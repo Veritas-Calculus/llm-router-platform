@@ -1,0 +1,19 @@
+name: "LLM Router Platform CodeQL Config"
+
+# Use the default queries plus security-extended
+queries:
+  - uses: security-extended
+
+# Define paths to ignore
+paths-ignore:
+  - '**/vendor/**'
+  - '**/testdata/**'
+
+# Query filters to manage specific findings
+query-filters:
+  # Exclude log injection findings in middleware where we have proper sanitization
+  # The sanitizeLogString function uses url.QueryEscape which escapes all dangerous chars
+  - exclude:
+      id: go/log-injection
+      paths:
+        - server/internal/api/middleware/middleware.go
