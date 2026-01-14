@@ -144,6 +144,8 @@ func (m *LoggingMiddleware) Log() gin.HandlerFunc {
 		start := time.Now()
 		path := sanitizeLogString(c.Request.URL.Path)
 		query := sanitizeLogString(c.Request.URL.RawQuery)
+		method := sanitizeLogString(c.Request.Method)
+		clientIP := sanitizeLogString(c.ClientIP())
 
 		c.Next()
 
@@ -155,11 +157,11 @@ func (m *LoggingMiddleware) Log() gin.HandlerFunc {
 		}
 
 		m.logger.Info("request",
-			zap.String("method", c.Request.Method),
+			zap.String("method", method),
 			zap.String("path", path),
 			zap.Int("status", status),
 			zap.Duration("latency", latency),
-			zap.String("client_ip", c.ClientIP()),
+			zap.String("client_ip", clientIP),
 		)
 	}
 }
