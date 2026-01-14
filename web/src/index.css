@@ -1,0 +1,229 @@
+@import "tailwindcss";
+
+@theme {
+  --color-apple-blue: #007AFF;
+  --color-apple-blue-hover: #0066CC;
+  --color-apple-gray-50: #F5F5F7;
+  --color-apple-gray-100: #E8E8ED;
+  --color-apple-gray-200: #D2D2D7;
+  --color-apple-gray-300: #AEAEB2;
+  --color-apple-gray-400: #8E8E93;
+  --color-apple-gray-500: #636366;
+  --color-apple-gray-600: #48484A;
+  --color-apple-gray-700: #3A3A3C;
+  --color-apple-gray-800: #2C2C2E;
+  --color-apple-gray-900: #1D1D1F;
+  --color-apple-green: #34C759;
+  --color-apple-red: #FF3B30;
+  --color-apple-orange: #FF9500;
+  --color-apple-yellow: #FFCC00;
+
+  --font-family-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  --font-size-2xs: 0.625rem;
+  --font-size-2xs--line-height: 0.75rem;
+
+  --shadow-apple: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-apple-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-apple-xl: 0 12px 40px rgba(0, 0, 0, 0.16);
+
+  --radius-apple: 12px;
+  --radius-apple-lg: 16px;
+  --radius-apple-xl: 24px;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--color-apple-gray-50);
+    color: var(--color-apple-gray-900);
+    font-family: var(--font-family-sans);
+  }
+
+  ::selection {
+    background-color: var(--color-apple-blue);
+    color: white;
+  }
+}
+
+@layer components {
+  .card {
+    background-color: white;
+    border-radius: var(--radius-apple-lg);
+    box-shadow: var(--shadow-apple);
+    padding: 1.5rem;
+  }
+
+  .label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-apple-gray-700);
+    margin-bottom: 0.375rem;
+  }
+
+  .input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-apple);
+    border: 1px solid var(--color-apple-gray-200);
+    background-color: white;
+    color: var(--color-apple-gray-900);
+    font-size: 1rem;
+    transition: all 0.2s ease;
+  }
+
+  .input::placeholder {
+    color: var(--color-apple-gray-400);
+  }
+
+  .input:focus {
+    outline: none;
+    border-color: var(--color-apple-blue);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-apple);
+    font-weight: 500;
+    font-size: 0.9375rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    border: none;
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background-color: var(--color-apple-blue);
+    color: white;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--color-apple-blue-hover);
+  }
+
+  .btn-primary:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.3);
+  }
+
+  .btn-secondary {
+    background-color: var(--color-apple-gray-100);
+    color: var(--color-apple-gray-900);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--color-apple-gray-200);
+  }
+
+  .btn-danger {
+    background-color: var(--color-apple-red);
+    color: white;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .btn-ghost {
+    background-color: transparent;
+    color: var(--color-apple-gray-600);
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    background-color: var(--color-apple-gray-100);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .badge-success {
+    background-color: rgba(52, 199, 89, 0.15);
+    color: #248a3d;
+  }
+
+  .badge-warning {
+    background-color: rgba(255, 149, 0, 0.15);
+    color: #c93400;
+  }
+
+  .badge-error {
+    background-color: rgba(255, 59, 48, 0.15);
+    color: #d70015;
+  }
+
+  .badge-info {
+    background-color: rgba(0, 122, 255, 0.15);
+    color: #0066cc;
+  }
+
+  .sidebar-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 1rem;
+    border-radius: var(--radius-apple);
+    color: var(--color-apple-gray-600);
+    font-size: 0.9375rem;
+    transition: all 0.2s ease;
+  }
+
+  .sidebar-link:hover {
+    background-color: var(--color-apple-gray-100);
+  }
+
+  .sidebar-link-active {
+    background-color: var(--color-apple-blue);
+    color: white;
+  }
+
+  .sidebar-link-active:hover {
+    background-color: var(--color-apple-blue);
+  }
+
+  .table-header {
+    padding: 0.75rem 1.5rem;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-apple-gray-500);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .table-cell {
+    padding: 1rem 1.5rem;
+    white-space: nowrap;
+    font-size: 0.875rem;
+    color: var(--color-apple-gray-900);
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}

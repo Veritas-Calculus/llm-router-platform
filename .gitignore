@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build outputs
+dist/
+build/
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go
+*.o
+*.a
+*.test
+go.work
+go.work.sum
+
+# Environment
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+*.out
+coverage.html
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Config with secrets
+config.yaml
+config.local.yaml
+*.pem
+*.key
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
