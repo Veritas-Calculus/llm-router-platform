@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,6 +14,13 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )
+
+// sanitizeLogString removes or replaces characters that could be used for log injection.
+var logSanitizer = regexp.MustCompile(`[\r\n\t]`)
+
+func sanitizeLogString(s string) string {
+	return logSanitizer.ReplaceAllString(s, "")
+}
 
 // AuthMiddleware handles JWT authentication.
 type AuthMiddleware struct {
@@ -134,8 +142,8 @@ func NewLoggingMiddleware(logger *zap.Logger) *LoggingMiddleware {
 func (m *LoggingMiddleware) Log() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-		path := c.Request.URL.Path
-		query := c.Request.URL.RawQuery
+		path := sanitizeLogString(c.Request.URL.Path)
+		query := sanitizeLogString(c.Request.URL.RawQuery)
 
 		c.Next()
 
@@ -220,7 +228,7 @@ func (m *RecoveryMiddleware) Recover() gin.HandlerFunc {
 			if err := recover(); err != nil {
 				m.logger.Error("panic recovered",
 					zap.Any("error", err),
-					zap.String("path", c.Request.URL.Path),
+					zap.String("path", sanitizeLogString(c.Request.URL.Path)),
 				)
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 					"error": "internal server error",
