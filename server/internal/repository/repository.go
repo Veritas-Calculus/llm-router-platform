@@ -207,6 +207,11 @@ func (r *ProviderAPIKeyRepository) Update(ctx context.Context, key *models.Provi
 	return r.db.WithContext(ctx).Save(key).Error
 }
 
+// Delete deletes a provider API key by ID.
+func (r *ProviderAPIKeyRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	return r.db.WithContext(ctx).Delete(&models.ProviderAPIKey{}, "id = ?", id).Error
+}
+
 // ModelRepository handles model data access.
 type ModelRepository struct {
 	db *gorm.DB

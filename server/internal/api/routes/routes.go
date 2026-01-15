@@ -138,6 +138,9 @@ func Setup(
 					providers.GET("", providerHandler.List)
 					providers.POST("/:id/toggle", providerHandler.Toggle)
 					providers.GET("/:id/health", providerHandler.CheckHealth)
+					providers.GET("/:id/api-keys", providerHandler.GetAPIKeys)
+					providers.POST("/:id/api-keys", providerHandler.CreateAPIKey)
+					providers.DELETE("/:id/api-keys/:key_id", providerHandler.DeleteAPIKey)
 				}
 			}
 

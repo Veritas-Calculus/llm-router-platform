@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/billing"
 	"llm-router-platform/internal/service/health"
 	"llm-router-platform/internal/service/proxy"
@@ -189,7 +190,7 @@ func (h *ProxyHandler) List(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, proxies)
+	c.JSON(http.StatusOK, gin.H{"data": proxies})
 }
 
 // CreateProxyRequest represents proxy creation request.
@@ -296,7 +297,12 @@ func NewProviderHandler(r *router.Router, logger *zap.Logger) *ProviderHandler {
 
 // List returns all providers.
 func (h *ProviderHandler) List(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"providers": []string{"openai", "anthropic", "google"}})
+	providers, err := h.router.GetAllProviders(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": providers})
 }
 
 // Toggle enables or disables a provider.
@@ -315,4 +321,79 @@ func (h *ProviderHandler) CheckHealth(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, status)
+}
+
+// GetAPIKeys returns all API keys for a provider.
+func (h *ProviderHandler) GetAPIKeys(c *gin.Context) {
+	providerID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid provider id"})
+		return
+	}
+
+	keys, err := h.router.GetProviderAPIKeys(c.Request.Context(), providerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": keys})
+}
+
+// CreateProviderAPIKeyRequest represents the request to create a provider API key.
+type CreateProviderAPIKeyRequest struct {
+	APIKey string `json:"api_key" binding:"required"`
+	Alias  string `json:"alias" binding:"required"`
+}
+
+// CreateAPIKey creates a new API key for a provider.
+func (h *ProviderHandler) CreateAPIKey(c *gin.Context) {
+	providerID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid provider id"})
+		return
+	}
+
+	var req CreateProviderAPIKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Store only the first few characters as prefix for display
+	keyPrefix := req.APIKey
+	if len(keyPrefix) > 8 {
+		keyPrefix = keyPrefix[:8] + "..."
+	}
+
+	key := &models.ProviderAPIKey{
+		ProviderID:      providerID,
+		EncryptedAPIKey: req.APIKey, // In production, this should be encrypted
+		KeyPrefix:       keyPrefix,
+		IsActive:        true,
+		Weight:          1.0,
+	}
+
+	if err := h.router.CreateProviderAPIKey(c.Request.Context(), key); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, key)
+}
+
+// DeleteAPIKey deletes a provider API key.
+func (h *ProviderHandler) DeleteAPIKey(c *gin.Context) {
+	keyID, err := uuid.Parse(c.Param("key_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid key id"})
+		return
+	}
+
+	if err := h.router.DeleteProviderAPIKey(c.Request.Context(), keyID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "API key deleted"})
 }

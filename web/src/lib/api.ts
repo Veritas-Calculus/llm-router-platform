@@ -268,19 +268,19 @@ export const alertsApi = {
 };
 
 export const providersApi = {
-  list: () => api.get<{ data: Provider[] }>('/admin/providers'),
+  list: () => api.get<{ data: Provider[] }>('/providers'),
   getApiKeys: (providerId: string) =>
-    api.get<{ data: ProviderApiKey[] }>(`/admin/providers/${providerId}/api-keys`),
+    api.get<{ data: ProviderApiKey[] }>(`/providers/${providerId}/api-keys`),
   createApiKey: (providerId: string, data: { api_key: string; alias: string }) =>
-    api.post<ProviderApiKey>(`/admin/providers/${providerId}/api-keys`, data),
+    api.post<ProviderApiKey>(`/providers/${providerId}/api-keys`, data),
   deleteApiKey: (providerId: string, keyId: string) =>
-    api.delete(`/admin/providers/${providerId}/api-keys/${keyId}`),
+    api.delete(`/providers/${providerId}/api-keys/${keyId}`),
 };
 
 export const proxiesApi = {
-  list: () => api.get<{ data: Proxy[] }>('/admin/proxies'),
+  list: () => api.get<{ data: Proxy[] }>('/proxies'),
   create: (data: { name: string; host: string; port: number; protocol: string }) =>
-    api.post<Proxy>('/admin/proxies', data),
-  update: (id: string, data: Partial<Proxy>) => api.put<Proxy>(`/admin/proxies/${id}`, data),
-  delete: (id: string) => api.delete(`/admin/proxies/${id}`),
+    api.post<Proxy>('/proxies', data),
+  update: (id: string, data: Partial<Proxy>) => api.put<Proxy>(`/proxies/${id}`, data),
+  delete: (id: string) => api.delete(`/proxies/${id}`),
 };

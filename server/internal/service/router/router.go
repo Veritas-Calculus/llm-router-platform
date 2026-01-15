@@ -200,6 +200,26 @@ func (r *Router) GetProviderClient(name string) (provider.Client, bool) {
 	return r.registry.Get(name)
 }
 
+// GetAllProviders returns all providers.
+func (r *Router) GetAllProviders(ctx context.Context) ([]models.Provider, error) {
+	return r.providerRepo.GetAll(ctx)
+}
+
+// GetProviderAPIKeys returns all API keys for a provider.
+func (r *Router) GetProviderAPIKeys(ctx context.Context, providerID uuid.UUID) ([]models.ProviderAPIKey, error) {
+	return r.providerKeyRepo.GetActiveByProvider(ctx, providerID)
+}
+
+// CreateProviderAPIKey creates a new provider API key.
+func (r *Router) CreateProviderAPIKey(ctx context.Context, key *models.ProviderAPIKey) error {
+	return r.providerKeyRepo.Create(ctx, key)
+}
+
+// DeleteProviderAPIKey deletes a provider API key.
+func (r *Router) DeleteProviderAPIKey(ctx context.Context, id uuid.UUID) error {
+	return r.providerKeyRepo.Delete(ctx, id)
+}
+
 // HealthStatus represents provider health status.
 type HealthStatus struct {
 	ProviderID   uuid.UUID
