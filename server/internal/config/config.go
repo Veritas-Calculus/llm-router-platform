@@ -112,10 +112,12 @@ func Load() (*Config, error) {
 	viper.SetConfigFile(".env")
 	viper.AutomaticEnv()
 
+	// Try to read .env file, but don't fail if it doesn't exist
+	// When running in Docker, environment variables are set directly
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, err
-		}
+		// Ignore all config file errors - env vars will be used instead
+		// This handles both ConfigFileNotFoundError and os.PathError
+		_ = err
 	}
 
 	setDefaults()
