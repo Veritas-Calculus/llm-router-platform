@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowPathIcon, CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon, ServerIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { healthApi, alertsApi, ApiKeyHealth, ProxyHealth, Alert } from '@/lib/api';
+import { healthApi, alertsApi, ApiKeyHealth, ProxyHealth, ProviderHealth, Alert } from '@/lib/api';
 
 function HealthPage() {
   const [apiKeyHealth, setApiKeyHealth] = useState<ApiKeyHealth[]>([]);
   const [proxyHealth, setProxyHealth] = useState<ProxyHealth[]>([]);
+  const [providerHealth, setProviderHealth] = useState<ProviderHealth[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'api-keys' | 'proxies' | 'alerts'>('api-keys');
+  const [activeTab, setActiveTab] = useState<'providers' | 'api-keys' | 'proxies' | 'alerts'>('providers');
 
   useEffect(() => {
     loadHealthData();
@@ -18,18 +19,21 @@ function HealthPage() {
 
   const loadHealthData = async () => {
     try {
-      const [apiKeysRes, proxiesRes, alertsRes] = await Promise.all([
+      const [apiKeysRes, proxiesRes, providersRes, alertsRes] = await Promise.all([
         healthApi.getApiKeysHealth(),
         healthApi.getProxiesHealth(),
+        healthApi.getProvidersHealth(),
         alertsApi.list(),
       ]);
       setApiKeyHealth(apiKeysRes?.data || []);
       setProxyHealth(proxiesRes?.data || []);
+      setProviderHealth(providersRes || []);
       setAlerts(alertsRes?.data || []);
     } catch (error) {
       toast.error('Failed to load health data');
       setApiKeyHealth([]);
       setProxyHealth([]);
+      setProviderHealth([]);
       setAlerts([]);
     } finally {
       setLoading(false);
@@ -67,6 +71,28 @@ function HealthPage() {
     }
   };
 
+  const checkProvider = async (id: string) => {
+    try {
+      const result = await healthApi.checkProvider(id);
+      setProviderHealth((prev) =>
+        prev.map((p) => (p.id === id ? result : p))
+      );
+      toast.success('Provider checked');
+    } catch (error) {
+      toast.error('Health check failed');
+    }
+  };
+
+  const checkAllProviders = async () => {
+    try {
+      await healthApi.checkAllProviders();
+      await loadHealthData();
+      toast.success('All providers checked');
+    } catch (error) {
+      toast.error('Health check failed');
+    }
+  };
+
   const acknowledgeAlert = async (id: string) => {
     try {
       await alertsApi.acknowledge(id);
@@ -95,7 +121,12 @@ function HealthPage() {
     }
   };
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: string | boolean) => {
+    if (typeof status === 'boolean') {
+      return status 
+        ? <CheckCircleIcon className="w-5 h-5 text-apple-green" />
+        : <XCircleIcon className="w-5 h-5 text-apple-red" />;
+    }
     switch (status) {
       case 'healthy':
       case 'active':
@@ -136,7 +167,7 @@ function HealthPage() {
         </div>
         <button
           onClick={refreshAll}
-          className="btn-secondary"
+          className="btn btn-secondary"
           disabled={refreshing}
         >
           <ArrowPathIcon className={`w-5 h-5 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
@@ -145,6 +176,16 @@ function HealthPage() {
       </div>
 
       <div className="flex gap-4 border-b border-apple-gray-200">
+        <button
+          onClick={() => setActiveTab('providers')}
+          className={`pb-3 px-1 font-medium transition-colors ${
+            activeTab === 'providers'
+              ? 'text-apple-blue border-b-2 border-apple-blue'
+              : 'text-apple-gray-500 hover:text-apple-gray-700'
+          }`}
+        >
+          Providers
+        </button>
         <button
           onClick={() => setActiveTab('api-keys')}
           className={`pb-3 px-1 font-medium transition-colors ${
@@ -181,6 +222,81 @@ function HealthPage() {
           )}
         </button>
       </div>
+
+      {activeTab === 'providers' && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="card"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium text-apple-gray-900">Provider Health</h3>
+            <button
+              onClick={checkAllProviders}
+              className="btn btn-secondary text-sm"
+            >
+              <ArrowPathIcon className="w-4 h-4 mr-1" />
+              Check All
+            </button>
+          </div>
+          {providerHealth.length === 0 ? (
+            <p className="text-center text-apple-gray-500 py-8">No active providers configured</p>
+          ) : (
+            <div className="space-y-4">
+              {providerHealth.map((provider) => (
+                <div
+                  key={provider.id}
+                  className="flex items-center justify-between p-4 bg-apple-gray-50 rounded-apple"
+                >
+                  <div className="flex items-center gap-4">
+                    {getStatusIcon(provider.is_healthy)}
+                    <div>
+                      <p className="font-medium text-apple-gray-900">{provider.name}</p>
+                      <p className="text-sm text-apple-gray-500">{provider.base_url}</p>
+                      {provider.error_message && (
+                        <p className="text-xs text-apple-red mt-1">{provider.error_message}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    {provider.use_proxy && (
+                      <div className="flex items-center gap-1">
+                        <ServerIcon className="w-4 h-4 text-apple-blue" />
+                        <span className="text-xs text-apple-blue">Via Proxy</span>
+                      </div>
+                    )}
+                    <div className="text-right">
+                      <p className="text-sm font-medium text-apple-gray-900">
+                        {provider.response_time > 0 ? `${provider.response_time}ms` : '-'}
+                      </p>
+                      <p className="text-xs text-apple-gray-500">Latency</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium text-apple-gray-900">
+                        {(provider.success_rate * 100).toFixed(1)}%
+                      </p>
+                      <p className="text-xs text-apple-gray-500">Success rate</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-apple-gray-500">
+                        {provider.last_check ? formatDate(provider.last_check) : 'Never'}
+                      </p>
+                      <p className="text-xs text-apple-gray-400">Last checked</p>
+                    </div>
+                    <button
+                      onClick={() => checkProvider(provider.id)}
+                      className="btn btn-ghost p-2"
+                      title="Check now"
+                    >
+                      <ArrowPathIcon className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </motion.div>
+      )}
 
       {activeTab === 'api-keys' && (
         <motion.div
@@ -219,7 +335,7 @@ function HealthPage() {
                     </div>
                     <button
                       onClick={() => checkApiKey(key.id)}
-                      className="btn-ghost p-2"
+                      className="btn btn-ghost p-2"
                       title="Check now"
                     >
                       <ArrowPathIcon className="w-5 h-5" />
@@ -271,7 +387,7 @@ function HealthPage() {
                     </div>
                     <button
                       onClick={() => checkProxy(proxy.id)}
-                      className="btn-ghost p-2"
+                      className="btn btn-ghost p-2"
                       title="Check now"
                     >
                       <ArrowPathIcon className="w-5 h-5" />
