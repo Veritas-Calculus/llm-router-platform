@@ -84,6 +84,11 @@ func (r *Router) Route(ctx context.Context, modelName string) (*models.Provider,
 		selectedProvider = r.selectWeighted(providers)
 	}
 
+	// For providers that don't require API keys (e.g., Ollama, LM Studio), return nil for apiKey
+	if !selectedProvider.RequiresAPIKey {
+		return selectedProvider, nil, nil
+	}
+
 	apiKey, err := r.selectAPIKey(ctx, selectedProvider.ID)
 	if err != nil {
 		return nil, nil, err
@@ -205,6 +210,34 @@ func (r *Router) GetAllProviders(ctx context.Context) ([]models.Provider, error)
 	return r.providerRepo.GetAll(ctx)
 }
 
+// GetProviderByID returns a provider by ID.
+func (r *Router) GetProviderByID(ctx context.Context, id uuid.UUID) (*models.Provider, error) {
+	return r.providerRepo.GetByID(ctx, id)
+}
+
+// UpdateProvider updates a provider.
+func (r *Router) UpdateProvider(ctx context.Context, provider *models.Provider) error {
+	return r.providerRepo.Update(ctx, provider)
+}
+
+// ToggleProviderAPIKey toggles a provider API key's active status.
+func (r *Router) ToggleProviderAPIKey(ctx context.Context, id uuid.UUID) (*models.ProviderAPIKey, error) {
+	key, err := r.providerKeyRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	key.IsActive = !key.IsActive
+	if err := r.providerKeyRepo.Update(ctx, key); err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+// GetAllProviderAPIKeys returns all API keys for a provider (including inactive).
+func (r *Router) GetAllProviderAPIKeys(ctx context.Context, providerID uuid.UUID) ([]models.ProviderAPIKey, error) {
+	return r.providerKeyRepo.GetByProvider(ctx, providerID)
+}
+
 // GetProviderAPIKeys returns all API keys for a provider.
 func (r *Router) GetProviderAPIKeys(ctx context.Context, providerID uuid.UUID) ([]models.ProviderAPIKey, error) {
 	return r.providerKeyRepo.GetActiveByProvider(ctx, providerID)
@@ -222,11 +255,11 @@ func (r *Router) DeleteProviderAPIKey(ctx context.Context, id uuid.UUID) error {
 
 // HealthStatus represents provider health status.
 type HealthStatus struct {
-	ProviderID   uuid.UUID
-	ProviderName string
-	IsHealthy    bool
-	Latency      time.Duration
-	LastChecked  time.Time
+	ProviderID   uuid.UUID     `json:"provider_id"`
+	ProviderName string        `json:"provider_name"`
+	IsHealthy    bool          `json:"is_healthy"`
+	Latency      time.Duration `json:"latency"`
+	LastChecked  time.Time     `json:"last_checked"`
 }
 
 // CheckProviderHealth checks health of a specific provider.
