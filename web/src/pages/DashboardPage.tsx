@@ -81,9 +81,9 @@ function DashboardPage() {
         dashboardApi.getModelStats(),
       ]);
       setStats(overviewRes);
-      setChartData(chartRes.data);
-      setProviderStats(providerRes.data);
-      setModelStats(modelRes.data);
+      setChartData(chartRes?.data || []);
+      setProviderStats(providerRes?.data || []);
+      setModelStats(modelRes?.data || []);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -273,7 +273,7 @@ function DashboardPage() {
         >
           <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Top Models</h2>
           <div className="space-y-4">
-            {modelStats.slice(0, 5).map((model, index) => (
+            {(modelStats || []).slice(0, 5).map((model, index) => (
               <div key={model.model_id} className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="w-6 h-6 bg-apple-gray-100 rounded-full flex items-center justify-center text-sm font-medium text-apple-gray-600">

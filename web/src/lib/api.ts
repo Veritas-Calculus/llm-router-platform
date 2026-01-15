@@ -248,9 +248,9 @@ export const apiKeysApi = {
 
 export const usageApi = {
   getRecords: (page: number, pageSize: number) =>
-    api.get<{ data: UsageRecord[]; total: number }>(`/usage?page=${page}&page_size=${pageSize}`),
+    api.get<{ data: UsageRecord[]; total: number }>(`/usage/recent?page=${page}&page_size=${pageSize}`),
   getDailyStats: (days: number) => api.get<{ data: DailyStats[] }>(`/usage/daily?days=${days}`),
-  getMonthlyUsage: () => api.get<MonthlyUsage>('/usage/monthly'),
+  getMonthlyUsage: () => api.get<MonthlyUsage>('/usage/summary'),
 };
 
 export const healthApi = {

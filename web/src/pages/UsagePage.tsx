@@ -31,12 +31,16 @@ function UsagePage() {
         usageApi.getRecords(page, pageSize),
         usageApi.getMonthlyUsage(),
       ]);
-      setDailyStats(dailyRes.data);
-      setRecords(recordsRes.data);
-      setTotal(recordsRes.total);
+      setDailyStats(dailyRes?.data || []);
+      setRecords(recordsRes?.data || []);
+      setTotal(recordsRes?.total || 0);
       setMonthlyUsage(monthlyRes);
     } catch (error) {
       console.error('Failed to load usage data:', error);
+      // Set default empty values on error
+      setDailyStats([]);
+      setRecords([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }

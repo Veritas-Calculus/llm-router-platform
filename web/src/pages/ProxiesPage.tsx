@@ -24,9 +24,10 @@ function ProxiesPage() {
   const loadProxies = async () => {
     try {
       const response = await proxiesApi.list();
-      setProxies(response.data);
+      setProxies(response?.data || []);
     } catch (error) {
       toast.error('Failed to load proxies');
+      setProxies([]);
     } finally {
       setLoading(false);
     }

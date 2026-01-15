@@ -23,11 +23,14 @@ function HealthPage() {
         healthApi.getProxiesHealth(),
         alertsApi.list(),
       ]);
-      setApiKeyHealth(apiKeysRes.data);
-      setProxyHealth(proxiesRes.data);
-      setAlerts(alertsRes.data);
+      setApiKeyHealth(apiKeysRes?.data || []);
+      setProxyHealth(proxiesRes?.data || []);
+      setAlerts(alertsRes?.data || []);
     } catch (error) {
       toast.error('Failed to load health data');
+      setApiKeyHealth([]);
+      setProxyHealth([]);
+      setAlerts([]);
     } finally {
       setLoading(false);
     }

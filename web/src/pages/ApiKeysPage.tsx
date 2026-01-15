@@ -19,9 +19,10 @@ function ApiKeysPage() {
   const loadApiKeys = async () => {
     try {
       const response = await apiKeysApi.list();
-      setApiKeys(response.data);
+      setApiKeys(response?.data || []);
     } catch (error) {
       toast.error('Failed to load API keys');
+      setApiKeys([]);
     } finally {
       setLoading(false);
     }

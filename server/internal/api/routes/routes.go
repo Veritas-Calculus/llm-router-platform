@@ -2,8 +2,6 @@
 package routes
 
 import (
-	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 	"llm-router-platform/internal/api/handlers"
 	"llm-router-platform/internal/api/middleware"
 	"llm-router-platform/internal/config"
@@ -14,6 +12,9 @@ import (
 	"llm-router-platform/internal/service/proxy"
 	"llm-router-platform/internal/service/router"
 	"llm-router-platform/internal/service/user"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // Services holds all service dependencies.

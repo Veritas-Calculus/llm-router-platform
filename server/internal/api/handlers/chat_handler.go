@@ -220,7 +220,7 @@ func (h *UsageHandler) GetDaily(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, daily)
+	c.JSON(http.StatusOK, gin.H{"data": daily})
 }
 
 // GetByProvider returns usage by provider.
@@ -269,5 +269,5 @@ func (h *UsageHandler) GetRecent(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, logs)
+	c.JSON(http.StatusOK, gin.H{"data": logs, "total": len(logs)})
 }

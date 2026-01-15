@@ -26,12 +26,14 @@ function ProvidersPage() {
   const loadProviders = async () => {
     try {
       const response = await providersApi.list();
-      setProviders(response.data);
-      if (response.data.length > 0) {
-        setSelectedProvider(response.data[0]);
+      const data = response?.data || [];
+      setProviders(data);
+      if (data.length > 0) {
+        setSelectedProvider(data[0]);
       }
     } catch (error) {
       toast.error('Failed to load providers');
+      setProviders([]);
     } finally {
       setLoading(false);
     }
@@ -40,7 +42,7 @@ function ProvidersPage() {
   const loadApiKeys = async (providerId: string) => {
     try {
       const response = await providersApi.getApiKeys(providerId);
-      setApiKeys(response.data);
+      setApiKeys(response?.data || []);
     } catch (error) {
       console.error('Failed to load API keys:', error);
       setApiKeys([]);
