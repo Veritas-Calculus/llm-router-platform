@@ -5,10 +5,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/uuid"
-	"go.uber.org/zap"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+
+	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // Service handles billing and usage tracking.
@@ -52,12 +53,12 @@ func (s *Service) calculateCost(model *models.Model, inputTokens, outputTokens i
 
 // UsageSummary represents aggregated usage data.
 type UsageSummary struct {
-	TotalRequests  int64   `json:"total_requests"`
-	TotalTokens    int64   `json:"total_tokens"`
-	TotalCost      float64 `json:"total_cost"`
-	AvgLatency     float64 `json:"avg_latency"`
-	SuccessRate    float64 `json:"success_rate"`
-	ErrorCount     int64   `json:"error_count"`
+	TotalRequests int64   `json:"total_requests"`
+	TotalTokens   int64   `json:"total_tokens"`
+	TotalCost     float64 `json:"total_cost"`
+	AvgLatency    float64 `json:"avg_latency"`
+	SuccessRate   float64 `json:"success_rate"`
+	ErrorCount    int64   `json:"error_count"`
 }
 
 // GetUsageSummary returns aggregated usage for a user.
@@ -67,6 +68,21 @@ func (s *Service) GetUsageSummary(ctx context.Context, userID uuid.UUID, startTi
 		return nil, err
 	}
 
+	return s.aggregateLogs(logs), nil
+}
+
+// GetSystemUsageSummary returns aggregated usage for all users (system-wide).
+func (s *Service) GetSystemUsageSummary(ctx context.Context, startTime, endTime time.Time) (*UsageSummary, error) {
+	logs, err := s.usageRepo.GetByTimeRange(ctx, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.aggregateLogs(logs), nil
+}
+
+// aggregateLogs aggregates usage logs into a summary.
+func (s *Service) aggregateLogs(logs []models.UsageLog) *UsageSummary {
 	summary := &UsageSummary{}
 	var totalLatency int64
 	var successCount int64
@@ -89,15 +105,15 @@ func (s *Service) GetUsageSummary(ctx context.Context, userID uuid.UUID, startTi
 		summary.SuccessRate = float64(successCount) / float64(summary.TotalRequests) * 100
 	}
 
-	return summary, nil
+	return summary
 }
 
 // DailyUsage represents daily usage data.
 type DailyUsage struct {
-	Date      string  `json:"date"`
-	Requests  int64   `json:"requests"`
-	Tokens    int64   `json:"tokens"`
-	Cost      float64 `json:"cost"`
+	Date     string  `json:"date"`
+	Requests int64   `json:"requests"`
+	Tokens   int64   `json:"tokens"`
+	Cost     float64 `json:"cost"`
 }
 
 // GetDailyUsage returns daily usage statistics.
@@ -110,6 +126,24 @@ func (s *Service) GetDailyUsage(ctx context.Context, userID uuid.UUID, days int)
 		return nil, err
 	}
 
+	return s.aggregateDailyLogs(logs), nil
+}
+
+// GetSystemDailyUsage returns daily usage statistics for all users (system-wide).
+func (s *Service) GetSystemDailyUsage(ctx context.Context, days int) ([]DailyUsage, error) {
+	endTime := time.Now()
+	startTime := endTime.AddDate(0, 0, -days)
+
+	logs, err := s.usageRepo.GetByTimeRange(ctx, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.aggregateDailyLogs(logs), nil
+}
+
+// aggregateDailyLogs aggregates logs by day.
+func (s *Service) aggregateDailyLogs(logs []models.UsageLog) []DailyUsage {
 	dailyMap := make(map[string]*DailyUsage)
 
 	for _, log := range logs {
@@ -127,7 +161,7 @@ func (s *Service) GetDailyUsage(ctx context.Context, userID uuid.UUID, days int)
 		result = append(result, *usage)
 	}
 
-	return result, nil
+	return result
 }
 
 // ProviderUsage represents usage per provider.
@@ -146,6 +180,21 @@ func (s *Service) GetUsageByProvider(ctx context.Context, userID uuid.UUID, star
 		return nil, err
 	}
 
+	return s.aggregateProviderLogs(logs), nil
+}
+
+// GetSystemUsageByProvider returns usage grouped by provider for all users (system-wide).
+func (s *Service) GetSystemUsageByProvider(ctx context.Context, startTime, endTime time.Time) ([]ProviderUsage, error) {
+	logs, err := s.usageRepo.GetByTimeRange(ctx, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.aggregateProviderLogs(logs), nil
+}
+
+// aggregateProviderLogs aggregates logs by provider.
+func (s *Service) aggregateProviderLogs(logs []models.UsageLog) []ProviderUsage {
 	providerMap := make(map[uuid.UUID]*ProviderUsage)
 
 	for _, log := range logs {
@@ -162,7 +211,69 @@ func (s *Service) GetUsageByProvider(ctx context.Context, userID uuid.UUID, star
 		result = append(result, *usage)
 	}
 
-	return result, nil
+	return result
+}
+
+// ModelUsage represents usage per model.
+type ModelUsage struct {
+	ModelID      uuid.UUID `json:"model_id"`
+	ModelName    string    `json:"model_name"`
+	Requests     int64     `json:"requests"`
+	InputTokens  int64     `json:"input_tokens"`
+	OutputTokens int64     `json:"output_tokens"`
+	TotalTokens  int64     `json:"total_tokens"`
+	Cost         float64   `json:"cost"`
+}
+
+// GetUsageByModel returns usage grouped by model name.
+func (s *Service) GetUsageByModel(ctx context.Context, userID uuid.UUID, startTime, endTime time.Time) ([]ModelUsage, error) {
+	logs, err := s.usageRepo.GetByUserIDAndTimeRange(ctx, userID, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.aggregateModelLogs(logs), nil
+}
+
+// GetSystemUsageByModel returns usage grouped by model for all users (system-wide).
+func (s *Service) GetSystemUsageByModel(ctx context.Context, startTime, endTime time.Time) ([]ModelUsage, error) {
+	logs, err := s.usageRepo.GetByTimeRange(ctx, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.aggregateModelLogs(logs), nil
+}
+
+// aggregateModelLogs aggregates logs by model name.
+func (s *Service) aggregateModelLogs(logs []models.UsageLog) []ModelUsage {
+	// Group by model name (works for both registered models and dynamic ones like Ollama)
+	modelMap := make(map[string]*ModelUsage)
+
+	for _, log := range logs {
+		modelName := log.ModelName
+		if modelName == "" {
+			continue
+		}
+		if _, ok := modelMap[modelName]; !ok {
+			modelMap[modelName] = &ModelUsage{
+				ModelID:   log.ModelID,
+				ModelName: modelName,
+			}
+		}
+		modelMap[modelName].Requests++
+		modelMap[modelName].InputTokens += int64(log.RequestTokens)
+		modelMap[modelName].OutputTokens += int64(log.ResponseTokens)
+		modelMap[modelName].TotalTokens += int64(log.TotalTokens)
+		modelMap[modelName].Cost += log.Cost
+	}
+
+	result := make([]ModelUsage, 0, len(modelMap))
+	for _, usage := range modelMap {
+		result = append(result, *usage)
+	}
+
+	return result
 }
 
 // GetRecentUsage returns recent usage logs.

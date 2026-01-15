@@ -145,6 +145,11 @@ func (s *Service) GetAPIKeys(ctx context.Context, userID uuid.UUID) ([]models.AP
 	return s.apiKeyRepo.GetByUserID(ctx, userID)
 }
 
+// GetAllAPIKeys returns all API keys in the system (for admin view).
+func (s *Service) GetAllAPIKeys(ctx context.Context) ([]models.APIKey, error) {
+	return s.apiKeyRepo.GetAll(ctx)
+}
+
 // ValidateAPIKey validates an API key and returns the associated user.
 func (s *Service) ValidateAPIKey(ctx context.Context, rawKey string) (*models.User, *models.APIKey, error) {
 	hashedKey := hashAPIKey(rawKey)

@@ -91,6 +91,15 @@ func (r *APIKeyRepository) GetByUserID(ctx context.Context, userID uuid.UUID) ([
 	return keys, nil
 }
 
+// GetAll retrieves all API keys (for admin view).
+func (r *APIKeyRepository) GetAll(ctx context.Context) ([]models.APIKey, error) {
+	var keys []models.APIKey
+	if err := r.db.WithContext(ctx).Find(&keys).Error; err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
 // GetActive retrieves all active API keys.
 func (r *APIKeyRepository) GetActive(ctx context.Context) ([]models.APIKey, error) {
 	var keys []models.APIKey
@@ -336,6 +345,18 @@ func (r *UsageLogRepository) GetByUserIDAndTimeRange(ctx context.Context, userID
 	var logs []models.UsageLog
 	if err := r.db.WithContext(ctx).
 		Where("user_id = ? AND created_at >= ? AND created_at <= ?", userID, start, end).
+		Order("created_at DESC").
+		Find(&logs).Error; err != nil {
+		return nil, err
+	}
+	return logs, nil
+}
+
+// GetByTimeRange retrieves all usage logs in time range (for system-wide stats).
+func (r *UsageLogRepository) GetByTimeRange(ctx context.Context, start, end time.Time) ([]models.UsageLog, error) {
+	var logs []models.UsageLog
+	if err := r.db.WithContext(ctx).
+		Where("created_at >= ? AND created_at <= ?", start, end).
 		Order("created_at DESC").
 		Find(&logs).Error; err != nil {
 		return nil, err

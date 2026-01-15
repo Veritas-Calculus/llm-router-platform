@@ -57,6 +57,7 @@ func NewService(
 // APIKeyHealthStatus represents health status of an API key.
 type APIKeyHealthStatus struct {
 	ID           uuid.UUID `json:"id"`
+	ProviderID   uuid.UUID `json:"provider_id"`
 	ProviderName string    `json:"provider_name"`
 	KeyPrefix    string    `json:"key_prefix"`
 	IsActive     bool      `json:"is_active"`
@@ -127,6 +128,7 @@ func (s *Service) GetAPIKeysHealth(ctx context.Context) ([]APIKeyHealthStatus, e
 
 		statuses[i] = APIKeyHealthStatus{
 			ID:           key.ID,
+			ProviderID:   key.ProviderID,
 			ProviderName: key.Provider.Name,
 			KeyPrefix:    key.KeyPrefix,
 			IsActive:     key.IsActive,

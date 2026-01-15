@@ -103,6 +103,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		UserID:     userObj.ID,
 		APIKeyID:   userAPIKey.ID,
 		ProviderID: selectedProvider.ID,
+		ModelName:  req.Model,
 		Latency:    latency.Milliseconds(),
 	}
 
@@ -177,6 +178,7 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client
 		UserID:     userObj.ID,
 		APIKeyID:   userAPIKey.ID,
 		ProviderID: selectedProvider.ID,
+		ModelName:  req.Model,
 		Latency:    latency.Milliseconds(),
 		StatusCode: http.StatusOK,
 	}

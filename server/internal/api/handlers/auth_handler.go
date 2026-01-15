@@ -87,10 +87,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 		"user": gin.H{
-			"id":    userObj.ID,
-			"email": userObj.Email,
-			"name":  userObj.Name,
-			"role":  userObj.Role,
+			"id":         userObj.ID,
+			"email":      userObj.Email,
+			"name":       userObj.Name,
+			"role":       userObj.Role,
+			"created_at": userObj.CreatedAt,
 		},
 	})
 }
@@ -289,7 +290,7 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 	})
 }
 
-// List returns all API keys for user.
+// List returns all API keys for the authenticated user.
 func (h *APIKeyHandler) List(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {

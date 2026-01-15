@@ -37,29 +37,53 @@ def get_or_create_api_key(jwt_token: str) -> str:
     
     API Keys are used for LLM API calls (chat completions),
     while JWT tokens are used for dashboard/management APIs.
+    
+    Note: Once created, API keys cannot be retrieved in full (only prefix is stored).
+    This function checks for a cached key file first, then creates a new one if needed.
     """
+    import os
+    
+    # Cache file to store the API key for reuse
+    cache_file = os.path.join(os.path.dirname(__file__), ".api_key_cache")
+    
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {jwt_token}",
     }
     
-    # First, try to list existing API keys
-    response = requests.get(
-        f"{BASE_URL}/api/v1/api-keys",
-        headers=headers,
-    )
-    response.raise_for_status()
-    keys = response.json().get("api_keys", [])
+    # Try to load cached API key
+    if os.path.exists(cache_file):
+        with open(cache_file, "r") as f:
+            cached_key = f.read().strip()
+            if cached_key:
+                # Verify the key is still valid by making a test request
+                try:
+                    test_response = requests.post(
+                        f"{BASE_URL}/api/v1/chat/completions",
+                        json={"model": "test", "messages": [{"role": "user", "content": "test"}]},
+                        headers={"Content-Type": "application/json", "X-API-Key": cached_key},
+                        timeout=5,
+                    )
+                    # If we get 401/403, key is invalid; any other response means key is valid
+                    if test_response.status_code not in [401, 403]:
+                        return cached_key
+                except requests.exceptions.RequestException:
+                    pass  # Key might still be valid, network issue
     
-    # If there's an active key, we need to create a new one since we can't retrieve the raw key
-    # Create a new API key for this example
+    # Create a new API key
     response = requests.post(
         f"{BASE_URL}/api/v1/api-keys",
         json={"name": "Python Example Key"},
         headers=headers,
     )
     response.raise_for_status()
-    return response.json()["key"]
+    new_key = response.json()["key"]
+    
+    # Cache the key for future use
+    with open(cache_file, "w") as f:
+        f.write(new_key)
+    
+    return new_key
 
 
 def chat_completion(api_key: str, messages: list, model: str = "gpt-4") -> dict:

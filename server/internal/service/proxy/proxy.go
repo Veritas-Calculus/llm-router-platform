@@ -2,11 +2,16 @@
 package proxy
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
+	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,15 +42,16 @@ func NewService(proxyRepo *repository.ProxyRepository, logger *zap.Logger) *Serv
 }
 
 // Create adds a new proxy.
-func (s *Service) Create(ctx context.Context, proxyURL, proxyType, region, username, password string) (*models.Proxy, error) {
+func (s *Service) Create(ctx context.Context, proxyURL, proxyType, region, username, password string, upstreamProxyID *uuid.UUID) (*models.Proxy, error) {
 	proxy := &models.Proxy{
-		URL:      proxyURL,
-		Type:     proxyType,
-		Region:   region,
-		Username: username,
-		Password: password,
-		IsActive: true,
-		Weight:   1.0,
+		URL:             proxyURL,
+		Type:            proxyType,
+		Region:          region,
+		Username:        username,
+		Password:        password,
+		UpstreamProxyID: upstreamProxyID,
+		IsActive:        true,
+		Weight:          1.0,
 	}
 
 	if err := s.proxyRepo.Create(ctx, proxy); err != nil {
@@ -71,18 +77,26 @@ func (s *Service) GetByID(ctx context.Context, id uuid.UUID) (*models.Proxy, err
 }
 
 // Update updates a proxy.
-func (s *Service) Update(ctx context.Context, id uuid.UUID, proxyURL, proxyType, region string, isActive bool) error {
+func (s *Service) Update(ctx context.Context, id uuid.UUID, proxyURL, proxyType, region string, isActive bool, username, password string, upstreamProxyID *uuid.UUID) (*models.Proxy, error) {
 	proxy, err := s.proxyRepo.GetByID(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	proxy.URL = proxyURL
 	proxy.Type = proxyType
 	proxy.Region = region
 	proxy.IsActive = isActive
+	proxy.Username = username
+	proxy.UpstreamProxyID = upstreamProxyID
+	if password != "" {
+		proxy.Password = password
+	}
 
-	return s.proxyRepo.Update(ctx, proxy)
+	if err := s.proxyRepo.Update(ctx, proxy); err != nil {
+		return nil, err
+	}
+	return proxy, nil
 }
 
 // Delete removes a proxy.
@@ -91,14 +105,17 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 }
 
 // Toggle enables or disables a proxy.
-func (s *Service) Toggle(ctx context.Context, id uuid.UUID) error {
+func (s *Service) Toggle(ctx context.Context, id uuid.UUID) (*models.Proxy, error) {
 	proxy, err := s.proxyRepo.GetByID(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	proxy.IsActive = !proxy.IsActive
-	return s.proxyRepo.Update(ctx, proxy)
+	if err := s.proxyRepo.Update(ctx, proxy); err != nil {
+		return nil, err
+	}
+	return proxy, nil
 }
 
 // SelectProxy selects a proxy based on weights.
@@ -146,21 +163,132 @@ func (s *Service) CheckHealth(ctx context.Context, id uuid.UUID) (bool, time.Dur
 	return s.checkProxyHealth(ctx, proxy)
 }
 
-// checkProxyHealth tests proxy connectivity.
-func (s *Service) checkProxyHealth(ctx context.Context, proxy *models.Proxy) (bool, time.Duration, error) {
-	start := time.Now()
+// normalizeProxyURL ensures the proxy URL has a proper scheme.
+func (s *Service) normalizeProxyURL(proxy *models.Proxy) string {
+	proxyURLStr := proxy.URL
+	if !strings.Contains(proxyURLStr, "://") {
+		if proxy.Type == "socks5" {
+			proxyURLStr = "socks5://" + proxyURLStr
+		} else if proxy.Type == "https" {
+			proxyURLStr = "https://" + proxyURLStr
+		} else {
+			proxyURLStr = "http://" + proxyURLStr
+		}
+	}
+	return proxyURLStr
+}
 
-	proxyURL, err := url.Parse(proxy.URL)
+// buildProxyTransport creates an http.Transport with proxy chain support.
+func (s *Service) buildProxyTransport(ctx context.Context, proxy *models.Proxy) (*http.Transport, error) {
+	proxyURLStr := s.normalizeProxyURL(proxy)
+	proxyURL, err := url.Parse(proxyURLStr)
 	if err != nil {
-		return false, 0, err
+		return nil, err
 	}
 
 	if proxy.Username != "" && proxy.Password != "" {
 		proxyURL.User = url.UserPassword(proxy.Username, proxy.Password)
 	}
 
-	transport := &http.Transport{
+	// Check if this proxy has an upstream proxy
+	if proxy.UpstreamProxyID != nil {
+		upstreamProxy, err := s.proxyRepo.GetByID(ctx, *proxy.UpstreamProxyID)
+		if err != nil {
+			s.logger.Warn("failed to get upstream proxy, using direct connection",
+				zap.String("proxy_id", proxy.ID.String()),
+				zap.String("upstream_id", proxy.UpstreamProxyID.String()),
+				zap.Error(err))
+		} else {
+			// Build chained transport
+			return s.buildChainedTransport(ctx, proxyURL, upstreamProxy)
+		}
+	}
+
+	// Simple single-proxy transport
+	return &http.Transport{
 		Proxy: http.ProxyURL(proxyURL),
+	}, nil
+}
+
+// buildChainedTransport creates a transport that connects through an upstream proxy first.
+func (s *Service) buildChainedTransport(ctx context.Context, targetProxyURL *url.URL, upstreamProxy *models.Proxy) (*http.Transport, error) {
+	upstreamURLStr := s.normalizeProxyURL(upstreamProxy)
+	upstreamURL, err := url.Parse(upstreamURLStr)
+	if err != nil {
+		return nil, err
+	}
+
+	if upstreamProxy.Username != "" && upstreamProxy.Password != "" {
+		upstreamURL.User = url.UserPassword(upstreamProxy.Username, upstreamProxy.Password)
+	}
+
+	// Create a custom dialer that connects through the upstream proxy
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(upstreamURL),
+		DialContext: func(dialCtx context.Context, network, addr string) (net.Conn, error) {
+			// First connect to the upstream proxy
+			dialer := &net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}
+
+			// Parse upstream host
+			upstreamHost := upstreamURL.Host
+			conn, err := dialer.DialContext(dialCtx, "tcp", upstreamHost)
+			if err != nil {
+				return nil, fmt.Errorf("failed to connect to upstream proxy: %w", err)
+			}
+
+			// Send CONNECT request to upstream proxy for the target proxy
+			targetHost := targetProxyURL.Host
+			connectReq := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n", targetHost, targetHost)
+
+			// Add upstream proxy auth if needed
+			if upstreamURL.User != nil {
+				username := upstreamURL.User.Username()
+				password, _ := upstreamURL.User.Password()
+				auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+				connectReq += fmt.Sprintf("Proxy-Authorization: Basic %s\r\n", auth)
+			}
+			connectReq += "\r\n"
+
+			if _, err := conn.Write([]byte(connectReq)); err != nil {
+				conn.Close()
+				return nil, fmt.Errorf("failed to send CONNECT request: %w", err)
+			}
+
+			// Read response
+			reader := bufio.NewReader(conn)
+			resp, err := http.ReadResponse(reader, nil)
+			if err != nil {
+				conn.Close()
+				return nil, fmt.Errorf("failed to read CONNECT response: %w", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				conn.Close()
+				return nil, fmt.Errorf("upstream CONNECT failed: %s", resp.Status)
+			}
+
+			// Now we have a tunnel through the upstream proxy to the target proxy
+			return conn, nil
+		},
+	}
+
+	// Override the Proxy function to send requests through the target proxy
+	transport.Proxy = http.ProxyURL(targetProxyURL)
+
+	return transport, nil
+}
+
+// checkProxyHealth tests proxy connectivity.
+func (s *Service) checkProxyHealth(ctx context.Context, proxy *models.Proxy) (bool, time.Duration, error) {
+	start := time.Now()
+
+	transport, err := s.buildProxyTransport(ctx, proxy)
+	if err != nil {
+		return false, 0, err
 	}
 
 	client := &http.Client{
@@ -168,7 +296,8 @@ func (s *Service) checkProxyHealth(ctx context.Context, proxy *models.Proxy) (bo
 		Timeout:   10 * time.Second,
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://httpbin.org/ip", nil)
+	// Use ip.plz.ac to test proxy connectivity - it returns the IP address
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://ip.plz.ac", nil)
 	if err != nil {
 		return false, 0, err
 	}
@@ -182,6 +311,7 @@ func (s *Service) checkProxyHealth(ctx context.Context, proxy *models.Proxy) (bo
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	// Check response is valid (status 200 and non-empty body means proxy works)
 	healthy := resp.StatusCode == http.StatusOK
 	s.updateProxyStats(ctx, proxy.ID, healthy, latency)
 

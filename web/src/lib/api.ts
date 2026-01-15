@@ -85,7 +85,7 @@ export interface User {
   email: string;
   name: string;
   role: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface ApiKey {
@@ -112,6 +112,16 @@ export interface OverviewStats {
   active_proxies: number;
   requests_today: number;
   cost_today: number;
+  tokens_today: number;
+  error_count: number;
+  api_keys: {
+    total: number;
+    healthy: number;
+  };
+  proxies: {
+    total: number;
+    healthy: number;
+  };
 }
 
 export interface UsageChartData {
@@ -125,6 +135,7 @@ export interface ProviderStats {
   provider_id: string;
   provider_name: string;
   requests: number;
+  tokens: number;
   success_rate: number;
   avg_latency_ms: number;
   total_cost: number;
@@ -232,6 +243,9 @@ export interface Proxy {
   avg_latency: number;
   last_checked: string;
   created_at: string;
+  username?: string;
+  has_auth?: boolean;
+  upstream_proxy_id?: string;
 }
 
 export interface UsageRecord {
@@ -321,8 +335,22 @@ export const providersApi = {
 
 export const proxiesApi = {
   list: () => api.get<{ data: Proxy[] }>('/proxies'),
-  create: (data: { url: string; type: string; region: string }) =>
+  create: (data: { url: string; type: string; region: string; username?: string; password?: string; upstream_proxy_id?: string }) =>
     api.post<Proxy>('/proxies', data),
-  update: (id: string, data: Partial<Proxy>) => api.put<Proxy>(`/proxies/${id}`, data),
+  batchCreate: (proxies: Array<{ url: string; type?: string; region?: string }>) =>
+    api.post<{ success: number; failed: number; proxies: Proxy[]; errors?: string[] }>(
+      '/proxies/batch',
+      { proxies }
+    ),
+  update: (id: string, data: Partial<Proxy> & { password?: string; upstream_proxy_id?: string }) => api.put<Proxy>(`/proxies/${id}`, data),
   delete: (id: string) => api.delete(`/proxies/${id}`),
+  toggle: (id: string) => api.post<Proxy>(`/proxies/${id}/toggle`),
+  test: (id: string) =>
+    api.post<{ id: string; url: string; is_healthy: boolean; latency_ms: number; error?: string }>(
+      `/proxies/${id}/test`
+    ),
+  testAll: () =>
+    api.post<{
+      results: Array<{ id: string; url: string; is_healthy: boolean; latency_ms: number; error?: string }>;
+    }>('/proxies/test-all'),
 };

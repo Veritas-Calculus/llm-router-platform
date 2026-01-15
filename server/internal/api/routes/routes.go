@@ -57,7 +57,7 @@ func Setup(
 	usageHandler := handlers.NewUsageHandler(services.Billing, logger)
 	healthHandler := handlers.NewHealthHandler(services.Health, logger)
 	alertHandler := handlers.NewAlertHandler(services.Health, logger)
-	dashboardHandler := handlers.NewDashboardHandler(services.Billing, services.Health, logger)
+	dashboardHandler := handlers.NewDashboardHandler(services.Billing, services.Health, services.Router, logger)
 	proxyHandler := handlers.NewProxyHandler(services.Proxy, logger)
 	providerHandler := handlers.NewProviderHandler(services.Router, logger)
 
@@ -132,9 +132,12 @@ func Setup(
 				{
 					proxies.GET("", proxyHandler.List)
 					proxies.POST("", proxyHandler.Create)
+					proxies.POST("/batch", proxyHandler.BatchCreate)
+					proxies.POST("/test-all", proxyHandler.TestAllProxies)
 					proxies.PUT("/:id", proxyHandler.Update)
 					proxies.DELETE("/:id", proxyHandler.Delete)
 					proxies.POST("/:id/toggle", proxyHandler.Toggle)
+					proxies.POST("/:id/test", proxyHandler.TestProxy)
 				}
 
 				providers := protected.Group("/providers")

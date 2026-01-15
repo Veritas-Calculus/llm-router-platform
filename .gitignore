@@ -53,6 +53,10 @@ config.local.yaml
 *.pem
 *.key
 
+# API key cache
+.api_key_cache
+*/.api_key_cache
+
 # Database
 *.db
 *.sqlite

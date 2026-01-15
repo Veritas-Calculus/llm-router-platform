@@ -31,6 +31,7 @@ const (
 type Router struct {
 	providerRepo    *repository.ProviderRepository
 	providerKeyRepo *repository.ProviderAPIKeyRepository
+	modelRepo       *repository.ModelRepository
 	registry        *provider.Registry
 	strategy        Strategy
 	roundRobinIndex int
@@ -42,12 +43,14 @@ type Router struct {
 func NewRouter(
 	providerRepo *repository.ProviderRepository,
 	providerKeyRepo *repository.ProviderAPIKeyRepository,
+	modelRepo *repository.ModelRepository,
 	registry *provider.Registry,
 	logger *zap.Logger,
 ) *Router {
 	return &Router{
 		providerRepo:    providerRepo,
 		providerKeyRepo: providerKeyRepo,
+		modelRepo:       modelRepo,
 		registry:        registry,
 		strategy:        StrategyWeighted,
 		logger:          logger,
@@ -213,6 +216,11 @@ func (r *Router) GetAllProviders(ctx context.Context) ([]models.Provider, error)
 // GetProviderByID returns a provider by ID.
 func (r *Router) GetProviderByID(ctx context.Context, id uuid.UUID) (*models.Provider, error) {
 	return r.providerRepo.GetByID(ctx, id)
+}
+
+// GetModelByID returns a model by ID.
+func (r *Router) GetModelByID(ctx context.Context, id uuid.UUID) (*models.Model, error) {
+	return r.modelRepo.GetByID(ctx, id)
 }
 
 // UpdateProvider updates a provider.

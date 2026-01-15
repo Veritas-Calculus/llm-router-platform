@@ -162,7 +162,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger) *
 		providerRegistry.Register("lmstudio", lmstudioClient)
 	}
 
-	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, providerRegistry, logger)
+	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Model, providerRegistry, logger)
 	billingService := billing.NewService(repos.UsageLog, repos.Model, logger)
 	memoryService := memory.NewService(repos.Memory, nil, logger)
 	proxyService := proxy.NewService(repos.Proxy, logger)
