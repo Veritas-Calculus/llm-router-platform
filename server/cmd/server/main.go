@@ -150,6 +150,18 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger) *
 		providerRegistry.Register("anthropic", anthropicClient)
 	}
 
+	// Register Ollama (local, no API key required)
+	if cfg.Providers.Ollama.BaseURL != "" {
+		ollamaClient := provider.NewOllamaClient(&cfg.Providers.Ollama, logger)
+		providerRegistry.Register("ollama", ollamaClient)
+	}
+
+	// Register LM Studio (local, no API key required)
+	if cfg.Providers.LMStudio.BaseURL != "" {
+		lmstudioClient := provider.NewLMStudioClient(&cfg.Providers.LMStudio, logger)
+		providerRegistry.Register("lmstudio", lmstudioClient)
+	}
+
 	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, providerRegistry, logger)
 	billingService := billing.NewService(repos.UsageLog, repos.Model, logger)
 	memoryService := memory.NewService(repos.Memory, nil, logger)
@@ -160,6 +172,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger) *
 		repos.APIKey,
 		repos.ProviderAPIKey,
 		repos.Proxy,
+		repos.Provider,
 		repos.HealthHistory,
 		alertNotifier,
 		providerRegistry,

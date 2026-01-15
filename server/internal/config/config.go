@@ -51,6 +51,8 @@ type ProvidersConfig struct {
 	OpenAI    ProviderConfig
 	Anthropic ProviderConfig
 	Google    ProviderConfig
+	Ollama    ProviderConfig
+	LMStudio  ProviderConfig
 }
 
 // ProviderConfig holds single provider configuration.
@@ -162,6 +164,14 @@ func Load() (*Config, error) {
 				APIKey:  viper.GetString("GOOGLE_API_KEY"),
 				BaseURL: viper.GetString("GOOGLE_BASE_URL"),
 			},
+			Ollama: ProviderConfig{
+				APIKey:  viper.GetString("OLLAMA_API_KEY"),
+				BaseURL: viper.GetString("OLLAMA_BASE_URL"),
+			},
+			LMStudio: ProviderConfig{
+				APIKey:  viper.GetString("LMSTUDIO_API_KEY"),
+				BaseURL: viper.GetString("LMSTUDIO_BASE_URL"),
+			},
 		},
 		ProxyPool: ProxyPoolConfig{
 			Enabled: viper.GetBool("PROXY_POOL_ENABLED"),
@@ -219,6 +229,8 @@ func setDefaults() {
 	viper.SetDefault("REDIS_DB", 0)
 	viper.SetDefault("OPENAI_BASE_URL", "https://api.openai.com/v1")
 	viper.SetDefault("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+	viper.SetDefault("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+	viper.SetDefault("LMSTUDIO_BASE_URL", "http://host.docker.internal:1234/v1")
 	viper.SetDefault("HEALTH_CHECK_ENABLED", true)
 	viper.SetDefault("HEALTH_CHECK_INTERVAL", 60)
 	viper.SetDefault("HEALTH_CHECK_TIMEOUT", 10)
