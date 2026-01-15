@@ -92,10 +92,13 @@ export interface ApiKey {
   id: string;
   name: string;
   key: string;
-  prefix: string;
+  key_prefix: string;
   is_active: boolean;
-  created_at: string;
+  rate_limit: number;
+  daily_limit: number;
+  expires_at: string | null;
   last_used_at: string | null;
+  created_at: string;
 }
 
 export interface OverviewStats {
@@ -158,6 +161,19 @@ export interface ProxyHealth {
   success_rate: number;
 }
 
+export interface ProviderHealth {
+  id: string;
+  name: string;
+  base_url: string;
+  is_active: boolean;
+  is_healthy: boolean;
+  use_proxy: boolean;
+  response_time: number;
+  last_check: string;
+  success_rate: number;
+  error_message?: string;
+}
+
 export interface Alert {
   id: string;
   target_type: string;
@@ -176,6 +192,11 @@ export interface Provider {
   base_url: string;
   is_active: boolean;
   priority: number;
+  weight: number;
+  max_retries: number;
+  timeout: number;
+  use_proxy: boolean;
+  requires_api_key: boolean;
   created_at: string;
 }
 
@@ -183,10 +204,20 @@ export interface ProviderApiKey {
   id: string;
   provider_id: string;
   alias: string;
-  status: string;
-  priority: number;
+  key_prefix: string;
+  is_active: boolean;
+  weight: number;
+  rate_limit: number;
+  usage_count: number;
   last_used_at?: string;
   created_at: string;
+}
+
+export interface ProviderHealthStatus {
+  provider_name: string;
+  is_healthy: boolean;
+  latency: number;
+  last_checked: string;
 }
 
 export interface Proxy {
@@ -244,7 +275,8 @@ export const dashboardApi = {
 export const apiKeysApi = {
   list: () => api.get<{ data: ApiKey[] }>('/api-keys'),
   create: (name: string) => api.post<ApiKey>('/api-keys', { name }),
-  revoke: (id: string) => api.delete(`/api-keys/${id}`),
+  revoke: (id: string) => api.post(`/api-keys/${id}/revoke`),
+  delete: (id: string) => api.delete(`/api-keys/${id}`),
 };
 
 export const usageApi = {
@@ -259,6 +291,9 @@ export const healthApi = {
   checkApiKey: (id: string) => api.post<ApiKeyHealth>(`/health/api-keys/${id}/check`),
   getProxiesHealth: () => api.get<{ data: ProxyHealth[] }>('/health/proxies'),
   checkProxy: (id: string) => api.post<ProxyHealth>(`/health/proxies/${id}/check`),
+  getProvidersHealth: () => api.get<ProviderHealth[]>('/health/providers'),
+  checkProvider: (id: string) => api.post<ProviderHealth>(`/health/providers/${id}/check`),
+  checkAllProviders: () => api.post<{ message: string }>('/health/providers/check-all'),
 };
 
 export const alertsApi = {
@@ -270,10 +305,16 @@ export const alertsApi = {
 
 export const providersApi = {
   list: () => api.get<{ data: Provider[] }>('/providers'),
+  update: (id: string, data: Partial<Provider>) => api.put<Provider>(`/providers/${id}`, data),
+  toggle: (id: string) => api.post<Provider>(`/providers/${id}/toggle`),
+  toggleProxy: (id: string) => api.post<Provider>(`/providers/${id}/toggle-proxy`),
+  checkHealth: (id: string) => api.get<ProviderHealthStatus>(`/providers/${id}/health`),
   getApiKeys: (providerId: string) =>
     api.get<{ data: ProviderApiKey[] }>(`/providers/${providerId}/api-keys`),
   createApiKey: (providerId: string, data: { api_key: string; alias: string }) =>
     api.post<ProviderApiKey>(`/providers/${providerId}/api-keys`, data),
+  toggleApiKey: (providerId: string, keyId: string) =>
+    api.post<ProviderApiKey>(`/providers/${providerId}/api-keys/${keyId}/toggle`),
   deleteApiKey: (providerId: string, keyId: string) =>
     api.delete(`/providers/${providerId}/api-keys/${keyId}`),
 };
