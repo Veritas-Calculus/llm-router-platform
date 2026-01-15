@@ -2,6 +2,8 @@
 package handlers
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"time"
 
@@ -85,11 +87,17 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		Stream:      req.Stream,
 	}
 
-	resp, err := client.Chat(c.Request.Context(), providerReq)
-	latency := time.Since(start)
-
 	userObj := c.MustGet("user").(*models.User)
 	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	// Handle streaming requests
+	if req.Stream {
+		h.handleStreamingChat(c, client, providerReq, selectedProvider, userObj, userAPIKey, start)
+		return
+	}
+
+	resp, err := client.Chat(c.Request.Context(), providerReq)
+	latency := time.Since(start)
 
 	usageLog := &models.UsageLog{
 		UserID:     userObj.ID,
@@ -121,6 +129,58 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		"choices": resp.Choices,
 		"usage":   resp.Usage,
 	})
+}
+
+// handleStreamingChat handles streaming chat completion requests.
+func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client, req *provider.ChatRequest, selectedProvider *models.Provider, userObj *models.User, userAPIKey *models.APIKey, start time.Time) {
+	chunks, err := client.StreamChat(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "provider request failed"})
+		return
+	}
+
+	// Set headers for SSE
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("Transfer-Encoding", "chunked")
+
+	c.Stream(func(w io.Writer) bool {
+		chunk, ok := <-chunks
+		if !ok {
+			return false
+		}
+
+		if chunk.Error != nil {
+			return false
+		}
+
+		if chunk.Done {
+			_, _ = w.Write([]byte("data: [DONE]\n\n"))
+			return false
+		}
+
+		data, err := json.Marshal(chunk)
+		if err != nil {
+			return false
+		}
+
+		_, _ = w.Write([]byte("data: "))
+		_, _ = w.Write(data)
+		_, _ = w.Write([]byte("\n\n"))
+		return true
+	})
+
+	// Record usage after streaming completes
+	latency := time.Since(start)
+	usageLog := &models.UsageLog{
+		UserID:     userObj.ID,
+		APIKeyID:   userAPIKey.ID,
+		ProviderID: selectedProvider.ID,
+		Latency:    latency.Milliseconds(),
+		StatusCode: http.StatusOK,
+	}
+	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 }
 
 // ModelHandler handles model listing endpoints.
