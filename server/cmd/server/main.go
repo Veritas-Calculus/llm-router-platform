@@ -53,6 +53,7 @@ func run() error {
 
 	_ = db.SeedDefaultProviders()
 	_ = db.SeedDefaultModels()
+	_ = db.SeedDefaultAdmin(&cfg.Admin)
 
 	repos := initRepositories(db)
 	services := initServices(repos, cfg, logger)

@@ -19,6 +19,7 @@ type Config struct {
 	JWT         JWTConfig
 	RateLimit   RateLimitConfig
 	Log         LogConfig
+	Admin       AdminConfig
 }
 
 // ServerConfig holds server-related configuration.
@@ -107,6 +108,13 @@ type LogConfig struct {
 	Format string
 }
 
+// AdminConfig holds default admin user configuration.
+type AdminConfig struct {
+	Email    string
+	Password string
+	Name     string
+}
+
 // Load reads configuration from environment variables and .env file.
 func Load() (*Config, error) {
 	viper.SetConfigFile(".env")
@@ -189,6 +197,11 @@ func Load() (*Config, error) {
 			Level:  viper.GetString("LOG_LEVEL"),
 			Format: viper.GetString("LOG_FORMAT"),
 		},
+		Admin: AdminConfig{
+			Email:    viper.GetString("ADMIN_EMAIL"),
+			Password: viper.GetString("ADMIN_PASSWORD"),
+			Name:     viper.GetString("ADMIN_NAME"),
+		},
 	}
 
 	return cfg, nil
@@ -215,6 +228,7 @@ func setDefaults() {
 	viper.SetDefault("RATE_LIMIT_REQUESTS_PER_MINUTE", 60)
 	viper.SetDefault("LOG_LEVEL", "info")
 	viper.SetDefault("LOG_FORMAT", "json")
+	viper.SetDefault("ADMIN_NAME", "Administrator")
 }
 
 // GetDSN returns the database connection string.

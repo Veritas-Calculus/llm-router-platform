@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -162,5 +163,42 @@ func (d *Database) SeedDefaultModels() error {
 		}
 	}
 
+	return nil
+}
+
+// SeedDefaultAdmin creates a default admin user if configured.
+func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
+	if cfg.Email == "" || cfg.Password == "" {
+		d.logger.Debug("admin seeding skipped: ADMIN_EMAIL or ADMIN_PASSWORD not set")
+		return nil
+	}
+
+	var existing models.User
+	result := d.DB.Where("email = ?", cfg.Email).First(&existing)
+	if result.Error == nil {
+		d.logger.Debug("admin user already exists", zap.String("email", cfg.Email))
+		return nil
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(cfg.Password), bcrypt.DefaultCost)
+	if err != nil {
+		d.logger.Error("failed to hash admin password", zap.Error(err))
+		return err
+	}
+
+	admin := &models.User{
+		Email:        cfg.Email,
+		PasswordHash: string(hashedPassword),
+		Name:         cfg.Name,
+		Role:         "admin",
+		IsActive:     true,
+	}
+
+	if err := d.DB.Create(admin).Error; err != nil {
+		d.logger.Error("failed to create admin user", zap.Error(err))
+		return err
+	}
+
+	d.logger.Info("default admin user created", zap.String("email", cfg.Email))
 	return nil
 }
