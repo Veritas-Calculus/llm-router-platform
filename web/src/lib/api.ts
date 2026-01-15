@@ -174,7 +174,7 @@ export interface Provider {
   id: string;
   name: string;
   base_url: string;
-  is_enabled: boolean;
+  is_active: boolean;
   priority: number;
   created_at: string;
 }
@@ -191,14 +191,15 @@ export interface ProviderApiKey {
 
 export interface Proxy {
   id: string;
-  name: string;
-  host: string;
-  port: number;
-  protocol: string;
-  status: string;
-  success_rate: number;
-  avg_latency_ms: number;
-  total_requests: number;
+  url: string;
+  type: string;
+  region: string;
+  is_active: boolean;
+  weight: number;
+  success_count: number;
+  failure_count: number;
+  avg_latency: number;
+  last_checked: string;
   created_at: string;
 }
 
@@ -279,7 +280,7 @@ export const providersApi = {
 
 export const proxiesApi = {
   list: () => api.get<{ data: Proxy[] }>('/proxies'),
-  create: (data: { name: string; host: string; port: number; protocol: string }) =>
+  create: (data: { url: string; type: string; region: string }) =>
     api.post<Proxy>('/proxies', data),
   update: (id: string, data: Partial<Proxy>) => api.put<Proxy>(`/proxies/${id}`, data),
   delete: (id: string) => api.delete(`/proxies/${id}`),

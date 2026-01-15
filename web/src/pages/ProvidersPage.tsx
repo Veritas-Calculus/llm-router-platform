@@ -132,7 +132,7 @@ function ProvidersPage() {
                         : 'text-apple-gray-500'
                     }`}
                   >
-                    {provider.is_enabled ? 'Enabled' : 'Disabled'}
+                    {provider.is_active ? 'Enabled' : 'Disabled'}
                   </p>
                 </button>
               ))}

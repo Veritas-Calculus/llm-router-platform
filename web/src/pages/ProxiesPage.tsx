@@ -10,10 +10,9 @@ function ProxiesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingProxy, setEditingProxy] = useState<Proxy | null>(null);
   const [formData, setFormData] = useState({
-    name: '',
-    host: '',
-    port: 8080,
-    protocol: 'http',
+    url: '',
+    type: 'http',
+    region: '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -34,8 +33,8 @@ function ProxiesPage() {
   };
 
   const handleSubmit = async () => {
-    if (!formData.name.trim() || !formData.host.trim()) {
-      toast.error('Please fill in all required fields');
+    if (!formData.url.trim()) {
+      toast.error('Please fill in the URL');
       return;
     }
 
@@ -75,32 +74,38 @@ function ProxiesPage() {
   const openEditModal = (proxy: Proxy) => {
     setEditingProxy(proxy);
     setFormData({
-      name: proxy.name,
-      host: proxy.host,
-      port: proxy.port,
-      protocol: proxy.protocol,
+      url: proxy.url,
+      type: proxy.type,
+      region: proxy.region || '',
     });
     setShowModal(true);
   };
 
   const openCreateModal = () => {
     setEditingProxy(null);
-    setFormData({ name: '', host: '', port: 8080, protocol: 'http' });
+    setFormData({ url: '', type: 'http', region: '' });
     setShowModal(true);
   };
 
   const closeModal = () => {
     setShowModal(false);
     setEditingProxy(null);
-    setFormData({ name: '', host: '', port: 8080, protocol: 'http' });
+    setFormData({ url: '', type: 'http', region: '' });
   };
 
   const formatDate = (dateString: string): string => {
+    if (!dateString) return 'Never';
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
     });
+  };
+
+  const getSuccessRate = (proxy: Proxy): string => {
+    const total = proxy.success_count + proxy.failure_count;
+    if (total === 0) return '100%';
+    return ((proxy.success_count / total) * 100).toFixed(1) + '%';
   };
 
   if (loading) {
@@ -141,43 +146,33 @@ function ProxiesPage() {
             <table className="min-w-full divide-y divide-apple-gray-200">
               <thead>
                 <tr>
-                  <th className="table-header">Name</th>
-                  <th className="table-header">Host</th>
-                  <th className="table-header">Protocol</th>
+                  <th className="table-header">URL</th>
+                  <th className="table-header">Type</th>
+                  <th className="table-header">Region</th>
                   <th className="table-header">Status</th>
                   <th className="table-header">Success Rate</th>
                   <th className="table-header">Latency</th>
-                  <th className="table-header">Requests</th>
-                  <th className="table-header">Created</th>
+                  <th className="table-header">Last Checked</th>
                   <th className="table-header">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-apple-gray-100">
                 {proxies.map((proxy) => (
                   <tr key={proxy.id} className="hover:bg-apple-gray-50">
-                    <td className="table-cell font-medium">{proxy.name}</td>
-                    <td className="table-cell">
-                      {proxy.host}:{proxy.port}
-                    </td>
-                    <td className="table-cell uppercase text-sm">{proxy.protocol}</td>
+                    <td className="table-cell font-medium">{proxy.url}</td>
+                    <td className="table-cell uppercase text-sm">{proxy.type}</td>
+                    <td className="table-cell">{proxy.region || '-'}</td>
                     <td className="table-cell">
                       <span
-                        className={
-                          proxy.status === 'active' ? 'badge-success' : 'badge-error'
-                        }
+                        className={proxy.is_active ? 'badge-success' : 'badge-error'}
                       >
-                        {proxy.status}
+                        {proxy.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td className="table-cell">
-                      {(proxy.success_rate * 100).toFixed(1)}%
-                    </td>
-                    <td className="table-cell">{proxy.avg_latency_ms}ms</td>
-                    <td className="table-cell">
-                      {new Intl.NumberFormat().format(proxy.total_requests)}
-                    </td>
+                    <td className="table-cell">{getSuccessRate(proxy)}</td>
+                    <td className="table-cell">{proxy.avg_latency.toFixed(0)}ms</td>
                     <td className="table-cell text-apple-gray-500">
-                      {formatDate(proxy.created_at)}
+                      {formatDate(proxy.last_checked)}
                     </td>
                     <td className="table-cell">
                       <div className="flex items-center gap-2">
@@ -215,61 +210,30 @@ function ProxiesPage() {
             </h2>
             <div className="space-y-4">
               <div>
-                <label htmlFor="name" className="label">
-                  Name
+                <label htmlFor="url" className="label">
+                  URL
                 </label>
                 <input
                   type="text"
-                  id="name"
-                  value={formData.name}
+                  id="url"
+                  value={formData.url}
                   onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, name: e.target.value }))
+                    setFormData((prev) => ({ ...prev, url: e.target.value }))
                   }
                   className="input"
-                  placeholder="e.g., US Proxy 1"
-                />
-              </div>
-              <div>
-                <label htmlFor="host" className="label">
-                  Host
-                </label>
-                <input
-                  type="text"
-                  id="host"
-                  value={formData.host}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, host: e.target.value }))
-                  }
-                  className="input"
-                  placeholder="e.g., proxy.example.com"
+                  placeholder="e.g., http://proxy.example.com:8080"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="port" className="label">
-                    Port
-                  </label>
-                  <input
-                    type="number"
-                    id="port"
-                    value={formData.port}
-                    onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, port: parseInt(e.target.value) || 8080 }))
-                    }
-                    className="input"
-                    min="1"
-                    max="65535"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="protocol" className="label">
-                    Protocol
+                  <label htmlFor="type" className="label">
+                    Type
                   </label>
                   <select
-                    id="protocol"
-                    value={formData.protocol}
+                    id="type"
+                    value={formData.type}
                     onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, protocol: e.target.value }))
+                      setFormData((prev) => ({ ...prev, type: e.target.value }))
                     }
                     className="input"
                   >
@@ -277,6 +241,21 @@ function ProxiesPage() {
                     <option value="https">HTTPS</option>
                     <option value="socks5">SOCKS5</option>
                   </select>
+                </div>
+                <div>
+                  <label htmlFor="region" className="label">
+                    Region
+                  </label>
+                  <input
+                    type="text"
+                    id="region"
+                    value={formData.region}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, region: e.target.value }))
+                    }
+                    className="input"
+                    placeholder="e.g., US-West"
+                  />
                 </div>
               </div>
             </div>

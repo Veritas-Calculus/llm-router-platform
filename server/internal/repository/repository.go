@@ -5,9 +5,10 @@ import (
 	"context"
 	"time"
 
+	"llm-router-platform/internal/models"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"llm-router-platform/internal/models"
 )
 
 // UserRepository handles user data access.
