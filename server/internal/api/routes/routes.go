@@ -86,7 +86,8 @@ func Setup(
 				{
 					keys.GET("", apiKeyHandler.List)
 					keys.POST("", apiKeyHandler.Create)
-					keys.DELETE("/:id", apiKeyHandler.Revoke)
+					keys.POST("/:id/revoke", apiKeyHandler.Revoke)
+					keys.DELETE("/:id", apiKeyHandler.Delete)
 				}
 
 				usage := protected.Group("/usage")
@@ -103,6 +104,9 @@ func Setup(
 					healthGroup.POST("/api-keys/:id/check", healthHandler.CheckAPIKey)
 					healthGroup.GET("/proxies", healthHandler.GetProxiesHealth)
 					healthGroup.POST("/proxies/:id/check", healthHandler.CheckProxy)
+					healthGroup.GET("/providers", healthHandler.GetProvidersHealth)
+					healthGroup.POST("/providers/:id/check", healthHandler.CheckProvider)
+					healthGroup.POST("/providers/check-all", healthHandler.CheckAllProviders)
 					healthGroup.GET("/history", healthHandler.GetHealthHistory)
 				}
 
@@ -136,10 +140,13 @@ func Setup(
 				providers := protected.Group("/providers")
 				{
 					providers.GET("", providerHandler.List)
+					providers.PUT("/:id", providerHandler.Update)
 					providers.POST("/:id/toggle", providerHandler.Toggle)
+					providers.POST("/:id/toggle-proxy", providerHandler.ToggleProxy)
 					providers.GET("/:id/health", providerHandler.CheckHealth)
 					providers.GET("/:id/api-keys", providerHandler.GetAPIKeys)
 					providers.POST("/:id/api-keys", providerHandler.CreateAPIKey)
+					providers.POST("/:id/api-keys/:key_id/toggle", providerHandler.ToggleAPIKey)
 					providers.DELETE("/:id/api-keys/:key_id", providerHandler.DeleteAPIKey)
 				}
 			}
