@@ -127,7 +127,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-org/llm-router-platform.git
+git clone https://github.com/Veritas-Calculus/llm-router-platform.git
 cd llm-router-platform
 
 # 进入后端目录
