@@ -4,13 +4,14 @@ package database
 import (
 	"time"
 
+	"llm-router-platform/internal/config"
+	"llm-router-platform/internal/models"
+
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"llm-router-platform/internal/config"
-	"llm-router-platform/internal/models"
 )
 
 // Database wraps the GORM database connection.

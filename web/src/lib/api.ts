@@ -1,7 +1,7 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/stores/authStore';
 
-const BASE_URL = '/api';
+const BASE_URL = '/api/v1';
 
 class ApiClient {
   private client: AxiosInstance;
