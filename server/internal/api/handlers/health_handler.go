@@ -5,11 +5,12 @@ import (
 	"net/http"
 	"strconv"
 
+	"llm-router-platform/internal/models"
+	"llm-router-platform/internal/service/health"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"llm-router-platform/internal/models"
-	"llm-router-platform/internal/service/health"
 )
 
 // HealthHandler handles health check endpoints.
@@ -101,6 +102,44 @@ func (h *HealthHandler) GetHealthHistory(c *gin.Context) {
 	c.JSON(http.StatusOK, history)
 }
 
+// GetProvidersHealth returns health status of all active providers.
+func (h *HealthHandler) GetProvidersHealth(c *gin.Context) {
+	statuses, err := h.healthService.GetProvidersHealth(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, statuses)
+}
+
+// CheckProvider checks health of a specific provider.
+func (h *HealthHandler) CheckProvider(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	status, err := h.healthService.CheckSingleProvider(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, status)
+}
+
+// CheckAllProviders runs health checks on all active providers.
+func (h *HealthHandler) CheckAllProviders(c *gin.Context) {
+	if err := h.healthService.CheckAllProviders(c.Request.Context()); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "health check initiated for all providers"})
+}
+
 // AlertHandler handles alert endpoints.
 type AlertHandler struct {
 	healthService *health.Service
@@ -138,9 +177,9 @@ func (h *AlertHandler) List(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"alerts": alerts,
-		"total":  total,
-		"page":   page,
+		"alerts":    alerts,
+		"total":     total,
+		"page":      page,
 		"page_size": pageSize,
 	})
 }

@@ -3,6 +3,8 @@ package health
 
 import (
 	"context"
+	"net/http"
+	"net/url"
 	"time"
 
 	"llm-router-platform/internal/models"
@@ -19,6 +21,7 @@ type Service struct {
 	apiKeyRepo        *repository.APIKeyRepository
 	providerKeyRepo   *repository.ProviderAPIKeyRepository
 	proxyRepo         *repository.ProxyRepository
+	providerRepo      *repository.ProviderRepository
 	healthHistoryRepo *repository.HealthHistoryRepository
 	alertNotifier     *AlertNotifier
 	providerRegistry  *provider.Registry
@@ -31,6 +34,7 @@ func NewService(
 	apiKeyRepo *repository.APIKeyRepository,
 	providerKeyRepo *repository.ProviderAPIKeyRepository,
 	proxyRepo *repository.ProxyRepository,
+	providerRepo *repository.ProviderRepository,
 	healthHistoryRepo *repository.HealthHistoryRepository,
 	alertNotifier *AlertNotifier,
 	providerRegistry *provider.Registry,
@@ -41,6 +45,7 @@ func NewService(
 		apiKeyRepo:        apiKeyRepo,
 		providerKeyRepo:   providerKeyRepo,
 		proxyRepo:         proxyRepo,
+		providerRepo:      providerRepo,
 		healthHistoryRepo: healthHistoryRepo,
 		alertNotifier:     alertNotifier,
 		providerRegistry:  providerRegistry,
@@ -74,6 +79,20 @@ type ProxyHealthStatus struct {
 	SuccessRate  float64   `json:"success_rate"`
 }
 
+// ProviderHealthStatus represents health status of a provider.
+type ProviderHealthStatus struct {
+	ID           uuid.UUID `json:"id"`
+	Name         string    `json:"name"`
+	BaseURL      string    `json:"base_url"`
+	IsActive     bool      `json:"is_active"`
+	IsHealthy    bool      `json:"is_healthy"`
+	UseProxy     bool      `json:"use_proxy"`
+	ResponseTime int64     `json:"response_time"`
+	LastCheck    time.Time `json:"last_check"`
+	SuccessRate  float64   `json:"success_rate"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+}
+
 // GetAPIKeysHealth returns health status of all API keys.
 func (s *Service) GetAPIKeysHealth(ctx context.Context) ([]APIKeyHealthStatus, error) {
 	keys, err := s.providerKeyRepo.GetAll(ctx)
@@ -103,7 +122,7 @@ func (s *Service) GetAPIKeysHealth(ctx context.Context) ([]APIKeyHealthStatus, e
 
 		successRate := float64(0)
 		if len(history) > 0 {
-			successRate = float64(successCount) / float64(len(history)) * 100
+			successRate = float64(successCount) / float64(len(history))
 		}
 
 		statuses[i] = APIKeyHealthStatus{
@@ -153,6 +172,19 @@ func (s *Service) CheckSingleAPIKey(ctx context.Context, id uuid.UUID) (*APIKeyH
 		_ = s.alertNotifier.Notify(ctx, "api_key", key.ID, "health_check_failed", "API key health check failed")
 	}
 
+	// Calculate success rate from history
+	histories, _ := s.healthHistoryRepo.GetByTarget(ctx, "api_key", key.ID, 10)
+	successCount := 0
+	for _, h := range histories {
+		if h.IsHealthy {
+			successCount++
+		}
+	}
+	successRate := float64(0)
+	if len(histories) > 0 {
+		successRate = float64(successCount) / float64(len(histories))
+	}
+
 	return &APIKeyHealthStatus{
 		ID:           key.ID,
 		ProviderName: key.Provider.Name,
@@ -161,6 +193,7 @@ func (s *Service) CheckSingleAPIKey(ctx context.Context, id uuid.UUID) (*APIKeyH
 		IsHealthy:    healthy,
 		LastCheck:    time.Now(),
 		ResponseTime: latency.Milliseconds(),
+		SuccessRate:  successRate,
 	}, nil
 }
 
@@ -193,7 +226,7 @@ func (s *Service) GetProxiesHealth(ctx context.Context) ([]ProxyHealthStatus, er
 
 		successRate := float64(0)
 		if len(history) > 0 {
-			successRate = float64(successCount) / float64(len(history)) * 100
+			successRate = float64(successCount) / float64(len(history))
 		}
 
 		statuses[i] = ProxyHealthStatus{
@@ -234,6 +267,19 @@ func (s *Service) CheckSingleProxy(ctx context.Context, id uuid.UUID) (*ProxyHea
 		_ = s.alertNotifier.Notify(ctx, "proxy", proxy.ID, "health_check_failed", "Proxy health check failed")
 	}
 
+	// Calculate success rate from history
+	histories, _ := s.healthHistoryRepo.GetByTarget(ctx, "proxy", proxy.ID, 10)
+	successCount := 0
+	for _, h := range histories {
+		if h.IsHealthy {
+			successCount++
+		}
+	}
+	successRate := float64(0)
+	if len(histories) > 0 {
+		successRate = float64(successCount) / float64(len(histories))
+	}
+
 	return &ProxyHealthStatus{
 		ID:           proxy.ID,
 		URL:          proxy.URL,
@@ -243,6 +289,7 @@ func (s *Service) CheckSingleProxy(ctx context.Context, id uuid.UUID) (*ProxyHea
 		IsHealthy:    healthy,
 		ResponseTime: latency.Milliseconds(),
 		LastCheck:    time.Now(),
+		SuccessRate:  successRate,
 	}, nil
 }
 
@@ -289,4 +336,197 @@ func (s *Service) GetAlertConfig(ctx context.Context, targetType string, targetI
 		return nil, nil
 	}
 	return s.alertNotifier.GetAlertConfigByTarget(ctx, targetType, targetID)
+}
+
+// GetProvidersHealth returns health status of all active providers.
+func (s *Service) GetProvidersHealth(ctx context.Context) ([]ProviderHealthStatus, error) {
+	providers, err := s.providerRepo.GetActive(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	statuses := make([]ProviderHealthStatus, len(providers))
+	for i, p := range providers {
+		history, _ := s.healthHistoryRepo.GetByTarget(ctx, "provider", p.ID, 10)
+
+		successCount := 0
+		var lastCheck time.Time
+		var lastResponseTime int64
+		isHealthy := true
+		var errorMsg string
+
+		for j, h := range history {
+			if j == 0 {
+				lastCheck = h.CheckedAt
+				lastResponseTime = h.ResponseTime
+				isHealthy = h.IsHealthy
+				errorMsg = h.ErrorMessage
+			}
+			if h.IsHealthy {
+				successCount++
+			}
+		}
+
+		successRate := float64(0)
+		if len(history) > 0 {
+			successRate = float64(successCount) / float64(len(history))
+		}
+
+		statuses[i] = ProviderHealthStatus{
+			ID:           p.ID,
+			Name:         p.Name,
+			BaseURL:      p.BaseURL,
+			IsActive:     p.IsActive,
+			IsHealthy:    isHealthy,
+			UseProxy:     p.UseProxy,
+			ResponseTime: lastResponseTime,
+			LastCheck:    lastCheck,
+			SuccessRate:  successRate,
+			ErrorMessage: errorMsg,
+		}
+	}
+
+	return statuses, nil
+}
+
+// CheckSingleProvider checks health of a specific provider.
+func (s *Service) CheckSingleProvider(ctx context.Context, id uuid.UUID) (*ProviderHealthStatus, error) {
+	p, err := s.providerRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	var healthy bool
+	var latency time.Duration
+	var errorMsg string
+
+	client, ok := s.providerRegistry.Get(p.Name)
+	if !ok {
+		healthy = false
+		errorMsg = "provider not registered"
+	} else {
+		// Check health using proxy if enabled
+		if p.UseProxy {
+			healthy, latency, errorMsg = s.checkWithProxy(ctx, p)
+		} else {
+			var err error
+			healthy, latency, err = client.CheckHealth(ctx)
+			if err != nil {
+				errorMsg = err.Error()
+			}
+		}
+	}
+
+	history := &models.HealthHistory{
+		TargetType:   "provider",
+		TargetID:     p.ID,
+		IsHealthy:    healthy,
+		ResponseTime: latency.Milliseconds(),
+		ErrorMessage: errorMsg,
+		CheckedAt:    time.Now(),
+	}
+	_ = s.healthHistoryRepo.Create(ctx, history)
+
+	if !healthy && s.alertNotifier != nil {
+		_ = s.alertNotifier.Notify(ctx, "provider", p.ID, "health_check_failed", "Provider health check failed: "+errorMsg)
+	}
+
+	// Calculate success rate from history
+	histories, _ := s.healthHistoryRepo.GetByTarget(ctx, "provider", p.ID, 10)
+	successCount := 0
+	for _, h := range histories {
+		if h.IsHealthy {
+			successCount++
+		}
+	}
+	successRate := float64(0)
+	if len(histories) > 0 {
+		successRate = float64(successCount) / float64(len(histories))
+	}
+
+	return &ProviderHealthStatus{
+		ID:           p.ID,
+		Name:         p.Name,
+		BaseURL:      p.BaseURL,
+		IsActive:     p.IsActive,
+		IsHealthy:    healthy,
+		UseProxy:     p.UseProxy,
+		ResponseTime: latency.Milliseconds(),
+		LastCheck:    time.Now(),
+		SuccessRate:  successRate,
+		ErrorMessage: errorMsg,
+	}, nil
+}
+
+// checkWithProxy performs a health check using a proxy.
+func (s *Service) checkWithProxy(ctx context.Context, p *models.Provider) (bool, time.Duration, string) {
+	// Get an active proxy
+	proxies, err := s.proxyRepo.GetActive(ctx)
+	if err != nil || len(proxies) == 0 {
+		return false, 0, "no active proxy available"
+	}
+
+	// Use the first active proxy
+	proxyInfo := proxies[0]
+	proxyURL, err := url.Parse(proxyInfo.URL)
+	if err != nil {
+		return false, 0, "invalid proxy URL"
+	}
+
+	// Create HTTP client with proxy
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(proxyURL),
+	}
+	httpClient := &http.Client{
+		Transport: transport,
+		Timeout:   time.Duration(p.Timeout) * time.Second,
+	}
+
+	// Determine health check endpoint based on provider
+	var healthURL string
+	switch p.Name {
+	case "openai", "lmstudio":
+		healthURL = p.BaseURL + "/models"
+	case "ollama":
+		healthURL = p.BaseURL + "/api/tags"
+	case "anthropic":
+		// Anthropic doesn't have a public health endpoint, use messages with minimal request
+		healthURL = p.BaseURL + "/v1/messages"
+	default:
+		healthURL = p.BaseURL + "/models"
+	}
+
+	start := time.Now()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
+	if err != nil {
+		return false, 0, err.Error()
+	}
+
+	resp, err := httpClient.Do(req)
+	latency := time.Since(start)
+	if err != nil {
+		return false, latency, err.Error()
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// For Anthropic, a 401 means the endpoint is reachable
+	if p.Name == "anthropic" && resp.StatusCode == http.StatusUnauthorized {
+		return true, latency, ""
+	}
+
+	return resp.StatusCode == http.StatusOK, latency, ""
+}
+
+// CheckAllProviders runs health checks on all active providers.
+func (s *Service) CheckAllProviders(ctx context.Context) error {
+	providers, err := s.providerRepo.GetActive(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, p := range providers {
+		_, _ = s.CheckSingleProvider(ctx, p.ID)
+	}
+
+	return nil
 }
