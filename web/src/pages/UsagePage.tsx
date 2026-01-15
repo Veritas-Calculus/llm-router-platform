@@ -140,8 +140,8 @@ function UsagePage() {
         className="card"
       >
         <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Daily Usage</h2>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-64" style={{ minHeight: '256px' }}>
+          <ResponsiveContainer width="100%" height="100%" minHeight={256}>
             <LineChart data={dailyStats}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
               <XAxis

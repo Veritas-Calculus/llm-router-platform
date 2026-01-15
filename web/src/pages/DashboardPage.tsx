@@ -156,8 +156,8 @@ function DashboardPage() {
           className="card"
         >
           <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Usage Trend</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64" style={{ minHeight: '256px' }}>
+            <ResponsiveContainer width="100%" height="100%" minHeight={256}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                 <XAxis
@@ -194,8 +194,8 @@ function DashboardPage() {
           className="card"
         >
           <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Cost Trend</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64" style={{ minHeight: '256px' }}>
+            <ResponsiveContainer width="100%" height="100%" minHeight={256}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                 <XAxis
@@ -239,8 +239,8 @@ function DashboardPage() {
           className="card"
         >
           <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Provider Usage</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64" style={{ minHeight: '256px' }}>
+            <ResponsiveContainer width="100%" height="100%" minHeight={256}>
               <BarChart data={providerStats} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                 <XAxis type="number" stroke="#8E8E93" fontSize={12} />
