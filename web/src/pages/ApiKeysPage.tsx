@@ -1,8 +1,76 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { PlusIcon, TrashIcon, ClipboardIcon } from '@heroicons/react/24/outline';
+import {
+  PlusIcon,
+  TrashIcon,
+  ClipboardIcon,
+  XCircleIcon,
+  ExclamationTriangleIcon,
+} from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { apiKeysApi, ApiKey } from '@/lib/api';
+
+interface ConfirmModalProps {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  confirmText: string;
+  confirmColor: 'red' | 'orange';
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
+}
+
+function ConfirmModal({
+  isOpen,
+  title,
+  message,
+  confirmText,
+  confirmColor,
+  onConfirm,
+  onCancel,
+  loading,
+}: ConfirmModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4"
+      >
+        <div className="flex items-start gap-4">
+          <div
+            className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
+              confirmColor === 'red' ? 'bg-red-100' : 'bg-orange-100'
+            }`}
+          >
+            <ExclamationTriangleIcon
+              className={`w-6 h-6 ${confirmColor === 'red' ? 'text-apple-red' : 'text-apple-orange'}`}
+            />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-apple-gray-900">{title}</h3>
+            <p className="mt-2 text-sm text-apple-gray-600">{message}</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 mt-6">
+          <button onClick={onCancel} className="btn btn-secondary" disabled={loading}>
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`btn ${confirmColor === 'red' ? 'btn-danger' : 'bg-apple-orange text-white hover:opacity-90'}`}
+            disabled={loading}
+          >
+            {loading ? 'Processing...' : confirmText}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
 
 function ApiKeysPage() {
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
@@ -11,6 +79,14 @@ function ApiKeysPage() {
   const [newKeyName, setNewKeyName] = useState('');
   const [createdKey, setCreatedKey] = useState<ApiKey | null>(null);
   const [creating, setCreating] = useState(false);
+
+  // Confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    type: 'revoke' | 'delete';
+    keyId: string;
+  }>({ isOpen: false, type: 'revoke', keyId: '' });
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     loadApiKeys();
@@ -48,17 +124,39 @@ function ApiKeysPage() {
     }
   };
 
-  const handleRevoke = async (id: string) => {
-    if (!confirm('Are you sure you want to revoke this API key? This action cannot be undone.')) {
-      return;
-    }
+  const openRevokeModal = (id: string) => {
+    setConfirmModal({ isOpen: true, type: 'revoke', keyId: id });
+  };
+
+  const openDeleteModal = (id: string) => {
+    setConfirmModal({ isOpen: true, type: 'delete', keyId: id });
+  };
+
+  const closeConfirmModal = () => {
+    setConfirmModal({ isOpen: false, type: 'revoke', keyId: '' });
+  };
+
+  const handleConfirmAction = async () => {
+    const { type, keyId } = confirmModal;
+    setProcessing(true);
 
     try {
-      await apiKeysApi.revoke(id);
-      setApiKeys((prev) => prev.filter((key) => key.id !== id));
-      toast.success('API key revoked');
+      if (type === 'revoke') {
+        await apiKeysApi.revoke(keyId);
+        setApiKeys((prev) =>
+          prev.map((key) => (key.id === keyId ? { ...key, is_active: false } : key))
+        );
+        toast.success('API key revoked');
+      } else {
+        await apiKeysApi.delete(keyId);
+        setApiKeys((prev) => prev.filter((key) => key.id !== keyId));
+        toast.success('API key deleted');
+      }
+      closeConfirmModal();
     } catch (error) {
-      toast.error('Failed to revoke API key');
+      toast.error(type === 'revoke' ? 'Failed to revoke API key' : 'Failed to delete API key');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -94,7 +192,7 @@ function ApiKeysPage() {
           <h1 className="text-2xl font-semibold text-apple-gray-900">API Keys</h1>
           <p className="text-apple-gray-500 mt-1">Manage your API keys for accessing the LLM Router</p>
         </div>
-        <button onClick={() => setShowCreateModal(true)} className="btn-primary">
+        <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
           <PlusIcon className="w-5 h-5 mr-2" />
           Create API Key
         </button>
@@ -120,7 +218,7 @@ function ApiKeysPage() {
                 </code>
                 <button
                   onClick={() => copyToClipboard(createdKey.key)}
-                  className="btn-ghost p-2"
+                  className="btn btn-ghost p-2"
                   title="Copy to clipboard"
                 >
                   <ClipboardIcon className="w-5 h-5" />
@@ -143,7 +241,7 @@ function ApiKeysPage() {
         {apiKeys.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-apple-gray-500 mb-4">No API keys yet</p>
-            <button onClick={() => setShowCreateModal(true)} className="btn-primary">
+            <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
               Create your first API key
             </button>
           </div>
@@ -155,6 +253,7 @@ function ApiKeysPage() {
                   <th className="table-header">Name</th>
                   <th className="table-header">Key</th>
                   <th className="table-header">Status</th>
+                  <th className="table-header">Expires</th>
                   <th className="table-header">Created</th>
                   <th className="table-header">Last Used</th>
                   <th className="table-header">Actions</th>
@@ -166,7 +265,7 @@ function ApiKeysPage() {
                     <td className="table-cell font-medium">{key.name}</td>
                     <td className="table-cell">
                       <code className="text-sm bg-apple-gray-100 px-2 py-1 rounded">
-                        {key.prefix}...
+                        {key.key_prefix}...
                       </code>
                     </td>
                     <td className="table-cell">
@@ -175,21 +274,37 @@ function ApiKeysPage() {
                       </span>
                     </td>
                     <td className="table-cell text-apple-gray-500">
+                      {key.expires_at && new Date(key.expires_at).getTime() > 0
+                        ? formatDate(key.expires_at)
+                        : 'Never'}
+                    </td>
+                    <td className="table-cell text-apple-gray-500">
                       {formatDate(key.created_at)}
                     </td>
                     <td className="table-cell text-apple-gray-500">
-                      {key.last_used_at ? formatDate(key.last_used_at) : 'Never'}
+                      {key.last_used_at && new Date(key.last_used_at).getTime() > 0
+                        ? formatDate(key.last_used_at)
+                        : 'Never'}
                     </td>
                     <td className="table-cell">
-                      {key.is_active && (
+                      <div className="flex items-center gap-2">
+                        {key.is_active && (
+                          <button
+                            onClick={() => openRevokeModal(key.id)}
+                            className="text-apple-orange hover:text-orange-600 transition-colors"
+                            title="Revoke API key"
+                          >
+                            <XCircleIcon className="w-5 h-5" />
+                          </button>
+                        )}
                         <button
-                          onClick={() => handleRevoke(key.id)}
+                          onClick={() => openDeleteModal(key.id)}
                           className="text-apple-red hover:text-red-600 transition-colors"
-                          title="Revoke API key"
+                          title="Delete API key"
                         >
                           <TrashIcon className="w-5 h-5" />
                         </button>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -227,17 +342,32 @@ function ApiKeysPage() {
                   setShowCreateModal(false);
                   setNewKeyName('');
                 }}
-                className="btn-secondary"
+                className="btn btn-secondary"
               >
                 Cancel
               </button>
-              <button onClick={handleCreate} className="btn-primary" disabled={creating}>
+              <button onClick={handleCreate} className="btn btn-primary" disabled={creating}>
                 {creating ? 'Creating...' : 'Create'}
               </button>
             </div>
           </motion.div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.type === 'revoke' ? 'Revoke API Key' : 'Delete API Key'}
+        message={
+          confirmModal.type === 'revoke'
+            ? 'Are you sure you want to revoke this API key? It will be deactivated but can still be deleted later.'
+            : 'Are you sure you want to permanently delete this API key? This action cannot be undone.'
+        }
+        confirmText={confirmModal.type === 'revoke' ? 'Revoke' : 'Delete'}
+        confirmColor={confirmModal.type === 'revoke' ? 'orange' : 'red'}
+        onConfirm={handleConfirmAction}
+        onCancel={closeConfirmModal}
+        loading={processing}
+      />
     </div>
   );
 }
