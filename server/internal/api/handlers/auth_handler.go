@@ -5,12 +5,13 @@ import (
 	"net/http"
 	"time"
 
+	"llm-router-platform/internal/config"
+	"llm-router-platform/internal/service/user"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"llm-router-platform/internal/config"
-	"llm-router-platform/internal/service/user"
 )
 
 // AuthHandler handles authentication endpoints.
@@ -275,11 +276,16 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"id":         apiKey.ID,
-		"name":       apiKey.Name,
-		"key":        rawKey,
-		"key_prefix": apiKey.KeyPrefix,
-		"created_at": apiKey.CreatedAt,
+		"id":           apiKey.ID,
+		"name":         apiKey.Name,
+		"key":          rawKey,
+		"key_prefix":   apiKey.KeyPrefix,
+		"is_active":    apiKey.IsActive,
+		"rate_limit":   apiKey.RateLimit,
+		"daily_limit":  apiKey.DailyLimit,
+		"expires_at":   apiKey.ExpiresAt,
+		"last_used_at": apiKey.LastUsedAt,
+		"created_at":   apiKey.CreatedAt,
 	})
 }
 
@@ -303,7 +309,7 @@ func (h *APIKeyHandler) List(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, keys)
+	c.JSON(http.StatusOK, gin.H{"data": keys})
 }
 
 // Revoke deactivates an API key.
@@ -332,4 +338,32 @@ func (h *APIKeyHandler) Revoke(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "API key revoked"})
+}
+
+// Delete permanently removes an API key.
+func (h *APIKeyHandler) Delete(c *gin.Context) {
+	keyID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid key id"})
+		return
+	}
+
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	id, err := uuid.Parse(userID.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+
+	if err := h.userService.DeleteAPIKey(c.Request.Context(), id, keyID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "API key deleted"})
 }

@@ -305,9 +305,107 @@ func (h *ProviderHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": providers})
 }
 
+// UpdateProviderRequest represents the request to update a provider.
+type UpdateProviderRequest struct {
+	IsActive   *bool    `json:"is_active"`
+	Priority   *int     `json:"priority"`
+	Weight     *float64 `json:"weight"`
+	MaxRetries *int     `json:"max_retries"`
+	Timeout    *int     `json:"timeout"`
+	BaseURL    *string  `json:"base_url"`
+}
+
+// Update updates a provider.
+func (h *ProviderHandler) Update(c *gin.Context) {
+	providerID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid provider id"})
+		return
+	}
+
+	var req UpdateProviderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	provider, err := h.router.GetProviderByID(c.Request.Context(), providerID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
+		return
+	}
+
+	if req.IsActive != nil {
+		provider.IsActive = *req.IsActive
+	}
+	if req.Priority != nil {
+		provider.Priority = *req.Priority
+	}
+	if req.Weight != nil {
+		provider.Weight = *req.Weight
+	}
+	if req.MaxRetries != nil {
+		provider.MaxRetries = *req.MaxRetries
+	}
+	if req.Timeout != nil {
+		provider.Timeout = *req.Timeout
+	}
+	if req.BaseURL != nil {
+		provider.BaseURL = *req.BaseURL
+	}
+
+	if err := h.router.UpdateProvider(c.Request.Context(), provider); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, provider)
+}
+
 // Toggle enables or disables a provider.
 func (h *ProviderHandler) Toggle(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "provider toggled"})
+	providerID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid provider id"})
+		return
+	}
+
+	provider, err := h.router.GetProviderByID(c.Request.Context(), providerID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
+		return
+	}
+
+	provider.IsActive = !provider.IsActive
+	if err := h.router.UpdateProvider(c.Request.Context(), provider); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, provider)
+}
+
+// ToggleProxy enables or disables proxy usage for a provider.
+func (h *ProviderHandler) ToggleProxy(c *gin.Context) {
+	providerID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid provider id"})
+		return
+	}
+
+	provider, err := h.router.GetProviderByID(c.Request.Context(), providerID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
+		return
+	}
+
+	provider.UseProxy = !provider.UseProxy
+	if err := h.router.UpdateProvider(c.Request.Context(), provider); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, provider)
 }
 
 // CheckHealth checks provider health.
@@ -331,13 +429,30 @@ func (h *ProviderHandler) GetAPIKeys(c *gin.Context) {
 		return
 	}
 
-	keys, err := h.router.GetProviderAPIKeys(c.Request.Context(), providerID)
+	keys, err := h.router.GetAllProviderAPIKeys(c.Request.Context(), providerID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": keys})
+}
+
+// ToggleAPIKey toggles a provider API key's active status.
+func (h *ProviderHandler) ToggleAPIKey(c *gin.Context) {
+	keyID, err := uuid.Parse(c.Param("key_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid key id"})
+		return
+	}
+
+	key, err := h.router.ToggleProviderAPIKey(c.Request.Context(), keyID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, key)
 }
 
 // CreateProviderAPIKeyRequest represents the request to create a provider API key.
@@ -368,6 +483,7 @@ func (h *ProviderHandler) CreateAPIKey(c *gin.Context) {
 
 	key := &models.ProviderAPIKey{
 		ProviderID:      providerID,
+		Alias:           req.Alias,
 		EncryptedAPIKey: req.APIKey, // In production, this should be encrypted
 		KeyPrefix:       keyPrefix,
 		IsActive:        true,
