@@ -123,7 +123,7 @@ function ProxiesPage() {
           <h1 className="text-2xl font-semibold text-apple-gray-900">Proxies</h1>
           <p className="text-apple-gray-500 mt-1">Manage proxy nodes for API requests</p>
         </div>
-        <button onClick={openCreateModal} className="btn-primary">
+        <button onClick={openCreateModal} className="btn btn-primary">
           <PlusIcon className="w-5 h-5 mr-2" />
           Add Proxy
         </button>
@@ -137,7 +137,7 @@ function ProxiesPage() {
         {proxies.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-apple-gray-500 mb-4">No proxies configured</p>
-            <button onClick={openCreateModal} className="btn-primary">
+            <button onClick={openCreateModal} className="btn btn-primary">
               Add your first proxy
             </button>
           </div>
@@ -260,10 +260,10 @@ function ProxiesPage() {
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={closeModal} className="btn-secondary">
+              <button onClick={closeModal} className="btn btn-secondary">
                 Cancel
               </button>
-              <button onClick={handleSubmit} className="btn-primary" disabled={saving}>
+              <button onClick={handleSubmit} className="btn btn-primary" disabled={saving}>
                 {saving ? 'Saving...' : editingProxy ? 'Update' : 'Create'}
               </button>
             </div>

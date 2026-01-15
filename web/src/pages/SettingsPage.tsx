@@ -108,7 +108,7 @@ function SettingsPage() {
           <div className="pt-4">
             <button
               onClick={handleSaveProfile}
-              className="btn-primary"
+              className="btn btn-primary"
               disabled={saving}
             >
               {saving ? 'Saving...' : 'Save Changes'}
@@ -170,7 +170,7 @@ function SettingsPage() {
           <div className="pt-4">
             <button
               onClick={handleChangePassword}
-              className="btn-primary"
+              className="btn btn-primary"
               disabled={saving}
             >
               {saving ? 'Changing...' : 'Change Password'}
@@ -191,7 +191,7 @@ function SettingsPage() {
         </p>
         <button
           onClick={() => toast.error('Account deletion is disabled')}
-          className="btn-danger"
+          className="btn btn-danger"
         >
           Delete Account
         </button>
