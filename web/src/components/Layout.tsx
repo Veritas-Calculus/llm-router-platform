@@ -10,6 +10,7 @@ import {
   GlobeAltIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -21,6 +22,7 @@ const navigation = [
   { name: 'Providers', href: '/providers', icon: ServerStackIcon },
   { name: 'Proxies', href: '/proxies', icon: GlobeAltIcon },
   { name: 'Settings', href: '/settings', icon: Cog6ToothIcon },
+  { name: 'Docs', href: '/docs', icon: DocumentTextIcon },
 ];
 
 function Layout() {

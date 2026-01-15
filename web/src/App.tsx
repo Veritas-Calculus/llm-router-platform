@@ -9,6 +9,7 @@ import HealthPage from '@/pages/HealthPage';
 import ProvidersPage from '@/pages/ProvidersPage';
 import ProxiesPage from '@/pages/ProxiesPage';
 import SettingsPage from '@/pages/SettingsPage';
+import DocsPage from '@/pages/DocsPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -40,6 +41,7 @@ function App() {
         <Route path="providers" element={<ProvidersPage />} />
         <Route path="proxies" element={<ProxiesPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="docs" element={<DocsPage />} />
       </Route>
     </Routes>
   );
