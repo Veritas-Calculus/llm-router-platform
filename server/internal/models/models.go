@@ -46,33 +46,36 @@ type APIKey struct {
 // Provider represents an LLM provider.
 type Provider struct {
 	BaseModel
-	Name       string  `gorm:"uniqueIndex;not null" json:"name"`
-	BaseURL    string  `gorm:"not null" json:"base_url"`
-	IsActive   bool    `gorm:"default:true" json:"is_active"`
-	Priority   int     `gorm:"default:0" json:"priority"`
-	Weight     float64 `gorm:"default:1.0" json:"weight"`
-	MaxRetries int     `gorm:"default:3" json:"max_retries"`
-	Timeout    int     `gorm:"default:30" json:"timeout"`
-	Models     []Model `gorm:"foreignKey:ProviderID" json:"models,omitempty"`
+	Name           string  `gorm:"uniqueIndex;not null" json:"name"`
+	BaseURL        string  `gorm:"not null" json:"base_url"`
+	IsActive       bool    `gorm:"default:true" json:"is_active"`
+	Priority       int     `gorm:"default:0" json:"priority"`
+	Weight         float64 `gorm:"default:1.0" json:"weight"`
+	MaxRetries     int     `gorm:"default:3" json:"max_retries"`
+	Timeout        int     `gorm:"default:30" json:"timeout"`
+	UseProxy       bool    `gorm:"default:false" json:"use_proxy"`
+	RequiresAPIKey bool    `gorm:"default:true" json:"requires_api_key"`
+	Models         []Model `gorm:"foreignKey:ProviderID" json:"models,omitempty"`
 }
 
 // Model represents an LLM model.
 type Model struct {
 	BaseModel
-	ProviderID     uuid.UUID `gorm:"type:uuid;not null;index" json:"provider_id"`
-	Name           string    `gorm:"not null" json:"name"`
-	DisplayName    string    `json:"display_name"`
-	InputPricePer1K  float64 `gorm:"default:0" json:"input_price_per_1k"`
-	OutputPricePer1K float64 `gorm:"default:0" json:"output_price_per_1k"`
-	MaxTokens      int       `gorm:"default:4096" json:"max_tokens"`
-	IsActive       bool      `gorm:"default:true" json:"is_active"`
-	Provider       Provider  `gorm:"foreignKey:ProviderID" json:"-"`
+	ProviderID       uuid.UUID `gorm:"type:uuid;not null;index" json:"provider_id"`
+	Name             string    `gorm:"not null" json:"name"`
+	DisplayName      string    `json:"display_name"`
+	InputPricePer1K  float64   `gorm:"default:0" json:"input_price_per_1k"`
+	OutputPricePer1K float64   `gorm:"default:0" json:"output_price_per_1k"`
+	MaxTokens        int       `gorm:"default:4096" json:"max_tokens"`
+	IsActive         bool      `gorm:"default:true" json:"is_active"`
+	Provider         Provider  `gorm:"foreignKey:ProviderID" json:"-"`
 }
 
 // ProviderAPIKey represents a provider-specific API key.
 type ProviderAPIKey struct {
 	BaseModel
 	ProviderID      uuid.UUID `gorm:"type:uuid;not null;index" json:"provider_id"`
+	Alias           string    `json:"alias"`
 	EncryptedAPIKey string    `gorm:"not null" json:"-"`
 	KeyPrefix       string    `json:"key_prefix"`
 	IsActive        bool      `gorm:"default:true" json:"is_active"`
@@ -102,18 +105,18 @@ type Proxy struct {
 // UsageLog represents a single API usage record.
 type UsageLog struct {
 	BaseModel
-	UserID        uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
-	APIKeyID      uuid.UUID `gorm:"type:uuid;not null;index" json:"api_key_id"`
-	ProviderID    uuid.UUID `gorm:"type:uuid;index" json:"provider_id"`
-	ModelID       uuid.UUID `gorm:"type:uuid;index" json:"model_id"`
-	ProxyID       uuid.UUID `gorm:"type:uuid;index" json:"proxy_id"`
-	RequestTokens int       `json:"request_tokens"`
-	ResponseTokens int      `json:"response_tokens"`
-	TotalTokens   int       `json:"total_tokens"`
-	Cost          float64   `json:"cost"`
-	Latency       int64     `json:"latency"`
-	StatusCode    int       `json:"status_code"`
-	ErrorMessage  string    `json:"error_message,omitempty"`
+	UserID         uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	APIKeyID       uuid.UUID `gorm:"type:uuid;not null;index" json:"api_key_id"`
+	ProviderID     uuid.UUID `gorm:"type:uuid;index" json:"provider_id"`
+	ModelID        uuid.UUID `gorm:"type:uuid;index" json:"model_id"`
+	ProxyID        uuid.UUID `gorm:"type:uuid;index" json:"proxy_id"`
+	RequestTokens  int       `json:"request_tokens"`
+	ResponseTokens int       `json:"response_tokens"`
+	TotalTokens    int       `json:"total_tokens"`
+	Cost           float64   `json:"cost"`
+	Latency        int64     `json:"latency"`
+	StatusCode     int       `json:"status_code"`
+	ErrorMessage   string    `json:"error_message,omitempty"`
 }
 
 // HealthHistory records health check results.

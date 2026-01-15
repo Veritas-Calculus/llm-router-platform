@@ -105,6 +105,11 @@ func (r *APIKeyRepository) Update(ctx context.Context, key *models.APIKey) error
 	return r.db.WithContext(ctx).Save(key).Error
 }
 
+// Delete permanently removes an API key from the database.
+func (r *APIKeyRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	return r.db.WithContext(ctx).Delete(&models.APIKey{}, "id = ?", id).Error
+}
+
 // ProviderRepository handles provider data access.
 type ProviderRepository struct {
 	db *gorm.DB
@@ -180,6 +185,15 @@ func (r *ProviderAPIKeyRepository) Create(ctx context.Context, key *models.Provi
 func (r *ProviderAPIKeyRepository) GetActiveByProvider(ctx context.Context, providerID uuid.UUID) ([]models.ProviderAPIKey, error) {
 	var keys []models.ProviderAPIKey
 	if err := r.db.WithContext(ctx).Where("provider_id = ? AND is_active = ?", providerID, true).Find(&keys).Error; err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+// GetByProvider retrieves all API keys for a provider (including inactive).
+func (r *ProviderAPIKeyRepository) GetByProvider(ctx context.Context, providerID uuid.UUID) ([]models.ProviderAPIKey, error) {
+	var keys []models.ProviderAPIKey
+	if err := r.db.WithContext(ctx).Where("provider_id = ?", providerID).Find(&keys).Error; err != nil {
 		return nil, err
 	}
 	return keys, nil
