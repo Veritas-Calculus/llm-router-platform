@@ -3,6 +3,8 @@ package user
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -190,6 +192,20 @@ func (s *Service) RevokeAPIKey(ctx context.Context, userID, keyID uuid.UUID) err
 	return s.apiKeyRepo.Update(ctx, apiKey)
 }
 
+// DeleteAPIKey permanently removes an API key from the database.
+func (s *Service) DeleteAPIKey(ctx context.Context, userID, keyID uuid.UUID) error {
+	apiKey, err := s.apiKeyRepo.GetByID(ctx, keyID)
+	if err != nil {
+		return err
+	}
+
+	if apiKey.UserID != userID {
+		return errors.New("unauthorized")
+	}
+
+	return s.apiKeyRepo.Delete(ctx, keyID)
+}
+
 // GetAPIKeyByID retrieves an API key by ID.
 func (s *Service) GetAPIKeyByID(ctx context.Context, id uuid.UUID) (*models.APIKey, error) {
 	return s.apiKeyRepo.GetByID(ctx, id)
@@ -201,8 +217,9 @@ func generateAPIKey() string {
 	return "llm_" + strings.ReplaceAll(id, "-", "")
 }
 
-// hashAPIKey creates a hash of the API key for storage.
+// hashAPIKey creates a deterministic hash of the API key for storage and lookup.
+// Uses SHA-256 instead of bcrypt because we need to look up keys by hash.
 func hashAPIKey(key string) string {
-	hash, _ := bcrypt.GenerateFromPassword([]byte(key), bcrypt.DefaultCost)
-	return string(hash)
+	hash := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(hash[:])
 }
