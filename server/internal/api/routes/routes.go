@@ -118,6 +118,9 @@ func Setup(
 				{
 					dashboard.GET("/stats", dashboardHandler.GetStats)
 					dashboard.GET("/overview", dashboardHandler.GetOverview)
+					dashboard.GET("/usage-chart", dashboardHandler.GetUsageChart)
+					dashboard.GET("/provider-stats", dashboardHandler.GetProviderStats)
+					dashboard.GET("/model-stats", dashboardHandler.GetModelStats)
 				}
 
 				proxies := protected.Group("/proxies")

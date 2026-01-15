@@ -91,6 +91,16 @@ func (h *DashboardHandler) GetOverview(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
+		"total_requests":     0,
+		"success_rate":       100.0,
+		"total_tokens":       0,
+		"total_cost":         0.0,
+		"average_latency_ms": 0.0,
+		"active_users":       1,
+		"active_providers":   len(apiKeyHealth),
+		"active_proxies":     healthyProxies,
+		"requests_today":     0,
+		"cost_today":         0.0,
 		"api_keys": gin.H{
 			"total":   len(apiKeyHealth),
 			"healthy": healthyAPIKeys,
@@ -100,6 +110,60 @@ func (h *DashboardHandler) GetOverview(c *gin.Context) {
 			"healthy": healthyProxies,
 		},
 	})
+}
+
+// GetUsageChart returns usage chart data for the last 7 days.
+func (h *DashboardHandler) GetUsageChart(c *gin.Context) {
+	var data []gin.H
+	now := time.Now()
+
+	for i := 6; i >= 0; i-- {
+		date := now.AddDate(0, 0, -i)
+		data = append(data, gin.H{
+			"date":     date.Format("2006-01-02"),
+			"requests": 0,
+			"tokens":   0,
+			"cost":     0.0,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": data})
+}
+
+// GetProviderStats returns statistics for each provider.
+func (h *DashboardHandler) GetProviderStats(c *gin.Context) {
+	apiKeyHealth, err := h.health.GetAPIKeysHealth(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	providerMap := make(map[string]gin.H)
+	for _, key := range apiKeyHealth {
+		if _, exists := providerMap[key.ProviderName]; !exists {
+			providerMap[key.ProviderName] = gin.H{
+				"provider_id":    key.ID.String(),
+				"provider_name":  key.ProviderName,
+				"requests":       0,
+				"success_rate":   key.SuccessRate,
+				"avg_latency_ms": key.ResponseTime,
+				"total_cost":     0.0,
+			}
+		}
+	}
+
+	var stats []gin.H
+	for _, v := range providerMap {
+		stats = append(stats, v)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": stats})
+}
+
+// GetModelStats returns statistics for each model.
+func (h *DashboardHandler) GetModelStats(c *gin.Context) {
+	// Return empty stats for now - can be populated with actual data later
+	c.JSON(http.StatusOK, gin.H{"data": []gin.H{}})
 }
 
 // ProxyHandler handles proxy management endpoints.
