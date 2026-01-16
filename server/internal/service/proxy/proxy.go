@@ -362,7 +362,7 @@ func (s *Service) buildChainedTransport(ctx context.Context, targetProxyURL *url
 				password, _ := targetProxyURL.User.Password()
 				auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 				connectReq2 += fmt.Sprintf("Proxy-Authorization: Basic %s\r\n", auth)
-				logger.Info("step 4: adding auth for target proxy", zap.String("username", username))
+				logger.Info("step 4: adding auth for target proxy")
 			}
 			connectReq2 += "\r\n"
 
