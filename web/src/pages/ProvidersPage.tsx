@@ -10,7 +10,7 @@ import {
   ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { providersApi, Provider, ProviderApiKey, ProviderHealthStatus } from '@/lib/api';
+import { providersApi, proxiesApi, Provider, ProviderApiKey, ProviderHealthStatus, Proxy } from '@/lib/api';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -78,6 +78,7 @@ function ProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
   const [apiKeys, setApiKeys] = useState<ProviderApiKey[]>([]);
+  const [proxies, setProxies] = useState<Proxy[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKey, setNewKey] = useState({ api_key: '', alias: '' });
@@ -87,6 +88,7 @@ function ProvidersPage() {
   const [editingEndpoint, setEditingEndpoint] = useState(false);
   const [endpointValue, setEndpointValue] = useState('');
   const [savingEndpoint, setSavingEndpoint] = useState(false);
+  const [savingProxy, setSavingProxy] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     type: 'delete';
@@ -96,6 +98,7 @@ function ProvidersPage() {
 
   useEffect(() => {
     loadProviders();
+    loadProxies();
   }, []);
 
   useEffect(() => {
@@ -133,6 +136,36 @@ function ProvidersPage() {
     }
   };
 
+  const loadProxies = async () => {
+    try {
+      const response = await proxiesApi.list();
+      setProxies(response?.data || []);
+    } catch (error) {
+      console.error('Failed to load proxies:', error);
+      setProxies([]);
+    }
+  };
+
+  const handleProxyChange = async (proxyId: string) => {
+    if (!selectedProvider) return;
+
+    setSavingProxy(true);
+    try {
+      const updated = await providersApi.update(selectedProvider.id, {
+        default_proxy_id: proxyId || null,
+      });
+      setSelectedProvider(updated);
+      setProviders((prev) =>
+        prev.map((p) => (p.id === updated.id ? updated : p))
+      );
+      toast.success(proxyId ? 'Default proxy updated' : 'Default proxy cleared');
+    } catch (error) {
+      toast.error('Failed to update proxy');
+    } finally {
+      setSavingProxy(false);
+    }
+  };
+
   const handleToggleProvider = async (provider: Provider) => {
     try {
       const updated = await providersApi.toggle(provider.id);
@@ -157,17 +190,23 @@ function ProvidersPage() {
       const status = await providersApi.checkHealth(selectedProvider.name);
       setHealthStatus(status);
       if (status.is_healthy) {
-        toast.success(`Connection successful! Latency: ${Math.round(status.latency / 1000000)}ms`);
+        toast.success(`Connection successful! Latency: ${status.response_time}ms`);
       } else {
-        toast.error('Connection failed');
+        toast.error(`Connection failed: ${status.error_message || 'Unknown error'}`);
       }
     } catch (error) {
       toast.error('Failed to test connection');
       setHealthStatus({
-        provider_name: selectedProvider.name,
+        id: selectedProvider.id,
+        name: selectedProvider.name,
+        base_url: selectedProvider.base_url,
+        is_active: selectedProvider.is_active,
         is_healthy: false,
-        latency: 0,
-        last_checked: new Date().toISOString(),
+        use_proxy: selectedProvider.use_proxy,
+        response_time: 0,
+        last_check: new Date().toISOString(),
+        success_rate: 0,
+        error_message: 'Failed to test connection',
       });
     } finally {
       setTesting(false);
@@ -439,6 +478,33 @@ function ProvidersPage() {
                       />
                     </button>
                   </div>
+
+                  {/* Proxy Selection Dropdown */}
+                  {selectedProvider.use_proxy && (
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-apple-gray-700 mb-2">
+                        Default Proxy
+                      </label>
+                      <select
+                        value={selectedProvider.default_proxy_id || ''}
+                        onChange={(e) => handleProxyChange(e.target.value)}
+                        disabled={savingProxy}
+                        className="w-full px-3 py-2 border border-apple-gray-200 rounded-apple text-sm focus:outline-none focus:ring-2 focus:ring-apple-blue focus:border-transparent disabled:opacity-50"
+                      >
+                        <option value="">Auto-select (first available)</option>
+                        {proxies
+                          .filter((p) => p.is_active)
+                          .map((proxy) => (
+                            <option key={proxy.id} value={proxy.id}>
+                              {proxy.url} {proxy.region ? `(${proxy.region})` : ''}
+                            </option>
+                          ))}
+                      </select>
+                      {savingProxy && (
+                        <p className="text-xs text-apple-gray-500 mt-1">Saving...</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {healthStatus && (
@@ -464,7 +530,12 @@ function ProvidersPage() {
                       </span>
                       {healthStatus.is_healthy && (
                         <span className="text-sm text-apple-gray-500 ml-2">
-                          Latency: {Math.round(healthStatus.latency / 1000000)}ms
+                          Latency: {healthStatus.response_time}ms
+                        </span>
+                      )}
+                      {!healthStatus.is_healthy && healthStatus.error_message && (
+                        <span className="text-sm text-apple-red ml-2">
+                          {healthStatus.error_message}
                         </span>
                       )}
                     </div>

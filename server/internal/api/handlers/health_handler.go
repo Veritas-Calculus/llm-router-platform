@@ -35,7 +35,7 @@ func (h *HealthHandler) GetAPIKeysHealth(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, statuses)
+	c.JSON(http.StatusOK, gin.H{"data": statuses})
 }
 
 // CheckAPIKey checks health of a specific API key.
@@ -63,7 +63,7 @@ func (h *HealthHandler) GetProxiesHealth(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, statuses)
+	c.JSON(http.StatusOK, gin.H{"data": statuses})
 }
 
 // CheckProxy checks health of a specific proxy.

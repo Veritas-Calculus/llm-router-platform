@@ -46,16 +46,17 @@ type APIKey struct {
 // Provider represents an LLM provider.
 type Provider struct {
 	BaseModel
-	Name           string  `gorm:"uniqueIndex;not null" json:"name"`
-	BaseURL        string  `gorm:"not null" json:"base_url"`
-	IsActive       bool    `gorm:"default:true" json:"is_active"`
-	Priority       int     `gorm:"default:0" json:"priority"`
-	Weight         float64 `gorm:"default:1.0" json:"weight"`
-	MaxRetries     int     `gorm:"default:3" json:"max_retries"`
-	Timeout        int     `gorm:"default:30" json:"timeout"`
-	UseProxy       bool    `gorm:"default:false" json:"use_proxy"`
-	RequiresAPIKey bool    `gorm:"default:true" json:"requires_api_key"`
-	Models         []Model `gorm:"foreignKey:ProviderID" json:"models,omitempty"`
+	Name           string     `gorm:"uniqueIndex;not null" json:"name"`
+	BaseURL        string     `gorm:"not null" json:"base_url"`
+	IsActive       bool       `gorm:"default:true" json:"is_active"`
+	Priority       int        `gorm:"default:0" json:"priority"`
+	Weight         float64    `gorm:"default:1.0" json:"weight"`
+	MaxRetries     int        `gorm:"default:3" json:"max_retries"`
+	Timeout        int        `gorm:"default:30" json:"timeout"`
+	UseProxy       bool       `gorm:"default:false" json:"use_proxy"`
+	DefaultProxyID *uuid.UUID `gorm:"type:uuid" json:"default_proxy_id,omitempty"`
+	RequiresAPIKey bool       `gorm:"default:true" json:"requires_api_key"`
+	Models         []Model    `gorm:"foreignKey:ProviderID" json:"models,omitempty"`
 }
 
 // Model represents an LLM model.
@@ -89,19 +90,20 @@ type ProviderAPIKey struct {
 // Proxy represents a proxy server.
 type Proxy struct {
 	BaseModel
-	URL             string     `gorm:"not null" json:"url"`
-	Type            string     `gorm:"default:http" json:"type"`
-	Username        string     `json:"username,omitempty"`
-	Password        string     `json:"-"`
-	Region          string     `json:"region"`
-	UpstreamProxyID *uuid.UUID `gorm:"type:uuid;index" json:"upstream_proxy_id,omitempty"`
-	UpstreamProxy   *Proxy     `gorm:"foreignKey:UpstreamProxyID" json:"-"`
-	IsActive        bool       `gorm:"default:true" json:"is_active"`
-	Weight          float64    `gorm:"default:1.0" json:"weight"`
-	SuccessCount    int64      `gorm:"default:0" json:"success_count"`
-	FailureCount    int64      `gorm:"default:0" json:"failure_count"`
-	AvgLatency      float64    `gorm:"default:0" json:"avg_latency"`
-	LastChecked     time.Time  `json:"last_checked"`
+	URL               string     `gorm:"not null" json:"url"`
+	Type              string     `gorm:"default:http" json:"type"`
+	Username          string     `json:"username,omitempty"`
+	EncryptedPassword string     `gorm:"->" json:"-"`              // Read-only, for migration
+	Password          string     `gorm:"column:password" json:"-"` // Encrypted password
+	Region            string     `json:"region"`
+	UpstreamProxyID   *uuid.UUID `gorm:"type:uuid;index" json:"upstream_proxy_id,omitempty"`
+	UpstreamProxy     *Proxy     `gorm:"foreignKey:UpstreamProxyID" json:"-"`
+	IsActive          bool       `gorm:"default:true" json:"is_active"`
+	Weight            float64    `gorm:"default:1.0" json:"weight"`
+	SuccessCount      int64      `gorm:"default:0" json:"success_count"`
+	FailureCount      int64      `gorm:"default:0" json:"failure_count"`
+	AvgLatency        float64    `gorm:"default:0" json:"avg_latency"`
+	LastChecked       time.Time  `json:"last_checked"`
 }
 
 // HasAuth returns true if the proxy has authentication configured.

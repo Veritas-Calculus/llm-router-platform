@@ -314,22 +314,28 @@ function HealthPage() {
                   className="flex items-center justify-between p-4 bg-apple-gray-50 rounded-apple"
                 >
                   <div className="flex items-center gap-4">
-                    {getStatusIcon(key.status)}
+                    <ServerIcon className="w-5 h-5 text-apple-gray-400" />
                     <div>
-                      <p className="font-medium text-apple-gray-900">{key.alias}</p>
+                      <p className="font-medium text-apple-gray-900">{key.key_prefix}...</p>
                       <p className="text-sm text-apple-gray-500">{key.provider_name}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-6">
                     <div className="text-right">
+                      <p className={`text-sm font-medium ${key.is_active ? 'text-apple-green' : 'text-apple-gray-400'}`}>
+                        {key.is_active ? 'Active' : 'Inactive'}
+                      </p>
+                      <p className="text-xs text-apple-gray-500">Status</p>
+                    </div>
+                    <div className="text-right">
                       <p className="text-sm font-medium text-apple-gray-900">
-                        {key.latency_ms}ms
+                        {key.response_time}ms
                       </p>
                       <p className="text-xs text-apple-gray-500">Latency</p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm text-apple-gray-500">
-                        {formatDate(key.last_checked)}
+                        {key.last_check ? formatDate(key.last_check) : 'Never'}
                       </p>
                       <p className="text-xs text-apple-gray-400">Last checked</p>
                     </div>
@@ -364,18 +370,24 @@ function HealthPage() {
                   className="flex items-center justify-between p-4 bg-apple-gray-50 rounded-apple"
                 >
                   <div className="flex items-center gap-4">
-                    {getStatusIcon(proxy.status)}
+                    {getStatusIcon(proxy.is_healthy)}
                     <div>
-                      <p className="font-medium text-apple-gray-900">{proxy.name}</p>
+                      <p className="font-medium text-apple-gray-900">{proxy.url}</p>
                       <p className="text-sm text-apple-gray-500">
-                        {proxy.host}:{proxy.port}
+                        {proxy.type} {proxy.region ? `• ${proxy.region}` : ''}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-6">
                     <div className="text-right">
+                      <p className={`text-sm font-medium ${proxy.is_active ? 'text-apple-green' : 'text-apple-gray-400'}`}>
+                        {proxy.is_active ? 'Active' : 'Inactive'}
+                      </p>
+                      <p className="text-xs text-apple-gray-500">Status</p>
+                    </div>
+                    <div className="text-right">
                       <p className="text-sm font-medium text-apple-gray-900">
-                        {proxy.latency_ms}ms
+                        {proxy.response_time}ms
                       </p>
                       <p className="text-xs text-apple-gray-500">Latency</p>
                     </div>

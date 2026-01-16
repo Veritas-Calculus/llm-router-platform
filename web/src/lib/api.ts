@@ -154,21 +154,23 @@ export interface ApiKeyHealth {
   id: string;
   provider_id: string;
   provider_name: string;
-  alias: string;
-  status: string;
-  latency_ms: number;
-  last_checked: string;
-  error_message?: string;
+  key_prefix: string;
+  is_active: boolean;
+  is_healthy: boolean;
+  last_check: string;
+  response_time: number;
+  success_rate: number;
 }
 
 export interface ProxyHealth {
   id: string;
-  name: string;
-  host: string;
-  port: number;
-  status: string;
-  latency_ms: number;
-  last_checked: string;
+  url: string;
+  type: string;
+  region: string;
+  is_active: boolean;
+  is_healthy: boolean;
+  response_time: number;
+  last_check: string;
   success_rate: number;
 }
 
@@ -207,6 +209,7 @@ export interface Provider {
   max_retries: number;
   timeout: number;
   use_proxy: boolean;
+  default_proxy_id?: string | null;
   requires_api_key: boolean;
   created_at: string;
 }
@@ -225,10 +228,16 @@ export interface ProviderApiKey {
 }
 
 export interface ProviderHealthStatus {
-  provider_name: string;
+  id: string;
+  name: string;
+  base_url: string;
+  is_active: boolean;
   is_healthy: boolean;
-  latency: number;
-  last_checked: string;
+  use_proxy: boolean;
+  response_time: number;  // milliseconds
+  last_check: string;
+  success_rate: number;
+  error_message?: string;
 }
 
 export interface Proxy {

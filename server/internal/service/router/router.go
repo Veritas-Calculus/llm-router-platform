@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"llm-router-platform/internal/config"
+	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/internal/service/provider"
@@ -27,6 +29,12 @@ const (
 	StrategyFallback     Strategy = "fallback"
 )
 
+// FailedKeyInfo tracks information about a failed API key.
+type FailedKeyInfo struct {
+	FailedAt time.Time
+	Reason   string
+}
+
 // Router handles request routing to LLM providers.
 type Router struct {
 	providerRepo    *repository.ProviderRepository
@@ -35,6 +43,8 @@ type Router struct {
 	registry        *provider.Registry
 	strategy        Strategy
 	roundRobinIndex int
+	failedKeys      map[uuid.UUID]*FailedKeyInfo // Track failed keys temporarily
+	failedKeysMu    sync.RWMutex
 	mu              sync.Mutex
 	logger          *zap.Logger
 }
@@ -53,6 +63,7 @@ func NewRouter(
 		modelRepo:       modelRepo,
 		registry:        registry,
 		strategy:        StrategyWeighted,
+		failedKeys:      make(map[uuid.UUID]*FailedKeyInfo),
 		logger:          logger,
 	}
 }
@@ -137,7 +148,45 @@ func (r *Router) selectLeastLatency(providers []models.Provider) *models.Provide
 	return r.selectWeighted(providers)
 }
 
-// selectAPIKey selects an API key for the provider.
+// isKeyTemporarilyFailed checks if a key is temporarily marked as failed.
+// Keys are considered failed for 5 minutes after a failure.
+func (r *Router) isKeyTemporarilyFailed(keyID uuid.UUID) bool {
+	r.failedKeysMu.RLock()
+	defer r.failedKeysMu.RUnlock()
+
+	info, exists := r.failedKeys[keyID]
+	if !exists {
+		return false
+	}
+
+	// Key failure expires after 5 minutes
+	if time.Since(info.FailedAt) > 5*time.Minute {
+		return false
+	}
+
+	return true
+}
+
+// MarkKeyFailed marks an API key as temporarily failed.
+func (r *Router) MarkKeyFailed(keyID uuid.UUID, reason string) {
+	r.failedKeysMu.Lock()
+	defer r.failedKeysMu.Unlock()
+
+	r.failedKeys[keyID] = &FailedKeyInfo{
+		FailedAt: time.Now(),
+		Reason:   reason,
+	}
+	r.logger.Warn("API key marked as failed", zap.String("key_id", keyID.String()), zap.String("reason", reason))
+}
+
+// ClearKeyFailure clears the failure status of an API key.
+func (r *Router) ClearKeyFailure(keyID uuid.UUID) {
+	r.failedKeysMu.Lock()
+	defer r.failedKeysMu.Unlock()
+	delete(r.failedKeys, keyID)
+}
+
+// selectAPIKey selects an API key for the provider, excluding temporarily failed keys.
 func (r *Router) selectAPIKey(ctx context.Context, providerID uuid.UUID) (*models.ProviderAPIKey, error) {
 	keys, err := r.providerKeyRepo.GetActiveByProvider(ctx, providerID)
 	if err != nil {
@@ -148,25 +197,87 @@ func (r *Router) selectAPIKey(ctx context.Context, providerID uuid.UUID) (*model
 		return nil, errors.New("no active API keys for provider")
 	}
 
-	var totalWeight float64
+	// Filter out temporarily failed keys
+	availableKeys := make([]models.ProviderAPIKey, 0, len(keys))
 	for _, k := range keys {
+		if !r.isKeyTemporarilyFailed(k.ID) {
+			availableKeys = append(availableKeys, k)
+		}
+	}
+
+	// If all keys are failed, use all keys (reset and try again)
+	if len(availableKeys) == 0 {
+		r.logger.Warn("all API keys are temporarily failed, resetting", zap.Int("total_keys", len(keys)))
+		availableKeys = keys
+		// Clear all failed keys for this provider
+		r.failedKeysMu.Lock()
+		for _, k := range keys {
+			delete(r.failedKeys, k.ID)
+		}
+		r.failedKeysMu.Unlock()
+	}
+
+	var totalWeight float64
+	for _, k := range availableKeys {
 		totalWeight += k.Weight
 	}
 
 	if totalWeight == 0 {
-		return &keys[secureRandomInt(len(keys))], nil
+		return &availableKeys[secureRandomInt(len(availableKeys))], nil
 	}
 
 	random := secureRandomFloat64() * totalWeight
 	var cumulative float64
-	for i := range keys {
-		cumulative += keys[i].Weight
+	for i := range availableKeys {
+		cumulative += availableKeys[i].Weight
 		if random <= cumulative {
-			return &keys[i], nil
+			return &availableKeys[i], nil
 		}
 	}
 
-	return &keys[len(keys)-1], nil
+	return &availableKeys[len(availableKeys)-1], nil
+}
+
+// SelectNextAPIKey selects the next available API key, excluding the current one.
+// This is used for fallback when the current key fails.
+func (r *Router) SelectNextAPIKey(ctx context.Context, providerID uuid.UUID, excludeKeyID uuid.UUID) (*models.ProviderAPIKey, error) {
+	keys, err := r.providerKeyRepo.GetActiveByProvider(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter out the excluded key and temporarily failed keys
+	availableKeys := make([]models.ProviderAPIKey, 0, len(keys))
+	for _, k := range keys {
+		if k.ID != excludeKeyID && !r.isKeyTemporarilyFailed(k.ID) {
+			availableKeys = append(availableKeys, k)
+		}
+	}
+
+	if len(availableKeys) == 0 {
+		return nil, errors.New("no alternative API keys available")
+	}
+
+	// Select using weighted random
+	var totalWeight float64
+	for _, k := range availableKeys {
+		totalWeight += k.Weight
+	}
+
+	if totalWeight == 0 {
+		return &availableKeys[secureRandomInt(len(availableKeys))], nil
+	}
+
+	random := secureRandomFloat64() * totalWeight
+	var cumulative float64
+	for i := range availableKeys {
+		cumulative += availableKeys[i].Weight
+		if random <= cumulative {
+			return &availableKeys[i], nil
+		}
+	}
+
+	return &availableKeys[len(availableKeys)-1], nil
 }
 
 // RouteWithFallback attempts routing with fallback providers.
@@ -208,6 +319,55 @@ func (r *Router) GetProviderClient(name string) (provider.Client, bool) {
 	return r.registry.Get(name)
 }
 
+// GetProviderClientWithKey creates a provider client dynamically using the provided API key from database.
+// This is the preferred method as API keys are stored encrypted in the database.
+func (r *Router) GetProviderClientWithKey(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey) (provider.Client, error) {
+	// For providers that don't require API keys
+	if !p.RequiresAPIKey || apiKey == nil {
+		// Try to get from registry first (for local providers like Ollama, LM Studio)
+		if client, ok := r.registry.Get(p.Name); ok {
+			return client, nil
+		}
+		// Create a client without API key
+		cfg := &config.ProviderConfig{
+			BaseURL: p.BaseURL,
+		}
+		return r.createProviderClient(p.Name, cfg)
+	}
+
+	// Decrypt the API key
+	decryptedKey, err := crypto.Decrypt(apiKey.EncryptedAPIKey)
+	if err != nil {
+		return nil, errors.New("failed to decrypt API key")
+	}
+
+	cfg := &config.ProviderConfig{
+		APIKey:  decryptedKey,
+		BaseURL: p.BaseURL,
+	}
+
+	return r.createProviderClient(p.Name, cfg)
+}
+
+// createProviderClient creates a provider client based on provider name.
+func (r *Router) createProviderClient(name string, cfg *config.ProviderConfig) (provider.Client, error) {
+	switch name {
+	case "openai":
+		return provider.NewOpenAIClient(cfg, r.logger), nil
+	case "anthropic":
+		return provider.NewAnthropicClient(cfg, r.logger), nil
+	case "google":
+		return provider.NewGoogleClient(cfg, r.logger), nil
+	case "ollama":
+		return provider.NewOllamaClient(cfg, r.logger), nil
+	case "lmstudio":
+		return provider.NewLMStudioClient(cfg, r.logger), nil
+	default:
+		// Default to OpenAI-compatible client
+		return provider.NewOpenAIClient(cfg, r.logger), nil
+	}
+}
+
 // GetAllProviders returns all providers.
 func (r *Router) GetAllProviders(ctx context.Context) ([]models.Provider, error) {
 	return r.providerRepo.GetAll(ctx)
@@ -216,6 +376,11 @@ func (r *Router) GetAllProviders(ctx context.Context) ([]models.Provider, error)
 // GetProviderByID returns a provider by ID.
 func (r *Router) GetProviderByID(ctx context.Context, id uuid.UUID) (*models.Provider, error) {
 	return r.providerRepo.GetByID(ctx, id)
+}
+
+// GetProviderByName returns a provider by name.
+func (r *Router) GetProviderByName(ctx context.Context, name string) (*models.Provider, error) {
+	return r.providerRepo.GetByName(ctx, name)
 }
 
 // GetModelByID returns a model by ID.
@@ -272,9 +437,43 @@ type HealthStatus struct {
 
 // CheckProviderHealth checks health of a specific provider.
 func (r *Router) CheckProviderHealth(ctx context.Context, providerName string) (*HealthStatus, error) {
+	// Get provider from database to check settings
+	p, err := r.providerRepo.GetByName(ctx, providerName)
+	if err != nil {
+		return nil, errors.New("provider not found")
+	}
+
+	// First try to get from registry (for local providers like Ollama, LM Studio)
 	client, ok := r.registry.Get(providerName)
 	if !ok {
-		return nil, errors.New("provider not found")
+		if p.RequiresAPIKey {
+			// Get an active API key for this provider
+			apiKey, err := r.selectAPIKey(ctx, p.ID)
+			if err != nil {
+				return nil, errors.New("no active API keys for provider")
+			}
+
+			client, err = r.GetProviderClientWithKey(ctx, p, apiKey)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			// Create client without API key
+			cfg := &config.ProviderConfig{
+				BaseURL: p.BaseURL,
+			}
+			client, err = r.createProviderClient(providerName, cfg)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// If provider requires proxy, we need to use proxy for health check
+	if p.UseProxy {
+		r.logger.Info("provider requires proxy for health check", zap.String("provider", providerName))
+		// For now, direct health check will fail if proxy is required but not configured in client
+		// TODO: Implement proxy-aware health check
 	}
 
 	healthy, latency, err := client.CheckHealth(ctx)

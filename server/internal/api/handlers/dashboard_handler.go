@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/billing"
 	"llm-router-platform/internal/service/health"
@@ -606,15 +607,17 @@ func (h *ProxyHandler) Toggle(c *gin.Context) {
 
 // ProviderHandler handles provider management endpoints.
 type ProviderHandler struct {
-	router *router.Router
-	logger *zap.Logger
+	router        *router.Router
+	healthService *health.Service
+	logger        *zap.Logger
 }
 
 // NewProviderHandler creates a new provider handler.
-func NewProviderHandler(r *router.Router, logger *zap.Logger) *ProviderHandler {
+func NewProviderHandler(r *router.Router, hs *health.Service, logger *zap.Logger) *ProviderHandler {
 	return &ProviderHandler{
-		router: r,
-		logger: logger,
+		router:        r,
+		healthService: hs,
+		logger:        logger,
 	}
 }
 
@@ -630,12 +633,14 @@ func (h *ProviderHandler) List(c *gin.Context) {
 
 // UpdateProviderRequest represents the request to update a provider.
 type UpdateProviderRequest struct {
-	IsActive   *bool    `json:"is_active"`
-	Priority   *int     `json:"priority"`
-	Weight     *float64 `json:"weight"`
-	MaxRetries *int     `json:"max_retries"`
-	Timeout    *int     `json:"timeout"`
-	BaseURL    *string  `json:"base_url"`
+	IsActive       *bool    `json:"is_active"`
+	Priority       *int     `json:"priority"`
+	Weight         *float64 `json:"weight"`
+	MaxRetries     *int     `json:"max_retries"`
+	Timeout        *int     `json:"timeout"`
+	BaseURL        *string  `json:"base_url"`
+	UseProxy       *bool    `json:"use_proxy"`
+	DefaultProxyID *string  `json:"default_proxy_id"` // Use string to allow "null" for clearing
 }
 
 // Update updates a provider.
@@ -675,6 +680,21 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 	}
 	if req.BaseURL != nil {
 		provider.BaseURL = *req.BaseURL
+	}
+	if req.UseProxy != nil {
+		provider.UseProxy = *req.UseProxy
+	}
+	if req.DefaultProxyID != nil {
+		if *req.DefaultProxyID == "" || *req.DefaultProxyID == "null" {
+			provider.DefaultProxyID = nil
+		} else {
+			proxyID, err := uuid.Parse(*req.DefaultProxyID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid proxy id"})
+				return
+			}
+			provider.DefaultProxyID = &proxyID
+		}
 	}
 
 	if err := h.router.UpdateProvider(c.Request.Context(), provider); err != nil {
@@ -733,9 +753,22 @@ func (h *ProviderHandler) ToggleProxy(c *gin.Context) {
 
 // CheckHealth checks provider health.
 func (h *ProviderHandler) CheckHealth(c *gin.Context) {
-	providerName := c.Param("id")
+	providerID := c.Param("id")
 
-	status, err := h.router.CheckProviderHealth(c.Request.Context(), providerName)
+	// Try to parse as UUID first
+	id, err := uuid.Parse(providerID)
+	if err != nil {
+		// If not a UUID, try to get provider by name
+		p, err := h.router.GetProviderByName(c.Request.Context(), providerID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
+			return
+		}
+		id = p.ID
+	}
+
+	// Use health service which handles proxy correctly
+	status, err := h.healthService.CheckSingleProvider(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -804,10 +837,17 @@ func (h *ProviderHandler) CreateAPIKey(c *gin.Context) {
 		keyPrefix = keyPrefix[:8] + "..."
 	}
 
+	// Encrypt the API key before storing
+	encryptedKey, err := crypto.Encrypt(req.APIKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to encrypt API key"})
+		return
+	}
+
 	key := &models.ProviderAPIKey{
 		ProviderID:      providerID,
 		Alias:           req.Alias,
-		EncryptedAPIKey: req.APIKey, // In production, this should be encrypted
+		EncryptedAPIKey: encryptedKey,
 		KeyPrefix:       keyPrefix,
 		IsActive:        true,
 		Weight:          1.0,

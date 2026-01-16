@@ -12,6 +12,7 @@ import (
 
 	"llm-router-platform/internal/api/routes"
 	"llm-router-platform/internal/config"
+	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/database"
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/internal/service/billing"
@@ -40,6 +41,17 @@ func run() error {
 
 	logger, _ := zap.NewProduction()
 	defer func() { _ = logger.Sync() }()
+
+	// Initialize encryption if key is provided
+	if cfg.Encryption.Key != "" {
+		if err := crypto.Initialize(cfg.Encryption.Key); err != nil {
+			logger.Warn("encryption initialization failed, sensitive data will not be encrypted", zap.Error(err))
+		} else {
+			logger.Info("encryption initialized successfully")
+		}
+	} else {
+		logger.Warn("ENCRYPTION_KEY not set, sensitive data will be stored unencrypted")
+	}
 
 	db, err := database.New(&cfg.Database, logger)
 	if err != nil {
@@ -138,29 +150,9 @@ func initRepositories(db *database.Database) *Repositories {
 func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger) *routes.Services {
 	userService := user.NewService(repos.User, repos.APIKey, logger)
 
+	// Provider registry - clients are created dynamically based on database configuration
+	// API keys are stored encrypted in the database and configured via Web UI
 	providerRegistry := provider.NewRegistry(logger)
-
-	if cfg.Providers.OpenAI.APIKey != "" {
-		openaiClient := provider.NewOpenAIClient(&cfg.Providers.OpenAI, logger)
-		providerRegistry.Register("openai", openaiClient)
-	}
-
-	if cfg.Providers.Anthropic.APIKey != "" {
-		anthropicClient := provider.NewAnthropicClient(&cfg.Providers.Anthropic, logger)
-		providerRegistry.Register("anthropic", anthropicClient)
-	}
-
-	// Register Ollama (local, no API key required)
-	if cfg.Providers.Ollama.BaseURL != "" {
-		ollamaClient := provider.NewOllamaClient(&cfg.Providers.Ollama, logger)
-		providerRegistry.Register("ollama", ollamaClient)
-	}
-
-	// Register LM Studio (local, no API key required)
-	if cfg.Providers.LMStudio.BaseURL != "" {
-		lmstudioClient := provider.NewLMStudioClient(&cfg.Providers.LMStudio, logger)
-		providerRegistry.Register("lmstudio", lmstudioClient)
-	}
 
 	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Model, providerRegistry, logger)
 	billingService := billing.NewService(repos.UsageLog, repos.Model, logger)

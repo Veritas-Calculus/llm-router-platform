@@ -12,7 +12,7 @@ type Config struct {
 	Server      ServerConfig
 	Database    DatabaseConfig
 	Redis       RedisConfig
-	Providers   ProvidersConfig
+	Encryption  EncryptionConfig
 	ProxyPool   ProxyPoolConfig
 	HealthCheck HealthCheckConfig
 	Alert       AlertConfig
@@ -46,16 +46,13 @@ type RedisConfig struct {
 	DB       int
 }
 
-// ProvidersConfig holds LLM provider configurations.
-type ProvidersConfig struct {
-	OpenAI    ProviderConfig
-	Anthropic ProviderConfig
-	Google    ProviderConfig
-	Ollama    ProviderConfig
-	LMStudio  ProviderConfig
+// EncryptionConfig holds encryption configuration for sensitive data.
+type EncryptionConfig struct {
+	Key string // 32-byte key for AES-256 encryption
 }
 
 // ProviderConfig holds single provider configuration.
+// Used for creating provider clients dynamically.
 type ProviderConfig struct {
 	APIKey  string
 	BaseURL string
@@ -151,27 +148,8 @@ func Load() (*Config, error) {
 			Password: viper.GetString("REDIS_PASSWORD"),
 			DB:       viper.GetInt("REDIS_DB"),
 		},
-		Providers: ProvidersConfig{
-			OpenAI: ProviderConfig{
-				APIKey:  viper.GetString("OPENAI_API_KEY"),
-				BaseURL: viper.GetString("OPENAI_BASE_URL"),
-			},
-			Anthropic: ProviderConfig{
-				APIKey:  viper.GetString("ANTHROPIC_API_KEY"),
-				BaseURL: viper.GetString("ANTHROPIC_BASE_URL"),
-			},
-			Google: ProviderConfig{
-				APIKey:  viper.GetString("GOOGLE_API_KEY"),
-				BaseURL: viper.GetString("GOOGLE_BASE_URL"),
-			},
-			Ollama: ProviderConfig{
-				APIKey:  viper.GetString("OLLAMA_API_KEY"),
-				BaseURL: viper.GetString("OLLAMA_BASE_URL"),
-			},
-			LMStudio: ProviderConfig{
-				APIKey:  viper.GetString("LMSTUDIO_API_KEY"),
-				BaseURL: viper.GetString("LMSTUDIO_BASE_URL"),
-			},
+		Encryption: EncryptionConfig{
+			Key: viper.GetString("ENCRYPTION_KEY"),
 		},
 		ProxyPool: ProxyPoolConfig{
 			Enabled: viper.GetBool("PROXY_POOL_ENABLED"),

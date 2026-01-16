@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"llm-router-platform/internal/models"
@@ -17,6 +18,31 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
+
+// isQuotaOrRateLimitError checks if an error message indicates a quota or rate limit issue.
+func isQuotaOrRateLimitError(errMsg string) bool {
+	errLower := strings.ToLower(errMsg)
+	quotaKeywords := []string{
+		"quota",
+		"rate limit",
+		"rate_limit",
+		"ratelimit",
+		"too many requests",
+		"429",
+		"insufficient_quota",
+		"billing",
+		"exceeded",
+		"limit reached",
+		"resource exhausted",
+		"resourceexhausted",
+	}
+	for _, keyword := range quotaKeywords {
+		if strings.Contains(errLower, keyword) {
+			return true
+		}
+	}
+	return false
+}
 
 // ChatHandler handles chat completion endpoints.
 type ChatHandler struct {
@@ -68,12 +94,6 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		return
 	}
 
-	client, ok := h.router.GetProviderClient(selectedProvider.Name)
-	if !ok {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client not found"})
-		return
-	}
-
 	messages := make([]provider.Message, len(req.Messages))
 	for i, m := range req.Messages {
 		messages[i] = provider.Message{Role: m.Role, Content: m.Content}
@@ -92,11 +112,59 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	// Handle streaming requests
 	if req.Stream {
+		// For streaming, try with the first key; if it fails, the stream handler will manage
+		client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, apiKey)
+		if err != nil {
+			h.logger.Error("failed to create provider client", zap.Error(err))
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client creation failed"})
+			return
+		}
 		h.handleStreamingChat(c, client, providerReq, selectedProvider, userObj, userAPIKey, start)
 		return
 	}
 
-	resp, err := client.Chat(c.Request.Context(), providerReq)
+	// Non-streaming: try with API key pooling (retry with different keys on failure)
+	maxRetries := 3
+	var resp *provider.ChatResponse
+	var lastErr error
+	currentAPIKey := apiKey
+
+	for attempt := 0; attempt < maxRetries && currentAPIKey != nil; attempt++ {
+		client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, currentAPIKey)
+		if err != nil {
+			h.logger.Error("failed to create provider client", zap.Error(err), zap.Int("attempt", attempt+1))
+			lastErr = err
+			// Try next key
+			currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
+			continue
+		}
+
+		resp, err = client.Chat(c.Request.Context(), providerReq)
+		if err != nil {
+			lastErr = err
+			h.logger.Warn("chat request failed, trying next API key",
+				zap.Error(err),
+				zap.Int("attempt", attempt+1),
+				zap.String("key_prefix", currentAPIKey.KeyPrefix),
+			)
+
+			// Check if this is a rate limit or quota error
+			errStr := err.Error()
+			if isQuotaOrRateLimitError(errStr) {
+				// Mark this key as temporarily failed
+				h.router.MarkKeyFailed(currentAPIKey.ID, errStr)
+			}
+
+			// Try next key
+			currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
+			continue
+		}
+
+		// Success - clear any previous failure for this key
+		h.router.ClearKeyFailure(currentAPIKey.ID)
+		break
+	}
+
 	latency := time.Since(start)
 
 	usageLog := &models.UsageLog{
@@ -107,12 +175,16 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		Latency:    latency.Milliseconds(),
 	}
 
-	if err != nil {
+	if resp == nil {
 		usageLog.StatusCode = http.StatusBadGateway
-		usageLog.ErrorMessage = err.Error()
+		if lastErr != nil {
+			usageLog.ErrorMessage = lastErr.Error()
+		} else {
+			usageLog.ErrorMessage = "all API keys failed"
+		}
 		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 
-		c.JSON(http.StatusBadGateway, gin.H{"error": "provider request failed"})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "provider request failed after retries"})
 		return
 	}
 

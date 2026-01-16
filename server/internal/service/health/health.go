@@ -3,10 +3,13 @@ package health
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
 
+	"llm-router-platform/internal/config"
+	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/internal/service/provider"
@@ -51,6 +54,51 @@ func NewService(
 		providerRegistry:  providerRegistry,
 		proxyService:      proxyService,
 		logger:            logger,
+	}
+}
+
+// getProviderClient creates a provider client dynamically using a ProviderAPIKey.
+// This is used for health checks where we need to test with the actual provider API key.
+func (s *Service) getProviderClient(p *models.Provider, apiKey *models.ProviderAPIKey) (provider.Client, error) {
+	// First try registry for local providers (Ollama, LM Studio)
+	if client, ok := s.providerRegistry.Get(p.Name); ok {
+		return client, nil
+	}
+
+	// Create client dynamically with the provider API key
+	var decryptedKey string
+	if apiKey != nil && apiKey.EncryptedAPIKey != "" {
+		var err error
+		decryptedKey, err = crypto.Decrypt(apiKey.EncryptedAPIKey)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	cfg := &config.ProviderConfig{
+		APIKey:  decryptedKey,
+		BaseURL: p.BaseURL,
+	}
+
+	return s.createProviderClient(p.Name, cfg)
+}
+
+// createProviderClient creates a provider client based on provider name.
+func (s *Service) createProviderClient(name string, cfg *config.ProviderConfig) (provider.Client, error) {
+	switch name {
+	case "openai":
+		return provider.NewOpenAIClient(cfg, s.logger), nil
+	case "anthropic":
+		return provider.NewAnthropicClient(cfg, s.logger), nil
+	case "google":
+		return provider.NewGoogleClient(cfg, s.logger), nil
+	case "ollama":
+		return provider.NewOllamaClient(cfg, s.logger), nil
+	case "lmstudio":
+		return provider.NewLMStudioClient(cfg, s.logger), nil
+	default:
+		// Default to OpenAI-compatible client
+		return provider.NewOpenAIClient(cfg, s.logger), nil
 	}
 }
 
@@ -142,15 +190,28 @@ func (s *Service) GetAPIKeysHealth(ctx context.Context) ([]APIKeyHealthStatus, e
 	return statuses, nil
 }
 
-// CheckSingleAPIKey checks health of a specific API key.
+// CheckSingleAPIKey checks health of a specific provider API key.
+// This uses the ProviderAPIKey to create a client and test the actual provider.
 func (s *Service) CheckSingleAPIKey(ctx context.Context, id uuid.UUID) (*APIKeyHealthStatus, error) {
 	key, err := s.providerKeyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	client, ok := s.providerRegistry.Get(key.Provider.Name)
-	if !ok {
+	// Get the provider for this API key
+	p, err := s.providerRepo.GetByID(ctx, key.ProviderID)
+	if err != nil {
+		return &APIKeyHealthStatus{
+			ID:        key.ID,
+			KeyPrefix: key.KeyPrefix,
+			IsActive:  key.IsActive,
+			IsHealthy: false,
+		}, nil
+	}
+
+	// Create client dynamically using the provider API key
+	client, err := s.getProviderClient(p, key)
+	if err != nil {
 		return &APIKeyHealthStatus{
 			ID:        key.ID,
 			KeyPrefix: key.KeyPrefix,
@@ -392,6 +453,7 @@ func (s *Service) GetProvidersHealth(ctx context.Context) ([]ProviderHealthStatu
 }
 
 // CheckSingleProvider checks health of a specific provider.
+// It uses one of the provider's API keys to create a client and test connectivity.
 func (s *Service) CheckSingleProvider(ctx context.Context, id uuid.UUID) (*ProviderHealthStatus, error) {
 	p, err := s.providerRepo.GetByID(ctx, id)
 	if err != nil {
@@ -402,19 +464,45 @@ func (s *Service) CheckSingleProvider(ctx context.Context, id uuid.UUID) (*Provi
 	var latency time.Duration
 	var errorMsg string
 
-	client, ok := s.providerRegistry.Get(p.Name)
-	if !ok {
-		healthy = false
-		errorMsg = "provider not registered"
-	} else {
-		// Check health using proxy if enabled
-		if p.UseProxy {
-			healthy, latency, errorMsg = s.checkWithProxy(ctx, p)
+	// Get an active API key for this provider (if it requires one)
+	var apiKey *models.ProviderAPIKey
+	if p.RequiresAPIKey {
+		keys, err := s.providerKeyRepo.GetActiveByProvider(ctx, p.ID)
+		if err != nil || len(keys) == 0 {
+			healthy = false
+			errorMsg = "no active API keys for provider"
 		} else {
-			var err error
-			healthy, latency, err = client.CheckHealth(ctx)
-			if err != nil {
-				errorMsg = err.Error()
+			apiKey = &keys[0] // Use the first active key for health check
+		}
+	}
+
+	if errorMsg == "" {
+		s.logger.Info("creating provider client for health check",
+			zap.String("provider", p.Name),
+			zap.Bool("has_api_key", apiKey != nil),
+			zap.String("base_url", p.BaseURL),
+			zap.Bool("use_proxy", p.UseProxy))
+
+		// Create client dynamically
+		client, err := s.getProviderClient(p, apiKey)
+		if err != nil {
+			healthy = false
+			errorMsg = "failed to create provider client: " + err.Error()
+			s.logger.Error("failed to create provider client", zap.Error(err))
+		} else {
+			// Check health using proxy if enabled
+			if p.UseProxy {
+				s.logger.Info("checking health with proxy", zap.String("provider", p.Name))
+				healthy, latency, errorMsg = s.checkWithProxy(ctx, p, apiKey)
+			} else {
+				s.logger.Info("checking health directly", zap.String("provider", p.Name))
+				healthy, latency, err = client.CheckHealth(ctx)
+				if err != nil {
+					errorMsg = err.Error()
+					s.logger.Error("health check failed", zap.String("provider", p.Name), zap.Error(err))
+				} else {
+					s.logger.Info("health check completed", zap.String("provider", p.Name), zap.Bool("healthy", healthy), zap.Duration("latency", latency))
+				}
 			}
 		}
 	}
@@ -461,19 +549,39 @@ func (s *Service) CheckSingleProvider(ctx context.Context, id uuid.UUID) (*Provi
 }
 
 // checkWithProxy performs a health check using a proxy.
-func (s *Service) checkWithProxy(ctx context.Context, p *models.Provider) (bool, time.Duration, string) {
-	// Get an active proxy
-	proxies, err := s.proxyRepo.GetActive(ctx)
-	if err != nil || len(proxies) == 0 {
-		return false, 0, "no active proxy available"
+func (s *Service) checkWithProxy(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey) (bool, time.Duration, string) {
+	var proxyInfo *models.Proxy
+
+	// Use provider's default proxy if set, otherwise use any active proxy
+	if p.DefaultProxyID != nil {
+		proxy, err := s.proxyRepo.GetByID(ctx, *p.DefaultProxyID)
+		if err != nil {
+			s.logger.Warn("failed to get default proxy, falling back to active proxies",
+				zap.String("provider", p.Name),
+				zap.String("proxy_id", p.DefaultProxyID.String()),
+				zap.Error(err))
+		} else if proxy.IsActive {
+			proxyInfo = proxy
+		}
 	}
 
-	// Use the first active proxy
-	proxyInfo := proxies[0]
+	// If no default proxy or it's inactive, get any active proxy
+	if proxyInfo == nil {
+		proxies, err := s.proxyRepo.GetActive(ctx)
+		if err != nil || len(proxies) == 0 {
+			return false, 0, "no active proxy available"
+		}
+		proxyInfo = &proxies[0]
+	}
+
 	proxyURL, err := url.Parse(proxyInfo.URL)
 	if err != nil {
 		return false, 0, "invalid proxy URL"
 	}
+
+	s.logger.Info("using proxy for health check",
+		zap.String("provider", p.Name),
+		zap.String("proxy_url", proxyInfo.URL))
 
 	// Create HTTP client with proxy
 	transport := &http.Transport{
@@ -482,6 +590,15 @@ func (s *Service) checkWithProxy(ctx context.Context, p *models.Provider) (bool,
 	httpClient := &http.Client{
 		Transport: transport,
 		Timeout:   time.Duration(p.Timeout) * time.Second,
+	}
+
+	// Decrypt API key if available
+	var decryptedKey string
+	if apiKey != nil && apiKey.EncryptedAPIKey != "" {
+		decryptedKey, err = crypto.Decrypt(apiKey.EncryptedAPIKey)
+		if err != nil {
+			return false, 0, "failed to decrypt API key: " + err.Error()
+		}
 	}
 
 	// Determine health check endpoint based on provider
@@ -494,6 +611,12 @@ func (s *Service) checkWithProxy(ctx context.Context, p *models.Provider) (bool,
 	case "anthropic":
 		// Anthropic doesn't have a public health endpoint, use messages with minimal request
 		healthURL = p.BaseURL + "/v1/messages"
+	case "google":
+		// Google Gemini uses /v1beta/models endpoint with API key in query string
+		healthURL = p.BaseURL + "/v1beta/models"
+		if decryptedKey != "" {
+			healthURL += "?key=" + decryptedKey
+		}
 	default:
 		healthURL = p.BaseURL + "/models"
 	}
@@ -504,6 +627,19 @@ func (s *Service) checkWithProxy(ctx context.Context, p *models.Provider) (bool,
 		return false, 0, err.Error()
 	}
 
+	// Add authorization headers for providers that need them
+	switch p.Name {
+	case "openai", "lmstudio":
+		if decryptedKey != "" {
+			req.Header.Set("Authorization", "Bearer "+decryptedKey)
+		}
+	case "anthropic":
+		if decryptedKey != "" {
+			req.Header.Set("x-api-key", decryptedKey)
+			req.Header.Set("anthropic-version", "2023-06-01")
+		}
+	}
+
 	resp, err := httpClient.Do(req)
 	latency := time.Since(start)
 	if err != nil {
@@ -511,12 +647,23 @@ func (s *Service) checkWithProxy(ctx context.Context, p *models.Provider) (bool,
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// For Anthropic, a 401 means the endpoint is reachable
-	if p.Name == "anthropic" && resp.StatusCode == http.StatusUnauthorized {
+	// For Anthropic without API key, a 401 means the endpoint is reachable
+	if p.Name == "anthropic" && decryptedKey == "" && resp.StatusCode == http.StatusUnauthorized {
 		return true, latency, ""
 	}
 
-	return resp.StatusCode == http.StatusOK, latency, ""
+	// For Google without API key, a 400/403 means the endpoint is reachable
+	if p.Name == "google" && decryptedKey == "" && (resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusForbidden) {
+		return true, latency, ""
+	}
+
+	// Check for errors in response
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return false, latency, "API returned status " + resp.Status + ": " + string(respBody)
+	}
+
+	return true, latency, ""
 }
 
 // CheckAllProviders runs health checks on all active providers.

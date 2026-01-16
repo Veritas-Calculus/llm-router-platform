@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 
@@ -44,12 +45,20 @@ func NewService(proxyRepo *repository.ProxyRepository, logger *zap.Logger) *Serv
 
 // Create adds a new proxy.
 func (s *Service) Create(ctx context.Context, proxyURL, proxyType, region, username, password string, upstreamProxyID *uuid.UUID) (*models.Proxy, error) {
+	// Encrypt password if provided
+	encryptedPassword := password
+	if password != "" {
+		if encrypted, err := crypto.Encrypt(password); err == nil {
+			encryptedPassword = encrypted
+		}
+	}
+
 	proxy := &models.Proxy{
 		URL:             proxyURL,
 		Type:            proxyType,
 		Region:          region,
 		Username:        username,
-		Password:        password,
+		Password:        encryptedPassword,
 		UpstreamProxyID: upstreamProxyID,
 		IsActive:        true,
 		Weight:          1.0,
@@ -91,7 +100,12 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, proxyURL, proxyType,
 	proxy.Username = username
 	proxy.UpstreamProxyID = upstreamProxyID
 	if password != "" {
-		proxy.Password = password
+		// Encrypt password before storing
+		if encrypted, err := crypto.Encrypt(password); err == nil {
+			proxy.Password = encrypted
+		} else {
+			proxy.Password = password
+		}
 	}
 
 	if err := s.proxyRepo.Update(ctx, proxy); err != nil {
@@ -188,7 +202,9 @@ func (s *Service) buildProxyTransport(ctx context.Context, proxy *models.Proxy) 
 	}
 
 	if proxy.Username != "" && proxy.Password != "" {
-		proxyURL.User = url.UserPassword(proxy.Username, proxy.Password)
+		// Decrypt password before using
+		password, _ := crypto.Decrypt(proxy.Password)
+		proxyURL.User = url.UserPassword(proxy.Username, password)
 	}
 
 	// Check if this proxy has an upstream proxy
@@ -465,7 +481,9 @@ func (s *Service) GetHTTPClient(ctx context.Context) (*http.Client, error) {
 	}
 
 	if proxy.Username != "" && proxy.Password != "" {
-		proxyURL.User = url.UserPassword(proxy.Username, proxy.Password)
+		// Decrypt password before using
+		password, _ := crypto.Decrypt(proxy.Password)
+		proxyURL.User = url.UserPassword(proxy.Username, password)
 	}
 
 	transport := &http.Transport{

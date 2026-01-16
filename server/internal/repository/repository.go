@@ -116,7 +116,7 @@ func (r *APIKeyRepository) Update(ctx context.Context, key *models.APIKey) error
 
 // Delete permanently removes an API key from the database.
 func (r *APIKeyRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&models.APIKey{}, "id = ?", id).Error
+	return r.db.WithContext(ctx).Unscoped().Delete(&models.APIKey{}, "id = ?", id).Error
 }
 
 // ProviderRepository handles provider data access.
@@ -231,9 +231,9 @@ func (r *ProviderAPIKeyRepository) Update(ctx context.Context, key *models.Provi
 	return r.db.WithContext(ctx).Save(key).Error
 }
 
-// Delete deletes a provider API key by ID.
+// Delete permanently removes a provider API key by ID.
 func (r *ProviderAPIKeyRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&models.ProviderAPIKey{}, "id = ?", id).Error
+	return r.db.WithContext(ctx).Unscoped().Delete(&models.ProviderAPIKey{}, "id = ?", id).Error
 }
 
 // ModelRepository handles model data access.
@@ -320,9 +320,9 @@ func (r *ProxyRepository) Update(ctx context.Context, proxy *models.Proxy) error
 	return r.db.WithContext(ctx).Save(proxy).Error
 }
 
-// Delete deletes a proxy.
+// Delete permanently removes a proxy from the database.
 func (r *ProxyRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&models.Proxy{}, "id = ?", id).Error
+	return r.db.WithContext(ctx).Unscoped().Delete(&models.Proxy{}, "id = ?", id).Error
 }
 
 // UsageLogRepository handles usage log data access.
@@ -432,9 +432,9 @@ func (r *ConversationMemoryRepository) GetByConversation(ctx context.Context, us
 	return memories, nil
 }
 
-// DeleteByConversation deletes all messages in a conversation.
+// DeleteByConversation permanently removes all messages in a conversation.
 func (r *ConversationMemoryRepository) DeleteByConversation(ctx context.Context, userID uuid.UUID, conversationID string) error {
-	return r.db.WithContext(ctx).
+	return r.db.WithContext(ctx).Unscoped().
 		Where("user_id = ? AND conversation_id = ?", userID, conversationID).
 		Delete(&models.ConversationMemory{}).Error
 }

@@ -59,7 +59,7 @@ func Setup(
 	alertHandler := handlers.NewAlertHandler(services.Health, logger)
 	dashboardHandler := handlers.NewDashboardHandler(services.Billing, services.Health, services.Router, logger)
 	proxyHandler := handlers.NewProxyHandler(services.Proxy, logger)
-	providerHandler := handlers.NewProviderHandler(services.Router, logger)
+	providerHandler := handlers.NewProviderHandler(services.Router, services.Health, logger)
 
 	api := engine.Group("/api")
 	{
