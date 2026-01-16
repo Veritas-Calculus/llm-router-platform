@@ -6,6 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,6 +42,7 @@ type FailedKeyInfo struct {
 type Router struct {
 	providerRepo    *repository.ProviderRepository
 	providerKeyRepo *repository.ProviderAPIKeyRepository
+	proxyRepo       *repository.ProxyRepository
 	modelRepo       *repository.ModelRepository
 	registry        *provider.Registry
 	strategy        Strategy
@@ -53,6 +57,7 @@ type Router struct {
 func NewRouter(
 	providerRepo *repository.ProviderRepository,
 	providerKeyRepo *repository.ProviderAPIKeyRepository,
+	proxyRepo *repository.ProxyRepository,
 	modelRepo *repository.ModelRepository,
 	registry *provider.Registry,
 	logger *zap.Logger,
@@ -60,6 +65,7 @@ func NewRouter(
 	return &Router{
 		providerRepo:    providerRepo,
 		providerKeyRepo: providerKeyRepo,
+		proxyRepo:       proxyRepo,
 		modelRepo:       modelRepo,
 		registry:        registry,
 		strategy:        StrategyWeighted,
@@ -86,16 +92,21 @@ func (r *Router) Route(ctx context.Context, modelName string) (*models.Provider,
 		return nil, nil, errors.New("no active providers available")
 	}
 
-	var selectedProvider *models.Provider
-	switch r.strategy {
-	case StrategyRoundRobin:
-		selectedProvider = r.selectRoundRobin(providers)
-	case StrategyWeighted:
-		selectedProvider = r.selectWeighted(providers)
-	case StrategyLeastLatency:
-		selectedProvider = r.selectLeastLatency(providers)
-	default:
-		selectedProvider = r.selectWeighted(providers)
+	// Try to find provider based on model name patterns
+	selectedProvider := r.findProviderForModel(modelName, providers)
+
+	// If no specific provider found, use weighted selection
+	if selectedProvider == nil {
+		switch r.strategy {
+		case StrategyRoundRobin:
+			selectedProvider = r.selectRoundRobin(providers)
+		case StrategyWeighted:
+			selectedProvider = r.selectWeighted(providers)
+		case StrategyLeastLatency:
+			selectedProvider = r.selectLeastLatency(providers)
+		default:
+			selectedProvider = r.selectWeighted(providers)
+		}
 	}
 
 	// For providers that don't require API keys (e.g., Ollama, LM Studio), return nil for apiKey
@@ -109,6 +120,63 @@ func (r *Router) Route(ctx context.Context, modelName string) (*models.Provider,
 	}
 
 	return selectedProvider, apiKey, nil
+}
+
+// findProviderForModel tries to find the appropriate provider for a given model name.
+func (r *Router) findProviderForModel(modelName string, providers []models.Provider) *models.Provider {
+	modelLower := strings.ToLower(modelName)
+
+	for i := range providers {
+		p := &providers[i]
+		switch p.Name {
+		case "google":
+			// Google Gemini models
+			if strings.HasPrefix(modelLower, "gemini") ||
+				strings.HasPrefix(modelLower, "gemma") ||
+				strings.HasPrefix(modelLower, "embedding") ||
+				strings.HasPrefix(modelLower, "text-embedding") ||
+				strings.HasPrefix(modelLower, "imagen") ||
+				strings.HasPrefix(modelLower, "veo") ||
+				strings.HasPrefix(modelLower, "aqa") {
+				return p
+			}
+		case "openai":
+			// OpenAI models
+			if strings.HasPrefix(modelLower, "gpt-") ||
+				strings.HasPrefix(modelLower, "o1") ||
+				strings.HasPrefix(modelLower, "o3") ||
+				strings.HasPrefix(modelLower, "o4") ||
+				strings.HasPrefix(modelLower, "chatgpt") ||
+				strings.HasPrefix(modelLower, "text-davinci") ||
+				strings.HasPrefix(modelLower, "dall-e") ||
+				strings.HasPrefix(modelLower, "whisper") ||
+				strings.HasPrefix(modelLower, "tts") {
+				return p
+			}
+		case "anthropic":
+			// Anthropic Claude models
+			if strings.HasPrefix(modelLower, "claude") {
+				return p
+			}
+		case "ollama", "lmstudio":
+			// Check for common open-source model patterns
+			// These are typically used when no other provider matches
+			if strings.Contains(modelLower, "llama") ||
+				strings.Contains(modelLower, "mistral") ||
+				strings.Contains(modelLower, "qwen") ||
+				strings.Contains(modelLower, "codellama") ||
+				strings.Contains(modelLower, "vicuna") ||
+				strings.Contains(modelLower, "phi") ||
+				strings.Contains(modelLower, "deepseek") ||
+				strings.Contains(modelLower, "yi-") ||
+				strings.Contains(modelLower, "mixtral") ||
+				strings.Contains(modelLower, "qwq") {
+				return p
+			}
+		}
+	}
+
+	return nil
 }
 
 // selectRoundRobin selects provider using round-robin.
@@ -330,7 +398,8 @@ func (r *Router) GetProviderClientWithKey(ctx context.Context, p *models.Provide
 		}
 		// Create a client without API key
 		cfg := &config.ProviderConfig{
-			BaseURL: p.BaseURL,
+			BaseURL:    p.BaseURL,
+			HTTPClient: r.getHTTPClientProvider(ctx, p),
 		}
 		return r.createProviderClient(p.Name, cfg)
 	}
@@ -342,11 +411,65 @@ func (r *Router) GetProviderClientWithKey(ctx context.Context, p *models.Provide
 	}
 
 	cfg := &config.ProviderConfig{
-		APIKey:  decryptedKey,
-		BaseURL: p.BaseURL,
+		APIKey:     decryptedKey,
+		BaseURL:    p.BaseURL,
+		HTTPClient: r.getHTTPClientProvider(ctx, p),
 	}
 
 	return r.createProviderClient(p.Name, cfg)
+}
+
+// getHTTPClientProvider returns a function that creates an HTTP client with optional proxy.
+func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) config.HTTPClientProvider {
+	if !p.UseProxy {
+		return nil
+	}
+
+	return func() *http.Client {
+		var proxyInfo *models.Proxy
+
+		// Use provider's default proxy if set
+		if p.DefaultProxyID != nil {
+			proxy, err := r.proxyRepo.GetByID(ctx, *p.DefaultProxyID)
+			if err == nil && proxy.IsActive {
+				proxyInfo = proxy
+			}
+		}
+
+		// If no default proxy or it's inactive, get any active proxy
+		if proxyInfo == nil {
+			proxies, err := r.proxyRepo.GetActive(ctx)
+			if err != nil || len(proxies) == 0 {
+				// Return default client if no proxy available
+				return &http.Client{Timeout: 60 * time.Second}
+			}
+			proxyInfo = &proxies[0]
+		}
+
+		proxyURL, err := url.Parse(proxyInfo.URL)
+		if err != nil {
+			return &http.Client{Timeout: 60 * time.Second}
+		}
+
+		// Add authentication if available
+		if proxyInfo.Username != "" && proxyInfo.Password != "" {
+			password, _ := crypto.Decrypt(proxyInfo.Password)
+			proxyURL.User = url.UserPassword(proxyInfo.Username, password)
+		}
+
+		r.logger.Debug("using proxy for provider",
+			zap.String("provider", p.Name),
+			zap.String("proxy_url", proxyInfo.URL))
+
+		transport := &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		}
+
+		return &http.Client{
+			Transport: transport,
+			Timeout:   60 * time.Second,
+		}
+	}
 }
 
 // createProviderClient creates a provider client based on provider name.

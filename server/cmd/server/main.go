@@ -154,7 +154,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger) *
 	// API keys are stored encrypted in the database and configured via Web UI
 	providerRegistry := provider.NewRegistry(logger)
 
-	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Model, providerRegistry, logger)
+	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, providerRegistry, logger)
 	billingService := billing.NewService(repos.UsageLog, repos.Model, logger)
 	memoryService := memory.NewService(repos.Memory, nil, logger)
 	proxyService := proxy.NewService(repos.Proxy, logger)

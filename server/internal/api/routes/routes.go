@@ -53,7 +53,7 @@ func Setup(
 	authHandler := handlers.NewAuthHandler(services.User, &cfg.JWT, logger)
 	apiKeyHandler := handlers.NewAPIKeyHandler(services.User, logger)
 	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, logger)
-	modelHandler := handlers.NewModelHandler(services.Provider, logger)
+	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)
 	usageHandler := handlers.NewUsageHandler(services.Billing, logger)
 	healthHandler := handlers.NewHealthHandler(services.Health, logger)
 	alertHandler := handlers.NewAlertHandler(services.Health, logger)
@@ -165,6 +165,8 @@ func Setup(
 			models.Use(authMiddleware.APIKey())
 			{
 				models.GET("", modelHandler.List)
+				// Also expose providers list under /models/providers for API key users
+				models.GET("/providers", modelHandler.ListProviders)
 			}
 		}
 	}

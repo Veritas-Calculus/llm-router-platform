@@ -152,19 +152,19 @@ func (r *ProviderRepository) GetByName(ctx context.Context, name string) (*model
 	return &provider, nil
 }
 
-// GetActive retrieves all active providers.
+// GetActive retrieves all active providers with their models.
 func (r *ProviderRepository) GetActive(ctx context.Context) ([]models.Provider, error) {
 	var providers []models.Provider
-	if err := r.db.WithContext(ctx).Where("is_active = ?", true).Find(&providers).Error; err != nil {
+	if err := r.db.WithContext(ctx).Preload("Models").Where("is_active = ?", true).Find(&providers).Error; err != nil {
 		return nil, err
 	}
 	return providers, nil
 }
 
-// GetAll retrieves all providers.
+// GetAll retrieves all providers with their models.
 func (r *ProviderRepository) GetAll(ctx context.Context) ([]models.Provider, error) {
 	var providers []models.Provider
-	if err := r.db.WithContext(ctx).Find(&providers).Error; err != nil {
+	if err := r.db.WithContext(ctx).Preload("Models").Find(&providers).Error; err != nil {
 		return nil, err
 	}
 	return providers, nil

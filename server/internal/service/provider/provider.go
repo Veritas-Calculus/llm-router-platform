@@ -101,13 +101,17 @@ type OpenAIClient struct {
 
 // NewOpenAIClient creates a new OpenAI client.
 func NewOpenAIClient(cfg *config.ProviderConfig, logger *zap.Logger) *OpenAIClient {
+	httpClient := &http.Client{
+		Timeout: 60 * time.Second,
+	}
+	if cfg.HTTPClient != nil {
+		httpClient = cfg.HTTPClient()
+	}
 	return &OpenAIClient{
-		apiKey:  cfg.APIKey,
-		baseURL: cfg.BaseURL,
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
-		logger: logger,
+		apiKey:     cfg.APIKey,
+		baseURL:    cfg.BaseURL,
+		httpClient: httpClient,
+		logger:     logger,
 	}
 }
 
@@ -262,13 +266,17 @@ type AnthropicClient struct {
 
 // NewAnthropicClient creates a new Anthropic client.
 func NewAnthropicClient(cfg *config.ProviderConfig, logger *zap.Logger) *AnthropicClient {
+	httpClient := &http.Client{
+		Timeout: 60 * time.Second,
+	}
+	if cfg.HTTPClient != nil {
+		httpClient = cfg.HTTPClient()
+	}
 	return &AnthropicClient{
-		apiKey:  cfg.APIKey,
-		baseURL: cfg.BaseURL,
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
-		logger: logger,
+		apiKey:     cfg.APIKey,
+		baseURL:    cfg.BaseURL,
+		httpClient: httpClient,
+		logger:     logger,
 	}
 }
 
@@ -409,12 +417,16 @@ type OllamaClient struct {
 
 // NewOllamaClient creates a new Ollama client.
 func NewOllamaClient(cfg *config.ProviderConfig, logger *zap.Logger) *OllamaClient {
+	httpClient := &http.Client{
+		Timeout: 120 * time.Second,
+	}
+	if cfg.HTTPClient != nil {
+		httpClient = cfg.HTTPClient()
+	}
 	return &OllamaClient{
-		baseURL: cfg.BaseURL,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-		},
-		logger: logger,
+		baseURL:    cfg.BaseURL,
+		httpClient: httpClient,
+		logger:     logger,
 	}
 }
 
@@ -559,12 +571,16 @@ type LMStudioClient struct {
 
 // NewLMStudioClient creates a new LM Studio client.
 func NewLMStudioClient(cfg *config.ProviderConfig, logger *zap.Logger) *LMStudioClient {
+	httpClient := &http.Client{
+		Timeout: 120 * time.Second,
+	}
+	if cfg.HTTPClient != nil {
+		httpClient = cfg.HTTPClient()
+	}
 	return &LMStudioClient{
-		baseURL: cfg.BaseURL,
-		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
-		},
-		logger: logger,
+		baseURL:    cfg.BaseURL,
+		httpClient: httpClient,
+		logger:     logger,
 	}
 }
 
@@ -710,13 +726,17 @@ type GoogleClient struct {
 
 // NewGoogleClient creates a new Google Gemini client.
 func NewGoogleClient(cfg *config.ProviderConfig, logger *zap.Logger) *GoogleClient {
+	httpClient := &http.Client{
+		Timeout: 60 * time.Second,
+	}
+	if cfg.HTTPClient != nil {
+		httpClient = cfg.HTTPClient()
+	}
 	return &GoogleClient{
-		apiKey:  cfg.APIKey,
-		baseURL: cfg.BaseURL,
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
-		logger: logger,
+		apiKey:     cfg.APIKey,
+		baseURL:    cfg.BaseURL,
+		httpClient: httpClient,
+		logger:     logger,
 	}
 }
 

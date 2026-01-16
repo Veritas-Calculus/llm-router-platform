@@ -2,6 +2,7 @@
 package config
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/spf13/viper"
@@ -54,9 +55,14 @@ type EncryptionConfig struct {
 // ProviderConfig holds single provider configuration.
 // Used for creating provider clients dynamically.
 type ProviderConfig struct {
-	APIKey  string
-	BaseURL string
+	APIKey     string
+	BaseURL    string
+	HTTPClient HTTPClientProvider // Optional custom HTTP client (e.g., with proxy)
 }
+
+// HTTPClientProvider is a function that returns an HTTP client.
+// This allows for lazy initialization and custom configurations like proxies.
+type HTTPClientProvider func() *http.Client
 
 // ProxyPoolConfig holds proxy pool configuration.
 type ProxyPoolConfig struct {
