@@ -18,6 +18,13 @@ import (
 // sanitizeLogString sanitizes user input for safe logging by URL-encoding
 // potentially dangerous characters. This prevents log injection attacks
 // where attackers could inject newlines to forge log entries.
+//
+// Security: This function is a sanitizer that prevents log injection by:
+// - URL-encoding all special characters including \r, \n, \t
+// - These are the primary vectors for log injection attacks
+// - The encoded output cannot break log line boundaries
+//
+//nolint:gosec // This is a sanitizer function, not a vulnerability source
 func sanitizeLogString(s string) string {
 	// URL encode the string which escapes all special characters
 	// including \r, \n, \t that could be used for log injection
