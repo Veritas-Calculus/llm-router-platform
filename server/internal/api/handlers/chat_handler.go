@@ -213,6 +213,8 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":      resp.ID,
+		"object":  "chat.completion",
+		"created": time.Now().Unix(),
 		"model":   resp.Model,
 		"choices": resp.Choices,
 		"usage":   resp.Usage,
@@ -465,10 +467,12 @@ func (h *ModelHandler) ListProviders(c *gin.Context) {
 func (h *ModelHandler) List(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	type ModelWithProvider struct {
-		ID       string `json:"id"`
-		Name     string `json:"name"`
-		Provider string `json:"provider"`
+	// OpenAI standard model format
+	type Model struct {
+		ID      string `json:"id"`
+		Object  string `json:"object"`
+		Created int64  `json:"created"`
+		OwnedBy string `json:"owned_by"`
 	}
 
 	// Get all active providers
@@ -505,19 +509,24 @@ func (h *ModelHandler) List(c *gin.Context) {
 		close(resultChan)
 	}()
 
-	// Collect results
-	allModels := make([]ModelWithProvider, 0)
+	// Collect results in OpenAI format
+	now := time.Now().Unix()
+	allModels := make([]Model, 0)
 	for r := range resultChan {
 		for _, modelID := range r.models {
-			allModels = append(allModels, ModelWithProvider{
-				ID:       modelID,
-				Name:     modelID,
-				Provider: r.providerName,
+			allModels = append(allModels, Model{
+				ID:      modelID,
+				Object:  "model",
+				Created: now,
+				OwnedBy: r.providerName,
 			})
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": allModels})
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data":   allModels,
+	})
 }
 
 // UsageHandler handles usage statistics endpoints.
