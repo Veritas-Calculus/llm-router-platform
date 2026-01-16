@@ -182,11 +182,12 @@ func (s *Service) CheckHealth(ctx context.Context, id uuid.UUID) (bool, time.Dur
 func (s *Service) normalizeProxyURL(proxy *models.Proxy) string {
 	proxyURLStr := proxy.URL
 	if !strings.Contains(proxyURLStr, "://") {
-		if proxy.Type == "socks5" {
+		switch proxy.Type {
+		case "socks5":
 			proxyURLStr = "socks5://" + proxyURLStr
-		} else if proxy.Type == "https" {
+		case "https":
 			proxyURLStr = "https://" + proxyURLStr
-		} else {
+		default:
 			proxyURLStr = "http://" + proxyURLStr
 		}
 	}
@@ -299,7 +300,7 @@ func (s *Service) buildChainedTransport(ctx context.Context, targetProxyURL *url
 
 			if _, err := conn.Write([]byte(connectReq)); err != nil {
 				logger.Error("failed to send CONNECT to upstream", zap.Error(err))
-				conn.Close()
+				_ = conn.Close()
 				return nil, fmt.Errorf("failed to send CONNECT to upstream proxy: %w", err)
 			}
 
@@ -308,21 +309,22 @@ func (s *Service) buildChainedTransport(ctx context.Context, targetProxyURL *url
 			resp, err := http.ReadResponse(reader, nil)
 			if err != nil {
 				logger.Error("failed to read CONNECT response from upstream", zap.Error(err))
-				conn.Close()
+				_ = conn.Close()
 				return nil, fmt.Errorf("failed to read CONNECT response from upstream: %w", err)
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			logger.Info("step 2: upstream CONNECT response", zap.Int("status_code", resp.StatusCode), zap.String("status", resp.Status))
 
 			if resp.StatusCode != http.StatusOK {
-				conn.Close()
+				_ = conn.Close()
 				return nil, fmt.Errorf("upstream CONNECT to target proxy failed: %s", resp.Status)
 			}
 
 			// Now we have a tunnel to the target proxy
 			// If target proxy is HTTPS, we need to perform TLS handshake
-			var targetConn net.Conn = conn
+			var targetConn net.Conn
+			targetConn = conn
 			if targetRequiresTLS {
 				// Extract hostname without port for TLS ServerName
 				targetHostname := targetHost
@@ -338,7 +340,7 @@ func (s *Service) buildChainedTransport(ctx context.Context, targetProxyURL *url
 				})
 				if err := tlsConn.HandshakeContext(dialCtx); err != nil {
 					logger.Error("TLS handshake with target proxy failed", zap.Error(err))
-					conn.Close()
+					_ = conn.Close()
 					return nil, fmt.Errorf("TLS handshake with target proxy failed: %w", err)
 				}
 				logger.Info("step 3: TLS handshake successful",
@@ -369,7 +371,7 @@ func (s *Service) buildChainedTransport(ctx context.Context, targetProxyURL *url
 
 			if _, err := targetConn.Write([]byte(connectReq2)); err != nil {
 				logger.Error("failed to send CONNECT to target proxy", zap.Error(err))
-				targetConn.Close()
+				_ = targetConn.Close()
 				return nil, fmt.Errorf("failed to send CONNECT to target proxy: %w", err)
 			}
 
@@ -377,10 +379,10 @@ func (s *Service) buildChainedTransport(ctx context.Context, targetProxyURL *url
 			resp2, err := http.ReadResponse(reader, nil)
 			if err != nil {
 				logger.Error("failed to read CONNECT response from target proxy", zap.Error(err))
-				targetConn.Close()
+				_ = targetConn.Close()
 				return nil, fmt.Errorf("failed to read CONNECT response from target proxy: %w", err)
 			}
-			resp2.Body.Close()
+			_ = resp2.Body.Close()
 
 			logger.Info("step 4: target proxy CONNECT response",
 				zap.Int("status_code", resp2.StatusCode),
@@ -388,7 +390,7 @@ func (s *Service) buildChainedTransport(ctx context.Context, targetProxyURL *url
 				zap.String("destination", addr))
 
 			if resp2.StatusCode != http.StatusOK {
-				targetConn.Close()
+				_ = targetConn.Close()
 				return nil, fmt.Errorf("target proxy CONNECT to %s failed: %s", addr, resp2.Status)
 			}
 
