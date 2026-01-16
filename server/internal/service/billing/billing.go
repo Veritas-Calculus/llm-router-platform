@@ -290,5 +290,10 @@ func (s *Service) GetRecentUsage(ctx context.Context, userID uuid.UUID, limit in
 		logs = logs[:limit]
 	}
 
+	// Set IsSuccess based on StatusCode
+	for i := range logs {
+		logs[i].IsSuccess = logs[i].StatusCode >= 200 && logs[i].StatusCode < 300
+	}
+
 	return logs, nil
 }

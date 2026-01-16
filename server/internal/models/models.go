@@ -118,13 +118,14 @@ type UsageLog struct {
 	ModelID        uuid.UUID `gorm:"type:uuid;index" json:"model_id"`
 	ModelName      string    `gorm:"index" json:"model_name"`
 	ProxyID        uuid.UUID `gorm:"type:uuid;index" json:"proxy_id"`
-	RequestTokens  int       `json:"request_tokens"`
-	ResponseTokens int       `json:"response_tokens"`
+	RequestTokens  int       `gorm:"column:request_tokens" json:"input_tokens"`
+	ResponseTokens int       `gorm:"column:response_tokens" json:"output_tokens"`
 	TotalTokens    int       `json:"total_tokens"`
 	Cost           float64   `json:"cost"`
-	Latency        int64     `json:"latency"`
+	Latency        int64     `gorm:"column:latency" json:"latency_ms"`
 	StatusCode     int       `json:"status_code"`
 	ErrorMessage   string    `json:"error_message,omitempty"`
+	IsSuccess      bool      `gorm:"-" json:"is_success"`
 }
 
 // HealthHistory records health check results.
