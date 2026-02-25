@@ -55,7 +55,7 @@ type EncryptionConfig struct {
 // ProviderConfig holds single provider configuration.
 // Used for creating provider clients dynamically.
 type ProviderConfig struct {
-	APIKey     string             // #nosec G117 -- internal config, never serialized to API responses
+	APIKey     string // #nosec G117 -- internal config, never serialized to API responses
 	BaseURL    string
 	HTTPClient HTTPClientProvider // Optional custom HTTP client (e.g., with proxy)
 }
