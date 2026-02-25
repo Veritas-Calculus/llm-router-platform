@@ -3,8 +3,8 @@ FROM node:25-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files and npm config
+COPY package*.json .npmrc ./
 
 # Install dependencies
 RUN npm ci
