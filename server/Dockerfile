@@ -21,8 +21,8 @@ FROM alpine:3.23
 
 WORKDIR /app
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
+# Install runtime dependencies and apply security patches
+RUN apk add --no-cache ca-certificates tzdata && apk upgrade --no-cache
 
 # Copy binary from builder
 COPY --from=builder /app/server /app/server

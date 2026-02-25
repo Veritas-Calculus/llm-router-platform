@@ -374,13 +374,13 @@ func (h *ProxyHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": responses})
 }
 
-// CreateProxyRequest represents proxy creation request.
+// CreateProxyRequest represents proxy creation request (input only, never serialized).
 type CreateProxyRequest struct {
 	URL             string `json:"url" binding:"required"`
 	Type            string `json:"type" binding:"required"`
 	Region          string `json:"region"`
 	Username        string `json:"username"`
-	Password        string `json:"password"`
+	Password        string `json:"password"` // #nosec G117 -- request input only
 	UpstreamProxyID string `json:"upstream_proxy_id"`
 }
 
@@ -418,16 +418,17 @@ type BatchCreateProxyRequest struct {
 		Type     string `json:"type"`
 		Region   string `json:"region"`
 		Username string `json:"username"`
-		Password string `json:"password"`
+		Password string `json:"password"` // #nosec G117 -- request input only
 	} `json:"proxies" binding:"required,min=1"`
 }
 
 // BatchCreateResult represents the result of batch proxy creation.
+// Uses ProxyResponse instead of models.Proxy to ensure sensitive fields are never serialized.
 type BatchCreateResult struct {
-	Success int            `json:"success"`
-	Failed  int            `json:"failed"`
-	Proxies []models.Proxy `json:"proxies"`
-	Errors  []string       `json:"errors,omitempty"`
+	Success int             `json:"success"`
+	Failed  int             `json:"failed"`
+	Proxies []ProxyResponse `json:"proxies"`
+	Errors  []string        `json:"errors,omitempty"`
 }
 
 // BatchCreate creates multiple proxies at once.
@@ -439,7 +440,7 @@ func (h *ProxyHandler) BatchCreate(c *gin.Context) {
 	}
 
 	result := BatchCreateResult{
-		Proxies: make([]models.Proxy, 0),
+		Proxies: make([]ProxyResponse, 0),
 		Errors:  make([]string, 0),
 	}
 
@@ -455,7 +456,7 @@ func (h *ProxyHandler) BatchCreate(c *gin.Context) {
 			result.Errors = append(result.Errors, p.URL+": "+err.Error())
 		} else {
 			result.Success++
-			result.Proxies = append(result.Proxies, *proxy)
+			result.Proxies = append(result.Proxies, toProxyResponse(proxy))
 		}
 	}
 
@@ -523,14 +524,14 @@ func (h *ProxyHandler) TestAllProxies(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"results": results})
 }
 
-// UpdateProxyRequest represents proxy update request.
+// UpdateProxyRequest represents proxy update request (input only, never serialized).
 type UpdateProxyRequest struct {
 	URL             string `json:"url" binding:"required"`
 	Type            string `json:"type" binding:"required"`
 	Region          string `json:"region"`
 	IsActive        bool   `json:"is_active"`
 	Username        string `json:"username"`
-	Password        string `json:"password"`
+	Password        string `json:"password"` // #nosec G117 -- request input only
 	UpstreamProxyID string `json:"upstream_proxy_id"`
 }
 
@@ -811,9 +812,9 @@ func (h *ProviderHandler) ToggleAPIKey(c *gin.Context) {
 	c.JSON(http.StatusOK, key)
 }
 
-// CreateProviderAPIKeyRequest represents the request to create a provider API key.
+// CreateProviderAPIKeyRequest represents the request to create a provider API key (input only, never serialized).
 type CreateProviderAPIKeyRequest struct {
-	APIKey string `json:"api_key" binding:"required"`
+	APIKey string `json:"api_key" binding:"required"` // #nosec G117 -- request input only, encrypted before storage
 	Alias  string `json:"alias" binding:"required"`
 }
 
