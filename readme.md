@@ -81,7 +81,7 @@
 
 | 技术 | 用途 |
 |------|------|
-| Go 1.21+ | 主开发语言 |
+| Go 1.24+ | 主开发语言 |
 | Gin | Web 框架 |
 | GORM | ORM 数据库操作 |
 | go-redis | Redis 客户端 |
@@ -93,13 +93,13 @@
 
 | 技术 | 用途 |
 |------|------|
-| React 18 | UI 框架 |
+| React 19 | UI 框架 |
 | TypeScript | 类型安全 |
 | Vite | 构建工具 |
-| TailwindCSS | 样式框架 |
+| TailwindCSS v4 | 样式框架 |
 | Framer Motion | 动画效果 |
 | Recharts | 图表可视化 |
-| React Query | 数据请求 |
+| Axios | 数据请求 |
 | Zustand | 状态管理 |
 
 ### 前端设计规范 (Apple Style)
@@ -118,10 +118,10 @@
 
 ### 环境要求
 
-- Go >= 1.21
+- Go >= 1.24
 - Node.js >= 18.x
-- PostgreSQL >= 14
-- Redis >= 6.0
+- PostgreSQL >= 16
+- Redis >= 7.0
 
 ### 后端安装
 
@@ -334,15 +334,20 @@ llm-router-platform/
 
 ## 开发计划
 
-- [ ] 支持更多 LLM 服务商 (Mistral, 通义千问, 文心一言等)
 - [x] 管理后台 Dashboard
 - [x] API Key 权限管理
-- [ ] 请求速率限制
+- [x] 多 LLM 服务商支持 (OpenAI, Claude, Gemini, Ollama, LM Studio)
+- [x] 代理池管理与健康检查
+- [x] 计费 & 用量统计
+- [x] 流式响应 (SSE)
+- [ ] 支持更多 LLM 服务商 (DeepSeek, 通义千问, Mistral 等)
+- [ ] 请求速率限制增强 (per-user/per-key 粒度)
 - [ ] WebSocket 实时流式响应优化
-- [ ] Kubernetes 部署支持
+- [ ] Kubernetes 部署支持 (Helm Chart)
 - [ ] 多语言国际化 (i18n)
 - [ ] 深色模式支持
 - [ ] 移动端适配
+- [ ] OpenAPI 3.0 规范文档
 
 ## 贡献指南
 

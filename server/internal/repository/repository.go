@@ -439,6 +439,28 @@ func (r *ConversationMemoryRepository) DeleteByConversation(ctx context.Context,
 		Delete(&models.ConversationMemory{}).Error
 }
 
+// DeleteOldestByConversation deletes the oldest N messages from a conversation.
+func (r *ConversationMemoryRepository) DeleteOldestByConversation(ctx context.Context, userID uuid.UUID, conversationID string, count int) error {
+	// Find the oldest N message IDs
+	var ids []uuid.UUID
+	if err := r.db.WithContext(ctx).
+		Model(&models.ConversationMemory{}).
+		Where("user_id = ? AND conversation_id = ?", userID, conversationID).
+		Order("sequence ASC").
+		Limit(count).
+		Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+
+	if len(ids) == 0 {
+		return nil
+	}
+
+	return r.db.WithContext(ctx).Unscoped().
+		Where("id IN ?", ids).
+		Delete(&models.ConversationMemory{}).Error
+}
+
 // ListConversationIDs returns all conversation IDs for a user.
 func (r *ConversationMemoryRepository) ListConversationIDs(ctx context.Context, userID uuid.UUID) ([]string, error) {
 	var ids []string

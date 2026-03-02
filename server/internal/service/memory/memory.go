@@ -146,11 +146,21 @@ func (s *Service) TruncateConversation(ctx context.Context, userID uuid.UUID, co
 		return nil
 	}
 
+	// Count how many of the oldest messages we need to remove
 	tokensToRemove := totalTokens - maxTokens
 	removed := 0
+	messagesToDelete := 0
 
 	for i := 0; i < len(messages) && removed < tokensToRemove; i++ {
 		removed += messages[i].TokenCount
+		messagesToDelete++
+	}
+
+	// Delete the oldest messages from the database
+	if messagesToDelete > 0 {
+		if err := s.memoryRepo.DeleteOldestByConversation(ctx, userID, conversationID, messagesToDelete); err != nil {
+			return err
+		}
 	}
 
 	return s.updateCache(ctx, userID, conversationID)
