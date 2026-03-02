@@ -33,7 +33,7 @@ func NewAuthHandler(userService *user.Service, jwtConfig *config.JWTConfig, logg
 // RegisterRequest represents registration request (input only, never serialized).
 type RegisterRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8"` // #nosec G117 -- request input only
+	Password string `json:"password" binding:"required,min=8"` // #nosec G101 -- request input only
 	Name     string `json:"name" binding:"required"`
 }
 
@@ -61,7 +61,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 // LoginRequest represents login request (input only, never serialized).
 type LoginRequest struct {
 	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"` // #nosec G117 -- request input only
+	Password string `json:"password" binding:"required"` // #nosec G101 -- request input only
 }
 
 // Login handles user login.

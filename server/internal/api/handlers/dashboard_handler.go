@@ -380,7 +380,7 @@ type CreateProxyRequest struct {
 	Type            string `json:"type" binding:"required"`
 	Region          string `json:"region"`
 	Username        string `json:"username"`
-	Password        string `json:"password"` // #nosec G117 -- request input only
+	Password        string `json:"password"` // #nosec G101 -- request input only
 	UpstreamProxyID string `json:"upstream_proxy_id"`
 }
 
@@ -418,7 +418,7 @@ type BatchCreateProxyRequest struct {
 		Type     string `json:"type"`
 		Region   string `json:"region"`
 		Username string `json:"username"`
-		Password string `json:"password"` // #nosec G117 -- request input only
+		Password string `json:"password"` // #nosec G101 -- request input only
 	} `json:"proxies" binding:"required,min=1"`
 }
 
@@ -531,7 +531,7 @@ type UpdateProxyRequest struct {
 	Region          string `json:"region"`
 	IsActive        bool   `json:"is_active"`
 	Username        string `json:"username"`
-	Password        string `json:"password"` // #nosec G117 -- request input only
+	Password        string `json:"password"` // #nosec G101 -- request input only
 	UpstreamProxyID string `json:"upstream_proxy_id"`
 }
 
@@ -814,7 +814,7 @@ func (h *ProviderHandler) ToggleAPIKey(c *gin.Context) {
 
 // CreateProviderAPIKeyRequest represents the request to create a provider API key (input only, never serialized).
 type CreateProviderAPIKeyRequest struct {
-	APIKey string `json:"api_key" binding:"required"` // #nosec G117 -- request input only, encrypted before storage
+	APIKey string `json:"api_key" binding:"required"` // #nosec G101 -- request input only, encrypted before storage
 	Alias  string `json:"alias" binding:"required"`
 }
 

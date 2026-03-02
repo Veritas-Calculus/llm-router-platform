@@ -135,3 +135,11 @@ func Decrypt(ciphertext string) (string, error) {
 func IsInitialized() bool {
 	return defaultEncryptor != nil && len(defaultEncryptor.key) > 0
 }
+
+// GetEncryptionKey returns the underlying encryption key.
+func GetEncryptionKey() []byte {
+	if defaultEncryptor == nil {
+		return nil
+	}
+	return defaultEncryptor.key
+}

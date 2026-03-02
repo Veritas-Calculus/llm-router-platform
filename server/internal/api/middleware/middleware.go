@@ -3,7 +3,6 @@ package middleware
 
 import (
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -15,27 +14,22 @@ import (
 	"go.uber.org/zap"
 )
 
-// sanitizeLogString sanitizes user input for safe logging by URL-encoding
-// potentially dangerous characters. This prevents log injection attacks
-// where attackers could inject newlines to forge log entries.
-//
-// Security: This function is a sanitizer that prevents log injection by:
-// - URL-encoding all special characters including \r, \n, \t
-// - These are the primary vectors for log injection attacks
-// - The encoded output cannot break log line boundaries
-//
-//nolint:gosec // This is a sanitizer function, not a vulnerability source
+// sanitizeLogString sanitizes user input for safe logging by removing
+// potentially dangerous characters like newlines and carriage returns.
+// This prevents log injection attacks.
 func sanitizeLogString(s string) string {
-	// URL encode the string which escapes all special characters
-	// including \r, \n, \t that could be used for log injection
-	encoded := url.QueryEscape(s)
-	// Restore safe characters for readability
-	encoded = strings.ReplaceAll(encoded, "%2F", "/")
-	encoded = strings.ReplaceAll(encoded, "%3A", ":")
-	encoded = strings.ReplaceAll(encoded, "%3D", "=")
-	encoded = strings.ReplaceAll(encoded, "%26", "&")
-	encoded = strings.ReplaceAll(encoded, "%3F", "?")
-	return encoded
+	// Standard log sanitization: replace control characters and limit charset
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == '\t' {
+			return ' '
+		}
+		// Allow standard printable ASCII characters
+		if r >= 32 && r <= 126 {
+			return r
+		}
+		// Replace everything else with a safe placeholder
+		return '?'
+	}, s)
 }
 
 // AuthMiddleware handles JWT authentication.

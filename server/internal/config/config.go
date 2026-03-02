@@ -34,7 +34,7 @@ type DatabaseConfig struct {
 	Host     string
 	Port     string
 	User     string
-	Password string // #nosec G117 -- internal config, never serialized to API responses
+	Password string // #nosec G101 -- internal config, never serialized to API responses
 	Name     string
 	SSLMode  string
 }
@@ -43,19 +43,19 @@ type DatabaseConfig struct {
 type RedisConfig struct {
 	Host     string
 	Port     string
-	Password string // #nosec G117 -- internal config, never serialized to API responses
+	Password string // #nosec G101 -- internal config, never serialized to API responses
 	DB       int
 }
 
 // EncryptionConfig holds encryption configuration for sensitive data.
 type EncryptionConfig struct {
-	Key string // #nosec G117 -- 32-byte key for AES-256 encryption, internal config only
+	Key string // #nosec G101 -- 32-byte key for AES-256 encryption, internal config only
 }
 
 // ProviderConfig holds single provider configuration.
 // Used for creating provider clients dynamically.
 type ProviderConfig struct {
-	APIKey     string // #nosec G117 -- internal config, never serialized to API responses
+	APIKey     string // #nosec G101 -- internal config, never serialized to API responses
 	BaseURL    string
 	HTTPClient HTTPClientProvider // Optional custom HTTP client (e.g., with proxy)
 }
@@ -97,7 +97,7 @@ type EmailConfig struct {
 
 // JWTConfig holds JWT authentication configuration.
 type JWTConfig struct {
-	Secret    string // #nosec G117 -- internal config, never serialized to API responses
+	Secret    string // #nosec G101 -- internal config, never serialized to API responses
 	ExpiresIn time.Duration
 }
 
@@ -116,7 +116,7 @@ type LogConfig struct {
 // AdminConfig holds default admin user configuration.
 type AdminConfig struct {
 	Email    string
-	Password string // #nosec G117 -- internal config, never serialized to API responses
+	Password string // #nosec G101 -- internal config, never serialized to API responses
 	Name     string
 }
 
