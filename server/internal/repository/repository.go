@@ -49,6 +49,50 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 	return r.db.WithContext(ctx).Save(user).Error
 }
 
+// GetAll retrieves all users (for admin).
+func (r *UserRepository) GetAll(ctx context.Context) ([]models.User, error) {
+	var users []models.User
+	if err := r.db.WithContext(ctx).Order("created_at DESC").Find(&users).Error; err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+// Count returns total user count.
+func (r *UserRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&models.User{}).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// CountActiveUsers counts users who have usage logs since a given time.
+func (r *UserRepository) CountActiveUsers(ctx context.Context, since time.Time) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&models.UsageLog{}).
+		Where("created_at >= ?", since).
+		Distinct("user_id").
+		Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// Search finds users matching a query string (email or name).
+func (r *UserRepository) Search(ctx context.Context, query string) ([]models.User, error) {
+	var users []models.User
+	pattern := "%" + query + "%"
+	if err := r.db.WithContext(ctx).
+		Where("email ILIKE ? OR name ILIKE ?", pattern, pattern).
+		Order("created_at DESC").
+		Find(&users).Error; err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
 // APIKeyRepository handles API key data access.
 type APIKeyRepository struct {
 	db *gorm.DB

@@ -24,7 +24,9 @@ import (
 	"llm-router-platform/internal/service/user"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -42,15 +44,20 @@ func run() error {
 	logger, _ := zap.NewProduction()
 	defer func() { _ = logger.Sync() }()
 
-	// Initialize encryption if key is provided
-	if cfg.Encryption.Key != "" {
-		if err := crypto.Initialize(cfg.Encryption.Key); err != nil {
-			logger.Warn("encryption initialization failed, sensitive data will not be encrypted", zap.Error(err))
-		} else {
-			logger.Info("encryption initialized successfully")
-		}
-	} else {
-		logger.Warn("ENCRYPTION_KEY not set, sensitive data will be stored unencrypted")
+	// Initialize encryption — mandatory in production.
+	// Refuse to start without a valid encryption key to prevent
+	// silent plaintext storage of provider API keys.
+	if cfg.Encryption.Key == "" {
+		logger.Fatal("ENCRYPTION_KEY is required — refusing to start without encryption")
+	}
+	if err := crypto.Initialize(cfg.Encryption.Key); err != nil {
+		logger.Fatal("encryption initialization failed", zap.Error(err))
+	}
+	logger.Info("encryption initialized successfully")
+
+	// Enforce minimum JWT secret length
+	if len(cfg.JWT.Secret) < 32 {
+		logger.Fatal("JWT_SECRET must be at least 32 characters")
 	}
 
 	db, err := database.New(&cfg.Database, logger)
@@ -68,7 +75,21 @@ func run() error {
 	_ = db.SeedDefaultAdmin(&cfg.Admin)
 
 	repos := initRepositories(db)
-	services := initServices(repos, cfg, logger)
+
+	// Initialize Redis client for rate limiting
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     cfg.Redis.GetRedisAddr(),
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		logger.Warn("redis connection failed, rate limiting will be disabled", zap.Error(err))
+		redisClient = nil
+	} else {
+		logger.Info("redis connected for rate limiting")
+	}
+
+	services := initServices(repos, cfg, logger, redisClient, db.DB)
 
 	gin.SetMode(cfg.Server.Mode)
 	engine := gin.New()
@@ -100,6 +121,22 @@ func run() error {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	// Periodic data cleanup (runs daily)
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				_, _ = db.CleanupOldHealthHistory(30) // 30-day retention
+				_, _ = db.CleanupOldAlerts(90)        // 90-day retention for resolved alerts
+			case <-quit:
+				return
+			}
+		}
+	}()
+
 	<-quit
 
 	logger.Info("shutting down server")
@@ -147,7 +184,7 @@ func initRepositories(db *database.Database) *Repositories {
 	}
 }
 
-func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger) *routes.Services {
+func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, redisClient *redis.Client, gormDB *gorm.DB) *routes.Services {
 	userService := user.NewService(repos.User, repos.APIKey, logger)
 
 	// Provider registry - clients are created dynamically based on database configuration
@@ -156,6 +193,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger) *
 
 	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, providerRegistry, logger)
 	billingService := billing.NewService(repos.UsageLog, repos.Model, logger)
+	budgetService := billing.NewBudgetService(repos.UsageLog, logger)
 	memoryService := memory.NewService(repos.Memory, nil, logger)
 	proxyService := proxy.NewService(repos.Proxy, logger)
 
@@ -173,12 +211,15 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger) *
 	)
 
 	return &routes.Services{
-		User:     userService,
-		Router:   routerService,
-		Billing:  billingService,
-		Health:   healthService,
-		Memory:   memoryService,
-		Proxy:    proxyService,
-		Provider: providerRegistry,
+		User:          userService,
+		Router:        routerService,
+		Billing:       billingService,
+		BudgetService: budgetService,
+		Health:        healthService,
+		Memory:        memoryService,
+		Proxy:         proxyService,
+		Provider:      providerRegistry,
+		RedisClient:   redisClient,
+		DB:            gormDB, // For health checks
 	}
 }

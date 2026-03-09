@@ -3,7 +3,7 @@ package user
 
 import (
 	"context"
-	"crypto/hmac"
+	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -43,7 +43,7 @@ func NewService(
 func (s *Service) Register(ctx context.Context, email, password, name string) (*models.User, error) {
 	existing, _ := s.userRepo.GetByEmail(ctx, email)
 	if existing != nil {
-		return nil, errors.New("email already registered")
+		return nil, errors.New("registration failed") // generic to prevent user enumeration
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -89,6 +89,101 @@ func (s *Service) GetByID(ctx context.Context, id uuid.UUID) (*models.User, erro
 	return s.userRepo.GetByID(ctx, id)
 }
 
+// ListUsers returns all users (admin only).
+func (s *Service) ListUsers(ctx context.Context) ([]models.User, error) {
+	return s.userRepo.GetAll(ctx)
+}
+
+// SearchUsers searches users by email or name (admin only).
+func (s *Service) SearchUsers(ctx context.Context, query string) ([]models.User, error) {
+	return s.userRepo.Search(ctx, query)
+}
+
+// ToggleUser enables or disables a user account and invalidates tokens (admin only).
+func (s *Service) ToggleUser(ctx context.Context, id uuid.UUID) (*models.User, error) {
+	user, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	user.IsActive = !user.IsActive
+	if !user.IsActive {
+		// When disabling, invalidate all tokens immediately
+		user.TokensInvalidatedAt = time.Now()
+	}
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return nil, err
+	}
+	s.logger.Info("user toggled",
+		zap.String("user_id", id.String()),
+		zap.Bool("is_active", user.IsActive),
+	)
+	return user, nil
+}
+
+// InvalidateTokens forces all existing tokens for a user to be rejected.
+func (s *Service) InvalidateTokens(ctx context.Context, id uuid.UUID) error {
+	user, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	user.TokensInvalidatedAt = time.Now()
+	s.logger.Info("tokens invalidated for user", zap.String("user_id", id.String()))
+	return s.userRepo.Update(ctx, user)
+}
+
+// UpdateRole changes a user's role (admin only).
+func (s *Service) UpdateRole(ctx context.Context, id uuid.UUID, role string) (*models.User, error) {
+	if role != "user" && role != "admin" {
+		return nil, errors.New("invalid role: must be 'user' or 'admin'")
+	}
+	user, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	user.Role = role
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return nil, err
+	}
+	s.logger.Info("user role updated",
+		zap.String("user_id", id.String()),
+		zap.String("role", role),
+	)
+	return user, nil
+}
+
+// CountUsers returns the total number of registered users.
+func (s *Service) CountUsers(ctx context.Context) (int64, error) {
+	return s.userRepo.Count(ctx)
+}
+
+// CountActiveUsers returns users who made API calls since a given time.
+func (s *Service) CountActiveUsers(ctx context.Context, since time.Time) (int64, error) {
+	return s.userRepo.CountActiveUsers(ctx, since)
+}
+
+// UpdateQuota updates a user's quota limits (admin only).
+func (s *Service) UpdateQuota(ctx context.Context, id uuid.UUID, tokenLimit *int64, budgetLimit *float64) (*models.User, error) {
+	user, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if tokenLimit != nil {
+		user.MonthlyTokenLimit = *tokenLimit
+	}
+	if budgetLimit != nil {
+		user.MonthlyBudgetUSD = *budgetLimit
+	}
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return nil, err
+	}
+	s.logger.Info("user quota updated",
+		zap.String("user_id", id.String()),
+		zap.Int64("monthly_token_limit", user.MonthlyTokenLimit),
+		zap.Float64("monthly_budget_usd", user.MonthlyBudgetUSD),
+	)
+	return user, nil
+}
+
 // UpdateProfile updates user profile information.
 func (s *Service) UpdateProfile(ctx context.Context, id uuid.UUID, name string) error {
 	user, err := s.userRepo.GetByID(ctx, id)
@@ -100,7 +195,7 @@ func (s *Service) UpdateProfile(ctx context.Context, id uuid.UUID, name string) 
 	return s.userRepo.Update(ctx, user)
 }
 
-// ChangePassword updates user password.
+// ChangePassword updates user password and invalidates all existing tokens.
 func (s *Service) ChangePassword(ctx context.Context, id uuid.UUID, oldPass, newPass string) error {
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
@@ -117,11 +212,25 @@ func (s *Service) ChangePassword(ctx context.Context, id uuid.UUID, oldPass, new
 	}
 
 	user.PasswordHash = string(hashedPassword)
+	user.TokensInvalidatedAt = time.Now() // revoke all existing tokens
+	s.logger.Info("password changed, tokens invalidated", zap.String("user_id", id.String()))
 	return s.userRepo.Update(ctx, user)
 }
 
+// MaxAPIKeysPerUser is the maximum number of API keys a user can create.
+const MaxAPIKeysPerUser = 20
+
 // CreateAPIKey generates a new API key for a user.
 func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, name string) (*models.APIKey, string, error) {
+	// Enforce max API key limit
+	existing, err := s.apiKeyRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(existing) >= MaxAPIKeysPerUser {
+		return nil, "", errors.New("maximum number of API keys reached")
+	}
+
 	rawKey := generateAPIKey()
 	hashedKey := hashAPIKey(rawKey)
 
@@ -218,10 +327,16 @@ func (s *Service) GetAPIKeyByID(ctx context.Context, id uuid.UUID) (*models.APIK
 	return s.apiKeyRepo.GetByID(ctx, id)
 }
 
-// generateAPIKey creates a new random API key.
+// generateAPIKey creates a new cryptographically random API key.
+// Uses crypto/rand for 256-bit entropy (32 bytes hex-encoded).
 func generateAPIKey() string {
-	id := uuid.New().String()
-	return "llm_" + strings.ReplaceAll(id, "-", "")
+	b := make([]byte, 32) // 256-bit
+	if _, err := cryptorand.Read(b); err != nil {
+		// Fallback to UUID if crypto/rand fails (should never happen)
+		id := uuid.New().String()
+		return "llm_" + strings.ReplaceAll(id, "-", "")
+	}
+	return "llm_" + hex.EncodeToString(b)
 }
 
 // hashAPIKey creates a deterministic keyed hash of the API key for storage and lookup.
@@ -238,8 +353,6 @@ func hashAPIKey(key string) string {
 		return hex.EncodeToString(hash[:])
 	}
 
-	// Use HMAC-SHA256 with the encryption key as salt
-	h := hmac.New(sha256.New, crypto.GetEncryptionKey())
-	h.Write([]byte(key))
-	return hex.EncodeToString(h.Sum(nil))
+	// Use HMAC-SHA256 via crypto package (key stays internal)
+	return hex.EncodeToString(crypto.HMACHash([]byte(key)))
 }

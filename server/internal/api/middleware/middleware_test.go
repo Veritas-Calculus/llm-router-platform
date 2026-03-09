@@ -53,7 +53,7 @@ func TestCORSMiddlewareAllowsMethods(t *testing.T) {
 
 func TestRateLimiterCreation(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
-	limiter := NewRateLimiter(100, logger)
+	limiter := NewRateLimiter(100, nil, logger)
 
 	assert.NotNil(t, limiter)
 }
@@ -171,7 +171,7 @@ func TestCORSWithSpecificOrigin(t *testing.T) {
 
 func TestRateLimiterMiddleware(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
-	limiter := NewRateLimiter(100, logger)
+	limiter := NewRateLimiter(100, nil, logger)
 
 	router := gin.New()
 	router.Use(limiter.Limit())

@@ -11,6 +11,7 @@ import (
 	"llm-router-platform/internal/service/health"
 	"llm-router-platform/internal/service/proxy"
 	"llm-router-platform/internal/service/router"
+	"llm-router-platform/internal/service/user"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -19,19 +20,21 @@ import (
 
 // DashboardHandler handles dashboard endpoints.
 type DashboardHandler struct {
-	billing *billing.Service
-	health  *health.Service
-	router  *router.Router
-	logger  *zap.Logger
+	billing     *billing.Service
+	health      *health.Service
+	router      *router.Router
+	userService *user.Service
+	logger      *zap.Logger
 }
 
 // NewDashboardHandler creates a new dashboard handler.
-func NewDashboardHandler(billing *billing.Service, health *health.Service, routerSvc *router.Router, logger *zap.Logger) *DashboardHandler {
+func NewDashboardHandler(billing *billing.Service, health *health.Service, routerSvc *router.Router, userService *user.Service, logger *zap.Logger) *DashboardHandler {
 	return &DashboardHandler{
-		billing: billing,
-		health:  health,
-		router:  routerSvc,
-		logger:  logger,
+		billing:     billing,
+		health:      health,
+		router:      routerSvc,
+		userService: userService,
+		logger:      logger,
 	}
 }
 
@@ -67,103 +70,137 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 	})
 }
 
-// GetOverview returns system overview.
+// GetOverview returns overview stats, role-aware.
+// Admin: system-wide stats. User: personal stats.
 func (h *DashboardHandler) GetOverview(c *gin.Context) {
-	// Verify user is authenticated (but we show system-wide stats)
-	_, exists := c.Get("user_id")
+	userIDStr, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	// Get system-wide usage stats for this month
+	role, _ := c.Get("role")
+	isAdmin := role == "admin"
+
 	now := time.Now()
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
-	monthlySummary, err := h.billing.GetSystemUsageSummary(c.Request.Context(), monthStart, now)
-	if err != nil {
-		h.logger.Error("failed to get monthly usage", zap.Error(err))
-		monthlySummary = &billing.UsageSummary{}
-	}
+	var monthlySummary, todaySummary *billing.UsageSummary
+	var err error
 
-	todaySummary, err := h.billing.GetSystemUsageSummary(c.Request.Context(), todayStart, now)
-	if err != nil {
-		h.logger.Error("failed to get today usage", zap.Error(err))
-		todaySummary = &billing.UsageSummary{}
-	}
+	if isAdmin {
+		// Admin sees system-wide stats
+		monthlySummary, err = h.billing.GetSystemUsageSummary(c.Request.Context(), monthStart, now)
+		if err != nil {
+			h.logger.Error("failed to get monthly usage", zap.Error(err))
+			monthlySummary = &billing.UsageSummary{}
+		}
 
-	apiKeyHealth, err := h.health.GetAPIKeysHealth(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+		todaySummary, err = h.billing.GetSystemUsageSummary(c.Request.Context(), todayStart, now)
+		if err != nil {
+			h.logger.Error("failed to get today usage", zap.Error(err))
+			todaySummary = &billing.UsageSummary{}
+		}
+	} else {
+		// Regular user sees their own stats
+		id, _ := uuid.Parse(userIDStr.(string))
+		monthlySummary, err = h.billing.GetUsageSummary(c.Request.Context(), id, monthStart, now)
+		if err != nil {
+			h.logger.Error("failed to get user monthly usage", zap.Error(err))
+			monthlySummary = &billing.UsageSummary{}
+		}
 
-	proxyHealth, err := h.health.GetProxiesHealth(c.Request.Context())
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	healthyAPIKeys := 0
-	for _, k := range apiKeyHealth {
-		if k.IsHealthy {
-			healthyAPIKeys++
+		todaySummary, err = h.billing.GetUsageSummary(c.Request.Context(), id, todayStart, now)
+		if err != nil {
+			h.logger.Error("failed to get user today usage", zap.Error(err))
+			todaySummary = &billing.UsageSummary{}
 		}
 	}
 
-	healthyProxies := 0
-	for _, p := range proxyHealth {
-		if p.IsHealthy {
-			healthyProxies++
-		}
-	}
-
-	// Count active providers from database
-	activeProviders := 0
-	if providers, err := h.router.GetAllProviders(c.Request.Context()); err == nil {
-		for _, p := range providers {
-			if p.IsActive {
-				activeProviders++
-			}
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{
+	result := gin.H{
 		"total_requests":     monthlySummary.TotalRequests,
 		"success_rate":       monthlySummary.SuccessRate,
 		"total_tokens":       monthlySummary.TotalTokens,
 		"total_cost":         monthlySummary.TotalCost,
 		"average_latency_ms": monthlySummary.AvgLatency,
-		"active_users":       1,
-		"active_providers":   activeProviders,
-		"active_proxies":     healthyProxies,
 		"requests_today":     todaySummary.TotalRequests,
 		"cost_today":         todaySummary.TotalCost,
 		"tokens_today":       todaySummary.TotalTokens,
 		"error_count":        monthlySummary.ErrorCount,
-		"api_keys": gin.H{
-			"total":   len(apiKeyHealth),
-			"healthy": healthyAPIKeys,
-		},
-		"proxies": gin.H{
-			"total":   len(proxyHealth),
-			"healthy": healthyProxies,
-		},
-	})
+	}
+
+	// Admin gets extra system info
+	if isAdmin {
+		apiKeyHealth, err := h.health.GetAPIKeysHealth(c.Request.Context())
+		if err != nil {
+			h.logger.Error("failed to get api key health", zap.Error(err))
+		}
+
+		proxyHealth, err := h.health.GetProxiesHealth(c.Request.Context())
+		if err != nil {
+			h.logger.Error("failed to get proxy health", zap.Error(err))
+		}
+
+		healthyAPIKeys := 0
+		for _, k := range apiKeyHealth {
+			if k.IsHealthy {
+				healthyAPIKeys++
+			}
+		}
+
+		healthyProxies := 0
+		for _, p := range proxyHealth {
+			if p.IsHealthy {
+				healthyProxies++
+			}
+		}
+
+		activeProviders := 0
+		if providers, err := h.router.GetAllProviders(c.Request.Context()); err == nil {
+			for _, p := range providers {
+				if p.IsActive {
+					activeProviders++
+				}
+			}
+		}
+
+		// Real active users count
+		activeUsers, _ := h.userService.CountActiveUsers(c.Request.Context(), todayStart)
+		totalUsers, _ := h.userService.CountUsers(c.Request.Context())
+
+		result["active_users"] = activeUsers
+		result["total_users"] = totalUsers
+		result["active_providers"] = activeProviders
+		result["active_proxies"] = healthyProxies
+		result["api_keys"] = gin.H{"total": len(apiKeyHealth), "healthy": healthyAPIKeys}
+		result["proxies"] = gin.H{"total": len(proxyHealth), "healthy": healthyProxies}
+	}
+
+	c.JSON(http.StatusOK, result)
 }
 
 // GetUsageChart returns usage chart data for the last 7 days.
+// Admin: system-wide. User: personal.
 func (h *DashboardHandler) GetUsageChart(c *gin.Context) {
-	// Verify user is authenticated (but we show system-wide stats)
-	_, exists := c.Get("user_id")
+	userIDStr, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	// Get system-wide daily usage for last 7 days
-	dailyUsage, err := h.billing.GetSystemDailyUsage(c.Request.Context(), 7)
+	role, _ := c.Get("role")
+	isAdmin := role == "admin"
+
+	var dailyUsage []billing.DailyUsage
+	var err error
+
+	if isAdmin {
+		dailyUsage, err = h.billing.GetSystemDailyUsage(c.Request.Context(), 7)
+	} else {
+		id, _ := uuid.Parse(userIDStr.(string))
+		dailyUsage, err = h.billing.GetDailyUsage(c.Request.Context(), id, 7)
+	}
 	if err != nil {
 		h.logger.Error("failed to get daily usage", zap.Error(err))
 	}
@@ -202,24 +239,33 @@ func (h *DashboardHandler) GetUsageChart(c *gin.Context) {
 }
 
 // GetProviderStats returns statistics for each provider.
+// Admin: system-wide. User: personal.
 func (h *DashboardHandler) GetProviderStats(c *gin.Context) {
-	// Verify user is authenticated (but we show system-wide stats)
-	_, exists := c.Get("user_id")
+	userIDStr, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	// Get system-wide usage by provider for the last 30 days
+	role, _ := c.Get("role")
+	isAdmin := role == "admin"
+
 	now := time.Now()
 	startTime := now.AddDate(0, 0, -30)
 
-	providerUsage, err := h.billing.GetSystemUsageByProvider(c.Request.Context(), startTime, now)
+	var providerUsage []billing.ProviderUsage
+	var err error
+
+	if isAdmin {
+		providerUsage, err = h.billing.GetSystemUsageByProvider(c.Request.Context(), startTime, now)
+	} else {
+		id, _ := uuid.Parse(userIDStr.(string))
+		providerUsage, err = h.billing.GetUsageByProvider(c.Request.Context(), id, startTime, now)
+	}
 	if err != nil {
 		h.logger.Error("failed to get provider usage", zap.Error(err))
 	}
 
-	// Build stats with provider names from router
 	var stats []gin.H
 	for _, usage := range providerUsage {
 		providerName := "Unknown"
@@ -238,8 +284,7 @@ func (h *DashboardHandler) GetProviderStats(c *gin.Context) {
 		})
 	}
 
-	// If no usage data, get all providers
-	if len(stats) == 0 {
+	if len(stats) == 0 && isAdmin {
 		providers, err := h.router.GetAllProviders(c.Request.Context())
 		if err == nil {
 			for _, provider := range providers {
@@ -262,26 +307,35 @@ func (h *DashboardHandler) GetProviderStats(c *gin.Context) {
 }
 
 // GetModelStats returns statistics for each model.
+// Admin: system-wide. User: personal.
 func (h *DashboardHandler) GetModelStats(c *gin.Context) {
-	// Verify user is authenticated (but we show system-wide stats)
-	_, exists := c.Get("user_id")
+	userIDStr, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
 
-	// Get system-wide usage by model for the last 30 days
+	role, _ := c.Get("role")
+	isAdmin := role == "admin"
+
 	now := time.Now()
 	startTime := now.AddDate(0, 0, -30)
 
-	modelUsage, err := h.billing.GetSystemUsageByModel(c.Request.Context(), startTime, now)
+	var modelUsage []billing.ModelUsage
+	var err error
+
+	if isAdmin {
+		modelUsage, err = h.billing.GetSystemUsageByModel(c.Request.Context(), startTime, now)
+	} else {
+		id, _ := uuid.Parse(userIDStr.(string))
+		modelUsage, err = h.billing.GetUsageByModel(c.Request.Context(), id, startTime, now)
+	}
 	if err != nil {
 		h.logger.Error("failed to get model usage", zap.Error(err))
 		c.JSON(http.StatusOK, gin.H{"data": []gin.H{}})
 		return
 	}
 
-	// Build stats using model name directly from usage data
 	var stats []gin.H
 	for _, usage := range modelUsage {
 		modelName := usage.ModelName

@@ -64,6 +64,36 @@ func NewChatHandler(r *router.Router, b *billing.Service, m *memory.Service, log
 	}
 }
 
+// checkUserQuota verifies the user hasn't exceeded their monthly quota.
+// Returns nil if within quota, or an error message if exceeded.
+func (h *ChatHandler) checkUserQuota(c *gin.Context, userObj *models.User) *string {
+	// Skip quota check if no limits set (0 = unlimited)
+	if userObj.MonthlyTokenLimit == 0 && userObj.MonthlyBudgetUSD == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+
+	summary, err := h.billing.GetUsageSummary(c.Request.Context(), userObj.ID, monthStart, now)
+	if err != nil {
+		h.logger.Error("quota check failed", zap.Error(err))
+		return nil // fail open — don't block on error
+	}
+
+	if userObj.MonthlyTokenLimit > 0 && summary.TotalTokens >= userObj.MonthlyTokenLimit {
+		msg := "monthly token quota exceeded"
+		return &msg
+	}
+
+	if userObj.MonthlyBudgetUSD > 0 && summary.TotalCost >= userObj.MonthlyBudgetUSD {
+		msg := "monthly budget quota exceeded"
+		return &msg
+	}
+
+	return nil
+}
+
 // ChatCompletionRequest represents a chat completion request.
 type ChatCompletionRequest struct {
 	Model          string           `json:"model" binding:"required"`
@@ -111,6 +141,18 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	userObj := c.MustGet("user").(*models.User)
 	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	// Check user quota before processing
+	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error": gin.H{
+				"message": *quotaErr,
+				"type":    "quota_exceeded",
+				"code":    "quota_exceeded",
+			},
+		})
+		return
+	}
 
 	// Handle streaming requests
 	if req.Stream {
