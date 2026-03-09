@@ -3,11 +3,14 @@ package billing
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"time"
 
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -16,6 +19,7 @@ import (
 type Service struct {
 	usageRepo *repository.UsageLogRepository
 	modelRepo *repository.ModelRepository
+	redis     *redis.Client
 	logger    *zap.Logger
 }
 
@@ -23,11 +27,13 @@ type Service struct {
 func NewService(
 	usageRepo *repository.UsageLogRepository,
 	modelRepo *repository.ModelRepository,
+	redisClient *redis.Client,
 	logger *zap.Logger,
 ) *Service {
 	return &Service{
 		usageRepo: usageRepo,
 		modelRepo: modelRepo,
+		redis:     redisClient,
 		logger:    logger,
 	}
 }
@@ -41,7 +47,23 @@ func (s *Service) RecordUsage(ctx context.Context, log *models.UsageLog) error {
 		}
 	}
 
-	return s.usageRepo.Create(ctx, log)
+	err := s.usageRepo.Create(ctx, log)
+
+	// Refresh redis cache asynchronously
+	if s.redis != nil && err == nil {
+		now := time.Now()
+		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
+		key := fmt.Sprintf("billing:usage:%s:%s", log.UserID.String(), monthStr)
+
+		pipe := s.redis.Pipeline()
+		pipe.HIncrBy(ctx, key, "total_requests", 1)
+		pipe.HIncrBy(ctx, key, "total_tokens", int64(log.TotalTokens))
+		pipe.HIncrByFloat(ctx, key, "total_cost", log.Cost)
+		pipe.Expire(ctx, key, 32*24*time.Hour)
+		_, _ = pipe.Exec(ctx)
+	}
+
+	return err
 }
 
 // calculateCost calculates the cost for token usage.
@@ -63,12 +85,47 @@ type UsageSummary struct {
 
 // GetUsageSummary returns aggregated usage for a user.
 func (s *Service) GetUsageSummary(ctx context.Context, userID uuid.UUID, startTime, endTime time.Time) (*UsageSummary, error) {
+	now := time.Now()
+	isCurrentMonth := startTime.Year() == now.Year() && startTime.Month() == now.Month()
+
+	if s.redis != nil && isCurrentMonth {
+		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
+		key := fmt.Sprintf("billing:usage:%s:%s", userID.String(), monthStr)
+
+		res, err := s.redis.HGetAll(ctx, key).Result()
+		if err == nil && len(res) > 0 {
+			reqs, _ := strconv.ParseInt(res["total_requests"], 10, 64)
+			tokens, _ := strconv.ParseInt(res["total_tokens"], 10, 64)
+			cost, _ := strconv.ParseFloat(res["total_cost"], 64)
+
+			return &UsageSummary{
+				TotalRequests: reqs,
+				TotalTokens:   tokens,
+				TotalCost:     cost,
+			}, nil
+		}
+	}
+
 	logs, err := s.usageRepo.GetByUserIDAndTimeRange(ctx, userID, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.aggregateLogs(logs), nil
+	summary := s.aggregateLogs(logs)
+
+	if s.redis != nil && isCurrentMonth {
+		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
+		key := fmt.Sprintf("billing:usage:%s:%s", userID.String(), monthStr)
+
+		pipe := s.redis.Pipeline()
+		pipe.HSet(ctx, key, "total_requests", summary.TotalRequests)
+		pipe.HSet(ctx, key, "total_tokens", summary.TotalTokens)
+		pipe.HSet(ctx, key, "total_cost", summary.TotalCost)
+		pipe.Expire(ctx, key, 32*24*time.Hour)
+		_, _ = pipe.Exec(ctx)
+	}
+
+	return summary, nil
 }
 
 // GetSystemUsageSummary returns aggregated usage for all users (system-wide).

@@ -209,7 +209,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	providerRegistry := provider.NewRegistry(logger)
 
 	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, providerRegistry, logger)
-	billingService := billing.NewService(repos.UsageLog, repos.Model, logger)
+	billingService := billing.NewService(repos.UsageLog, repos.Model, redisClient, logger)
 	budgetService := billing.NewBudgetService(repos.UsageLog, logger)
 	memoryService := memory.NewService(repos.Memory, nil, logger)
 	proxyService := proxy.NewService(repos.Proxy, logger)
