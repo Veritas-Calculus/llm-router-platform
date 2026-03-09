@@ -363,3 +363,53 @@ export const proxiesApi = {
       results: Array<{ id: string; url: string; is_healthy: boolean; latency_ms: number; error?: string }>;
     }>('/proxies/test-all'),
 };
+
+// ── Admin: User Management ──────────────────────────────────
+
+export interface UserListItem {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  is_active: boolean;
+  last_login_at: string;
+  created_at: string;
+  api_key_count: number;
+}
+
+export interface UserDetail {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+  api_keys: number;
+  monthly_token_limit: number;
+  monthly_budget_usd: number;
+  usage_month: {
+    total_requests: number;
+    total_tokens: number;
+    total_cost: number;
+    avg_latency: number;
+    success_rate: number;
+    error_count: number;
+  };
+}
+
+export const usersApi = {
+  list: (q?: string) =>
+    api.get<{ data: UserListItem[]; total: number }>(`/users${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  getById: (id: string) => api.get<UserDetail>(`/users/${id}`),
+  getUsage: (id: string, days?: number) =>
+    api.get<{ data: DailyStats[] }>(`/users/${id}/usage?days=${days || 30}`),
+  getApiKeys: (id: string) =>
+    api.get<{ data: ApiKey[] }>(`/users/${id}/api-keys`),
+  toggle: (id: string) =>
+    api.post<{ id: string; email: string; name: string; role: string; is_active: boolean }>(`/users/${id}/toggle`),
+  updateRole: (id: string, role: string) =>
+    api.put<{ id: string; email: string; name: string; role: string }>(`/users/${id}/role`, { role }),
+  updateQuota: (id: string, data: { monthly_token_limit?: number; monthly_budget_usd?: number }) =>
+    api.put(`/users/${id}/quota`, data),
+};
+

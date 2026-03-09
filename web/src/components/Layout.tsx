@@ -11,13 +11,23 @@ import {
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   DocumentTextIcon,
+  UsersIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/stores/authStore';
 
-const navigation = [
+const userNavigation = [
   { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
   { name: 'Usage', href: '/usage', icon: ChartBarIcon },
   { name: 'API Keys', href: '/api-keys', icon: KeyIcon },
+  { name: 'Docs', href: '/docs', icon: DocumentTextIcon },
+];
+
+const adminNavigation = [
+  { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
+  { name: 'Usage', href: '/usage', icon: ChartBarIcon },
+  { name: 'API Keys', href: '/api-keys', icon: KeyIcon },
+  // Admin-only sections
+  { name: 'Users', href: '/users', icon: UsersIcon },
   { name: 'Health', href: '/health', icon: HeartIcon },
   { name: 'Providers', href: '/providers', icon: ServerStackIcon },
   { name: 'Proxies', href: '/proxies', icon: GlobeAltIcon },
@@ -27,7 +37,9 @@ const navigation = [
 
 function Layout() {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
+  const { user, isAdmin, logout } = useAuthStore();
+
+  const navigation = isAdmin ? adminNavigation : userNavigation;
 
   const handleLogout = () => {
     logout();
@@ -63,14 +75,19 @@ function Layout() {
 
         <div className="p-4 border-t border-apple-gray-200">
           <div className="flex items-center gap-3 px-4 py-2 mb-2">
-            <div className="w-8 h-8 bg-apple-blue rounded-full flex items-center justify-center">
+            <div className={clsx(
+              "w-8 h-8 rounded-full flex items-center justify-center",
+              isAdmin ? "bg-amber-500" : "bg-apple-blue"
+            )}>
               <span className="text-white text-sm font-medium">
                 {user?.name?.charAt(0).toUpperCase() || 'U'}
               </span>
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-apple-gray-900 truncate">{user?.name}</p>
-              <p className="text-xs text-apple-gray-500 truncate">{user?.email}</p>
+              <p className="text-xs text-apple-gray-500 truncate">
+                {isAdmin ? 'Admin' : 'User'} · {user?.email}
+              </p>
             </div>
           </div>
           <button
