@@ -3,6 +3,7 @@ package routes
 
 import (
 	"context"
+	"database/sql"
 	"net/http/pprof"
 	"time"
 
@@ -171,9 +172,16 @@ func Setup(
 	// Swagger API Docs
 	engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// ─── Auth middleware (needed early for pprof protection) ──────────
+	// ─── Auth & Rate Limiter middleware ───────────────────────────────
 	authMiddleware := middleware.NewAuthMiddleware(&cfg.JWT, services.User, logger)
 	rateLimiter := middleware.NewRateLimiter(cfg.RateLimit.RequestsPerMinute, services.RedisClient, logger)
+
+	// ─── Backpressure middleware ──────────────────────────────────────
+	var sqlDB *sql.DB
+	if services.DB != nil {
+		sqlDB, _ = services.DB.DB()
+	}
+	backpressureLimiter := middleware.NewBackpressure(sqlDB, logger)
 
 	// pprof debug endpoints (only enabled in debug mode, requires admin auth)
 	if cfg.Server.Mode == "debug" {
@@ -355,6 +363,7 @@ func Setup(
 			chat := v1.Group("/chat")
 			chat.Use(authMiddleware.APIKey())
 			chat.Use(rateLimiter.Limit())
+			chat.Use(backpressureLimiter.Protect())
 			{
 				chat.POST("/completions", chatHandler.ChatCompletion)
 			}
@@ -362,6 +371,7 @@ func Setup(
 			embeddings := v1.Group("/embeddings")
 			embeddings.Use(authMiddleware.APIKey())
 			embeddings.Use(rateLimiter.Limit())
+			embeddings.Use(backpressureLimiter.Protect())
 			{
 				embeddings.POST("", chatHandler.Embeddings)
 			}
@@ -369,6 +379,7 @@ func Setup(
 			images := v1.Group("/images")
 			images.Use(authMiddleware.APIKey())
 			images.Use(rateLimiter.Limit())
+			images.Use(backpressureLimiter.Protect())
 			{
 				images.POST("/generations", chatHandler.GenerateImage)
 			}
@@ -376,6 +387,7 @@ func Setup(
 			audio := v1.Group("/audio")
 			audio.Use(authMiddleware.APIKey())
 			audio.Use(rateLimiter.Limit())
+			audio.Use(backpressureLimiter.Protect())
 			{
 				audio.POST("/transcriptions", chatHandler.TranscribeAudio)
 			}
