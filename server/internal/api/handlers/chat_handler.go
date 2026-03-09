@@ -100,12 +100,13 @@ func (h *ChatHandler) checkUserQuota(c *gin.Context, userObj *models.User) *stri
 
 // ChatCompletionRequest represents a chat completion request.
 type ChatCompletionRequest struct {
-	Model          string           `json:"model" binding:"required"`
-	Messages       []MessageRequest `json:"messages" binding:"required"`
-	MaxTokens      int              `json:"max_tokens,omitempty"`
-	Temperature    float64          `json:"temperature,omitempty"`
-	Stream         bool             `json:"stream,omitempty"`
-	ConversationID string           `json:"conversation_id,omitempty"`
+	Model              string           `json:"model" binding:"required"`
+	Messages           []MessageRequest `json:"messages" binding:"required"`
+	MaxTokens          int              `json:"max_tokens,omitempty"`
+	Temperature        float64          `json:"temperature,omitempty"`
+	Stream             bool             `json:"stream,omitempty"`
+	ConversationID     string           `json:"conversation_id,omitempty"`
+	ResumeFromStreamID string           `json:"resume_from_stream_id,omitempty"` // For resuming broken streams
 }
 
 // MessageRequest represents a message in the request.
@@ -166,6 +167,13 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 	messages = append(messages, historyMessages...)
 	for _, m := range req.Messages {
 		messages = append(messages, provider.Message{Role: m.Role, Content: m.Content})
+	}
+
+	// Stream Resume Injection: When upstream crashes, the client can pass a resume pointer containing the last incomplete string.
+	// We inject a system directive to guide the model to seamlessly continue.
+	if req.ResumeFromStreamID != "" {
+		resumeContext := "System Protocol: The previous generation was interrupted due to a network or upstream error. Please continue writing seamlessly from exactly where you left off. Do not repeat anything that was already written. End of System Protocol."
+		messages = append(messages, provider.Message{Role: "system", Content: resumeContext})
 	}
 
 	providerReq := &provider.ChatRequest{
