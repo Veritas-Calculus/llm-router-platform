@@ -111,6 +111,14 @@ func (m *AuthMiddleware) JWT() gin.HandlerFunc {
 			return
 		}
 
+		if userObj.RequirePasswordChange {
+			path := c.Request.URL.Path
+			if path != "/api/v1/auth/change-password" && path != "/api/v1/auth/logout" && path != "/api/v1/auth/me" {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "password_change_required"})
+				return
+			}
+		}
+
 		// Check if token was issued before a forced invalidation
 		// (password change, admin force-logout, etc.)
 		if !userObj.TokensInvalidatedAt.IsZero() {

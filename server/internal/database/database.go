@@ -228,11 +228,12 @@ func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
 	}
 
 	admin := &models.User{
-		Email:        cfg.Email,
-		PasswordHash: string(hashedPassword),
-		Name:         cfg.Name,
-		Role:         "admin",
-		IsActive:     true,
+		Email:                 cfg.Email,
+		PasswordHash:          string(hashedPassword),
+		Name:                  cfg.Name,
+		Role:                  "admin",
+		IsActive:              true,
+		RequirePasswordChange: true,
 	}
 
 	if err := d.DB.Create(admin).Error; err != nil {

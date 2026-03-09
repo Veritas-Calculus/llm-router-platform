@@ -212,6 +212,7 @@ func (s *Service) ChangePassword(ctx context.Context, id uuid.UUID, oldPass, new
 	}
 
 	user.PasswordHash = string(hashedPassword)
+	user.RequirePasswordChange = false
 	user.TokensInvalidatedAt = time.Now() // revoke all existing tokens
 	s.logger.Info("password changed, tokens invalidated", zap.String("user_id", id.String()))
 	return s.userRepo.Update(ctx, user)

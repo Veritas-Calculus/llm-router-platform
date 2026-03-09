@@ -19,16 +19,17 @@ type BaseModel struct {
 // User represents a platform user.
 type User struct {
 	BaseModel
-	Email               string    `gorm:"uniqueIndex;not null" json:"email"`
-	PasswordHash        string    `gorm:"not null" json:"-"`
-	Name                string    `json:"name"`
-	Role                string    `gorm:"default:user" json:"role"`
-	IsActive            bool      `gorm:"default:true" json:"is_active"`
-	APIKeys             []APIKey  `gorm:"foreignKey:UserID" json:"-"`
-	LastLoginAt         time.Time `json:"last_login_at"`
-	MonthlyTokenLimit   int64     `gorm:"default:0" json:"monthly_token_limit"` // 0 = unlimited
-	MonthlyBudgetUSD    float64   `gorm:"default:0" json:"monthly_budget_usd"`  // 0 = unlimited
-	TokensInvalidatedAt time.Time `json:"-"`                                    // tokens issued before this time are rejected
+	Email                 string    `gorm:"uniqueIndex;not null" json:"email"`
+	PasswordHash          string    `gorm:"not null" json:"-"`
+	Name                  string    `json:"name"`
+	Role                  string    `gorm:"default:user" json:"role"`
+	IsActive              bool      `gorm:"default:true" json:"is_active"`
+	RequirePasswordChange bool      `gorm:"default:false" json:"require_password_change"`
+	APIKeys               []APIKey  `gorm:"foreignKey:UserID" json:"-"`
+	LastLoginAt           time.Time `json:"last_login_at"`
+	MonthlyTokenLimit     int64     `gorm:"default:0" json:"monthly_token_limit"` // 0 = unlimited
+	MonthlyBudgetUSD      float64   `gorm:"default:0" json:"monthly_budget_usd"`  // 0 = unlimited
+	TokensInvalidatedAt   time.Time `json:"-"`                                    // tokens issued before this time are rejected
 }
 
 // APIKey represents an API key for authentication.
