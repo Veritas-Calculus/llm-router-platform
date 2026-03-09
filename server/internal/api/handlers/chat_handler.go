@@ -146,9 +146,26 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		return
 	}
 
-	messages := make([]provider.Message, len(req.Messages))
-	for i, m := range req.Messages {
-		messages[i] = provider.Message{Role: m.Role, Content: m.Content}
+	userObj := c.MustGet("user").(*models.User)
+	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	// Fetch conversation history if provided
+	var historyMessages []provider.Message
+	if req.ConversationID != "" && h.memory != nil {
+		history, err := h.memory.GetConversationWithLimit(c.Request.Context(), userObj.ID, req.ConversationID, 20)
+		if err == nil {
+			for _, hm := range history {
+				historyMessages = append(historyMessages, provider.Message{Role: hm.Role, Content: hm.Content})
+			}
+		} else {
+			h.logger.Warn("failed to fetch conversation memory", zap.Error(err), zap.String("conversation_id", req.ConversationID))
+		}
+	}
+
+	messages := make([]provider.Message, 0, len(historyMessages)+len(req.Messages))
+	messages = append(messages, historyMessages...)
+	for _, m := range req.Messages {
+		messages = append(messages, provider.Message{Role: m.Role, Content: m.Content})
 	}
 
 	providerReq := &provider.ChatRequest{
@@ -158,9 +175,6 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		Temperature: req.Temperature,
 		Stream:      req.Stream,
 	}
-
-	userObj := c.MustGet("user").(*models.User)
-	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 
 	// Observability: Start Trace
 	reqID := c.GetHeader("X-Request-ID")
@@ -195,7 +209,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client creation failed"})
 			return
 		}
-		h.handleStreamingChat(c, client, providerReq, selectedProvider, userObj, userAPIKey, start, trace)
+		h.handleStreamingChat(c, client, providerReq, selectedProvider, userObj, userAPIKey, start, trace, req.ConversationID, req.Messages)
 		return
 	}
 
@@ -230,6 +244,13 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 				outText = resp.Choices[0].Message.Content
 			}
 			gen.End(outText, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+
+			if req.ConversationID != "" && h.memory != nil {
+				for _, m := range req.Messages {
+					_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, m.Role, m.Content, 0)
+				}
+				_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, "assistant", outText, resp.Usage.CompletionTokens)
+			}
 		}
 	} else {
 		// For providers that require API keys, retry with different keys on failure
@@ -281,6 +302,12 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			}
 			if resp != nil {
 				gen.End(outText, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+				if req.ConversationID != "" && h.memory != nil {
+					for _, m := range req.Messages {
+						_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, m.Role, m.Content, 0)
+					}
+					_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, "assistant", outText, resp.Usage.CompletionTokens)
+				}
 			}
 			h.router.ClearKeyFailure(currentAPIKey.ID)
 			break
@@ -836,7 +863,7 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 }
 
 // handleStreamingChat handles streaming chat completion requests.
-func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client, req *provider.ChatRequest, selectedProvider *models.Provider, userObj *models.User, userAPIKey *models.APIKey, start time.Time, trace observability.Trace) {
+func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client, req *provider.ChatRequest, selectedProvider *models.Provider, userObj *models.User, userAPIKey *models.APIKey, start time.Time, trace observability.Trace, conversationID string, originalMessages []MessageRequest) {
 	gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, "Provider: "+selectedProvider.Name, req.Model, map[string]interface{}{
 		"temperature": req.Temperature,
 		"max_tokens":  req.MaxTokens,
@@ -900,6 +927,14 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client
 	// By default, if the stream hasn't produced token usage, they are passed as 0 and Langfuse tokenizer calculates them.
 	// If the provider supports `include_usage`, we now accurately bill based on these values.
 	gen.End(fullText, promptTokens, completionTokens)
+
+	if conversationID != "" && h.memory != nil {
+		for _, m := range originalMessages {
+			_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, conversationID, m.Role, m.Content, 0)
+		}
+		_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, conversationID, "assistant", fullText, completionTokens)
+	}
+
 	latency := time.Since(start)
 	usageLog := &models.UsageLog{
 		UserID:         userObj.ID,
