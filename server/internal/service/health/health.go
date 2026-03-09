@@ -96,6 +96,8 @@ func (s *Service) createProviderClient(name string, cfg *config.ProviderConfig) 
 		return provider.NewOllamaClient(cfg, s.logger), nil
 	case "lmstudio":
 		return provider.NewLMStudioClient(cfg, s.logger), nil
+	case "vllm":
+		return provider.NewOpenAIClient(cfg, s.logger), nil
 	default:
 		// Default to OpenAI-compatible client
 		return provider.NewOpenAIClient(cfg, s.logger), nil
@@ -604,7 +606,7 @@ func (s *Service) checkWithProxy(ctx context.Context, p *models.Provider, apiKey
 	// Determine health check endpoint based on provider
 	var healthURL string
 	switch p.Name {
-	case "openai", "lmstudio":
+	case "openai", "lmstudio", "vllm":
 		healthURL = p.BaseURL + "/models"
 	case "ollama":
 		healthURL = p.BaseURL + "/api/tags"
@@ -629,7 +631,7 @@ func (s *Service) checkWithProxy(ctx context.Context, p *models.Provider, apiKey
 
 	// Add authorization headers for providers that need them
 	switch p.Name {
-	case "openai", "lmstudio":
+	case "openai", "lmstudio", "vllm":
 		if decryptedKey != "" {
 			req.Header.Set("Authorization", "Bearer "+decryptedKey)
 		}

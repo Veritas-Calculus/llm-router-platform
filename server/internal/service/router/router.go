@@ -159,7 +159,7 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 			if strings.HasPrefix(modelLower, "claude") {
 				return p
 			}
-		case "ollama", "lmstudio":
+		case "ollama", "lmstudio", "vllm":
 			// Check for common open-source model patterns
 			// These are typically used when no other provider matches
 			if strings.Contains(modelLower, "llama") ||
@@ -528,6 +528,8 @@ func (r *Router) createProviderClient(name string, cfg *config.ProviderConfig) (
 		return provider.NewOllamaClient(cfg, r.logger), nil
 	case "lmstudio":
 		return provider.NewLMStudioClient(cfg, r.logger), nil
+	case "vllm":
+		return provider.NewOpenAIClient(cfg, r.logger), nil
 	default:
 		// Default to OpenAI-compatible client
 		return provider.NewOpenAIClient(cfg, r.logger), nil

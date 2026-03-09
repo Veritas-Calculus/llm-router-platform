@@ -131,6 +131,17 @@ func (d *Database) SeedDefaultProviders() error {
 			UseProxy:       false,
 			RequiresAPIKey: false,
 		},
+		{
+			Name:           "vllm",
+			BaseURL:        "http://host.docker.internal:8000/v1",
+			IsActive:       true,
+			Priority:       5,
+			Weight:         1.0,
+			MaxRetries:     3,
+			Timeout:        60,
+			UseProxy:       false,
+			RequiresAPIKey: false,
+		},
 	}
 
 	for _, provider := range providers {
