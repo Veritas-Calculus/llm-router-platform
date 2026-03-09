@@ -44,9 +44,8 @@ function ConfirmModal({
       >
         <div className="flex items-start gap-4">
           <div
-            className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-              confirmColor === 'red' ? 'bg-red-100' : 'bg-orange-100'
-            }`}
+            className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${confirmColor === 'red' ? 'bg-red-100' : 'bg-orange-100'
+              }`}
           >
             <ExclamationTriangleIcon
               className={`w-6 h-6 ${confirmColor === 'red' ? 'text-apple-red' : 'text-apple-orange'}`}
@@ -81,8 +80,11 @@ function ProvidersPage() {
   const [proxies, setProxies] = useState<Proxy[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newKey, setNewKey] = useState({ api_key: '', alias: '' });
+  const [newKey, setNewKey] = useState({ api_key: '', alias: '', priority: 1, weight: 1.0, rate_limit: 0 });
   const [adding, setAdding] = useState(false);
+  const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
+  const [editKeyData, setEditKeyData] = useState({ priority: 1, weight: 1.0, rate_limit: 0 });
+  const [updatingKey, setUpdatingKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [healthStatus, setHealthStatus] = useState<ProviderHealthStatus | null>(null);
   const [editingEndpoint, setEditingEndpoint] = useState(false);
@@ -228,6 +230,25 @@ function ProvidersPage() {
     }
   };
 
+  const handleToggleRequiresApiKey = async () => {
+    if (!selectedProvider) return;
+
+    try {
+      const updated = await providersApi.update(selectedProvider.id, {
+        requires_api_key: !selectedProvider.requires_api_key,
+      });
+      setProviders((prev) =>
+        prev.map((p) => (p.id === selectedProvider.id ? updated : p))
+      );
+      setSelectedProvider(updated);
+      toast.success(
+        `API Key requirement ${updated.requires_api_key ? 'enabled' : 'disabled'} for ${selectedProvider.name}`
+      );
+    } catch (error) {
+      toast.error('Failed to update API key requirement');
+    }
+  };
+
   const handleSaveEndpoint = async () => {
     if (!selectedProvider || !endpointValue.trim()) {
       toast.error('Please enter a valid endpoint URL');
@@ -271,15 +292,45 @@ function ProvidersPage() {
       const key = await providersApi.createApiKey(selectedProvider.id, {
         api_key: apiKeyValue,
         alias: newKey.alias.trim(),
+        priority: newKey.priority,
+        weight: newKey.weight,
+        rate_limit: newKey.rate_limit,
       });
       setApiKeys((prev) => [...prev, key]);
       setShowAddModal(false);
-      setNewKey({ api_key: '', alias: '' });
+      setNewKey({ api_key: '', alias: '', priority: 1, weight: 1.0, rate_limit: 0 });
       toast.success('API key added');
     } catch (error) {
       toast.error('Failed to add API key');
     } finally {
       setAdding(false);
+    }
+  };
+
+  const startEditingKey = (key: ProviderApiKey) => {
+    setEditingKeyId(key.id);
+    setEditKeyData({
+      priority: key.priority || 1,
+      weight: key.weight || 1.0,
+      rate_limit: key.rate_limit || 0,
+    });
+  };
+
+  const handleUpdateKey = async () => {
+    if (!selectedProvider || !editingKeyId) return;
+
+    setUpdatingKey(true);
+    try {
+      const updated = await providersApi.updateApiKey(selectedProvider.id, editingKeyId, editKeyData);
+      setApiKeys((prev) =>
+        prev.map((k) => (k.id === editingKeyId ? updated : k))
+      );
+      setEditingKeyId(null);
+      toast.success('API key updated');
+    } catch (error) {
+      toast.error('Failed to update API key');
+    } finally {
+      setUpdatingKey(false);
     }
   };
 
@@ -357,21 +408,19 @@ function ProvidersPage() {
               {providers.map((provider) => (
                 <div
                   key={provider.id}
-                  className={`flex items-center justify-between px-4 py-3 rounded-apple transition-colors cursor-pointer ${
-                    selectedProvider?.id === provider.id
-                      ? 'bg-apple-blue text-white'
-                      : 'hover:bg-apple-gray-100 text-apple-gray-900'
-                  }`}
+                  className={`flex items-center justify-between px-4 py-3 rounded-apple transition-colors cursor-pointer ${selectedProvider?.id === provider.id
+                    ? 'bg-apple-blue text-white'
+                    : 'hover:bg-apple-gray-100 text-apple-gray-900'
+                    }`}
                   onClick={() => setSelectedProvider(provider)}
                 >
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{provider.name}</p>
                     <p
-                      className={`text-sm ${
-                        selectedProvider?.id === provider.id
-                          ? 'text-white/80'
-                          : 'text-apple-gray-500'
-                      }`}
+                      className={`text-sm ${selectedProvider?.id === provider.id
+                        ? 'text-white/80'
+                        : 'text-apple-gray-500'
+                        }`}
                     >
                       Priority: {provider.priority}
                     </p>
@@ -381,24 +430,21 @@ function ProvidersPage() {
                       e.stopPropagation();
                       handleToggleProvider(provider);
                     }}
-                    className={`ml-2 p-1 rounded-full transition-colors ${
-                      selectedProvider?.id === provider.id
-                        ? 'hover:bg-white/20'
-                        : 'hover:bg-apple-gray-200'
-                    }`}
+                    className={`ml-2 p-1 rounded-full transition-colors ${selectedProvider?.id === provider.id
+                      ? 'hover:bg-white/20'
+                      : 'hover:bg-apple-gray-200'
+                      }`}
                     title={provider.is_active ? 'Disable provider' : 'Enable provider'}
                   >
                     {provider.is_active ? (
                       <CheckCircleIcon
-                        className={`w-5 h-5 ${
-                          selectedProvider?.id === provider.id ? 'text-white' : 'text-apple-green'
-                        }`}
+                        className={`w-5 h-5 ${selectedProvider?.id === provider.id ? 'text-white' : 'text-apple-green'
+                          }`}
                       />
                     ) : (
                       <XCircleIcon
-                        className={`w-5 h-5 ${
-                          selectedProvider?.id === provider.id ? 'text-white/60' : 'text-apple-gray-400'
-                        }`}
+                        className={`w-5 h-5 ${selectedProvider?.id === provider.id ? 'text-white/60' : 'text-apple-gray-400'
+                          }`}
                       />
                     )}
                   </button>
@@ -467,14 +513,12 @@ function ProvidersPage() {
                     </div>
                     <button
                       onClick={handleToggleProxy}
-                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        selectedProvider.use_proxy ? 'bg-apple-blue' : 'bg-apple-gray-200'
-                      }`}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${selectedProvider.use_proxy ? 'bg-apple-blue' : 'bg-apple-gray-200'
+                        }`}
                     >
                       <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                          selectedProvider.use_proxy ? 'translate-x-5' : 'translate-x-0'
-                        }`}
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${selectedProvider.use_proxy ? 'translate-x-5' : 'translate-x-0'
+                          }`}
                       />
                     </button>
                   </div>
@@ -509,11 +553,10 @@ function ProvidersPage() {
 
                 {healthStatus && (
                   <div
-                    className={`mt-4 p-4 rounded-apple ${
-                      healthStatus.is_healthy
-                        ? 'bg-green-50 border border-apple-green'
-                        : 'bg-red-50 border border-apple-red'
-                    }`}
+                    className={`mt-4 p-4 rounded-apple ${healthStatus.is_healthy
+                      ? 'bg-green-50 border border-apple-green'
+                      : 'bg-red-50 border border-apple-red'
+                      }`}
                   >
                     <div className="flex items-center gap-2">
                       {healthStatus.is_healthy ? (
@@ -522,9 +565,8 @@ function ProvidersPage() {
                         <XCircleIcon className="w-5 h-5 text-apple-red" />
                       )}
                       <span
-                        className={`font-medium ${
-                          healthStatus.is_healthy ? 'text-apple-green' : 'text-apple-red'
-                        }`}
+                        className={`font-medium ${healthStatus.is_healthy ? 'text-apple-green' : 'text-apple-red'
+                          }`}
                       >
                         {healthStatus.is_healthy ? 'Connection Successful' : 'Connection Failed'}
                       </span>
@@ -545,98 +587,154 @@ function ProvidersPage() {
 
               {/* API Keys Card - Only show if provider requires API key */}
               {selectedProvider.requires_api_key && (
-              <div className="card">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h3 className="text-lg font-semibold text-apple-gray-900">API Keys</h3>
-                    <p className="text-sm text-apple-gray-500 mt-1">
-                      Manage API keys for {selectedProvider.name}
-                    </p>
-                  </div>
-                  <button onClick={() => setShowAddModal(true)} className="btn btn-primary">
-                    <PlusIcon className="w-5 h-5 mr-2" />
-                    Add Key
-                  </button>
-                </div>
-
-                {apiKeys.length === 0 ? (
-                  <div className="text-center py-12">
-                    <p className="text-apple-gray-500 mb-4">No API keys for this provider</p>
+                <div className="card">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-lg font-semibold text-apple-gray-900">API Keys</h3>
+                      <p className="text-sm text-apple-gray-500 mt-1">
+                        Manage API keys for {selectedProvider.name}
+                      </p>
+                    </div>
                     <button onClick={() => setShowAddModal(true)} className="btn btn-primary">
-                      Add your first key
+                      <PlusIcon className="w-5 h-5 mr-2" />
+                      Add Key
                     </button>
                   </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-apple-gray-200">
-                      <thead>
-                        <tr>
-                          <th className="table-header">Alias</th>
-                          <th className="table-header">Key</th>
-                          <th className="table-header">Status</th>
-                          <th className="table-header">Usage</th>
-                          <th className="table-header">Last Used</th>
-                          <th className="table-header">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-apple-gray-100">
-                        {apiKeys.map((key) => (
-                          <tr key={key.id} className="hover:bg-apple-gray-50">
-                            <td className="table-cell font-medium">{key.alias}</td>
-                            <td className="table-cell">
-                              <code className="text-sm bg-apple-gray-100 px-2 py-1 rounded">
-                                {key.key_prefix}
-                              </code>
-                            </td>
-                            <td className="table-cell">
-                              <button
-                                onClick={() => handleToggleKey(key)}
-                                className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${
-                                  key.is_active
+
+                  {apiKeys.length === 0 ? (
+                    <div className="text-center py-12">
+                      <p className="text-apple-gray-500 mb-4">No API keys for this provider</p>
+                      <button onClick={() => setShowAddModal(true)} className="btn btn-primary">
+                        Add your first key
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-apple-gray-200">
+                        <thead>
+                          <tr>
+                            <th className="table-header">Alias</th>
+                            <th className="table-header w-48">Config</th>
+                            <th className="table-header">Status</th>
+                            <th className="table-header">Usage</th>
+                            <th className="table-header">Last Used</th>
+                            <th className="table-header text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-apple-gray-100">
+                          {apiKeys.map((key) => (
+                            <tr key={key.id} className="hover:bg-apple-gray-50">
+                              <td className="table-cell">
+                                <span className="font-medium text-apple-gray-900 block">{key.alias}</span>
+                                <code className="text-xs bg-apple-gray-100 px-1 py-0.5 rounded mt-1 inline-block">
+                                  {key.key_prefix}
+                                </code>
+                              </td>
+                              <td className="table-cell">
+                                {editingKeyId === key.id ? (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <label className="text-xs w-16 text-apple-gray-500">Priority</label>
+                                      <input
+                                        type="number" min="1" max="100"
+                                        value={editKeyData.priority}
+                                        onChange={e => setEditKeyData(p => ({ ...p, priority: parseInt(e.target.value) || 1 }))}
+                                        className="input text-xs py-1 px-2 w-20"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <label className="text-xs w-16 text-apple-gray-500">Weight</label>
+                                      <input
+                                        type="number" step="0.1" min="0" max="100"
+                                        value={editKeyData.weight}
+                                        onChange={e => setEditKeyData(p => ({ ...p, weight: parseFloat(e.target.value) || 0 }))}
+                                        className="input text-xs py-1 px-2 w-20"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <label className="text-xs w-16 text-apple-gray-500">Rate Limit</label>
+                                      <input
+                                        type="number" min="0"
+                                        value={editKeyData.rate_limit}
+                                        onChange={e => setEditKeyData(p => ({ ...p, rate_limit: parseInt(e.target.value) || 0 }))}
+                                        className="input text-xs py-1 px-2 w-20"
+                                        placeholder="0 = unltd"
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1 text-xs text-apple-gray-600">
+                                    <div><span className="text-apple-gray-400 w-16 inline-block">Priority:</span> <span className="font-medium">{key.priority || 1}</span></div>
+                                    <div><span className="text-apple-gray-400 w-16 inline-block">Weight:</span> <span className="font-medium">{key.weight || 1.0}</span></div>
+                                    <div><span className="text-apple-gray-400 w-16 inline-block">Rate Limit:</span> <span className="font-medium">{key.rate_limit ? `${key.rate_limit} RPS` : 'Unlimited'}</span></div>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="table-cell">
+                                <button
+                                  onClick={() => handleToggleKey(key)}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${key.is_active
                                     ? 'bg-green-100 text-apple-green hover:bg-green-200'
                                     : 'bg-gray-100 text-apple-gray-500 hover:bg-gray-200'
-                                }`}
-                              >
-                                {key.is_active ? (
-                                  <>
-                                    <CheckCircleIcon className="w-3.5 h-3.5" />
-                                    Active
-                                  </>
+                                    }`}
+                                >
+                                  {key.is_active ? (
+                                    <>
+                                      <CheckCircleIcon className="w-3.5 h-3.5" />
+                                      Active
+                                    </>
+                                  ) : (
+                                    <>
+                                      <XCircleIcon className="w-3.5 h-3.5" />
+                                      Inactive
+                                    </>
+                                  )}
+                                </button>
+                              </td>
+                              <td className="table-cell text-sm text-apple-gray-500">
+                                {key.usage_count.toLocaleString()} reqs
+                              </td>
+                              <td className="table-cell text-sm text-apple-gray-500">
+                                {key.last_used_at ? formatDate(key.last_used_at) : 'Never'}
+                              </td>
+                              <td className="table-cell text-right">
+                                {editingKeyId === key.id ? (
+                                  <div className="flex items-center justify-end gap-2">
+                                    <button onClick={() => setEditingKeyId(null)} className="text-xs text-apple-gray-500 hover:text-apple-gray-700">Cancel</button>
+                                    <button onClick={handleUpdateKey} disabled={updatingKey} className="text-xs bg-apple-blue text-white px-2 py-1 rounded hover:bg-blue-600">
+                                      {updatingKey ? 'Saving' : 'Save'}
+                                    </button>
+                                  </div>
                                 ) : (
-                                  <>
-                                    <XCircleIcon className="w-3.5 h-3.5" />
-                                    Inactive
-                                  </>
+                                  <div className="flex items-center justify-end gap-3">
+                                    <button
+                                      onClick={() => startEditingKey(key)}
+                                      className="text-apple-blue hover:text-blue-600 transition-colors text-sm"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => openDeleteModal(key.id)}
+                                      className="text-apple-red hover:text-red-600 transition-colors text-sm"
+                                      title="Delete API key"
+                                    >
+                                      <TrashIcon className="w-4 h-4" />
+                                    </button>
+                                  </div>
                                 )}
-                              </button>
-                            </td>
-                            <td className="table-cell text-apple-gray-500">
-                              {key.usage_count.toLocaleString()} requests
-                            </td>
-                            <td className="table-cell text-apple-gray-500">
-                              {key.last_used_at ? formatDate(key.last_used_at) : 'Never'}
-                            </td>
-                            <td className="table-cell">
-                              <button
-                                onClick={() => openDeleteModal(key.id)}
-                                className="text-apple-red hover:text-red-600 transition-colors"
-                                title="Delete API key"
-                              >
-                                <TrashIcon className="w-5 h-5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               )}
 
-              {/* Local Provider Info Card - Show for Ollama/LM Studio */}
-              {!selectedProvider.requires_api_key && (
-                <div className="card">
+              {/* Local Provider Info Card - Show for Ollama/LM Studio/vLLM */}
+              {['ollama', 'lmstudio', 'vllm'].includes(selectedProvider.name) && (
+                <div className="card mt-6">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="flex-shrink-0 w-10 h-10 bg-apple-blue/10 rounded-full flex items-center justify-center">
                       <CheckCircleIcon className="w-6 h-6 text-apple-blue" />
@@ -644,13 +742,35 @@ function ProvidersPage() {
                     <div>
                       <h3 className="text-lg font-semibold text-apple-gray-900">Local Provider</h3>
                       <p className="text-sm text-apple-gray-500">
-                        {selectedProvider.name === 'ollama' ? 'Ollama' : 'LM Studio'} runs locally and does not require API keys.
+                        {selectedProvider.name === 'ollama' ? 'Ollama' : selectedProvider.name === 'vllm' ? 'vLLM' : 'LM Studio'} runs locally. You can configure it to require an API key.
                       </p>
                     </div>
                   </div>
-                  
+
+                  {/* Requires API Key Toggle */}
+                  <div className="mt-4 pt-4 border-t border-apple-gray-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <h4 className="text-sm font-medium text-apple-gray-900">Require API Key</h4>
+                        <p className="text-xs text-apple-gray-500 mt-0.5">
+                          Require API keys to route requests to this provider
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleToggleRequiresApiKey}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${selectedProvider.requires_api_key ? 'bg-apple-blue' : 'bg-apple-gray-200'
+                          }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${selectedProvider.requires_api_key ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Endpoint Configuration */}
-                  <div className="border-t border-apple-gray-100 pt-4">
+                  <div className="border-t border-apple-gray-100 pt-4 mt-2">
                     <div className="flex items-center justify-between mb-2">
                       <label className="text-sm font-medium text-apple-gray-900">
                         Endpoint URL
@@ -671,7 +791,7 @@ function ProvidersPage() {
                           value={endpointValue}
                           onChange={(e) => setEndpointValue(e.target.value)}
                           className="input w-full"
-                          placeholder={selectedProvider.name === 'ollama' ? 'http://localhost:11434' : 'http://localhost:1234/v1'}
+                          placeholder={selectedProvider.name === 'ollama' ? 'http://localhost:11434' : selectedProvider.name === 'vllm' ? 'http://localhost:8000/v1' : 'http://localhost:1234/v1'}
                         />
                         <div className="flex justify-end gap-2">
                           <button
@@ -690,9 +810,11 @@ function ProvidersPage() {
                           </button>
                         </div>
                         <p className="text-xs text-apple-gray-500">
-                          {selectedProvider.name === 'ollama' 
+                          {selectedProvider.name === 'ollama'
                             ? 'Default: http://localhost:11434 (use host.docker.internal:11434 when running in Docker)'
-                            : 'Default: http://localhost:1234/v1 (use host.docker.internal:1234/v1 when running in Docker)'}
+                            : selectedProvider.name === 'vllm'
+                              ? 'Default: http://localhost:8000/v1 (use host.docker.internal:8000/v1 when running in Docker)'
+                              : 'Default: http://localhost:1234/v1 (use host.docker.internal:1234/v1 when running in Docker)'}
                         </p>
                       </div>
                     ) : (
@@ -749,12 +871,41 @@ function ProvidersPage() {
                   For Ollama/LM Studio, you can leave this empty or use any value.
                 </p>
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="priority" className="label">Priority (1 is highest)</label>
+                  <input
+                    type="number" id="priority" min="1"
+                    value={newKey.priority}
+                    onChange={(e) => setNewKey(p => ({ ...p, priority: parseInt(e.target.value) || 1 }))}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="weight" className="label">Weight (e.g. 1.0)</label>
+                  <input
+                    type="number" id="weight" step="0.1" min="0"
+                    value={newKey.weight}
+                    onChange={(e) => setNewKey(p => ({ ...p, weight: parseFloat(e.target.value) || 0 }))}
+                    className="input"
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="ratelimit" className="label">Rate Limit (req/sec, 0 for unlimited)</label>
+                <input
+                  type="number" id="ratelimit" min="0"
+                  value={newKey.rate_limit}
+                  onChange={(e) => setNewKey(p => ({ ...p, rate_limit: parseInt(e.target.value) || 0 }))}
+                  className="input"
+                />
+              </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button
                 onClick={() => {
                   setShowAddModal(false);
-                  setNewKey({ api_key: '', alias: '' });
+                  setNewKey({ api_key: '', alias: '', priority: 1, weight: 1.0, rate_limit: 0 });
                 }}
                 className="btn btn-secondary"
               >

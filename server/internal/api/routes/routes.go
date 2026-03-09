@@ -333,6 +333,7 @@ func Setup(
 					providers.POST("/:id/api-keys", providerHandler.CreateAPIKey)
 					providers.POST("/:id/api-keys/:key_id/toggle", providerHandler.ToggleAPIKey)
 					providers.DELETE("/:id/api-keys/:key_id", providerHandler.DeleteAPIKey)
+					providers.PUT("/:id/api-keys/:key_id", providerHandler.UpdateAPIKey)
 				}
 
 				// System-wide FinOps (admin only)

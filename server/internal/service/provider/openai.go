@@ -113,6 +113,11 @@ func (c *OpenAIClient) Embeddings(ctx context.Context, req *EmbeddingRequest) (*
 // StreamChat sends a streaming chat completion request to OpenAI.
 func (c *OpenAIClient) StreamChat(ctx context.Context, req *ChatRequest) (<-chan StreamChunk, error) {
 	req.Stream = true
+	if req.StreamOptions == nil {
+		req.StreamOptions = make(map[string]interface{})
+	}
+	req.StreamOptions["include_usage"] = true
+
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, err

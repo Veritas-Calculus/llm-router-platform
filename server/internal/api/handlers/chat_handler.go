@@ -853,6 +853,7 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client
 	c.Header("Transfer-Encoding", "chunked")
 
 	var fullText string
+	var promptTokens, completionTokens, totalTokens int
 
 	c.Stream(func(w io.Writer) bool {
 		chunk, ok := <-chunks
@@ -874,6 +875,12 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client
 			fullText += chunk.Choices[0].Delta.Content
 		}
 
+		if chunk.Usage != nil {
+			promptTokens = chunk.Usage.PromptTokens
+			completionTokens = chunk.Usage.CompletionTokens
+			totalTokens = chunk.Usage.TotalTokens
+		}
+
 		data, err := json.Marshal(chunk)
 		if err != nil {
 			return false
@@ -886,17 +893,20 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client
 	})
 
 	// Record usage after streaming completes
-	// Note: Langfuse counts characters as estimate if token isn't provided explicitly.
-	// We record 0 tokens natively if provider doesn't report it at end of stream, leaving Langfuse tokenizer to do it.
-	gen.End(fullText, 0, 0)
+	// By default, if the stream hasn't produced token usage, they are passed as 0 and Langfuse tokenizer calculates them.
+	// If the provider supports `include_usage`, we now accurately bill based on these values.
+	gen.End(fullText, promptTokens, completionTokens)
 	latency := time.Since(start)
 	usageLog := &models.UsageLog{
-		UserID:     userObj.ID,
-		APIKeyID:   userAPIKey.ID,
-		ProviderID: selectedProvider.ID,
-		ModelName:  req.Model,
-		Latency:    latency.Milliseconds(),
-		StatusCode: http.StatusOK,
+		UserID:         userObj.ID,
+		APIKeyID:       userAPIKey.ID,
+		ProviderID:     selectedProvider.ID,
+		ModelName:      req.Model,
+		RequestTokens:  promptTokens,
+		ResponseTokens: completionTokens,
+		TotalTokens:    totalTokens,
+		Latency:        latency.Milliseconds(),
+		StatusCode:     http.StatusOK,
 	}
 	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 }

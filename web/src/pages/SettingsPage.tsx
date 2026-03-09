@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
+import { userApi } from '@/lib/api';
 
 function SettingsPage() {
   const { user } = useAuthStore();
@@ -44,7 +45,10 @@ function SettingsPage() {
 
     setSaving(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await userApi.changePassword({
+        old_password: formData.currentPassword,
+        new_password: formData.newPassword,
+      });
       setFormData((prev) => ({
         ...prev,
         currentPassword: '',
@@ -52,8 +56,8 @@ function SettingsPage() {
         confirmPassword: '',
       }));
       toast.success('Password changed');
-    } catch (error) {
-      toast.error('Failed to change password');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || 'Failed to change password');
     } finally {
       setSaving(false);
     }

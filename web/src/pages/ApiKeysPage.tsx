@@ -42,9 +42,8 @@ function ConfirmModal({
       >
         <div className="flex items-start gap-4">
           <div
-            className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-              confirmColor === 'red' ? 'bg-red-100' : 'bg-orange-100'
-            }`}
+            className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${confirmColor === 'red' ? 'bg-red-100' : 'bg-orange-100'
+              }`}
           >
             <ExclamationTriangleIcon
               className={`w-6 h-6 ${confirmColor === 'red' ? 'text-apple-red' : 'text-apple-orange'}`}
@@ -253,6 +252,7 @@ function ApiKeysPage() {
                   <th className="table-header">Name</th>
                   <th className="table-header">Key</th>
                   <th className="table-header">Status</th>
+                  <th className="table-header">Limits</th>
                   <th className="table-header">Expires</th>
                   <th className="table-header">Created</th>
                   <th className="table-header">Last Used</th>
@@ -272,6 +272,12 @@ function ApiKeysPage() {
                       <span className={key.is_active ? 'badge-success' : 'badge-error'}>
                         {key.is_active ? 'Active' : 'Revoked'}
                       </span>
+                    </td>
+                    <td className="table-cell">
+                      <div className="text-xs text-apple-gray-600 space-y-1">
+                        <div><span className="text-apple-gray-400">Rate:</span> {key.rate_limit || 'Unlimited'}</div>
+                        <div><span className="text-apple-gray-400">Daily:</span> {key.daily_limit || 'Unlimited'}</div>
+                      </div>
                     </td>
                     <td className="table-cell text-apple-gray-500">
                       {key.expires_at && new Date(key.expires_at).getTime() > 0

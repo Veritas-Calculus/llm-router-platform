@@ -85,6 +85,9 @@ export interface User {
   email: string;
   name: string;
   role: string;
+  require_password_change?: boolean;
+  monthly_token_limit?: number;
+  monthly_budget_usd?: number;
   created_at?: string;
 }
 
@@ -220,6 +223,7 @@ export interface ProviderApiKey {
   alias: string;
   key_prefix: string;
   is_active: boolean;
+  priority: number;
   weight: number;
   rate_limit: number;
   usage_count: number;
@@ -285,7 +289,12 @@ export interface MonthlyUsage {
 export const authApi = {
   login: (data: LoginRequest) => api.post<LoginResponse>('/auth/login', data),
   register: (data: RegisterRequest) => api.post<LoginResponse>('/auth/register', data),
-  getCurrentUser: () => api.get<User>('/me'),
+  getCurrentUser: () => api.get<User>('/user/profile'),
+};
+
+export const userApi = {
+  getProfile: () => api.get<User>('/user/profile'),
+  changePassword: (data: any) => api.put('/user/password', data),
 };
 
 export const dashboardApi = {
@@ -334,8 +343,10 @@ export const providersApi = {
   checkHealth: (id: string) => api.get<ProviderHealthStatus>(`/providers/${id}/health`),
   getApiKeys: (providerId: string) =>
     api.get<{ data: ProviderApiKey[] }>(`/providers/${providerId}/api-keys`),
-  createApiKey: (providerId: string, data: { api_key: string; alias: string }) =>
+  createApiKey: (providerId: string, data: { api_key: string; alias: string; priority?: number; weight?: number; rate_limit?: number }) =>
     api.post<ProviderApiKey>(`/providers/${providerId}/api-keys`, data),
+  updateApiKey: (providerId: string, keyId: string, data: { priority?: number; weight?: number; rate_limit?: number }) =>
+    api.put<ProviderApiKey>(`/providers/${providerId}/api-keys/${keyId}`, data),
   toggleApiKey: (providerId: string, keyId: string) =>
     api.post<ProviderApiKey>(`/providers/${providerId}/api-keys/${keyId}/toggle`),
   deleteApiKey: (providerId: string, keyId: string) =>

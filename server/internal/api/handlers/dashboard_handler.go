@@ -696,6 +696,7 @@ type UpdateProviderRequest struct {
 	BaseURL        *string  `json:"base_url"`
 	UseProxy       *bool    `json:"use_proxy"`
 	DefaultProxyID *string  `json:"default_proxy_id"` // Use string to allow "null" for clearing
+	RequiresAPIKey *bool    `json:"requires_api_key"`
 }
 
 // Update updates a provider.
@@ -738,6 +739,9 @@ func (h *ProviderHandler) Update(c *gin.Context) {
 	}
 	if req.UseProxy != nil {
 		provider.UseProxy = *req.UseProxy
+	}
+	if req.RequiresAPIKey != nil {
+		provider.RequiresAPIKey = *req.RequiresAPIKey
 	}
 	if req.DefaultProxyID != nil {
 		if *req.DefaultProxyID == "" || *req.DefaultProxyID == "null" {
@@ -868,10 +872,18 @@ func (h *ProviderHandler) ToggleAPIKey(c *gin.Context) {
 
 // CreateProviderAPIKeyRequest represents the request to create a provider API key (input only, never serialized).
 type CreateProviderAPIKeyRequest struct {
-	APIKey   string   `json:"api_key" binding:"required"` // #nosec G101 -- request input only, encrypted before storage
-	Alias    string   `json:"alias" binding:"required"`
-	Priority int      `json:"priority,omitempty"`
-	Weight   *float64 `json:"weight,omitempty"`
+	APIKey    string   `json:"api_key" binding:"required"` // #nosec G101 -- request input only, encrypted before storage
+	Alias     string   `json:"alias" binding:"required"`
+	Priority  int      `json:"priority,omitempty"`
+	Weight    *float64 `json:"weight,omitempty"`
+	RateLimit int      `json:"rate_limit,omitempty"`
+}
+
+// UpdateProviderAPIKeyRequest represents the request to update a provider API key.
+type UpdateProviderAPIKeyRequest struct {
+	Priority  *int     `json:"priority,omitempty"`
+	Weight    *float64 `json:"weight,omitempty"`
+	RateLimit *int     `json:"rate_limit,omitempty"`
 }
 
 // CreateAPIKey creates a new API key for a provider.
@@ -918,6 +930,7 @@ func (h *ProviderHandler) CreateAPIKey(c *gin.Context) {
 		IsActive:        true,
 		Priority:        prio,
 		Weight:          weight,
+		RateLimit:       req.RateLimit,
 	}
 
 	if err := h.router.CreateProviderAPIKey(c.Request.Context(), key); err != nil {
@@ -942,4 +955,46 @@ func (h *ProviderHandler) DeleteAPIKey(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "API key deleted"})
+}
+
+// UpdateAPIKey updates a provider API key.
+func (h *ProviderHandler) UpdateAPIKey(c *gin.Context) {
+	keyID, err := uuid.Parse(c.Param("key_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid key id"})
+		return
+	}
+
+	var req UpdateProviderAPIKeyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	key, err := h.router.GetProviderAPIKeyByID(c.Request.Context(), keyID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "API key not found"})
+		return
+	}
+
+	if req.Priority != nil {
+		prio := *req.Priority
+		if prio <= 0 {
+			prio = 1
+		}
+		key.Priority = prio
+	}
+	if req.Weight != nil {
+		key.Weight = *req.Weight
+	}
+	if req.RateLimit != nil {
+		key.RateLimit = *req.RateLimit
+	}
+
+	if err := h.router.UpdateProviderAPIKey(c.Request.Context(), key); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, key)
 }

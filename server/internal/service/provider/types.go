@@ -28,6 +28,7 @@ type StreamChunk struct {
 	ID      string        `json:"id,omitempty"`
 	Model   string        `json:"model,omitempty"`
 	Choices []DeltaChoice `json:"choices,omitempty"`
+	Usage   *Usage        `json:"usage,omitempty"`
 	Error   error         `json:"-"`
 	Done    bool          `json:"-"`
 }
@@ -47,11 +48,12 @@ type Delta struct {
 
 // ChatRequest represents a chat completion request.
 type ChatRequest struct {
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	MaxTokens   int       `json:"max_tokens,omitempty"`
-	Temperature float64   `json:"temperature,omitempty"`
-	Stream      bool      `json:"stream,omitempty"`
+	Model         string                 `json:"model"`
+	Messages      []Message              `json:"messages"`
+	MaxTokens     int                    `json:"max_tokens,omitempty"`
+	Temperature   float64                `json:"temperature,omitempty"`
+	Stream        bool                   `json:"stream,omitempty"`
+	StreamOptions map[string]interface{} `json:"stream_options,omitempty"`
 }
 
 // Message represents a chat message.

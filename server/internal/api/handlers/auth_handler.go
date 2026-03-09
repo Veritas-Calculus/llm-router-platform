@@ -113,11 +113,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"token": token,
 		"user": gin.H{
-			"id":         userObj.ID,
-			"email":      userObj.Email,
-			"name":       userObj.Name,
-			"role":       userObj.Role,
-			"created_at": userObj.CreatedAt,
+			"id":                      userObj.ID,
+			"email":                   userObj.Email,
+			"name":                    userObj.Name,
+			"role":                    userObj.Role,
+			"require_password_change": userObj.RequirePasswordChange,
+			"monthly_token_limit":     userObj.MonthlyTokenLimit,
+			"monthly_budget_usd":      userObj.MonthlyBudgetUSD,
+			"created_at":              userObj.CreatedAt,
 		},
 	})
 }
@@ -162,11 +165,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 		"user": gin.H{
-			"id":         userObj.ID,
-			"email":      userObj.Email,
-			"name":       userObj.Name,
-			"role":       userObj.Role,
-			"created_at": userObj.CreatedAt,
+			"id":                      userObj.ID,
+			"email":                   userObj.Email,
+			"name":                    userObj.Name,
+			"role":                    userObj.Role,
+			"require_password_change": userObj.RequirePasswordChange,
+			"monthly_token_limit":     userObj.MonthlyTokenLimit,
+			"monthly_budget_usd":      userObj.MonthlyBudgetUSD,
+			"created_at":              userObj.CreatedAt,
 		},
 	})
 }
@@ -227,10 +233,13 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":    userObj.ID,
-		"email": userObj.Email,
-		"name":  userObj.Name,
-		"role":  userObj.Role,
+		"id":                      userObj.ID,
+		"email":                   userObj.Email,
+		"name":                    userObj.Name,
+		"role":                    userObj.Role,
+		"require_password_change": userObj.RequirePasswordChange,
+		"monthly_token_limit":     userObj.MonthlyTokenLimit,
+		"monthly_budget_usd":      userObj.MonthlyBudgetUSD,
 	})
 }
 

@@ -113,7 +113,7 @@ func (m *AuthMiddleware) JWT() gin.HandlerFunc {
 
 		if userObj.RequirePasswordChange {
 			path := c.Request.URL.Path
-			if path != "/api/v1/auth/change-password" && path != "/api/v1/auth/logout" && path != "/api/v1/auth/me" {
+			if path != "/api/v1/user/password" && path != "/api/v1/user/profile" && path != "/api/v1/auth/logout" {
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "password_change_required"})
 				return
 			}

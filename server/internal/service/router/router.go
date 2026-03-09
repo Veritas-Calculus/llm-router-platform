@@ -594,6 +594,16 @@ func (r *Router) DeleteProviderAPIKey(ctx context.Context, id uuid.UUID) error {
 	return r.providerKeyRepo.Delete(ctx, id)
 }
 
+// UpdateProviderAPIKey updates a provider API key.
+func (r *Router) UpdateProviderAPIKey(ctx context.Context, key *models.ProviderAPIKey) error {
+	return r.providerKeyRepo.Update(ctx, key)
+}
+
+// GetProviderAPIKeyByID returns a provider API key by ID.
+func (r *Router) GetProviderAPIKeyByID(ctx context.Context, id uuid.UUID) (*models.ProviderAPIKey, error) {
+	return r.providerKeyRepo.GetByID(ctx, id)
+}
+
 // HealthStatus represents provider health status.
 type HealthStatus struct {
 	ProviderID   uuid.UUID     `json:"provider_id"`

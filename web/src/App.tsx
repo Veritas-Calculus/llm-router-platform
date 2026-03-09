@@ -12,22 +12,31 @@ import SettingsPage from '@/pages/SettingsPage';
 import DocsPage from '@/pages/DocsPage';
 import UsersPage from '@/pages/UsersPage';
 import UserDetailPage from '@/pages/UserDetailPage';
+import ForcePasswordChangePage from '@/pages/ForcePasswordChangePage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const { isAuthenticated, user } = useAuthStore((state) => state);
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (user?.require_password_change) {
+    return <Navigate to="/change-password" replace />;
   }
 
   return <>{children}</>;
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isAdmin } = useAuthStore();
+  const { isAuthenticated, isAdmin, user } = useAuthStore();
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (user?.require_password_change) {
+    return <Navigate to="/change-password" replace />;
   }
 
   if (!isAdmin) {
@@ -41,6 +50,10 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/change-password" element={
+        useAuthStore.getState().isAuthenticated ?
+          <ForcePasswordChangePage /> : <Navigate to="/login" replace />
+      } />
       <Route
         path="/"
         element={

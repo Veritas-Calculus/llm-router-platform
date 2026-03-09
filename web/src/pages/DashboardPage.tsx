@@ -27,6 +27,7 @@ import {
   ProviderStats,
   ModelStats,
 } from '@/lib/api';
+import { useAuthStore } from '@/stores/authStore';
 
 interface StatCardProps {
   title: string;
@@ -72,6 +73,7 @@ function StatCard({ title, value, subtitle, icon: Icon, color, trend }: StatCard
 }
 
 function DashboardPage() {
+  const { user } = useAuthStore();
   const [stats, setStats] = useState<OverviewStats | null>(null);
   const [chartData, setChartData] = useState<UsageChartData[]>([]);
   const [providerStats, setProviderStats] = useState<ProviderStats[]>([]);
@@ -153,6 +155,45 @@ function DashboardPage() {
         </div>
       </div>
 
+      {/* Quota Warnings */}
+      {user && (user.monthly_budget_usd! > 0 || user.monthly_token_limit! > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {user.monthly_budget_usd! > 0 && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card bg-apple-gray-50 border border-apple-gray-200">
+              <div className="flex justify-between text-sm mb-2">
+                <span className="font-semibold text-apple-gray-900">Monthly Budget</span>
+                <span className="text-apple-gray-600 font-medium">
+                  {formatCurrency(stats?.total_cost || 0)} / {formatCurrency(user.monthly_budget_usd!)}
+                </span>
+              </div>
+              <div className="w-full bg-white rounded-full h-2.5 overflow-hidden border border-apple-gray-200">
+                <div
+                  className={`h-2.5 rounded-full ${((stats?.total_cost || 0) / user.monthly_budget_usd!) > 0.9 ? 'bg-apple-red' : ((stats?.total_cost || 0) / user.monthly_budget_usd!) > 0.75 ? 'bg-apple-orange' : 'bg-apple-blue'}`}
+                  style={{ width: `${Math.min(100, ((stats?.total_cost || 0) / user.monthly_budget_usd!) * 100)}%` }}
+                ></div>
+              </div>
+            </motion.div>
+          )}
+
+          {user.monthly_token_limit! > 0 && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card bg-apple-gray-50 border border-apple-gray-200">
+              <div className="flex justify-between text-sm mb-2">
+                <span className="font-semibold text-apple-gray-900">Monthly Token Limit</span>
+                <span className="text-apple-gray-600 font-medium">
+                  {formatTokens(stats?.total_tokens || 0)} / {formatTokens(user.monthly_token_limit!)}
+                </span>
+              </div>
+              <div className="w-full bg-white rounded-full h-2.5 overflow-hidden border border-apple-gray-200">
+                <div
+                  className={`h-2.5 rounded-full ${((stats?.total_tokens || 0) / user.monthly_token_limit!) > 0.9 ? 'bg-apple-red' : ((stats?.total_tokens || 0) / user.monthly_token_limit!) > 0.75 ? 'bg-apple-orange' : 'bg-apple-purple'}`}
+                  style={{ width: `${Math.min(100, ((stats?.total_tokens || 0) / user.monthly_token_limit!) * 100)}%` }}
+                ></div>
+              </div>
+            </motion.div>
+          )}
+        </div>
+      )}
+
       {/* Main Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
@@ -223,11 +264,10 @@ function DashboardPage() {
                 </p>
               </div>
             </div>
-            <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-              stats?.api_keys?.healthy === stats?.api_keys?.total 
-                ? 'bg-green-100 text-apple-green' 
+            <div className={`px-2 py-1 rounded-full text-xs font-medium ${stats?.api_keys?.healthy === stats?.api_keys?.total
+                ? 'bg-green-100 text-apple-green'
                 : 'bg-orange-100 text-apple-orange'
-            }`}>
+              }`}>
               {stats?.api_keys?.total ? Math.round((stats?.api_keys?.healthy || 0) / stats.api_keys.total * 100) : 0}% healthy
             </div>
           </div>
@@ -251,11 +291,10 @@ function DashboardPage() {
                 </p>
               </div>
             </div>
-            <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-              stats?.proxies?.healthy === stats?.proxies?.total 
-                ? 'bg-green-100 text-apple-green' 
+            <div className={`px-2 py-1 rounded-full text-xs font-medium ${stats?.proxies?.healthy === stats?.proxies?.total
+                ? 'bg-green-100 text-apple-green'
                 : 'bg-orange-100 text-apple-orange'
-            }`}>
+              }`}>
               {stats?.proxies?.total ? Math.round((stats?.proxies?.healthy || 0) / stats.proxies.total * 100) : 0}% healthy
             </div>
           </div>
@@ -379,13 +418,12 @@ function DashboardPage() {
                       </p>
                       <p className="text-xs text-apple-gray-500">{formatCurrency(provider.total_cost)}</p>
                     </div>
-                    <div className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      provider.success_rate >= 95
+                    <div className={`px-2 py-0.5 rounded text-xs font-medium ${provider.success_rate >= 95
                         ? 'bg-green-100 text-apple-green'
                         : provider.success_rate >= 80
-                        ? 'bg-orange-100 text-apple-orange'
-                        : 'bg-red-100 text-apple-red'
-                    }`}>
+                          ? 'bg-orange-100 text-apple-orange'
+                          : 'bg-red-100 text-apple-red'
+                      }`}>
                       {provider.success_rate?.toFixed(0) || 0}%
                     </div>
                   </div>
