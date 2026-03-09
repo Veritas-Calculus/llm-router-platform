@@ -95,6 +95,7 @@ type ProviderAPIKey struct {
 	EncryptedAPIKey string    `gorm:"not null" json:"-"`
 	KeyPrefix       string    `json:"key_prefix"`
 	IsActive        bool      `gorm:"default:true" json:"is_active"`
+	Priority        int       `gorm:"default:1" json:"priority"` // 1 is highest priority
 	Weight          float64   `gorm:"default:1.0" json:"weight"`
 	RateLimit       int       `gorm:"default:0" json:"rate_limit"`
 	UsageCount      int64     `gorm:"default:0" json:"usage_count"`

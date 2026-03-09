@@ -118,6 +118,41 @@ func TestAPIKeySelection(t *testing.T) {
 	assert.Len(t, activeKeys, 2)
 }
 
+func TestAPIKeyPriority(t *testing.T) {
+	providerID := uuid.New()
+
+	keys := []models.ProviderAPIKey{
+		{ProviderID: providerID, IsActive: true, Priority: 2, Weight: 1.0, Alias: "key-p2"},
+		{ProviderID: providerID, IsActive: true, Priority: 1, Weight: 1.0, Alias: "key-p1-a"},
+		{ProviderID: providerID, IsActive: true, Priority: 1, Weight: 1.0, Alias: "key-p1-b"},
+		{ProviderID: providerID, IsActive: true, Priority: 0, Weight: 1.0, Alias: "key-p0"}, // Should be treated as 1
+		{ProviderID: providerID, IsActive: true, Priority: 3, Weight: 1.0, Alias: "key-p3"},
+	}
+
+	bestPriority := int(^uint(0) >> 1) // MaxInt
+	for _, k := range keys {
+		if k.Priority < bestPriority && k.Priority > 0 {
+			bestPriority = k.Priority
+		} else if k.Priority == 0 && 1 < bestPriority {
+			bestPriority = 1
+		}
+	}
+
+	var priorityKeys []models.ProviderAPIKey
+	for _, k := range keys {
+		prio := k.Priority
+		if prio == 0 {
+			prio = 1
+		}
+		if prio == bestPriority {
+			priorityKeys = append(priorityKeys, k)
+		}
+	}
+
+	assert.Equal(t, 1, bestPriority)
+	assert.Len(t, priorityKeys, 3) // key-p1-a, key-p1-b, and key-p0 (treated as 1)
+}
+
 func TestRetryLogic(t *testing.T) {
 	maxRetries := 3
 	currentRetry := 0

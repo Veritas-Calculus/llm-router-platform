@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -285,25 +286,47 @@ func (r *Router) selectAPIKey(ctx context.Context, providerID uuid.UUID) (*model
 		r.failedKeysMu.Unlock()
 	}
 
-	var totalWeight float64
+	// Find the best (lowest) priority among available keys
+	bestPriority := math.MaxInt32
 	for _, k := range availableKeys {
+		if k.Priority < bestPriority && k.Priority > 0 {
+			bestPriority = k.Priority
+		} else if k.Priority == 0 && 1 < bestPriority {
+			bestPriority = 1 // default priority if 0
+		}
+	}
+
+	// Filter keys down to just the ones with the best priority
+	var priorityKeys []models.ProviderAPIKey
+	for _, k := range availableKeys {
+		prio := k.Priority
+		if prio == 0 {
+			prio = 1
+		}
+		if prio == bestPriority {
+			priorityKeys = append(priorityKeys, k)
+		}
+	}
+
+	var totalWeight float64
+	for _, k := range priorityKeys {
 		totalWeight += k.Weight
 	}
 
 	if totalWeight == 0 {
-		return &availableKeys[secureRandomInt(len(availableKeys))], nil
+		return &priorityKeys[secureRandomInt(len(priorityKeys))], nil
 	}
 
 	random := secureRandomFloat64() * totalWeight
 	var cumulative float64
-	for i := range availableKeys {
-		cumulative += availableKeys[i].Weight
+	for i := range priorityKeys {
+		cumulative += priorityKeys[i].Weight
 		if random <= cumulative {
-			return &availableKeys[i], nil
+			return &priorityKeys[i], nil
 		}
 	}
 
-	return &availableKeys[len(availableKeys)-1], nil
+	return &priorityKeys[len(priorityKeys)-1], nil
 }
 
 // SelectNextAPIKey selects the next available API key, excluding the current one.
@@ -326,26 +349,46 @@ func (r *Router) SelectNextAPIKey(ctx context.Context, providerID uuid.UUID, exc
 		return nil, errors.New("no alternative API keys available")
 	}
 
+	bestPriority := math.MaxInt32
+	for _, k := range availableKeys {
+		if k.Priority < bestPriority && k.Priority > 0 {
+			bestPriority = k.Priority
+		} else if k.Priority == 0 && 1 < bestPriority {
+			bestPriority = 1
+		}
+	}
+
+	var priorityKeys []models.ProviderAPIKey
+	for _, k := range availableKeys {
+		prio := k.Priority
+		if prio == 0 {
+			prio = 1
+		}
+		if prio == bestPriority {
+			priorityKeys = append(priorityKeys, k)
+		}
+	}
+
 	// Select using weighted random
 	var totalWeight float64
-	for _, k := range availableKeys {
+	for _, k := range priorityKeys {
 		totalWeight += k.Weight
 	}
 
 	if totalWeight == 0 {
-		return &availableKeys[secureRandomInt(len(availableKeys))], nil
+		return &priorityKeys[secureRandomInt(len(priorityKeys))], nil
 	}
 
 	random := secureRandomFloat64() * totalWeight
 	var cumulative float64
-	for i := range availableKeys {
-		cumulative += availableKeys[i].Weight
+	for i := range priorityKeys {
+		cumulative += priorityKeys[i].Weight
 		if random <= cumulative {
-			return &availableKeys[i], nil
+			return &priorityKeys[i], nil
 		}
 	}
 
-	return &availableKeys[len(availableKeys)-1], nil
+	return &priorityKeys[len(priorityKeys)-1], nil
 }
 
 // RouteWithFallback attempts routing with fallback providers.

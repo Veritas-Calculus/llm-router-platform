@@ -868,8 +868,10 @@ func (h *ProviderHandler) ToggleAPIKey(c *gin.Context) {
 
 // CreateProviderAPIKeyRequest represents the request to create a provider API key (input only, never serialized).
 type CreateProviderAPIKeyRequest struct {
-	APIKey string `json:"api_key" binding:"required"` // #nosec G101 -- request input only, encrypted before storage
-	Alias  string `json:"alias" binding:"required"`
+	APIKey   string   `json:"api_key" binding:"required"` // #nosec G101 -- request input only, encrypted before storage
+	Alias    string   `json:"alias" binding:"required"`
+	Priority int      `json:"priority,omitempty"`
+	Weight   *float64 `json:"weight,omitempty"`
 }
 
 // CreateAPIKey creates a new API key for a provider.
@@ -899,13 +901,23 @@ func (h *ProviderHandler) CreateAPIKey(c *gin.Context) {
 		return
 	}
 
+	prio := req.Priority
+	if prio <= 0 {
+		prio = 1
+	}
+	weight := 1.0
+	if req.Weight != nil {
+		weight = *req.Weight
+	}
+
 	key := &models.ProviderAPIKey{
 		ProviderID:      providerID,
 		Alias:           req.Alias,
 		EncryptedAPIKey: encryptedKey,
 		KeyPrefix:       keyPrefix,
 		IsActive:        true,
-		Weight:          1.0,
+		Priority:        prio,
+		Weight:          weight,
 	}
 
 	if err := h.router.CreateProviderAPIKey(c.Request.Context(), key); err != nil {
