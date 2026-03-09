@@ -4,8 +4,10 @@ package handlers
 import (
 	"net/http"
 	"time"
+	"unicode"
 
 	"llm-router-platform/internal/config"
+	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/user"
 
 	"github.com/gin-gonic/gin"
@@ -16,32 +18,78 @@ import (
 
 // AuthHandler handles authentication endpoints.
 type AuthHandler struct {
-	userService *user.Service
-	jwtConfig   *config.JWTConfig
-	logger      *zap.Logger
+	userService      *user.Service
+	auditService     *audit.Service
+	jwtConfig        *config.JWTConfig
+	registrationMode string
+	logger           *zap.Logger
 }
 
 // NewAuthHandler creates a new auth handler.
-func NewAuthHandler(userService *user.Service, jwtConfig *config.JWTConfig, logger *zap.Logger) *AuthHandler {
+func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, jwtConfig *config.JWTConfig, registrationMode string, logger *zap.Logger) *AuthHandler {
+	if registrationMode == "" {
+		registrationMode = "open"
+	}
 	return &AuthHandler{
-		userService: userService,
-		jwtConfig:   jwtConfig,
-		logger:      logger,
+		userService:      userService,
+		auditService:     auditSvc,
+		jwtConfig:        jwtConfig,
+		registrationMode: registrationMode,
+		logger:           logger,
 	}
 }
 
 // RegisterRequest represents registration request (input only, never serialized).
 type RegisterRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8"` // #nosec G101 -- request input only
-	Name     string `json:"name" binding:"required"`
+	Email    string `json:"email" binding:"required,email,max=255"`
+	Password string `json:"password" binding:"required,min=8,max=128"` // #nosec G101 -- request input only
+	Name     string `json:"name" binding:"required,min=1,max=100"`
+}
+
+// validatePassword enforces password complexity: min 8 chars, must contain
+// at least one uppercase letter, one lowercase letter, and one digit.
+func validatePassword(password string) string {
+	if len(password) < 8 {
+		return "password must be at least 8 characters"
+	}
+	var hasUpper, hasLower, hasDigit bool
+	for _, c := range password {
+		switch {
+		case unicode.IsUpper(c):
+			hasUpper = true
+		case unicode.IsLower(c):
+			hasLower = true
+		case unicode.IsDigit(c):
+			hasDigit = true
+		}
+	}
+	if !hasUpper || !hasLower || !hasDigit {
+		return "password must contain at least one uppercase letter, one lowercase letter, and one digit"
+	}
+	return ""
 }
 
 // Register handles user registration.
 func (h *AuthHandler) Register(c *gin.Context) {
+	// Enforce registration mode
+	switch h.registrationMode {
+	case "closed":
+		c.JSON(http.StatusForbidden, gin.H{"error": "registration is currently closed"})
+		return
+	case "invite":
+		// TODO: validate invite code from request
+		c.JSON(http.StatusForbidden, gin.H{"error": "registration requires an invitation code"})
+		return
+	}
+
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if msg := validatePassword(req.Password); msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
 
@@ -51,10 +99,26 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// Auto-login: generate token for newly registered user
+	token, err := h.generateToken(userObj.ID, userObj.Email, userObj.Role)
+	if err != nil {
+		c.JSON(http.StatusCreated, gin.H{
+			"id":    userObj.ID,
+			"email": userObj.Email,
+			"name":  userObj.Name,
+		})
+		return
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
-		"id":    userObj.ID,
-		"email": userObj.Email,
-		"name":  userObj.Name,
+		"token": token,
+		"user": gin.H{
+			"id":         userObj.ID,
+			"email":      userObj.Email,
+			"name":       userObj.Name,
+			"role":       userObj.Role,
+			"created_at": userObj.CreatedAt,
+		},
 	})
 }
 
@@ -74,6 +138,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	userObj, err := h.userService.Authenticate(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
+		// Audit: failed login
+		if h.auditService != nil {
+			h.auditService.Log(c.Request.Context(), audit.ActionLoginFailed, uuid.Nil, uuid.Nil,
+				c.ClientIP(), c.Request.UserAgent(), map[string]interface{}{"email": req.Email})
+		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
@@ -82,6 +151,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
+	}
+
+	// Audit: successful login
+	if h.auditService != nil {
+		h.auditService.Log(c.Request.Context(), audit.ActionLogin, userObj.ID, userObj.ID,
+			c.ClientIP(), c.Request.UserAgent(), nil)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -96,7 +171,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
-// RefreshToken refreshes JWT token.
+// RefreshToken refreshes JWT token using current DB state.
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -104,16 +179,25 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	email, _ := c.Get("email")
-	role, _ := c.Get("role")
-
 	id, err := uuid.Parse(userID.(string))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
 		return
 	}
 
-	token, err := h.generateToken(id, email.(string), role.(string))
+	// Query database for current user state (not from old JWT claims)
+	userObj, err := h.userService.GetByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+		return
+	}
+
+	if !userObj.IsActive {
+		c.JSON(http.StatusForbidden, gin.H{"error": "account is disabled"})
+		return
+	}
+
+	token, err := h.generateToken(userObj.ID, userObj.Email, userObj.Role)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
 		return
@@ -186,7 +270,7 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 // ChangePasswordRequest represents password change request.
 type ChangePasswordRequest struct {
 	OldPassword string `json:"old_password" binding:"required"`
-	NewPassword string `json:"new_password" binding:"required,min=8"`
+	NewPassword string `json:"new_password" binding:"required,min=8,max=128"`
 }
 
 // ChangePassword changes user password.
@@ -194,6 +278,11 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	var req ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if msg := validatePassword(req.NewPassword); msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
 

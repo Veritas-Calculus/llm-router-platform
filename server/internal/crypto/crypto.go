@@ -4,7 +4,9 @@ package crypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -136,10 +138,13 @@ func IsInitialized() bool {
 	return defaultEncryptor != nil && len(defaultEncryptor.key) > 0
 }
 
-// GetEncryptionKey returns the underlying encryption key.
-func GetEncryptionKey() []byte {
-	if defaultEncryptor == nil {
+// HMACHash computes HMAC-SHA256 of data using the encryption key as salt.
+// The key never leaves this package — callers only get the hash result.
+func HMACHash(data []byte) []byte {
+	if defaultEncryptor == nil || len(defaultEncryptor.key) == 0 {
 		return nil
 	}
-	return defaultEncryptor.key
+	h := hmac.New(sha256.New, defaultEncryptor.key)
+	h.Write(data)
+	return h.Sum(nil)
 }
