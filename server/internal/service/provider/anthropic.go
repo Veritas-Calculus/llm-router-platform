@@ -113,6 +113,21 @@ func (c *AnthropicClient) Chat(ctx context.Context, req *ChatRequest) (*ChatResp
 	}, nil
 }
 
+// Embeddings returns ErrNotImplemented as Anthropic doesn't natively support this endpoint format.
+func (c *AnthropicClient) Embeddings(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error) {
+	return nil, ErrNotImplemented
+}
+
+// GenerateImage returns ErrNotImplemented.
+func (c *AnthropicClient) GenerateImage(ctx context.Context, req *ImageGenerationRequest) (*ImageGenerationResponse, error) {
+	return nil, ErrNotImplemented
+}
+
+// TranscribeAudio returns ErrNotImplemented.
+func (c *AnthropicClient) TranscribeAudio(ctx context.Context, req *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
+	return nil, ErrNotImplemented
+}
+
 // ListModels returns available models from Anthropic.
 func (c *AnthropicClient) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	return []ModelInfo{

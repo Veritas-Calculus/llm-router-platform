@@ -148,9 +148,9 @@ func TestLatencyTracking(t *testing.T) {
 
 func TestModelMatching(t *testing.T) {
 	modelMappings := map[string]string{
-		"gpt-4":          "openai",
-		"gpt-3.5-turbo":  "openai",
-		"claude-3-opus":  "anthropic",
+		"gpt-4":           "openai",
+		"gpt-3.5-turbo":   "openai",
+		"claude-3-opus":   "anthropic",
 		"claude-3-sonnet": "anthropic",
 	}
 

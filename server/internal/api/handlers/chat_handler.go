@@ -4,6 +4,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -108,6 +109,22 @@ type ChatCompletionRequest struct {
 type MessageRequest struct {
 	Role    string `json:"role" binding:"required"`
 	Content string `json:"content" binding:"required"`
+}
+
+// EmbeddingsRequest represents an embeddings request from the user.
+type EmbeddingsRequest struct {
+	Model          string      `json:"model" binding:"required"`
+	Input          interface{} `json:"input" binding:"required"` // Can be string or []string
+	EncodingFormat string      `json:"encoding_format,omitempty"`
+}
+
+// ImageGenerationRequest represents an image generation request from the user.
+type ImageGenerationRequest struct {
+	Model          string `json:"model,omitempty"`
+	Prompt         string `json:"prompt" binding:"required"`
+	N              int    `json:"n,omitempty"`
+	Size           string `json:"size,omitempty"`
+	ResponseFormat string `json:"response_format,omitempty"` // "url" or "b64_json"
 }
 
 // ChatCompletion handles chat completion requests.
@@ -261,6 +278,401 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		"choices": resp.Choices,
 		"usage":   resp.Usage,
 	})
+}
+
+// Embeddings handles embedding generation requests.
+func (h *ChatHandler) Embeddings(c *gin.Context) {
+	var req EmbeddingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	start := time.Now()
+
+	selectedProvider, apiKey, err := h.router.Route(c.Request.Context(), req.Model)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no available providers"})
+		return
+	}
+
+	providerReq := &provider.EmbeddingRequest{
+		Model:          req.Model,
+		Input:          req.Input,
+		EncodingFormat: req.EncodingFormat,
+	}
+
+	userObj := c.MustGet("user").(*models.User)
+	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error": gin.H{
+				"message": *quotaErr,
+				"type":    "quota_exceeded",
+				"code":    "quota_exceeded",
+			},
+		})
+		return
+	}
+
+	maxRetries := 3
+	var resp *provider.EmbeddingResponse
+	var lastErr error
+	currentAPIKey := apiKey
+
+	if !selectedProvider.RequiresAPIKey {
+		client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, nil)
+		if err != nil {
+			h.logger.Error("failed to create provider client", zap.Error(err))
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client creation failed"})
+			return
+		}
+
+		resp, lastErr = client.Embeddings(c.Request.Context(), providerReq)
+	} else {
+		for attempt := 0; attempt < maxRetries && currentAPIKey != nil; attempt++ {
+			client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, currentAPIKey)
+			if err != nil {
+				h.logger.Error("failed to create provider client", zap.Error(err), zap.Int("attempt", attempt+1))
+				lastErr = err
+				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
+				continue
+			}
+
+			resp, err = client.Embeddings(c.Request.Context(), providerReq)
+			if err != nil {
+				lastErr = err
+				h.logger.Warn("embeddings request failed, trying next API key",
+					zap.Error(err),
+					zap.Int("attempt", attempt+1),
+					zap.String("key_prefix", currentAPIKey.KeyPrefix),
+				)
+
+				errStr := err.Error()
+				if isQuotaOrRateLimitError(errStr) {
+					h.router.MarkKeyFailed(currentAPIKey.ID, errStr)
+				}
+				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
+				continue
+			}
+
+			h.router.ClearKeyFailure(currentAPIKey.ID)
+			break
+		}
+	}
+
+	latency := time.Since(start)
+
+	usageLog := &models.UsageLog{
+		UserID:     userObj.ID,
+		APIKeyID:   userAPIKey.ID,
+		ProviderID: selectedProvider.ID,
+		ModelName:  req.Model,
+		Latency:    latency.Milliseconds(),
+	}
+
+	if resp == nil {
+		usageLog.StatusCode = http.StatusBadGateway
+		if lastErr != nil {
+			if lastErr == provider.ErrNotImplemented {
+				usageLog.StatusCode = http.StatusNotImplemented
+			}
+			usageLog.ErrorMessage = lastErr.Error()
+		} else {
+			usageLog.ErrorMessage = "all API keys failed"
+		}
+		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+
+		if lastErr == provider.ErrNotImplemented {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "embeddings not supported by this provider"})
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": "provider request failed after retries"})
+		return
+	}
+
+	usageLog.StatusCode = http.StatusOK
+	usageLog.RequestTokens = resp.Usage.PromptTokens
+	usageLog.ResponseTokens = resp.Usage.CompletionTokens
+	usageLog.TotalTokens = resp.Usage.TotalTokens
+	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// GenerateImage handles image generation requests.
+func (h *ChatHandler) GenerateImage(c *gin.Context) {
+	var req ImageGenerationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Model might be missing if prompt provided directly, default to dall-e-3
+	model := req.Model
+	if model == "" {
+		model = "dall-e-3"
+	}
+
+	start := time.Now()
+
+	selectedProvider, apiKey, err := h.router.Route(c.Request.Context(), model)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no available providers"})
+		return
+	}
+
+	providerReq := &provider.ImageGenerationRequest{
+		Model:          model,
+		Prompt:         req.Prompt,
+		N:              req.N,
+		Size:           req.Size,
+		ResponseFormat: req.ResponseFormat,
+	}
+
+	userObj := c.MustGet("user").(*models.User)
+	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error": gin.H{
+				"message": *quotaErr,
+				"type":    "quota_exceeded",
+				"code":    "quota_exceeded",
+			},
+		})
+		return
+	}
+
+	maxRetries := 3
+	var resp *provider.ImageGenerationResponse
+	var lastErr error
+	currentAPIKey := apiKey
+
+	if !selectedProvider.RequiresAPIKey {
+		client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, nil)
+		if err != nil {
+			h.logger.Error("failed to create provider client", zap.Error(err))
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client creation failed"})
+			return
+		}
+		resp, lastErr = client.GenerateImage(c.Request.Context(), providerReq)
+	} else {
+		for attempt := 0; attempt < maxRetries && currentAPIKey != nil; attempt++ {
+			client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, currentAPIKey)
+			if err != nil {
+				h.logger.Error("failed to create provider client", zap.Error(err), zap.Int("attempt", attempt+1))
+				lastErr = err
+				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
+				continue
+			}
+
+			resp, err = client.GenerateImage(c.Request.Context(), providerReq)
+			if err != nil {
+				lastErr = err
+				h.logger.Warn("image generation request failed, trying next API key",
+					zap.Error(err),
+					zap.Int("attempt", attempt+1),
+					zap.String("key_prefix", currentAPIKey.KeyPrefix),
+				)
+
+				errStr := err.Error()
+				if isQuotaOrRateLimitError(errStr) {
+					h.router.MarkKeyFailed(currentAPIKey.ID, errStr)
+				}
+				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
+				continue
+			}
+
+			h.router.ClearKeyFailure(currentAPIKey.ID)
+			break
+		}
+	}
+
+	latency := time.Since(start)
+
+	usageLog := &models.UsageLog{
+		UserID:     userObj.ID,
+		APIKeyID:   userAPIKey.ID,
+		ProviderID: selectedProvider.ID,
+		ModelName:  model,
+		Latency:    latency.Milliseconds(),
+	}
+
+	if resp == nil {
+		usageLog.StatusCode = http.StatusBadGateway
+		if lastErr != nil {
+			if lastErr == provider.ErrNotImplemented {
+				usageLog.StatusCode = http.StatusNotImplemented
+			}
+			usageLog.ErrorMessage = lastErr.Error()
+		} else {
+			usageLog.ErrorMessage = "all API keys failed"
+		}
+		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+
+		if lastErr == provider.ErrNotImplemented {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "image generation not supported by this provider"})
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": "provider request failed after retries"})
+		return
+	}
+
+	usageLog.StatusCode = http.StatusOK
+	// Image requests are often billed differently, but we log the request.
+	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// TranscribeAudio handles audio transcription requests.
+func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
+	file, fileHeader, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file is required: " + err.Error()})
+		return
+	}
+	defer func() { _ = file.Close() }()
+
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read file"})
+		return
+	}
+
+	model := c.PostForm("model")
+	if model == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "model is required"})
+		return
+	}
+
+	start := time.Now()
+
+	selectedProvider, apiKey, err := h.router.Route(c.Request.Context(), model)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no available providers"})
+		return
+	}
+
+	// Read optional fields
+	var temperature float64
+	tempStr := c.PostForm("temperature")
+	if tempStr != "" {
+		_, _ = fmt.Sscanf(tempStr, "%f", &temperature)
+	}
+
+	providerReq := &provider.AudioTranscriptionRequest{
+		File:           fileBytes,
+		FileName:       fileHeader.Filename,
+		Model:          model,
+		Language:       c.PostForm("language"),
+		Prompt:         c.PostForm("prompt"),
+		ResponseFormat: c.PostForm("response_format"),
+		Temperature:    temperature,
+	}
+
+	userObj := c.MustGet("user").(*models.User)
+	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error": gin.H{
+				"message": *quotaErr,
+				"type":    "quota_exceeded",
+				"code":    "quota_exceeded",
+			},
+		})
+		return
+	}
+
+	maxRetries := 3
+	var resp *provider.AudioTranscriptionResponse
+	var lastErr error
+	currentAPIKey := apiKey
+
+	if !selectedProvider.RequiresAPIKey {
+		client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, nil)
+		if err != nil {
+			h.logger.Error("failed to create provider client", zap.Error(err))
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client creation failed"})
+			return
+		}
+		resp, lastErr = client.TranscribeAudio(c.Request.Context(), providerReq)
+	} else {
+		for attempt := 0; attempt < maxRetries && currentAPIKey != nil; attempt++ {
+			client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, currentAPIKey)
+			if err != nil {
+				h.logger.Error("failed to create provider client", zap.Error(err), zap.Int("attempt", attempt+1))
+				lastErr = err
+				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
+				continue
+			}
+
+			resp, err = client.TranscribeAudio(c.Request.Context(), providerReq)
+			if err != nil {
+				lastErr = err
+				h.logger.Warn("audio transcription request failed, trying next API key",
+					zap.Error(err),
+					zap.Int("attempt", attempt+1),
+					zap.String("key_prefix", currentAPIKey.KeyPrefix),
+				)
+
+				errStr := err.Error()
+				if isQuotaOrRateLimitError(errStr) {
+					h.router.MarkKeyFailed(currentAPIKey.ID, errStr)
+				}
+				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
+				continue
+			}
+
+			h.router.ClearKeyFailure(currentAPIKey.ID)
+			break
+		}
+	}
+
+	latency := time.Since(start)
+
+	usageLog := &models.UsageLog{
+		UserID:     userObj.ID,
+		APIKeyID:   userAPIKey.ID,
+		ProviderID: selectedProvider.ID,
+		ModelName:  model,
+		Latency:    latency.Milliseconds(),
+	}
+
+	if resp == nil {
+		usageLog.StatusCode = http.StatusBadGateway
+		if lastErr != nil {
+			if lastErr == provider.ErrNotImplemented {
+				usageLog.StatusCode = http.StatusNotImplemented
+			}
+			usageLog.ErrorMessage = lastErr.Error()
+		} else {
+			usageLog.ErrorMessage = "all API keys failed"
+		}
+		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+
+		if lastErr == provider.ErrNotImplemented {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "audio transcription not supported by this provider"})
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": "provider request failed after retries"})
+		return
+	}
+
+	usageLog.StatusCode = http.StatusOK
+	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+
+	// In OpenAI's API, the text format requests return plain text string directly.
+	// The client provider wrapper handles format translation into the unified struct.
+	if providerReq.ResponseFormat == "text" || providerReq.ResponseFormat == "srt" || providerReq.ResponseFormat == "vtt" {
+		c.String(http.StatusOK, resp.Text)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 // handleStreamingChat handles streaming chat completion requests.

@@ -82,7 +82,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to create migrator: %v", err)
 		}
-		defer m.Close()
+		defer func() {
+			if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
+				log.Printf("failed to close migrator: srcErr=%v, dbErr=%v", srcErr, dbErr)
+			}
+		}()
 
 		version, dirty, err := m.Version()
 		if err != nil {
@@ -98,7 +102,11 @@ func main() {
 
 		m, err := newMigrator(&cfg.Database)
 		if err == nil {
-			defer m.Close()
+			defer func() {
+				if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
+					log.Printf("failed to close migrator: srcErr=%v, dbErr=%v", srcErr, dbErr)
+				}
+			}()
 			version, dirty, verr := m.Version()
 			if verr == nil {
 				fmt.Printf("Migration version: %d (dirty: %v)\n", version, dirty)
@@ -129,7 +137,11 @@ func runSQLMigrations(cfg *config.DatabaseConfig, direction string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create migrator: %w", err)
 	}
-	defer m.Close()
+	defer func() {
+		if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
+			log.Printf("failed to close migrator: srcErr=%v, dbErr=%v", srcErr, dbErr)
+		}
+	}()
 
 	switch direction {
 	case "up":
@@ -149,7 +161,11 @@ func runSQLMigrationsWithSteps(cfg *config.DatabaseConfig, steps int) error {
 	if err != nil {
 		return fmt.Errorf("failed to create migrator: %w", err)
 	}
-	defer m.Close()
+	defer func() {
+		if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
+			log.Printf("failed to close migrator: srcErr=%v, dbErr=%v", srcErr, dbErr)
+		}
+	}()
 
 	if steps == -1 {
 		return m.Down()

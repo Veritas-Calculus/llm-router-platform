@@ -348,6 +348,27 @@ func Setup(
 				chat.POST("/completions", chatHandler.ChatCompletion)
 			}
 
+			embeddings := v1.Group("/embeddings")
+			embeddings.Use(authMiddleware.APIKey())
+			embeddings.Use(rateLimiter.Limit())
+			{
+				embeddings.POST("", chatHandler.Embeddings)
+			}
+
+			images := v1.Group("/images")
+			images.Use(authMiddleware.APIKey())
+			images.Use(rateLimiter.Limit())
+			{
+				images.POST("/generations", chatHandler.GenerateImage)
+			}
+
+			audio := v1.Group("/audio")
+			audio.Use(authMiddleware.APIKey())
+			audio.Use(rateLimiter.Limit())
+			{
+				audio.POST("/transcriptions", chatHandler.TranscribeAudio)
+			}
+
 			models := v1.Group("/models")
 			models.Use(authMiddleware.APIKey())
 			{

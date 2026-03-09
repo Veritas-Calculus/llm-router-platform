@@ -202,6 +202,21 @@ func (c *GoogleClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 	}, nil
 }
 
+// Embeddings returns ErrNotImplemented as Gemini uses a different API for embeddings (/v1beta/models/...:embedContent).
+func (c *GoogleClient) Embeddings(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error) {
+	return nil, ErrNotImplemented
+}
+
+// GenerateImage returns ErrNotImplemented.
+func (c *GoogleClient) GenerateImage(ctx context.Context, req *ImageGenerationRequest) (*ImageGenerationResponse, error) {
+	return nil, ErrNotImplemented
+}
+
+// TranscribeAudio returns ErrNotImplemented.
+func (c *GoogleClient) TranscribeAudio(ctx context.Context, req *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
+	return nil, ErrNotImplemented
+}
+
 // StreamChat sends a streaming chat completion request to Google Gemini.
 func (c *GoogleClient) StreamChat(ctx context.Context, req *ChatRequest) (<-chan StreamChunk, error) {
 	contents := buildGeminiContents(req.Messages)

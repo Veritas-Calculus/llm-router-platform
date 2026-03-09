@@ -70,6 +70,48 @@ func (c *OllamaClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 	return &result, nil
 }
 
+// Embeddings sends an embeddings request to Ollama.
+func (c *OllamaClient) Embeddings(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/embeddings", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, errors.New(string(respBody))
+	}
+
+	var embResp EmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&embResp); err != nil {
+		return nil, err
+	}
+
+	return &embResp, nil
+}
+
+// GenerateImage returns ErrNotImplemented.
+func (c *OllamaClient) GenerateImage(ctx context.Context, req *ImageGenerationRequest) (*ImageGenerationResponse, error) {
+	return nil, ErrNotImplemented
+}
+
+// TranscribeAudio returns ErrNotImplemented.
+func (c *OllamaClient) TranscribeAudio(ctx context.Context, req *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
+	return nil, ErrNotImplemented
+}
+
 // ListModels returns available models from Ollama.
 func (c *OllamaClient) ListModels(ctx context.Context) ([]ModelInfo, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)

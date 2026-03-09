@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -72,6 +74,40 @@ func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 	}
 
 	return &chatResp, nil
+}
+
+// Embeddings sends an embeddings request to OpenAI.
+func (c *OpenAIClient) Embeddings(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/embeddings", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, errors.New(string(respBody))
+	}
+
+	var embResp EmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&embResp); err != nil {
+		return nil, err
+	}
+
+	return &embResp, nil
 }
 
 // StreamChat sends a streaming chat completion request to OpenAI.
@@ -179,4 +215,106 @@ func (c *OpenAIClient) CheckHealth(ctx context.Context) (bool, time.Duration, er
 	defer func() { _ = resp.Body.Close() }()
 
 	return resp.StatusCode == http.StatusOK, latency, nil
+}
+
+// GenerateImage sends an image generation request to OpenAI.
+func (c *OpenAIClient) GenerateImage(ctx context.Context, req *ImageGenerationRequest) (*ImageGenerationResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/images/generations", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, errors.New(string(respBody))
+	}
+
+	var imgResp ImageGenerationResponse
+	if err := json.NewDecoder(resp.Body).Decode(&imgResp); err != nil {
+		return nil, err
+	}
+
+	return &imgResp, nil
+}
+
+// TranscribeAudio sends an audio transcription request to OpenAI.
+func (c *OpenAIClient) TranscribeAudio(ctx context.Context, req *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+
+	// Create a form file field
+	fw, err := w.CreateFormFile("file", req.FileName)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = fw.Write(req.File); err != nil {
+		return nil, err
+	}
+
+	// Add other fields
+	_ = w.WriteField("model", req.Model)
+	if req.Language != "" {
+		_ = w.WriteField("language", req.Language)
+	}
+	if req.Prompt != "" {
+		_ = w.WriteField("prompt", req.Prompt)
+	}
+	if req.ResponseFormat != "" {
+		_ = w.WriteField("response_format", req.ResponseFormat)
+	}
+	if req.Temperature > 0 {
+		_ = w.WriteField("temperature", fmt.Sprintf("%f", req.Temperature))
+	}
+
+	// Close the multipart writer to finalize the payload
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/audio/transcriptions", &b)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq.Header.Set("Content-Type", w.FormDataContentType())
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, errors.New(string(respBody))
+	}
+
+	// For specific response formats, OpenAI returns raw text or JSON
+	// Assume JSON or plain text handling based on typical behavior
+	if req.ResponseFormat == "text" || req.ResponseFormat == "srt" || req.ResponseFormat == "vtt" {
+		respBody, _ := io.ReadAll(resp.Body)
+		return &AudioTranscriptionResponse{Text: string(respBody)}, nil
+	}
+
+	var audioResp AudioTranscriptionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&audioResp); err != nil {
+		return nil, err
+	}
+
+	return &audioResp, nil
 }

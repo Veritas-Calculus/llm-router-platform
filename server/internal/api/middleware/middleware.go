@@ -115,7 +115,7 @@ func (m *AuthMiddleware) JWT() gin.HandlerFunc {
 		// (password change, admin force-logout, etc.)
 		if !userObj.TokensInvalidatedAt.IsZero() {
 			iat, _ := claims.GetIssuedAt()
-			if iat != nil && iat.Time.Before(userObj.TokensInvalidatedAt) {
+			if iat != nil && iat.Before(userObj.TokensInvalidatedAt) {
 				AuthFailuresTotal.WithLabelValues("token_revoked").Inc()
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token has been revoked"})
 				return
