@@ -1,4 +1,16 @@
 // Package main provides the entry point for the LLM Router Platform server.
+//
+// @title           LLM Router Platform API
+// @version         1.0
+// @description     A unified gateway for multiple Large Language Models with billing, memory, and proxy pool support.
+//
+// @host            localhost:8080
+// @BasePath        /
+//
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
 package main
 
 import (

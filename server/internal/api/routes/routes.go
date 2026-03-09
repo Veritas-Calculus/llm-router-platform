@@ -21,8 +21,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+
+	// Import swagger docs
+	_ "llm-router-platform/docs"
 )
 
 // Build information set via -ldflags.
@@ -162,6 +167,9 @@ func Setup(
 	})
 	// Prometheus metrics endpoint
 	engine.GET("/metrics", middleware.MetricsHandler())
+
+	// Swagger API Docs
+	engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// ─── Auth middleware (needed early for pprof protection) ──────────
 	authMiddleware := middleware.NewAuthMiddleware(&cfg.JWT, services.User, logger)

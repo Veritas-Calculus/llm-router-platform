@@ -228,6 +228,10 @@ VITE_APP_TITLE=LLM Router Platform
 
 ## API 文档
 
+我们提供了遵循 OpenAPI 3.0 规范的在线 Swagger UI 文档。服务启动后，可以通过访问以下地址查看完整的 API 列表、参数定义及在线调试：
+
+- **Swagger UI**: [http://localhost:8080/swagger/index.html](http://localhost:8080/swagger/index.html)
+
 ### 基础请求
 
 ```bash
@@ -344,10 +348,10 @@ llm-router-platform/
 - [ ] 请求速率限制增强 (per-user/per-key 粒度)
 - [ ] WebSocket 实时流式响应优化
 - [ ] Kubernetes 部署支持 (Helm Chart)
-- [ ] 多语言国际化 (i18n)
+- [x] 多语言国际化 (i18n)
 - [ ] 深色模式支持
 - [ ] 移动端适配
-- [ ] OpenAPI 3.0 规范文档
+- [x] OpenAPI 3.0 规范文档
 
 ## 贡献指南
 
