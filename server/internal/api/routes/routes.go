@@ -13,6 +13,7 @@ import (
 	"llm-router-platform/internal/service/billing"
 	"llm-router-platform/internal/service/health"
 	"llm-router-platform/internal/service/memory"
+	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/proxy"
 	"llm-router-platform/internal/service/router"
@@ -39,6 +40,7 @@ type Services struct {
 	BudgetService *billing.BudgetService
 	Health        *health.Service
 	Memory        *memory.Service
+	Observability observability.Service
 	Proxy         *proxy.Service
 	Provider      *provider.Registry
 	RedisClient   *redis.Client // For rate limiting
@@ -190,7 +192,7 @@ func Setup(
 
 	authHandler := handlers.NewAuthHandler(services.User, auditService, &cfg.JWT, cfg.Registration.Mode, logger)
 	apiKeyHandler := handlers.NewAPIKeyHandler(services.User, logger)
-	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, logger)
+	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Observability, logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)
 	usageHandler := handlers.NewUsageHandler(services.Billing, logger)
 	healthHandler := handlers.NewHealthHandler(services.Health, logger)

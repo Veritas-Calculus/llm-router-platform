@@ -11,18 +11,19 @@ import (
 
 // Config holds all configuration for the application.
 type Config struct {
-	Server       ServerConfig
-	Database     DatabaseConfig
-	Redis        RedisConfig
-	Encryption   EncryptionConfig
-	ProxyPool    ProxyPoolConfig
-	HealthCheck  HealthCheckConfig
-	Alert        AlertConfig
-	JWT          JWTConfig
-	RateLimit    RateLimitConfig
-	Log          LogConfig
-	Admin        AdminConfig
-	Registration RegistrationConfig
+	Server        ServerConfig
+	Database      DatabaseConfig
+	Redis         RedisConfig
+	Encryption    EncryptionConfig
+	ProxyPool     ProxyPoolConfig
+	HealthCheck   HealthCheckConfig
+	Alert         AlertConfig
+	JWT           JWTConfig
+	RateLimit     RateLimitConfig
+	Log           LogConfig
+	Admin         AdminConfig
+	Registration  RegistrationConfig
+	Observability ObservabilityConfig
 }
 
 // ServerConfig holds server-related configuration.
@@ -128,6 +129,14 @@ type RegistrationConfig struct {
 	Mode string // "open", "invite", "closed"
 }
 
+// ObservabilityConfig holds observability configuration (e.g. Langfuse).
+type ObservabilityConfig struct {
+	LangfuseEnabled   bool
+	LangfusePublicKey string
+	LangfuseSecretKey string // #nosec G101
+	LangfuseHost      string
+}
+
 // Load reads configuration from environment variables and .env file.
 func Load() (*Config, error) {
 	viper.SetConfigFile(".env")
@@ -218,6 +227,12 @@ func Load() (*Config, error) {
 		Registration: RegistrationConfig{
 			Mode: viper.GetString("REGISTRATION_MODE"),
 		},
+		Observability: ObservabilityConfig{
+			LangfuseEnabled:   viper.GetBool("LANGFUSE_ENABLED"),
+			LangfusePublicKey: viper.GetString("LANGFUSE_PUBLIC_KEY"),
+			LangfuseSecretKey: viper.GetString("LANGFUSE_SECRET_KEY"),
+			LangfuseHost:      viper.GetString("LANGFUSE_HOST"),
+		},
 	}
 
 	return cfg, nil
@@ -249,6 +264,8 @@ func setDefaults() {
 	viper.SetDefault("LOG_FORMAT", "json")
 	viper.SetDefault("ADMIN_NAME", "Administrator")
 	viper.SetDefault("REGISTRATION_MODE", "open") // open, invite, closed
+	viper.SetDefault("LANGFUSE_ENABLED", false)
+	viper.SetDefault("LANGFUSE_HOST", "https://cloud.langfuse.com")
 }
 
 // GetDSN returns the database connection string.

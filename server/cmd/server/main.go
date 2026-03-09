@@ -18,6 +18,7 @@ import (
 	"llm-router-platform/internal/service/billing"
 	"llm-router-platform/internal/service/health"
 	"llm-router-platform/internal/service/memory"
+	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/proxy"
 	"llm-router-platform/internal/service/router"
@@ -144,6 +145,10 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	if err := services.Observability.Shutdown(ctx); err != nil {
+		logger.Error("observability shutdown error", zap.Error(err))
+	}
+
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Error("server shutdown error", zap.Error(err))
 		return err
@@ -196,6 +201,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	budgetService := billing.NewBudgetService(repos.UsageLog, logger)
 	memoryService := memory.NewService(repos.Memory, nil, logger)
 	proxyService := proxy.NewService(repos.Proxy, logger)
+	obsService := observability.NewLangfuseService(cfg.Observability, logger)
 
 	alertNotifier := health.NewAlertNotifier(repos.Alert, repos.AlertConfig, logger)
 	healthService := health.NewService(
@@ -217,6 +223,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		BudgetService: budgetService,
 		Health:        healthService,
 		Memory:        memoryService,
+		Observability: obsService,
 		Proxy:         proxyService,
 		Provider:      providerRegistry,
 		RedisClient:   redisClient,

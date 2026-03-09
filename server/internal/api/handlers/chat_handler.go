@@ -14,6 +14,7 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/billing"
 	"llm-router-platform/internal/service/memory"
+	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/router"
 
@@ -52,15 +53,17 @@ type ChatHandler struct {
 	router  *router.Router
 	billing *billing.Service
 	memory  *memory.Service
+	obsInfo observability.Service
 	logger  *zap.Logger
 }
 
 // NewChatHandler creates a new chat handler.
-func NewChatHandler(r *router.Router, b *billing.Service, m *memory.Service, logger *zap.Logger) *ChatHandler {
+func NewChatHandler(r *router.Router, b *billing.Service, m *memory.Service, obs observability.Service, logger *zap.Logger) *ChatHandler {
 	return &ChatHandler{
 		router:  r,
 		billing: b,
 		memory:  m,
+		obsInfo: obs,
 		logger:  logger,
 	}
 }
