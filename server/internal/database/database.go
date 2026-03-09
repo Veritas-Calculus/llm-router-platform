@@ -60,6 +60,7 @@ func (d *Database) Migrate() error {
 		&models.Alert{},
 		&models.AlertConfig{},
 		&models.ConversationMemory{},
+		&models.AuditLog{},
 	)
 }
 
@@ -230,4 +231,45 @@ func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
 
 	d.logger.Info("default admin user created", zap.String("email", cfg.Email))
 	return nil
+}
+
+// CleanupOldHealthHistory removes health history records older than the specified duration.
+// This should be called periodically to prevent unbounded table growth.
+func (d *Database) CleanupOldHealthHistory(retentionDays int) (int64, error) {
+	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	result := d.DB.Where("checked_at < ?", cutoff).Delete(&models.HealthHistory{})
+	if result.Error != nil {
+		d.logger.Error("failed to cleanup health history",
+			zap.Int("retention_days", retentionDays),
+			zap.Error(result.Error),
+		)
+		return 0, result.Error
+	}
+	if result.RowsAffected > 0 {
+		d.logger.Info("cleaned up old health history records",
+			zap.Int64("deleted", result.RowsAffected),
+			zap.Int("retention_days", retentionDays),
+		)
+	}
+	return result.RowsAffected, nil
+}
+
+// CleanupOldAlerts removes resolved alerts older than the specified duration.
+func (d *Database) CleanupOldAlerts(retentionDays int) (int64, error) {
+	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	result := d.DB.Where("status = ? AND resolved_at < ?", "resolved", cutoff).Delete(&models.Alert{})
+	if result.Error != nil {
+		d.logger.Error("failed to cleanup old alerts",
+			zap.Int("retention_days", retentionDays),
+			zap.Error(result.Error),
+		)
+		return 0, result.Error
+	}
+	if result.RowsAffected > 0 {
+		d.logger.Info("cleaned up old resolved alerts",
+			zap.Int64("deleted", result.RowsAffected),
+			zap.Int("retention_days", retentionDays),
+		)
+	}
+	return result.RowsAffected, nil
 }

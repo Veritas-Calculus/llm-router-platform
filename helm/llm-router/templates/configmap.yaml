@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-router-config
+  labels:
+    {{- include "llm-router.labels" . | nindent 4 }}
+data:
+  SERVER_PORT: {{ .Values.server.port | quote }}
+  GIN_MODE: {{ .Values.server.env.GIN_MODE | quote }}
+  LOG_LEVEL: {{ .Values.server.env.LOG_LEVEL | quote }}
+  LOG_FORMAT: {{ .Values.server.env.LOG_FORMAT | quote }}
+  RATE_LIMIT_ENABLED: {{ .Values.server.env.RATE_LIMIT_ENABLED | quote }}
+  RATE_LIMIT_REQUESTS_PER_MINUTE: {{ .Values.server.env.RATE_LIMIT_REQUESTS_PER_MINUTE | quote }}
+  HEALTH_CHECK_ENABLED: {{ .Values.server.env.HEALTH_CHECK_ENABLED | quote }}
+  HEALTH_CHECK_INTERVAL: {{ .Values.server.env.HEALTH_CHECK_INTERVAL | quote }}
+  CORS_ORIGINS: {{ .Values.server.env.CORS_ORIGINS | quote }}
+  {{- if .Values.postgresql.enabled }}
+  DB_HOST: {{ .Release.Name }}-postgresql
+  DB_PORT: "5432"
+  DB_NAME: {{ .Values.postgresql.auth.database | quote }}
+  DB_USER: postgres
+  DB_SSL_MODE: disable
+  {{- end }}
+  {{- if .Values.redis.enabled }}
+  REDIS_HOST: {{ .Release.Name }}-redis-master
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  {{- end }}

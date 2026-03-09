@@ -3,6 +3,7 @@ package config
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -10,23 +11,25 @@ import (
 
 // Config holds all configuration for the application.
 type Config struct {
-	Server      ServerConfig
-	Database    DatabaseConfig
-	Redis       RedisConfig
-	Encryption  EncryptionConfig
-	ProxyPool   ProxyPoolConfig
-	HealthCheck HealthCheckConfig
-	Alert       AlertConfig
-	JWT         JWTConfig
-	RateLimit   RateLimitConfig
-	Log         LogConfig
-	Admin       AdminConfig
+	Server       ServerConfig
+	Database     DatabaseConfig
+	Redis        RedisConfig
+	Encryption   EncryptionConfig
+	ProxyPool    ProxyPoolConfig
+	HealthCheck  HealthCheckConfig
+	Alert        AlertConfig
+	JWT          JWTConfig
+	RateLimit    RateLimitConfig
+	Log          LogConfig
+	Admin        AdminConfig
+	Registration RegistrationConfig
 }
 
 // ServerConfig holds server-related configuration.
 type ServerConfig struct {
-	Port string
-	Mode string
+	Port        string
+	Mode        string
+	CORSOrigins []string // Allowed CORS origins; empty or ["*"] = allow all
 }
 
 // DatabaseConfig holds database connection configuration.
@@ -120,6 +123,11 @@ type AdminConfig struct {
 	Name     string
 }
 
+// RegistrationConfig holds user registration settings.
+type RegistrationConfig struct {
+	Mode string // "open", "invite", "closed"
+}
+
 // Load reads configuration from environment variables and .env file.
 func Load() (*Config, error) {
 	viper.SetConfigFile(".env")
@@ -135,10 +143,21 @@ func Load() (*Config, error) {
 
 	setDefaults()
 
+	// Parse CORS origins from comma-separated string
+	var corsOrigins []string
+	if raw := viper.GetString("CORS_ORIGINS"); raw != "" {
+		for _, o := range strings.Split(raw, ",") {
+			if trimmed := strings.TrimSpace(o); trimmed != "" {
+				corsOrigins = append(corsOrigins, trimmed)
+			}
+		}
+	}
+
 	cfg := &Config{
 		Server: ServerConfig{
-			Port: viper.GetString("SERVER_PORT"),
-			Mode: viper.GetString("GIN_MODE"),
+			Port:        viper.GetString("SERVER_PORT"),
+			Mode:        viper.GetString("GIN_MODE"),
+			CORSOrigins: corsOrigins,
 		},
 		Database: DatabaseConfig{
 			Host:     viper.GetString("DB_HOST"),
@@ -196,6 +215,9 @@ func Load() (*Config, error) {
 			Password: viper.GetString("ADMIN_PASSWORD"),
 			Name:     viper.GetString("ADMIN_NAME"),
 		},
+		Registration: RegistrationConfig{
+			Mode: viper.GetString("REGISTRATION_MODE"),
+		},
 	}
 
 	return cfg, nil
@@ -205,6 +227,7 @@ func Load() (*Config, error) {
 func setDefaults() {
 	viper.SetDefault("SERVER_PORT", "8080")
 	viper.SetDefault("GIN_MODE", "release")
+	viper.SetDefault("CORS_ORIGINS", "") // Empty = deny by default in production; set to "*" or specific origins
 	viper.SetDefault("DB_HOST", "localhost")
 	viper.SetDefault("DB_PORT", "5432")
 	viper.SetDefault("DB_SSL_MODE", "disable")
@@ -225,6 +248,7 @@ func setDefaults() {
 	viper.SetDefault("LOG_LEVEL", "info")
 	viper.SetDefault("LOG_FORMAT", "json")
 	viper.SetDefault("ADMIN_NAME", "Administrator")
+	viper.SetDefault("REGISTRATION_MODE", "open") // open, invite, closed
 }
 
 // GetDSN returns the database connection string.

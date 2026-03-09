@@ -1,0 +1,14 @@
+-- 000001_initial_schema.down.sql
+-- Rollback initial schema
+
+DROP TABLE IF EXISTS conversation_memories CASCADE;
+DROP TABLE IF EXISTS alert_configs CASCADE;
+DROP TABLE IF EXISTS alerts CASCADE;
+DROP TABLE IF EXISTS health_histories CASCADE;
+DROP TABLE IF EXISTS usage_logs CASCADE;
+DROP TABLE IF EXISTS proxies CASCADE;
+DROP TABLE IF EXISTS provider_api_keys CASCADE;
+DROP TABLE IF EXISTS models CASCADE;
+DROP TABLE IF EXISTS providers CASCADE;
+DROP TABLE IF EXISTS api_keys CASCADE;
+DROP TABLE IF EXISTS users CASCADE;

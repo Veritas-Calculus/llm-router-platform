@@ -1,0 +1,28 @@
+# Development overrides — NOT for production use.
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# This file provides convenience defaults for LOCAL DEVELOPMENT ONLY.
+# In production, set proper values via environment variables or .env file.
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5432:5432" # Expose to all interfaces for dev tools
+
+  redis:
+    command: redis-server --requirepass devpassword
+    ports:
+      - "6379:6379"
+
+  server:
+    environment:
+      - DB_PASSWORD=devpassword
+      - REDIS_PASSWORD=devpassword
+      - JWT_SECRET=dev-jwt-secret-key-at-least-32-characters-long
+      - ADMIN_PASSWORD=DevAdmin123!
+      - ENCRYPTION_KEY=dev-32-byte-encryption-key-here!
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:80
+      - GIN_MODE=debug
+      - LOG_LEVEL=debug

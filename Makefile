@@ -3,17 +3,21 @@
 # Variables
 BINARY_NAME=llm-router-server
 GO_FILES=$(shell find . -name '*.go' -type f)
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+LDFLAGS=-ldflags="-w -s -X llm-router-platform/internal/api/routes.Version=$(VERSION) -X llm-router-platform/internal/api/routes.GitCommit=$(GIT_COMMIT) -X llm-router-platform/internal/api/routes.BuildTime=$(BUILD_TIME)"
 
 all: build
 
 # Build
 build:
-	@echo "Building server..."
-	cd server && go build -o bin/$(BINARY_NAME) ./cmd/server
+	@echo "Building server... ($(VERSION) $(GIT_COMMIT))"
+	cd server && go build $(LDFLAGS) -o bin/$(BINARY_NAME) ./cmd/server
 
 build-linux:
-	@echo "Building for Linux..."
-	cd server && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o bin/$(BINARY_NAME)-linux ./cmd/server
+	@echo "Building for Linux... ($(VERSION) $(GIT_COMMIT))"
+	cd server && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o bin/$(BINARY_NAME)-linux ./cmd/server
 
 # Test
 test:
@@ -86,22 +90,34 @@ migrate-down:
 	@echo "Rolling back migrations..."
 	cd server && go run ./cmd/migrate down
 
+migrate-version:
+	cd server && go run ./cmd/migrate version
+
+migrate-status:
+	cd server && go run ./cmd/migrate status
+
 # Help
 help:
 	@echo "Available targets:"
-	@echo "  build          - Build the server binary"
-	@echo "  build-linux    - Build for Linux"
-	@echo "  test           - Run tests"
-	@echo "  test-coverage  - Run tests with coverage"
-	@echo "  clean          - Clean build artifacts"
-	@echo "  run            - Run the server"
-	@echo "  dev            - Run in development mode"
-	@echo "  web-install    - Install web dependencies"
-	@echo "  web-build      - Build web frontend"
-	@echo "  web-dev        - Run web dev server"
-	@echo "  docker-build   - Build Docker images"
-	@echo "  docker-up      - Start Docker containers"
-	@echo "  docker-down    - Stop Docker containers"
+	@echo "  build             - Build the server binary (with version info)"
+	@echo "  build-linux       - Build for Linux"
+	@echo "  test              - Run tests"
+	@echo "  test-coverage     - Run tests with coverage"
+	@echo "  clean             - Clean build artifacts"
+	@echo "  run               - Run the server"
+	@echo "  dev               - Run in development mode"
+	@echo "  web-install       - Install web dependencies"
+	@echo "  web-build         - Build web frontend"
+	@echo "  web-dev           - Run web dev server"
+	@echo "  docker-build      - Build Docker images"
+	@echo "  docker-up         - Start Docker containers"
+	@echo "  docker-down       - Stop Docker containers"
+	@echo "  migrate-up        - Run SQL migrations"
+	@echo "  migrate-down      - Rollback last migration"
+	@echo "  migrate-version   - Show current migration version"
+	@echo "  migrate-status    - Check DB connection and migration status"
+	@echo "  lint              - Run linters"
+
 	@echo "  docker-logs    - Show Docker logs"
 	@echo "  lint           - Run linter"
 	@echo "  help           - Show this help"
