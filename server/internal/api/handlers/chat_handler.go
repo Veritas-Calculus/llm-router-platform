@@ -162,6 +162,17 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 	userObj := c.MustGet("user").(*models.User)
 	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 
+	// Observability: Start Trace
+	reqID := c.GetHeader("X-Request-ID")
+	if reqID == "" {
+		reqID = uuid.New().String()
+	}
+	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "chat_completion", userObj.ID.String(), req.ConversationID, map[string]interface{}{
+		"model":  req.Model,
+		"stream": req.Stream,
+	})
+	defer trace.End()
+
 	// Check user quota before processing
 	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{
@@ -183,7 +194,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client creation failed"})
 			return
 		}
-		h.handleStreamingChat(c, client, providerReq, selectedProvider, userObj, userAPIKey, start)
+		h.handleStreamingChat(c, client, providerReq, selectedProvider, userObj, userAPIKey, start, trace)
 		return
 	}
 
@@ -202,7 +213,23 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			return
 		}
 
+		genName := "Provider: " + selectedProvider.Name
+		gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, req.Model, map[string]interface{}{
+			"temperature": req.Temperature,
+			"max_tokens":  req.MaxTokens,
+		}, req.Messages)
+
 		resp, lastErr = client.Chat(c.Request.Context(), providerReq)
+		if lastErr != nil {
+			gen.EndWithError(lastErr)
+		} else if resp != nil {
+			// calculate tokens if we can
+			outText := ""
+			if len(resp.Choices) > 0 {
+				outText = resp.Choices[0].Message.Content
+			}
+			gen.End(outText, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+		}
 	} else {
 		// For providers that require API keys, retry with different keys on failure
 		for attempt := 0; attempt < maxRetries && currentAPIKey != nil; attempt++ {
@@ -215,8 +242,18 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 				continue
 			}
 
+			genName := "Provider: " + selectedProvider.Name
+			if attempt > 0 {
+				genName += fmt.Sprintf(" (Retry %d)", attempt)
+			}
+			gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, req.Model, map[string]interface{}{
+				"temperature": req.Temperature,
+				"max_tokens":  req.MaxTokens,
+			}, req.Messages)
+
 			resp, err = client.Chat(c.Request.Context(), providerReq)
 			if err != nil {
+				gen.EndWithError(err)
 				lastErr = err
 				h.logger.Warn("chat request failed, trying next API key",
 					zap.Error(err),
@@ -237,6 +274,13 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			}
 
 			// Success - clear any previous failure for this key
+			outText := ""
+			if resp != nil && len(resp.Choices) > 0 {
+				outText = resp.Choices[0].Message.Content
+			}
+			if resp != nil {
+				gen.End(outText, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+			}
 			h.router.ClearKeyFailure(currentAPIKey.ID)
 			break
 		}
@@ -308,6 +352,17 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 	userObj := c.MustGet("user").(*models.User)
 	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 
+	// Observability: Start Trace
+	reqID := c.GetHeader("X-Request-ID")
+	if reqID == "" {
+		reqID = uuid.New().String()
+	}
+	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "embeddings", userObj.ID.String(), "", map[string]interface{}{
+		"model":           req.Model,
+		"encoding_format": req.EncodingFormat,
+	})
+	defer trace.End()
+
 	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error": gin.H{
@@ -332,7 +387,17 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 			return
 		}
 
+		genName := "Provider: " + selectedProvider.Name
+		gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, req.Model, map[string]interface{}{
+			"encoding_format": req.EncodingFormat,
+		}, req.Input)
+
 		resp, lastErr = client.Embeddings(c.Request.Context(), providerReq)
+		if lastErr != nil {
+			gen.EndWithError(lastErr)
+		} else if resp != nil {
+			gen.End("Embedded representation generated successfully", resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+		}
 	} else {
 		for attempt := 0; attempt < maxRetries && currentAPIKey != nil; attempt++ {
 			client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, currentAPIKey)
@@ -343,8 +408,17 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 				continue
 			}
 
+			genName := "Provider: " + selectedProvider.Name
+			if attempt > 0 {
+				genName += fmt.Sprintf(" (Retry %d)", attempt)
+			}
+			gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, req.Model, map[string]interface{}{
+				"encoding_format": req.EncodingFormat,
+			}, req.Input)
+
 			resp, err = client.Embeddings(c.Request.Context(), providerReq)
 			if err != nil {
+				gen.EndWithError(err)
 				lastErr = err
 				h.logger.Warn("embeddings request failed, trying next API key",
 					zap.Error(err),
@@ -360,6 +434,9 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 				continue
 			}
 
+			if resp != nil {
+				gen.End("Embedded representation generated successfully", resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+			}
 			h.router.ClearKeyFailure(currentAPIKey.ID)
 			break
 		}
@@ -437,6 +514,18 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 	userObj := c.MustGet("user").(*models.User)
 	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 
+	// Observability: Start Trace
+	reqID := c.GetHeader("X-Request-ID")
+	if reqID == "" {
+		reqID = uuid.New().String()
+	}
+	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "generate_image", userObj.ID.String(), "", map[string]interface{}{
+		"model":           model,
+		"size":            req.Size,
+		"response_format": req.ResponseFormat,
+	})
+	defer trace.End()
+
 	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error": gin.H{
@@ -460,7 +549,19 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client creation failed"})
 			return
 		}
+		genName := "Provider: " + selectedProvider.Name
+		gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, model, map[string]interface{}{
+			"size":            req.Size,
+			"response_format": req.ResponseFormat,
+			"n":               req.N,
+		}, req.Prompt)
+
 		resp, lastErr = client.GenerateImage(c.Request.Context(), providerReq)
+		if lastErr != nil {
+			gen.EndWithError(lastErr)
+		} else if resp != nil {
+			gen.End("Image generated successfully", 0, 0)
+		}
 	} else {
 		for attempt := 0; attempt < maxRetries && currentAPIKey != nil; attempt++ {
 			client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, currentAPIKey)
@@ -471,8 +572,19 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 				continue
 			}
 
+			genName := "Provider: " + selectedProvider.Name
+			if attempt > 0 {
+				genName += fmt.Sprintf(" (Retry %d)", attempt)
+			}
+			gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, model, map[string]interface{}{
+				"size":            req.Size,
+				"response_format": req.ResponseFormat,
+				"n":               req.N,
+			}, req.Prompt)
+
 			resp, err = client.GenerateImage(c.Request.Context(), providerReq)
 			if err != nil {
+				gen.EndWithError(err)
 				lastErr = err
 				h.logger.Warn("image generation request failed, trying next API key",
 					zap.Error(err),
@@ -487,7 +599,9 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
 				continue
 			}
-
+			if resp != nil {
+				gen.End("Image generated successfully", 0, 0)
+			}
 			h.router.ClearKeyFailure(currentAPIKey.ID)
 			break
 		}
@@ -579,6 +693,20 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 	userObj := c.MustGet("user").(*models.User)
 	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 
+	// Observability: Start Trace
+	reqID := c.GetHeader("X-Request-ID")
+	if reqID == "" {
+		reqID = uuid.New().String()
+	}
+	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "transcribe_audio", userObj.ID.String(), "", map[string]interface{}{
+		"model":           model,
+		"language":        providerReq.Language,
+		"response_format": providerReq.ResponseFormat,
+		"temperature":     providerReq.Temperature,
+		"filename":        providerReq.FileName,
+	})
+	defer trace.End()
+
 	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error": gin.H{
@@ -602,7 +730,19 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client creation failed"})
 			return
 		}
+		genName := "Provider: " + selectedProvider.Name
+		gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, model, map[string]interface{}{
+			"language":        providerReq.Language,
+			"response_format": providerReq.ResponseFormat,
+			"temperature":     providerReq.Temperature,
+		}, providerReq.Prompt)
+
 		resp, lastErr = client.TranscribeAudio(c.Request.Context(), providerReq)
+		if lastErr != nil {
+			gen.EndWithError(lastErr)
+		} else if resp != nil {
+			gen.End(resp.Text, 0, 0)
+		}
 	} else {
 		for attempt := 0; attempt < maxRetries && currentAPIKey != nil; attempt++ {
 			client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, currentAPIKey)
@@ -613,8 +753,19 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 				continue
 			}
 
+			genName := "Provider: " + selectedProvider.Name
+			if attempt > 0 {
+				genName += fmt.Sprintf(" (Retry %d)", attempt)
+			}
+			gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, model, map[string]interface{}{
+				"language":        providerReq.Language,
+				"response_format": providerReq.ResponseFormat,
+				"temperature":     providerReq.Temperature,
+			}, providerReq.Prompt)
+
 			resp, err = client.TranscribeAudio(c.Request.Context(), providerReq)
 			if err != nil {
+				gen.EndWithError(err)
 				lastErr = err
 				h.logger.Warn("audio transcription request failed, trying next API key",
 					zap.Error(err),
@@ -629,7 +780,9 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
 				continue
 			}
-
+			if resp != nil {
+				gen.End(resp.Text, 0, 0)
+			}
 			h.router.ClearKeyFailure(currentAPIKey.ID)
 			break
 		}
@@ -679,9 +832,16 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 }
 
 // handleStreamingChat handles streaming chat completion requests.
-func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client, req *provider.ChatRequest, selectedProvider *models.Provider, userObj *models.User, userAPIKey *models.APIKey, start time.Time) {
+func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client, req *provider.ChatRequest, selectedProvider *models.Provider, userObj *models.User, userAPIKey *models.APIKey, start time.Time, trace observability.Trace) {
+	gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, "Provider: "+selectedProvider.Name, req.Model, map[string]interface{}{
+		"temperature": req.Temperature,
+		"max_tokens":  req.MaxTokens,
+		"stream":      true,
+	}, req.Messages)
+
 	chunks, err := client.StreamChat(c.Request.Context(), req)
 	if err != nil {
+		gen.EndWithError(err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "provider request failed"})
 		return
 	}
@@ -692,6 +852,8 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client
 	c.Header("Connection", "keep-alive")
 	c.Header("Transfer-Encoding", "chunked")
 
+	var fullText string
+
 	c.Stream(func(w io.Writer) bool {
 		chunk, ok := <-chunks
 		if !ok {
@@ -699,12 +861,17 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client
 		}
 
 		if chunk.Error != nil {
+			gen.EndWithError(chunk.Error)
 			return false
 		}
 
 		if chunk.Done {
 			_, _ = w.Write([]byte("data: [DONE]\n\n"))
 			return false
+		}
+
+		if len(chunk.Choices) > 0 {
+			fullText += chunk.Choices[0].Delta.Content
 		}
 
 		data, err := json.Marshal(chunk)
@@ -719,6 +886,9 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client
 	})
 
 	// Record usage after streaming completes
+	// Note: Langfuse counts characters as estimate if token isn't provided explicitly.
+	// We record 0 tokens natively if provider doesn't report it at end of stream, leaving Langfuse tokenizer to do it.
+	gen.End(fullText, 0, 0)
 	latency := time.Since(start)
 	usageLog := &models.UsageLog{
 		UserID:     userObj.ID,
