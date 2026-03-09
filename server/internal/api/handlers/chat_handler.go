@@ -171,6 +171,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		"model":  req.Model,
 		"stream": req.Stream,
 	})
+	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
 	// Check user quota before processing
@@ -361,6 +362,7 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 		"model":           req.Model,
 		"encoding_format": req.EncodingFormat,
 	})
+	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
 	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
@@ -524,6 +526,7 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 		"size":            req.Size,
 		"response_format": req.ResponseFormat,
 	})
+	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
 	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
@@ -705,6 +708,7 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 		"temperature":     providerReq.Temperature,
 		"filename":        providerReq.FileName,
 	})
+	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
 	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
