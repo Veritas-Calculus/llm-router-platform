@@ -61,6 +61,7 @@ func (d *Database) Migrate() error {
 		&models.AlertConfig{},
 		&models.ConversationMemory{},
 		&models.AuditLog{},
+		&models.Budget{},
 	)
 }
 

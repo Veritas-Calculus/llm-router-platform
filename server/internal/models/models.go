@@ -27,9 +27,10 @@ type User struct {
 	RequirePasswordChange bool      `gorm:"default:false" json:"require_password_change"`
 	APIKeys               []APIKey  `gorm:"foreignKey:UserID" json:"-"`
 	LastLoginAt           time.Time `json:"last_login_at"`
-	MonthlyTokenLimit     int64     `gorm:"default:0" json:"monthly_token_limit"` // 0 = unlimited
-	MonthlyBudgetUSD      float64   `gorm:"default:0" json:"monthly_budget_usd"`  // 0 = unlimited
-	TokensInvalidatedAt   time.Time `json:"-"`                                    // tokens issued before this time are rejected
+	MonthlyTokenLimit     int64     `gorm:"default:0" json:"monthly_token_limit"`   // 0 = unlimited
+	MonthlyBudgetUSD      float64   `gorm:"default:0" json:"monthly_budget_usd"`    // 0 = unlimited
+	RateLimitPerMinute    int       `gorm:"default:0" json:"rate_limit_per_minute"` // 0 = use global default
+	TokensInvalidatedAt   time.Time `json:"-"`                                      // tokens issued before this time are rejected
 }
 
 // APIKey represents an API key for authentication.
@@ -190,4 +191,16 @@ type ConversationMemory struct {
 	Content        string    `gorm:"type:text" json:"content"`
 	TokenCount     int       `json:"token_count"`
 	Sequence       int       `gorm:"not null" json:"sequence"`
+}
+
+// Budget represents monthly spending limits for a user.
+type Budget struct {
+	BaseModel
+	UserID          uuid.UUID  `gorm:"type:uuid;not null;uniqueIndex" json:"user_id"`
+	APIKeyID        *uuid.UUID `gorm:"type:uuid;index" json:"api_key_id,omitempty"`
+	MonthlyLimitUSD float64    `gorm:"not null" json:"monthly_limit_usd"`
+	AlertThreshold  float64    `gorm:"default:0.8" json:"alert_threshold"`
+	IsActive        bool       `gorm:"default:true" json:"is_active"`
+	WebhookURL      string     `json:"webhook_url,omitempty"`
+	Email           string     `json:"email,omitempty"`
 }

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 
 	"github.com/google/uuid"
@@ -18,54 +19,37 @@ import (
 
 // ─── Budget Management ──────────────────────────────────────
 
-// Budget represents monthly spending limits for a user or API key.
-type Budget struct {
-	ID              uuid.UUID  `json:"id" gorm:"type:uuid;primary_key;default:gen_random_uuid()"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	UserID          uuid.UUID  `json:"user_id" gorm:"type:uuid;not null;index"`
-	APIKeyID        *uuid.UUID `json:"api_key_id,omitempty" gorm:"type:uuid;index"` // Optional: per API key
-	MonthlyLimitUSD float64    `json:"monthly_limit_usd" gorm:"not null"`
-	AlertThreshold  float64    `json:"alert_threshold" gorm:"default:0.8"` // 0.8 = alert at 80%
-	IsActive        bool       `json:"is_active" gorm:"default:true"`
-	WebhookURL      string     `json:"webhook_url,omitempty"`
-	Email           string     `json:"email,omitempty"`
-}
-
 // BudgetStatus represents the current spend vs. budget.
 type BudgetStatus struct {
-	Budget         *Budget `json:"budget"`
-	CurrentSpend   float64 `json:"current_spend"`
-	RemainingUSD   float64 `json:"remaining_usd"`
-	UsagePercent   float64 `json:"usage_percent"`
-	IsOverBudget   bool    `json:"is_over_budget"`
-	IsAlertTripped bool    `json:"is_alert_tripped"`
-	PeriodStart    string  `json:"period_start"`
-	PeriodEnd      string  `json:"period_end"`
+	Budget         *models.Budget `json:"budget"`
+	CurrentSpend   float64        `json:"current_spend"`
+	RemainingUSD   float64        `json:"remaining_usd"`
+	UsagePercent   float64        `json:"usage_percent"`
+	IsOverBudget   bool           `json:"is_over_budget"`
+	IsAlertTripped bool           `json:"is_alert_tripped"`
+	PeriodStart    string         `json:"period_start"`
+	PeriodEnd      string         `json:"period_end"`
 }
 
 // BudgetService handles budget creation, checking, and alerting.
 type BudgetService struct {
-	usageRepo *repository.UsageLogRepository
-	logger    *zap.Logger
-	budgets   map[uuid.UUID]*Budget // In-memory until DB model integrated
+	usageRepo  *repository.UsageLogRepository
+	budgetRepo *repository.BudgetRepository
+	logger     *zap.Logger
 }
 
 // NewBudgetService creates a new budget service.
-func NewBudgetService(usageRepo *repository.UsageLogRepository, logger *zap.Logger) *BudgetService {
+func NewBudgetService(usageRepo *repository.UsageLogRepository, budgetRepo *repository.BudgetRepository, logger *zap.Logger) *BudgetService {
 	return &BudgetService{
-		usageRepo: usageRepo,
-		logger:    logger,
-		budgets:   make(map[uuid.UUID]*Budget),
+		usageRepo:  usageRepo,
+		budgetRepo: budgetRepo,
+		logger:     logger,
 	}
 }
 
 // SetBudget creates or updates a budget for a user.
-func (s *BudgetService) SetBudget(userID uuid.UUID, limitUSD, threshold float64, webhookURL, email string) *Budget {
-	budget := &Budget{
-		ID:              uuid.New(),
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+func (s *BudgetService) SetBudget(ctx context.Context, userID uuid.UUID, limitUSD, threshold float64, webhookURL, email string) (*models.Budget, error) {
+	budget := &models.Budget{
 		UserID:          userID,
 		MonthlyLimitUSD: limitUSD,
 		AlertThreshold:  threshold,
@@ -73,29 +57,41 @@ func (s *BudgetService) SetBudget(userID uuid.UUID, limitUSD, threshold float64,
 		WebhookURL:      webhookURL,
 		Email:           email,
 	}
-	s.budgets[userID] = budget
+	if err := s.budgetRepo.Upsert(ctx, budget); err != nil {
+		s.logger.Error("failed to save budget", zap.Error(err))
+		return nil, fmt.Errorf("failed to save budget: %w", err)
+	}
 	s.logger.Info("budget set",
 		zap.String("user_id", userID.String()),
 		zap.Float64("limit_usd", limitUSD),
 		zap.Float64("threshold", threshold),
 	)
-	return budget
+	// Re-read from DB to get the generated ID/timestamps
+	saved, err := s.budgetRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return budget, nil
+	}
+	return saved, nil
 }
 
 // GetBudget returns the budget for a user.
-func (s *BudgetService) GetBudget(userID uuid.UUID) *Budget {
-	return s.budgets[userID]
+func (s *BudgetService) GetBudget(ctx context.Context, userID uuid.UUID) *models.Budget {
+	budget, err := s.budgetRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return nil
+	}
+	return budget
 }
 
 // DeleteBudget removes a budget for a user.
-func (s *BudgetService) DeleteBudget(userID uuid.UUID) {
-	delete(s.budgets, userID)
+func (s *BudgetService) DeleteBudget(ctx context.Context, userID uuid.UUID) error {
+	return s.budgetRepo.DeleteByUserID(ctx, userID)
 }
 
 // CheckBudget evaluates current spend vs budget and returns status.
 func (s *BudgetService) CheckBudget(ctx context.Context, userID uuid.UUID) (*BudgetStatus, error) {
-	budget := s.budgets[userID]
-	if budget == nil || !budget.IsActive {
+	budget, err := s.budgetRepo.GetByUserID(ctx, userID)
+	if err != nil || budget == nil || !budget.IsActive {
 		return nil, nil
 	}
 

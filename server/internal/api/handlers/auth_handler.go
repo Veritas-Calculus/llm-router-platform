@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 	"unicode"
@@ -156,6 +157,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	refreshToken, err := h.generateRefreshToken(userObj.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate refresh token"})
+		return
+	}
+
 	// Audit: successful login
 	if h.auditService != nil {
 		h.auditService.Log(c.Request.Context(), audit.ActionLogin, userObj.ID, userObj.ID,
@@ -163,7 +170,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"token": token,
+		"token":         token,
+		"refresh_token": refreshToken,
+		"token_type":    "Bearer",
+		"expires_in":    int(h.jwtConfig.ExpiresIn.Seconds()),
 		"user": gin.H{
 			"id":                      userObj.ID,
 			"email":                   userObj.Email,
@@ -315,18 +325,121 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "password changed"})
 }
 
-// generateToken creates a JWT token.
+// generateToken creates a JWT access token.
 func (h *AuthHandler) generateToken(userID uuid.UUID, email, role string) (string, error) {
 	claims := jwt.MapClaims{
 		"sub":   userID.String(),
 		"email": email,
 		"role":  role,
+		"type":  "access",
 		"exp":   time.Now().Add(h.jwtConfig.ExpiresIn).Unix(),
 		"iat":   time.Now().Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(h.jwtConfig.Secret))
+}
+
+// generateRefreshToken creates a long-lived refresh token (7 days).
+func (h *AuthHandler) generateRefreshToken(userID uuid.UUID) (string, error) {
+	claims := jwt.MapClaims{
+		"sub":  userID.String(),
+		"type": "refresh",
+		"jti":  uuid.New().String(), // unique token ID for rotation
+		"exp":  time.Now().Add(7 * 24 * time.Hour).Unix(),
+		"iat":  time.Now().Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(h.jwtConfig.Secret))
+}
+
+// RefreshTokenRequest represents a token refresh request.
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+// RotateRefreshToken accepts a valid refresh token and returns a new access+refresh pair.
+// This implements the refresh-token rotation pattern: each refresh token is single-use.
+func (h *AuthHandler) RotateRefreshToken(c *gin.Context) {
+	var req RefreshTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Parse and validate the refresh token
+	token, err := jwt.Parse(req.RefreshToken, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return []byte(h.jwtConfig.Secret), nil
+	})
+	if err != nil || !token.Valid {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired refresh token"})
+		return
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token claims"})
+		return
+	}
+
+	// Verify this is a refresh token, not an access token
+	tokenType, _ := claims["type"].(string)
+	if tokenType != "refresh" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "token is not a refresh token"})
+		return
+	}
+
+	sub, _ := claims["sub"].(string)
+	userID, err := uuid.Parse(sub)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token subject"})
+		return
+	}
+
+	// Fetch current user state from database
+	userObj, err := h.userService.GetByID(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+		return
+	}
+
+	if !userObj.IsActive {
+		c.JSON(http.StatusForbidden, gin.H{"error": "account is disabled"})
+		return
+	}
+
+	// Check token wasn't issued before tokens were invalidated
+	if !userObj.TokensInvalidatedAt.IsZero() {
+		iat, _ := claims["iat"].(float64)
+		if time.Unix(int64(iat), 0).Before(userObj.TokensInvalidatedAt) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "token has been revoked"})
+			return
+		}
+	}
+
+	// Issue new access token + refresh token (rotation)
+	newAccessToken, err := h.generateToken(userObj.ID, userObj.Email, userObj.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate access token"})
+		return
+	}
+
+	newRefreshToken, err := h.generateRefreshToken(userObj.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate refresh token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"token":         newAccessToken,
+		"refresh_token": newRefreshToken,
+		"token_type":    "Bearer",
+		"expires_in":    int(h.jwtConfig.ExpiresIn.Seconds()),
+	})
 }
 
 // APIKeyHandler handles API key endpoints.

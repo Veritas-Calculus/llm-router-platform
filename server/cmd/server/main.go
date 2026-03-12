@@ -183,6 +183,7 @@ type Repositories struct {
 	Memory         *repository.ConversationMemoryRepository
 	Alert          *repository.AlertRepository
 	AlertConfig    *repository.AlertConfigRepository
+	Budget         *repository.BudgetRepository
 }
 
 func initRepositories(db *database.Database) *Repositories {
@@ -198,6 +199,7 @@ func initRepositories(db *database.Database) *Repositories {
 		Memory:         repository.NewConversationMemoryRepository(db.DB),
 		Alert:          repository.NewAlertRepository(db.DB),
 		AlertConfig:    repository.NewAlertConfigRepository(db.DB),
+		Budget:         repository.NewBudgetRepository(db.DB),
 	}
 }
 
@@ -210,7 +212,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 
 	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, providerRegistry, logger)
 	billingService := billing.NewService(repos.UsageLog, repos.Model, redisClient, logger)
-	budgetService := billing.NewBudgetService(repos.UsageLog, logger)
+	budgetService := billing.NewBudgetService(repos.UsageLog, repos.Budget, logger)
 	memoryService := memory.NewService(repos.Memory, nil, logger)
 	proxyService := proxy.NewService(repos.Proxy, logger)
 	obsService := observability.NewLangfuseService(cfg.Observability, logger)

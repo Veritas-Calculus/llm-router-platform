@@ -61,7 +61,12 @@ func (h *FinOpsHandler) SetBudget(c *gin.Context) {
 		threshold = 0.8 // Default 80%
 	}
 
-	budget := h.budgetService.SetBudget(userID, req.MonthlyLimitUSD, threshold, req.WebhookURL, req.Email)
+	budget, err := h.budgetService.SetBudget(c.Request.Context(), userID, req.MonthlyLimitUSD, threshold, req.WebhookURL, req.Email)
+	if err != nil {
+		h.logger.Error("failed to set budget", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set budget"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"budget": budget})
 }
 
@@ -73,7 +78,7 @@ func (h *FinOpsHandler) GetBudget(c *gin.Context) {
 		return
 	}
 
-	budget := h.budgetService.GetBudget(userID)
+	budget := h.budgetService.GetBudget(c.Request.Context(), userID)
 	if budget == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no budget set"})
 		return
@@ -113,7 +118,11 @@ func (h *FinOpsHandler) DeleteBudget(c *gin.Context) {
 		return
 	}
 
-	h.budgetService.DeleteBudget(userID)
+	if err := h.budgetService.DeleteBudget(c.Request.Context(), userID); err != nil {
+		h.logger.Error("failed to delete budget", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete budget"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "budget deleted"})
 }
 

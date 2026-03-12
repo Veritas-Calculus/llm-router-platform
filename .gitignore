@@ -1,63 +1,55 @@
-# Dependencies
-node_modules/
-vendor/
 
-# Build outputs
-dist/
-build/
-bin/
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Go
-*.o
-*.a
-*.test
-go.work
-go.work.sum
-
-# Environment
+.api_key_cache
+.DS_Store
 .env
-.env.local
 .env.*.local
-*.env
-
-# IDE
+.env.local
 .idea/
 .vscode/
-*.swp
-*.swo
-*~
-.DS_Store
-
-# Logs
-*.log
-logs/
-
-# Test coverage
-coverage/
-*.out
-coverage.html
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-
-# Config with secrets
-config.yaml
-config.local.yaml
-*.pem
-*.key
-
-# API key cache
-.api_key_cache
-*/.api_key_cache
-
-# Database
+*.a
 *.db
+*.dll
+*.dylib
+*.env
+*.exe
+*.exe~
+*.key
+*.log
+*.o
+*.out
+*.pem
+*.so
 *.sqlite
 *.sqlite3
+*.swo
+*.swp
+*.test
+*.tmp
+*/.api_key_cache
+*~
+# API key cache
+# Build outputs
+# Config with secrets
+# Database
+# Dependencies
+# Environment
+# Go
+# IDE
+# Logs
+# Temporary files
+# Test coverage
+bin/
+build/
+config.local.yaml
+config.yaml
+coverage.html
+coverage/
+dist/
+go.work
+go.work.sum
+logs/
+node_modules/
+server/server
+temp/
+tmp/
+vendor/
