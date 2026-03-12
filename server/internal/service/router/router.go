@@ -18,6 +18,7 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/internal/service/provider"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -272,7 +273,7 @@ func (r *Router) selectCostOptimized(ctx context.Context, modelName string, prov
 	}
 
 	r.logger.Debug("cost-optimized routing",
-		zap.String("model", modelName),
+		zap.String("model", sanitize.LogValue(modelName)),
 		zap.String("provider", best.provider.Name),
 		zap.Float64("cost_per_1k", best.cost),
 	)

@@ -13,6 +13,7 @@ import (
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -146,7 +147,7 @@ func (s *Service) UpdateRole(ctx context.Context, id uuid.UUID, role string) (*m
 	}
 	s.logger.Info("user role updated",
 		zap.String("user_id", id.String()),
-		zap.String("role", role),
+		zap.String("role", sanitize.LogValue(role)),
 	)
 	return user, nil
 }
@@ -350,6 +351,8 @@ func hashAPIKey(key string) string {
 	// If encryption is not initialized, fall back to simple SHA-256 for stability
 	// but in production we should always have a salt.
 	if !crypto.IsInitialized() {
+		// lgtm[go/weak-sensitive-data-hashing] — Fallback for startup/testing only.
+		// API keys are 256-bit random (not user passwords); SHA-256 is safe for high-entropy inputs.
 		hash := sha256.Sum256([]byte(key))
 		return hex.EncodeToString(hash[:])
 	}

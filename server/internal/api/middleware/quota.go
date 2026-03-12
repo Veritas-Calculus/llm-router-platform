@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"llm-router-platform/pkg/sanitize"
 	"net/http"
 	"strconv"
 	"time"
@@ -67,7 +68,7 @@ func (q *QuotaChecker) Check() gin.HandlerFunc {
 			// fail-open: if Redis is down, allow the request
 			q.logger.Warn("quota check redis error, allowing request",
 				zap.Error(err),
-				zap.String("user_id", userID),
+				zap.String("user_id", sanitize.LogValue(userID)),
 			)
 			c.Next()
 			return

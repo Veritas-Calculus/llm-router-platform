@@ -15,6 +15,7 @@ import (
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/router"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -157,7 +158,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 				historyMessages = append(historyMessages, provider.Message{Role: hm.Role, Content: hm.Content})
 			}
 		} else {
-			h.logger.Warn("failed to fetch conversation memory", zap.Error(err), zap.String("conversation_id", req.ConversationID))
+			h.logger.Warn("failed to fetch conversation memory", zap.Error(err), zap.String("conversation_id", sanitize.LogValue(req.ConversationID)))
 		}
 	}
 

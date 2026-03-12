@@ -11,6 +11,7 @@ import (
 
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/service/user"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -229,7 +230,7 @@ func (r *RateLimiter) Limit() gin.HandlerFunc {
 			RateLimitFailOpenTotal.Inc() // Track for alerting
 			r.logger.Warn("rate limiter redis error, allowing request",
 				zap.Error(err),
-				zap.String("identifier", identifier),
+				zap.String("identifier", sanitize.LogValue(identifier)),
 			)
 			c.Next()
 			return
