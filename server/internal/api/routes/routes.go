@@ -175,6 +175,12 @@ func Setup(
 	// ─── Auth & Rate Limiter middleware ───────────────────────────────
 	authMiddleware := middleware.NewAuthMiddleware(&cfg.JWT, services.User, logger)
 	rateLimiter := middleware.NewRateLimiter(cfg.RateLimit.RequestsPerMinute, services.RedisClient, logger)
+	authorLimiter := middleware.NewAuthRateLimiter(services.RedisClient, 5, logger)
+
+	// Per-key and per-user rate limiters
+	perKeyLimiter := middleware.NewPerKeyRateLimiter(services.RedisClient, logger)
+	perUserLimiter := middleware.NewPerUserRateLimiter(services.RedisClient, cfg.RateLimit.RequestsPerMinute, logger)
+	quotaChecker := middleware.NewQuotaChecker(services.RedisClient, logger)
 
 	// ─── Backpressure middleware ──────────────────────────────────────
 	var sqlDB *sql.DB
@@ -224,17 +230,18 @@ func Setup(
 		v1 := api.Group("/v1")
 		{
 			auth := v1.Group("/auth")
-			authLimiter := middleware.NewAuthRateLimiter(services.RedisClient, 5, logger)
-			auth.Use(authLimiter.Limit())
+			auth.Use(authorLimiter.Limit())
 			{
 				auth.POST("/register", authHandler.Register)
 				auth.POST("/login", authHandler.Login)
 				auth.POST("/refresh", authHandler.RefreshToken)
+				auth.POST("/token/rotate", authHandler.RotateRefreshToken) // Refresh token rotation
 			}
 
 			// ── All authenticated users ─────────────────────────
 			protected := v1.Group("")
 			protected.Use(authMiddleware.JWT())
+			protected.Use(perUserLimiter.Limit())
 			{
 				// Personal profile
 				user := protected.Group("/user")
@@ -362,6 +369,8 @@ func Setup(
 
 			chat := v1.Group("/chat")
 			chat.Use(authMiddleware.APIKey())
+			chat.Use(perKeyLimiter.Limit())
+			chat.Use(quotaChecker.Check())
 			chat.Use(rateLimiter.Limit())
 			chat.Use(backpressureLimiter.Protect())
 			{
@@ -370,6 +379,8 @@ func Setup(
 
 			embeddings := v1.Group("/embeddings")
 			embeddings.Use(authMiddleware.APIKey())
+			embeddings.Use(perKeyLimiter.Limit())
+			embeddings.Use(quotaChecker.Check())
 			embeddings.Use(rateLimiter.Limit())
 			embeddings.Use(backpressureLimiter.Protect())
 			{
@@ -378,6 +389,8 @@ func Setup(
 
 			images := v1.Group("/images")
 			images.Use(authMiddleware.APIKey())
+			images.Use(perKeyLimiter.Limit())
+			images.Use(quotaChecker.Check())
 			images.Use(rateLimiter.Limit())
 			images.Use(backpressureLimiter.Protect())
 			{
@@ -386,6 +399,8 @@ func Setup(
 
 			audio := v1.Group("/audio")
 			audio.Use(authMiddleware.APIKey())
+			audio.Use(perKeyLimiter.Limit())
+			audio.Use(quotaChecker.Check())
 			audio.Use(rateLimiter.Limit())
 			audio.Use(backpressureLimiter.Protect())
 			{

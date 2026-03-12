@@ -133,6 +133,12 @@ func (m *AuthMiddleware) JWT() gin.HandlerFunc {
 		c.Set("user_id", userIDStr)
 		c.Set("email", userObj.Email)
 		c.Set("role", userObj.Role) // Real-time role from DB, not from JWT
+
+		// Set quota/rate-limit info for downstream middleware
+		c.Set("user_monthly_token_limit", userObj.MonthlyTokenLimit)
+		c.Set("user_monthly_budget_usd", userObj.MonthlyBudgetUSD)
+		c.Set("user_rate_limit", userObj.RateLimitPerMinute)
+
 		c.Next()
 	}
 }
