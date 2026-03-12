@@ -1,0 +1,298 @@
+{
+    "annotations": {
+        "list": []
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 1,
+    "links": [],
+    "panels": [
+        {
+            "title": "Request Rate (req/s)",
+            "type": "timeseries",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+            },
+            "targets": [
+                {
+                    "expr": "sum(rate(http_requests_total{job=\"llm-router\"}[5m])) by (method, path)",
+                    "legendFormat": "{{method}} {{path}}"
+                }
+            ],
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 0
+            }
+        },
+        {
+            "title": "Error Rate (%)",
+            "type": "timeseries",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+            },
+            "targets": [
+                {
+                    "expr": "sum(rate(http_requests_total{job=\"llm-router\",status=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"llm-router\"}[5m])) * 100",
+                    "legendFormat": "Error %"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percent",
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 1
+                            },
+                            {
+                                "color": "red",
+                                "value": 5
+                            }
+                        ]
+                    }
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 0
+            }
+        },
+        {
+            "title": "Request Latency P95 (ms)",
+            "type": "timeseries",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+            },
+            "targets": [
+                {
+                    "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"llm-router\"}[5m])) by (le))",
+                    "legendFormat": "P95"
+                },
+                {
+                    "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"llm-router\"}[5m])) by (le))",
+                    "legendFormat": "P99"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "s"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 8
+            }
+        },
+        {
+            "title": "Active Providers",
+            "type": "stat",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+            },
+            "targets": [
+                {
+                    "expr": "sum(llm_router_provider_active)",
+                    "legendFormat": "Active"
+                }
+            ],
+            "gridPos": {
+                "h": 4,
+                "w": 6,
+                "x": 12,
+                "y": 8
+            }
+        },
+        {
+            "title": "Healthy API Keys",
+            "type": "stat",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+            },
+            "targets": [
+                {
+                    "expr": "sum(llm_router_apikey_healthy)",
+                    "legendFormat": "Healthy Keys"
+                }
+            ],
+            "gridPos": {
+                "h": 4,
+                "w": 6,
+                "x": 18,
+                "y": 8
+            }
+        },
+        {
+            "title": "Token Usage by Provider",
+            "type": "timeseries",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+            },
+            "targets": [
+                {
+                    "expr": "sum(rate(llm_router_tokens_total{job=\"llm-router\"}[5m])) by (provider, type)",
+                    "legendFormat": "{{provider}} {{type}}"
+                }
+            ],
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 12
+            }
+        },
+        {
+            "title": "Cost per Hour ($)",
+            "type": "timeseries",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+            },
+            "targets": [
+                {
+                    "expr": "sum(increase(llm_router_cost_usd_total{job=\"llm-router\"}[1h])) by (provider)",
+                    "legendFormat": "{{provider}}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "currencyUSD"
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 16
+            }
+        },
+        {
+            "title": "Provider Latency Distribution",
+            "type": "heatmap",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+            },
+            "targets": [
+                {
+                    "expr": "sum(rate(llm_router_provider_latency_seconds_bucket{job=\"llm-router\"}[5m])) by (le, provider)",
+                    "legendFormat": "{{provider}}"
+                }
+            ],
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 16
+            }
+        },
+        {
+            "title": "Budget Utilization by User",
+            "type": "bargauge",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+            },
+            "targets": [
+                {
+                    "expr": "llm_router_budget_usage_percent",
+                    "legendFormat": "{{user}}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percent",
+                    "max": 100,
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 70
+                            },
+                            {
+                                "color": "orange",
+                                "value": 85
+                            },
+                            {
+                                "color": "red",
+                                "value": 95
+                            }
+                        ]
+                    }
+                }
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 24
+            }
+        },
+        {
+            "title": "PostgreSQL Connections",
+            "type": "timeseries",
+            "datasource": {
+                "type": "prometheus",
+                "uid": "${DS_PROMETHEUS}"
+            },
+            "targets": [
+                {
+                    "expr": "go_sql_open_connections{job=\"llm-router\"}",
+                    "legendFormat": "Open"
+                },
+                {
+                    "expr": "go_sql_idle_connections{job=\"llm-router\"}",
+                    "legendFormat": "Idle"
+                }
+            ],
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 24
+            }
+        }
+    ],
+    "schemaVersion": 39,
+    "tags": [
+        "llm-router",
+        "api-gateway"
+    ],
+    "templating": {
+        "list": [
+            {
+                "name": "DS_PROMETHEUS",
+                "type": "datasource",
+                "query": "prometheus"
+            }
+        ]
+    },
+    "time": {
+        "from": "now-1h",
+        "to": "now"
+    },
+    "title": "LLM Router Platform",
+    "uid": "llm-router-overview"
+}

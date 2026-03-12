@@ -7,9 +7,9 @@
 ### 核心功能
 
 - **统一 API 接口**: 提供与 OpenAI 兼容的 API 格式，一套代码对接多个 LLM 平台
-- **多平台支持**: 集成 OpenAI、Claude、Gemini 等主流 LLM 服务商
+- **多平台支持**: 集成 OpenAI、Claude、Gemini、DeepSeek、Mistral、Ollama、LM Studio 等主流 LLM 服务商
 - **代理池管理**: 支持自定义 Proxy Pool 配置，实现请求负载均衡和故障转移
-- **智能路由**: 根据模型、成本、延迟等因素自动选择最优服务商
+- **智能路由**: 支持轮询、加权、最低延迟、成本优化等多种路由策略
 
 ### 计费功能
 
@@ -23,14 +23,16 @@
 - 保存历史对话上下文
 - 支持会话恢复和续写
 - 跨设备会话同步
+- **会话压缩**: 自动将长对话历史压缩为摘要，降低 Token 消耗
 
 ### 健康检查
 
 - **API Key 可用性检测**: 定时验证各平台 API Key 是否有效、余额是否充足
 - **代理池健康监测**: 检测 Proxy Pool 中各节点的连通性和响应延迟
 - **自动故障转移**: 当检测到 API Key 失效或代理节点不可用时，自动切换备用资源
-- **告警通知**: 支持邮件、Webhook、钉钉/飞书等多渠道告警
+- **告警通知**: 支持 Webhook、SMTP 邮件、钉钉（HMAC 签名）、飞书（Interactive Card）等多渠道告警
 - **健康状态面板**: 可视化展示各资源的健康状态和历史可用率
+- **Grafana 监控**: 预置 10 面板 Dashboard 模板（请求率、错误率、延迟 P95/P99、Token 用量、成本追踪等）
 
 ### 管理后台 (Apple Design Style)
 
@@ -40,6 +42,14 @@
 - **用户管理**: API Key 管理、配额设置、权限控制
 - **系统监控**: 服务健康状态、请求成功率、错误日志追踪
 - **健康检查**: API Key 状态、代理池节点状态、实时告警信息
+- **深色模式**: 支持浅色/深色/跟随系统三种主题模式
+
+### 安全特性
+
+- **JWT 双 Token**: 短期 Access Token (15min) + 长期 Refresh Token (7d) 旋转机制
+- **API Key 加密存储**: 使用 AES-256-GCM + HMAC 加密 Provider API Key
+- **审计日志**: 关键操作（登录、Key 管理、用户变更）全量记录
+- **速率限制**: 基于 Redis 的滑动窗口限流
 
 ## 技术架构
 
@@ -81,13 +91,14 @@
 
 | 技术 | 用途 |
 |------|------|
-| Go 1.24+ | 主开发语言 |
+| Go 1.26+ | 主开发语言 |
 | Gin | Web 框架 |
 | GORM | ORM 数据库操作 |
 | go-redis | Redis 客户端 |
-| zap | 日志库 |
+| zap | 结构化日志 |
 | viper | 配置管理 |
 | swaggo | API 文档生成 |
+| jwt-go | JWT 认证 (Access + Refresh Token) |
 
 ### 前端 (React)
 
@@ -118,7 +129,7 @@
 
 ### 环境要求
 
-- Go >= 1.24
+- Go >= 1.26
 - Node.js >= 18.x
 - PostgreSQL >= 16
 - Redis >= 7.0
@@ -153,13 +164,16 @@ go run cmd/server/main.go
 cd web
 
 # 安装依赖
-pnpm install
+npm install
 
 # 开发模式
-pnpm dev
+npm run dev
+
+# 运行测试
+npm test
 
 # 生产构建
-pnpm build
+npm run build
 ```
 
 ### Docker 一键部署
@@ -287,14 +301,17 @@ llm-router-platform/
 │   │   ├── models/           # 数据模型
 │   │   ├── repository/       # 数据访问层
 │   │   ├── service/          # 业务逻辑层
-│   │   │   ├── billing/      # 计费服务
-│   │   │   ├── memory/       # 会话记忆
-│   │   │   ├── provider/     # LLM 服务商适配
+│   │   │   ├── audit/        # 审计日志
+│   │   │   ├── billing/      # 计费 & FinOps
+│   │   │   ├── health/       # 健康检查 & 告警调度
+│   │   │   ├── memory/       # 会话记忆 & 压缩
+│   │   │   ├── notification/ # 多渠道通知 (Webhook/Email/钉钉/飞书)
+│   │   │   ├── observability/# 可观测性
+│   │   │   ├── provider/     # LLM Provider 适配 (OpenAI/Claude/Gemini/DeepSeek/Mistral/Ollama)
 │   │   │   ├── proxy/        # 代理池管理
-│   │   │   ├── router/       # 路由策略
-│   │   │   ├── health/       # 健康检查服务
-│   │   │   └── alert/        # 告警通知服务
-│   │   └── pkg/              # 公共工具包
+│   │   │   ├── router/       # 路由策略 (轮询/加权/最低延迟/成本优化)
+│   │   │   └── user/         # 用户服务
+│   │   ├── crypto/           # 加密工具 (AES-GCM + HMAC)
 │   ├── go.mod
 │   └── go.sum
 │
@@ -340,18 +357,22 @@ llm-router-platform/
 
 - [x] 管理后台 Dashboard
 - [x] API Key 权限管理
-- [x] 多 LLM 服务商支持 (OpenAI, Claude, Gemini, Ollama, LM Studio)
+- [x] 多 LLM 服务商支持 (OpenAI, Claude, Gemini, Ollama, LM Studio, DeepSeek, Mistral)
 - [x] 代理池管理与健康检查
 - [x] 计费 & 用量统计
 - [x] 流式响应 (SSE)
-- [ ] 支持更多 LLM 服务商 (DeepSeek, 通义千问, Mistral 等)
-- [ ] 请求速率限制增强 (per-user/per-key 粒度)
-- [ ] WebSocket 实时流式响应优化
-- [ ] Kubernetes 部署支持 (Helm Chart)
-- [x] 多语言国际化 (i18n)
-- [ ] 深色模式支持
-- [ ] 移动端适配
+- [x] 深色模式支持
+- [x] Refresh Token 旋转机制
+- [x] 成本优化路由策略
+- [x] 多渠道告警通知 (Webhook/Email/钉钉/飞书)
+- [x] 会话记忆压缩
+- [x] Grafana 监控 Dashboard
+- [x] 预算持久化 (PostgreSQL)
 - [x] OpenAPI 3.0 规范文档
+- [ ] 请求速率限制增强 (per-user/per-key 粒度)
+- [ ] Kubernetes 部署支持 (Helm Chart)
+- [ ] 多语言国际化 (i18n)
+- [ ] 移动端适配
 
 ## 贡献指南
 
