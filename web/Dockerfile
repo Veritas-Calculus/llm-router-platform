@@ -18,6 +18,10 @@ RUN npm run build
 # Runtime stage
 FROM nginx:alpine
 
+LABEL org.opencontainers.image.source="https://github.com/Veritas-Calculus/llm-router-platform"
+LABEL org.opencontainers.image.description="LLM Router Platform - Web Frontend"
+LABEL org.opencontainers.image.licenses="MIT"
+
 # Patch CVE-2026-25646 and other Alpine security updates
 RUN apk upgrade --no-cache
 

@@ -23,6 +23,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # Runtime stage
 FROM alpine:3.23
 
+LABEL org.opencontainers.image.source="https://github.com/Veritas-Calculus/llm-router-platform"
+LABEL org.opencontainers.image.description="LLM Router Platform - API Server"
+LABEL org.opencontainers.image.licenses="MIT"
+
 WORKDIR /app
 
 # Install runtime dependencies and apply security patches
