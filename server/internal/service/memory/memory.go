@@ -244,6 +244,100 @@ func (s *Service) deleteCache(ctx context.Context, userID uuid.UUID, conversatio
 	return s.redis.Del(ctx, key).Err()
 }
 
+// CompressConversation replaces older messages with a summary to reduce token usage.
+// It keeps the last `keepRecent` messages intact and compresses everything before them
+// into a single "system" summary message. The summarizer function is provided by the caller
+// (typically uses an LLM to generate the summary).
+func (s *Service) CompressConversation(
+	ctx context.Context,
+	userID uuid.UUID,
+	conversationID string,
+	maxTokens int,
+	keepRecent int,
+	summarizer func(messages []Message) (string, int, error),
+) error {
+	messages, err := s.GetConversation(ctx, userID, conversationID)
+	if err != nil {
+		return err
+	}
+
+	totalTokens := 0
+	for _, m := range messages {
+		totalTokens += m.TokenCount
+	}
+
+	// No compression needed
+	if totalTokens <= maxTokens || len(messages) <= keepRecent {
+		return nil
+	}
+
+	// Split into old (to summarize) and recent (to keep)
+	splitIdx := len(messages) - keepRecent
+	oldMessages := messages[:splitIdx]
+	// recentMessages := messages[splitIdx:]
+
+	// Generate summary of old messages
+	summary, summaryTokens, err := summarizer(oldMessages)
+	if err != nil {
+		s.logger.Error("failed to generate conversation summary",
+			zap.Error(err),
+			zap.String("conversation_id", conversationID),
+		)
+		// Fallback: just truncate
+		return s.TruncateConversation(ctx, userID, conversationID, maxTokens)
+	}
+
+	// Delete old messages from DB
+	if err := s.memoryRepo.DeleteOldestByConversation(ctx, userID, conversationID, splitIdx); err != nil {
+		return err
+	}
+
+	// Insert summary as a system message at the beginning
+	summaryMemory := &models.ConversationMemory{
+		UserID:         userID,
+		ConversationID: conversationID,
+		Role:           "system",
+		Content:        "[Conversation Summary]\n" + summary,
+		TokenCount:     summaryTokens,
+		Sequence:       0, // Place at the start
+	}
+
+	if err := s.memoryRepo.Create(ctx, summaryMemory); err != nil {
+		return err
+	}
+
+	s.logger.Info("conversation compressed",
+		zap.String("conversation_id", conversationID),
+		zap.Int("original_messages", len(messages)),
+		zap.Int("compressed_to_messages", keepRecent+1),
+		zap.Int("original_tokens", totalTokens),
+		zap.Int("summary_tokens", summaryTokens),
+	)
+
+	return s.updateCache(ctx, userID, conversationID)
+}
+
+// SummarizeMessages builds a plain-text summary of a list of messages.
+// This is a simple extractive summarizer — for production use, wire this to an LLM call.
+func SummarizeMessages(messages []Message) string {
+	if len(messages) == 0 {
+		return ""
+	}
+
+	var summary string
+	summary = "Previous conversation context:\n"
+	for _, m := range messages {
+		prefix := m.Role
+		content := m.Content
+		if len(content) > 200 {
+			content = content[:200] + "..."
+		}
+		summary += "- " + prefix + ": " + content + "\n"
+	}
+
+	return summary
+}
+
 // ListConversations returns all conversation IDs for a user.
 func (s *Service) ListConversations(ctx context.Context, userID uuid.UUID) ([]string, error) {
 	return s.memoryRepo.ListConversationIDs(ctx, userID)

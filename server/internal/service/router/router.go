@@ -27,10 +27,11 @@ import (
 type Strategy string
 
 const (
-	StrategyRoundRobin   Strategy = "round_robin"
-	StrategyWeighted     Strategy = "weighted"
-	StrategyLeastLatency Strategy = "least_latency"
-	StrategyFallback     Strategy = "fallback"
+	StrategyRoundRobin    Strategy = "round_robin"
+	StrategyWeighted      Strategy = "weighted"
+	StrategyLeastLatency  Strategy = "least_latency"
+	StrategyFallback      Strategy = "fallback"
+	StrategyCostOptimized Strategy = "cost_optimized"
 )
 
 // FailedKeyInfo tracks information about a failed API key.
@@ -105,6 +106,8 @@ func (r *Router) Route(ctx context.Context, modelName string) (*models.Provider,
 			selectedProvider = r.selectWeighted(providers)
 		case StrategyLeastLatency:
 			selectedProvider = r.selectLeastLatency(providers)
+		case StrategyCostOptimized:
+			selectedProvider = r.selectCostOptimized(ctx, modelName, providers)
 		default:
 			selectedProvider = r.selectWeighted(providers)
 		}
@@ -163,15 +166,25 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 			// Check for common open-source model patterns
 			// These are typically used when no other provider matches
 			if strings.Contains(modelLower, "llama") ||
-				strings.Contains(modelLower, "mistral") ||
-				strings.Contains(modelLower, "qwen") ||
 				strings.Contains(modelLower, "codellama") ||
 				strings.Contains(modelLower, "vicuna") ||
 				strings.Contains(modelLower, "phi") ||
-				strings.Contains(modelLower, "deepseek") ||
-				strings.Contains(modelLower, "yi-") ||
-				strings.Contains(modelLower, "mixtral") ||
-				strings.Contains(modelLower, "qwq") {
+				strings.Contains(modelLower, "yi-") {
+				return p
+			}
+		case "deepseek":
+			// DeepSeek models
+			if strings.HasPrefix(modelLower, "deepseek") {
+				return p
+			}
+		case "mistral":
+			// Mistral AI models
+			if strings.HasPrefix(modelLower, "mistral") ||
+				strings.HasPrefix(modelLower, "mixtral") ||
+				strings.HasPrefix(modelLower, "codestral") ||
+				strings.HasPrefix(modelLower, "pixtral") ||
+				strings.HasPrefix(modelLower, "open-mistral") ||
+				strings.HasPrefix(modelLower, "open-mixtral") {
 				return p
 			}
 		}
@@ -215,6 +228,56 @@ func (r *Router) selectWeighted(providers []models.Provider) *models.Provider {
 // selectLeastLatency selects provider with lowest latency.
 func (r *Router) selectLeastLatency(providers []models.Provider) *models.Provider {
 	return r.selectWeighted(providers)
+}
+
+// selectCostOptimized selects the provider with the lowest cost for a given model.
+// It compares input_price_per_1k across all providers that offer the requested model.
+// If cost data is unavailable, it falls back to weighted selection.
+func (r *Router) selectCostOptimized(ctx context.Context, modelName string, providers []models.Provider) *models.Provider {
+	type providerCost struct {
+		provider *models.Provider
+		cost     float64
+	}
+
+	var candidates []providerCost
+
+	for i := range providers {
+		p := &providers[i]
+		models, err := r.modelRepo.GetByProvider(ctx, p.ID)
+		if err != nil {
+			continue
+		}
+		for _, m := range models {
+			if strings.EqualFold(m.Name, modelName) && m.IsActive {
+				candidates = append(candidates, providerCost{
+					provider: p,
+					cost:     m.InputPricePer1K,
+				})
+				break
+			}
+		}
+	}
+
+	if len(candidates) == 0 {
+		// No cost data — fallback to weighted
+		return r.selectWeighted(providers)
+	}
+
+	// Find the lowest cost
+	best := candidates[0]
+	for _, c := range candidates[1:] {
+		if c.cost < best.cost {
+			best = c
+		}
+	}
+
+	r.logger.Debug("cost-optimized routing",
+		zap.String("model", modelName),
+		zap.String("provider", best.provider.Name),
+		zap.Float64("cost_per_1k", best.cost),
+	)
+
+	return best.provider
 }
 
 // isKeyTemporarilyFailed checks if a key is temporarily marked as failed.
@@ -528,6 +591,10 @@ func (r *Router) createProviderClient(name string, cfg *config.ProviderConfig) (
 		return provider.NewOllamaClient(cfg, r.logger), nil
 	case "lmstudio":
 		return provider.NewLMStudioClient(cfg, r.logger), nil
+	case "deepseek":
+		return provider.NewDeepSeekClient(cfg, r.logger), nil
+	case "mistral":
+		return provider.NewMistralClient(cfg, r.logger), nil
 	case "vllm":
 		return provider.NewOpenAIClient(cfg, r.logger), nil
 	default:

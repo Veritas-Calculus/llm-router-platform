@@ -32,6 +32,38 @@
   --radius-apple-xl: 24px;
 }
 
+/* ─── Theme Variables (Light/Dark) ─────────────────────────── */
+:root {
+  --theme-bg: #F5F5F7;
+  --theme-bg-card: #FFFFFF;
+  --theme-bg-sidebar: #FFFFFF;
+  --theme-bg-input: #FFFFFF;
+  --theme-bg-hover: #E8E8ED;
+  --theme-text: #1D1D1F;
+  --theme-text-secondary: #636366;
+  --theme-text-muted: #8E8E93;
+  --theme-border: #D2D2D7;
+  --theme-border-light: #E8E8ED;
+  --theme-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --theme-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.dark {
+  --theme-bg: #000000;
+  --theme-bg-card: #1C1C1E;
+  --theme-bg-sidebar: #1C1C1E;
+  --theme-bg-input: #2C2C2E;
+  --theme-bg-hover: #3A3A3C;
+  --theme-text: #F5F5F7;
+  --theme-text-secondary: #AEAEB2;
+  --theme-text-muted: #8E8E93;
+  --theme-border: #3A3A3C;
+  --theme-border-light: #2C2C2E;
+  --theme-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --theme-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}
+
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;
@@ -39,9 +71,10 @@
   }
 
   body {
-    background-color: var(--color-apple-gray-50);
-    color: var(--color-apple-gray-900);
+    background-color: var(--theme-bg);
+    color: var(--theme-text);
     font-family: var(--font-family-sans);
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
 
   ::selection {
@@ -52,17 +85,18 @@
 
 @layer components {
   .card {
-    background-color: white;
+    background-color: var(--theme-bg-card);
     border-radius: var(--radius-apple-lg);
-    box-shadow: var(--shadow-apple);
+    box-shadow: var(--theme-shadow);
     padding: 1.5rem;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
   }
 
   .label {
     display: block;
     font-size: 0.875rem;
     font-weight: 500;
-    color: var(--color-apple-gray-700);
+    color: var(--theme-text-secondary);
     margin-bottom: 0.375rem;
   }
 
@@ -70,15 +104,15 @@
     width: 100%;
     padding: 0.75rem 1rem;
     border-radius: var(--radius-apple);
-    border: 1px solid var(--color-apple-gray-200);
-    background-color: white;
-    color: var(--color-apple-gray-900);
+    border: 1px solid var(--theme-border);
+    background-color: var(--theme-bg-input);
+    color: var(--theme-text);
     font-size: 1rem;
     transition: all 0.2s ease;
   }
 
   .input::placeholder {
-    color: var(--color-apple-gray-400);
+    color: var(--theme-text-muted);
   }
 
   .input:focus {
@@ -120,12 +154,12 @@
   }
 
   .btn-secondary {
-    background-color: var(--color-apple-gray-100);
-    color: var(--color-apple-gray-900);
+    background-color: var(--theme-bg-hover);
+    color: var(--theme-text);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background-color: var(--color-apple-gray-200);
+    background-color: var(--theme-border);
   }
 
   .btn-danger {
@@ -139,11 +173,11 @@
 
   .btn-ghost {
     background-color: transparent;
-    color: var(--color-apple-gray-600);
+    color: var(--theme-text-secondary);
   }
 
   .btn-ghost:hover:not(:disabled) {
-    background-color: var(--color-apple-gray-100);
+    background-color: var(--theme-bg-hover);
   }
 
   .badge {
@@ -157,22 +191,22 @@
 
   .badge-success {
     background-color: rgba(52, 199, 89, 0.15);
-    color: #248a3d;
+    color: #34C759;
   }
 
   .badge-warning {
     background-color: rgba(255, 149, 0, 0.15);
-    color: #c93400;
+    color: #FF9500;
   }
 
   .badge-error {
     background-color: rgba(255, 59, 48, 0.15);
-    color: #d70015;
+    color: #FF3B30;
   }
 
   .badge-info {
     background-color: rgba(0, 122, 255, 0.15);
-    color: #0066cc;
+    color: #007AFF;
   }
 
   .sidebar-link {
@@ -181,13 +215,13 @@
     gap: 0.75rem;
     padding: 0.625rem 1rem;
     border-radius: var(--radius-apple);
-    color: var(--color-apple-gray-600);
+    color: var(--theme-text-secondary);
     font-size: 0.9375rem;
     transition: all 0.2s ease;
   }
 
   .sidebar-link:hover {
-    background-color: var(--color-apple-gray-100);
+    background-color: var(--theme-bg-hover);
   }
 
   .sidebar-link-active {
@@ -204,7 +238,7 @@
     text-align: left;
     font-size: 0.75rem;
     font-weight: 500;
-    color: var(--color-apple-gray-500);
+    color: var(--theme-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
@@ -213,7 +247,7 @@
     padding: 1rem 1.5rem;
     white-space: nowrap;
     font-size: 0.875rem;
-    color: var(--color-apple-gray-900);
+    color: var(--theme-text);
   }
 }
 
@@ -227,3 +261,4 @@
     display: none;
   }
 }
+
