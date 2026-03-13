@@ -100,7 +100,7 @@ func (h *ChatHandler) checkUserQuota(c *gin.Context, userObj *models.User) *stri
 // ChatCompletionRequest represents a chat completion request.
 type ChatCompletionRequest struct {
 	Model              string           `json:"model" binding:"required"`
-	Messages           []MessageRequest `json:"messages" binding:"required"`
+	Messages           []MessageRequest `json:"messages" binding:"required,min=1"`
 	MaxTokens          int              `json:"max_tokens,omitempty"`
 	Temperature        float64          `json:"temperature,omitempty"`
 	Stream             bool             `json:"stream,omitempty"`
@@ -110,8 +110,8 @@ type ChatCompletionRequest struct {
 
 // MessageRequest represents a message in the request.
 type MessageRequest struct {
-	Role    string `json:"role" binding:"required"`
-	Content string `json:"content" binding:"required"`
+	Role    string                  `json:"role" binding:"required"`
+	Content provider.FlexibleContent `json:"content" binding:"required"`
 }
 
 // EmbeddingsRequest represents an embeddings request from the user.
@@ -155,7 +155,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		history, err := h.memory.GetConversationWithLimit(c.Request.Context(), userObj.ID, req.ConversationID, 20)
 		if err == nil {
 			for _, hm := range history {
-				historyMessages = append(historyMessages, provider.Message{Role: hm.Role, Content: hm.Content})
+				historyMessages = append(historyMessages, provider.Message{Role: hm.Role, Content: provider.StringContent(hm.Content)})
 			}
 		} else {
 			h.logger.Warn("failed to fetch conversation memory", zap.Error(err), zap.String("conversation_id", sanitize.LogValue(req.ConversationID)))
@@ -172,7 +172,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 	// We inject a system directive to guide the model to seamlessly continue.
 	if req.ResumeFromStreamID != "" {
 		resumeContext := "System Protocol: The previous generation was interrupted due to a network or upstream error. Please continue writing seamlessly from exactly where you left off. Do not repeat anything that was already written. End of System Protocol."
-		messages = append(messages, provider.Message{Role: "system", Content: resumeContext})
+		messages = append(messages, provider.Message{Role: "system", Content: provider.StringContent(resumeContext)})
 	}
 
 	providerReq := &provider.ChatRequest{
@@ -248,13 +248,13 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			// calculate tokens if we can
 			outText := ""
 			if len(resp.Choices) > 0 {
-				outText = resp.Choices[0].Message.Content
+				outText = resp.Choices[0].Message.Content.Text
 			}
 			gen.End(outText, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 
 			if req.ConversationID != "" && h.memory != nil {
 				for _, m := range req.Messages {
-					_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, m.Role, m.Content, 0)
+					_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, m.Role, m.Content.Text, 0)
 				}
 				_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, "assistant", outText, resp.Usage.CompletionTokens)
 			}
@@ -305,13 +305,13 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			// Success - clear any previous failure for this key
 			outText := ""
 			if resp != nil && len(resp.Choices) > 0 {
-				outText = resp.Choices[0].Message.Content
+				outText = resp.Choices[0].Message.Content.Text
 			}
 			if resp != nil {
 				gen.End(outText, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 				if req.ConversationID != "" && h.memory != nil {
 					for _, m := range req.Messages {
-						_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, m.Role, m.Content, 0)
+						_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, m.Role, m.Content.Text, 0)
 					}
 					_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, "assistant", outText, resp.Usage.CompletionTokens)
 				}
@@ -937,7 +937,7 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client
 
 	if conversationID != "" && h.memory != nil {
 		for _, m := range originalMessages {
-			_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, conversationID, m.Role, m.Content, 0)
+			_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, conversationID, m.Role, m.Content.Text, 0)
 		}
 		_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, conversationID, "assistant", fullText, completionTokens)
 	}

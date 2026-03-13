@@ -117,13 +117,7 @@ func TestAuthHandlerLoginValidation(t *testing.T) {
 func TestChatHandlerValidation(t *testing.T) {
 	router := gin.New()
 	router.POST("/chat", func(c *gin.Context) {
-		var req struct {
-			Model    string `json:"model" binding:"required"`
-			Messages []struct {
-				Role    string `json:"role" binding:"required"`
-				Content string `json:"content" binding:"required"`
-			} `json:"messages" binding:"required,min=1"`
-		}
+		var req ChatCompletionRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -137,8 +131,18 @@ func TestChatHandlerValidation(t *testing.T) {
 		wantStatus int
 	}{
 		{
-			name:       "valid request",
+			name:       "valid request with string content",
 			body:       `{"model":"gpt-4","messages":[{"role":"user","content":"Hello"}]}`,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "valid request with array content",
+			body:       `{"model":"gpt-4","messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]}`,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "valid request with mixed multimodal content",
+			body:       `{"model":"gpt-4","messages":[{"role":"user","content":[{"type":"text","text":"Describe this image"},{"type":"image_url","image_url":{"url":"https://example.com/img.png"}}]}]}`,
 			wantStatus: http.StatusOK,
 		},
 		{
@@ -163,6 +167,7 @@ func TestChatHandlerValidation(t *testing.T) {
 		})
 	}
 }
+
 
 func TestAPIKeyHandlerValidation(t *testing.T) {
 	router := gin.New()

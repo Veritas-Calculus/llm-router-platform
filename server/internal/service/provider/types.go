@@ -3,7 +3,9 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -11,6 +13,64 @@ var (
 	// ErrNotImplemented is returned when a provider does not support an operation.
 	ErrNotImplemented = errors.New("operation not implemented by this provider")
 )
+
+// FlexibleContent handles the OpenAI-compatible content field which can be
+// either a plain string or an array of content parts (multimodal format).
+// After unmarshalling, Text contains the concatenated text content.
+type FlexibleContent struct {
+	Text string
+	// Raw preserves the original JSON for transparent forwarding to upstream.
+	Raw json.RawMessage
+}
+
+// ContentPart represents a single part in the array content format.
+type ContentPart struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}
+
+// UnmarshalJSON implements custom unmarshalling for flexible content.
+func (fc *FlexibleContent) UnmarshalJSON(data []byte) error {
+	fc.Raw = append(fc.Raw[:0], data...)
+
+	// Try string first
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		fc.Text = s
+		return nil
+	}
+
+	// Try array of content parts
+	var parts []ContentPart
+	if err := json.Unmarshal(data, &parts); err == nil {
+		var texts []string
+		for _, p := range parts {
+			if p.Type == "text" && p.Text != "" {
+				texts = append(texts, p.Text)
+			}
+		}
+		fc.Text = strings.Join(texts, "\n")
+		return nil
+	}
+
+	// Fallback: treat as raw string
+	fc.Text = string(data)
+	return nil
+}
+
+// MarshalJSON outputs the original raw JSON to preserve the format for upstream.
+func (fc FlexibleContent) MarshalJSON() ([]byte, error) {
+	if len(fc.Raw) > 0 {
+		return fc.Raw, nil
+	}
+	return json.Marshal(fc.Text)
+}
+
+// StringContent creates a FlexibleContent from a plain string.
+func StringContent(s string) FlexibleContent {
+	raw, _ := json.Marshal(s)
+	return FlexibleContent{Text: s, Raw: raw}
+}
 
 // Client defines the interface for LLM provider clients.
 type Client interface {
@@ -58,8 +118,8 @@ type ChatRequest struct {
 
 // Message represents a chat message.
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string          `json:"role"`
+	Content FlexibleContent `json:"content"`
 }
 
 // ChatResponse represents a chat completion response.

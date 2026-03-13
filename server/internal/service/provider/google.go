@@ -101,20 +101,20 @@ func buildGeminiContents(messages []Message) []geminiContent {
 
 	for _, msg := range messages {
 		if msg.Role == "system" {
-			systemPrompt = msg.Content
+			systemPrompt = msg.Content.Text
 			continue
 		}
 
 		content := geminiContent{
 			Role: convertRoleToGemini(msg.Role),
 			Parts: []geminiPart{
-				{Text: msg.Content},
+				{Text: msg.Content.Text},
 			},
 		}
 
 		// Prepend system prompt to first user message
 		if msg.Role == "user" && systemPrompt != "" {
-			content.Parts[0].Text = systemPrompt + "\n\n" + msg.Content
+			content.Parts[0].Text = systemPrompt + "\n\n" + msg.Content.Text
 			systemPrompt = ""
 		}
 
@@ -194,7 +194,7 @@ func (c *GoogleClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 		Choices: []Choice{
 			{
 				Index:        0,
-				Message:      Message{Role: "assistant", Content: content},
+				Message:      Message{Role: "assistant", Content: StringContent(content)},
 				FinishReason: finishReason,
 			},
 		},

@@ -10,7 +10,7 @@ func TestChatRequest(t *testing.T) {
 	req := ChatRequest{
 		Model: "gpt-4",
 		Messages: []Message{
-			{Role: "user", Content: "Hello"},
+			{Role: "user", Content: StringContent("Hello")},
 		},
 		MaxTokens:   1000,
 		Temperature: 0.7,
@@ -24,11 +24,11 @@ func TestChatRequest(t *testing.T) {
 func TestMessage(t *testing.T) {
 	msg := Message{
 		Role:    "user",
-		Content: "Hello, how are you?",
+		Content: StringContent("Hello, how are you?"),
 	}
 
 	assert.Equal(t, "user", msg.Role)
-	assert.Equal(t, "Hello, how are you?", msg.Content)
+	assert.Equal(t, "Hello, how are you?", msg.Content.Text)
 }
 
 func TestChatResponse(t *testing.T) {
@@ -38,7 +38,7 @@ func TestChatResponse(t *testing.T) {
 		Choices: []Choice{
 			{
 				Index:        0,
-				Message:      Message{Role: "assistant", Content: "Hello!"},
+				Message:      Message{Role: "assistant", Content: StringContent("Hello!")},
 				FinishReason: "stop",
 			},
 		},
@@ -52,13 +52,13 @@ func TestChatResponse(t *testing.T) {
 	assert.Equal(t, "chatcmpl-123", resp.ID)
 	assert.Equal(t, "gpt-4", resp.Model)
 	assert.Len(t, resp.Choices, 1)
-	assert.Equal(t, "Hello!", resp.Choices[0].Message.Content)
+	assert.Equal(t, "Hello!", resp.Choices[0].Message.Content.Text)
 }
 
 func TestChoice(t *testing.T) {
 	choice := Choice{
 		Index:        0,
-		Message:      Message{Role: "assistant", Content: "Response"},
+		Message:      Message{Role: "assistant", Content: StringContent("Response")},
 		FinishReason: "stop",
 	}
 
@@ -104,10 +104,10 @@ func TestTokenCalculation(t *testing.T) {
 
 func TestMultipleMessages(t *testing.T) {
 	messages := []Message{
-		{Role: "system", Content: "You are a helpful assistant."},
-		{Role: "user", Content: "Hello"},
-		{Role: "assistant", Content: "Hi there!"},
-		{Role: "user", Content: "How are you?"},
+		{Role: "system", Content: StringContent("You are a helpful assistant.")},
+		{Role: "user", Content: StringContent("Hello")},
+		{Role: "assistant", Content: StringContent("Hi there!")},
+		{Role: "user", Content: StringContent("How are you?")},
 	}
 
 	assert.Len(t, messages, 4)
@@ -120,7 +120,7 @@ func TestChatRequestWithStream(t *testing.T) {
 	req := ChatRequest{
 		Model: "gpt-4",
 		Messages: []Message{
-			{Role: "user", Content: "Stream test"},
+			{Role: "user", Content: StringContent("Stream test")},
 		},
 		Stream: true,
 	}

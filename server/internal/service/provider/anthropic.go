@@ -101,7 +101,7 @@ func (c *AnthropicClient) Chat(ctx context.Context, req *ChatRequest) (*ChatResp
 		Choices: []Choice{
 			{
 				Index:        0,
-				Message:      Message{Role: "assistant", Content: content},
+				Message:      Message{Role: "assistant", Content: StringContent(content)},
 				FinishReason: "stop",
 			},
 		},
@@ -144,7 +144,7 @@ func (c *AnthropicClient) CheckHealth(ctx context.Context) (bool, time.Duration,
 	req := &ChatRequest{
 		Model: "claude-3-haiku-20240307",
 		Messages: []Message{
-			{Role: "user", Content: "Hi"},
+			{Role: "user", Content: StringContent("Hi")},
 		},
 		MaxTokens: 5,
 	}
@@ -172,7 +172,7 @@ func (c *AnthropicClient) StreamChat(ctx context.Context, req *ChatRequest) (<-c
 				Model: resp.Model,
 				Choices: []DeltaChoice{{
 					Index: 0,
-					Delta: Delta{Content: resp.Choices[0].Message.Content},
+					Delta: Delta{Content: resp.Choices[0].Message.Content.Text},
 				}},
 			}
 		}
