@@ -20,23 +20,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// sanitizeLogString sanitizes user input for safe logging by removing
-// potentially dangerous characters like newlines and carriage returns.
-// This prevents log injection attacks.
-func sanitizeLogString(s string) string {
-	// Standard log sanitization: replace control characters and limit charset
-	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\r' || r == '\t' {
-			return ' '
-		}
-		// Allow standard printable ASCII characters
-		if r >= 32 && r <= 126 {
-			return r
-		}
-		// Replace everything else with a safe placeholder
-		return '?'
-	}, s)
-}
+// sanitizeLog wraps sanitize.LogValue for request logging.
+var sanitizeLog = sanitize.LogValue
 
 // AuthMiddleware handles JWT authentication.
 type AuthMiddleware struct {
@@ -271,10 +256,10 @@ func NewLoggingMiddleware(logger *zap.Logger) *LoggingMiddleware {
 func (m *LoggingMiddleware) Log() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-		path := sanitizeLogString(c.Request.URL.Path)
-		query := sanitizeLogString(c.Request.URL.RawQuery)
-		method := sanitizeLogString(c.Request.Method)
-		clientIP := sanitizeLogString(c.ClientIP())
+		path := sanitizeLog(c.Request.URL.Path)
+		query := sanitizeLog(c.Request.URL.RawQuery)
+		method := sanitizeLog(c.Request.Method)
+		clientIP := sanitizeLog(c.ClientIP())
 
 		c.Next()
 
@@ -362,7 +347,7 @@ func (m *RecoveryMiddleware) Recover() gin.HandlerFunc {
 			if err := recover(); err != nil {
 				m.logger.Error("panic recovered",
 					zap.Any("error", err),
-					zap.String("path", sanitizeLogString(c.Request.URL.Path)),
+					zap.String("path", sanitizeLog(c.Request.URL.Path)),
 				)
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 					"error": "internal server error",
