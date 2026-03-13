@@ -22,25 +22,26 @@ LABEL org.opencontainers.image.source="https://github.com/Veritas-Calculus/llm-r
 LABEL org.opencontainers.image.description="LLM Router Platform - Web Frontend"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Patch CVE-2026-25646 and other Alpine security updates
+# Patch Alpine security updates
 RUN apk upgrade --no-cache
 
-# Create non-privileged user for nginx
+# Create non-privileged user
 RUN addgroup -g 10001 -S appgroup && \
-    adduser -u 10001 -S appuser -G appgroup -h /app -s /sbin/nologin && \
-    chown -R appuser:appgroup /var/cache/nginx /var/log/nginx && \
-    touch /var/run/nginx.pid && chown appuser:appgroup /var/run/nginx.pid
+    adduser -u 10001 -S appuser -G appgroup -h /app -s /sbin/nologin
 
-# Copy built files
-COPY --from=builder /app/dist /usr/share/nginx/html
+# Copy full nginx config (handles non-root paths internally)
+COPY nginx.conf /etc/nginx/nginx.conf
+# Remove default server block config (ours is in the main nginx.conf)
+RUN rm -f /etc/nginx/conf.d/default.conf
 
-# Copy nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy built frontend files
+COPY --from=builder --chown=appuser:appgroup /app/dist /usr/share/nginx/html
 
 # Switch to non-privileged user
 USER appuser
 
-# Expose port
-EXPOSE 80
+# Non-privileged port
+EXPOSE 8080
 
+ENTRYPOINT []
 CMD ["nginx", "-g", "daemon off;"]
