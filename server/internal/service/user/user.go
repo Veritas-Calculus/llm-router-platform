@@ -3,6 +3,7 @@ package user
 
 import (
 	"context"
+	"crypto/hmac"
 	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -351,10 +352,11 @@ func hashAPIKey(key string) string {
 	// If encryption is not initialized, fall back to simple SHA-256 for stability
 	// but in production we should always have a salt.
 	if !crypto.IsInitialized() {
-		// lgtm[go/weak-sensitive-data-hashing] — Fallback for startup/testing only.
-		// API keys are 256-bit random (not user passwords); SHA-256 is safe for high-entropy inputs.
-		hash := sha256.Sum256([]byte(key))
-		return hex.EncodeToString(hash[:])
+		// Fallback HMAC for startup/testing when ENCRYPTION_KEY is not yet configured.
+		// Uses a static key — production must always have crypto initialized.
+		h := hmac.New(sha256.New, []byte("llm-router-fallback-hmac-key-v1!"))
+		h.Write([]byte(key))
+		return hex.EncodeToString(h.Sum(nil))
 	}
 
 	// Use HMAC-SHA256 via crypto package (key stays internal)
