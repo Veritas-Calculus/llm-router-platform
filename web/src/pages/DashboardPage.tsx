@@ -166,7 +166,7 @@ function DashboardPage() {
                   {formatCurrency(stats?.total_cost || 0)} / {formatCurrency(user.monthly_budget_usd!)}
                 </span>
               </div>
-              <div className="w-full bg-white rounded-full h-2.5 overflow-hidden border border-apple-gray-200">
+              <div className="w-full bg-[var(--theme-bg-input)] rounded-full h-2.5 overflow-hidden border border-apple-gray-200">
                 <div
                   className={`h-2.5 rounded-full ${((stats?.total_cost || 0) / user.monthly_budget_usd!) > 0.9 ? 'bg-apple-red' : ((stats?.total_cost || 0) / user.monthly_budget_usd!) > 0.75 ? 'bg-apple-orange' : 'bg-apple-blue'}`}
                   style={{ width: `${Math.min(100, ((stats?.total_cost || 0) / user.monthly_budget_usd!) * 100)}%` }}
@@ -183,7 +183,7 @@ function DashboardPage() {
                   {formatTokens(stats?.total_tokens || 0)} / {formatTokens(user.monthly_token_limit!)}
                 </span>
               </div>
-              <div className="w-full bg-white rounded-full h-2.5 overflow-hidden border border-apple-gray-200">
+              <div className="w-full bg-[var(--theme-bg-input)] rounded-full h-2.5 overflow-hidden border border-apple-gray-200">
                 <div
                   className={`h-2.5 rounded-full ${((stats?.total_tokens || 0) / user.monthly_token_limit!) > 0.9 ? 'bg-apple-red' : ((stats?.total_tokens || 0) / user.monthly_token_limit!) > 0.75 ? 'bg-apple-orange' : 'bg-apple-purple'}`}
                   style={{ width: `${Math.min(100, ((stats?.total_tokens || 0) / user.monthly_token_limit!) * 100)}%` }}

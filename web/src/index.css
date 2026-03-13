@@ -62,6 +62,32 @@
   --theme-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   --theme-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
   color-scheme: dark;
+
+  /* ── Invert apple-gray scale for dark mode ──────────────── */
+  /* Swap light↔dark ends so text/bg utilities adapt automatically */
+  --color-apple-gray-50: #1C1C1E;
+  --color-apple-gray-100: #2C2C2E;
+  --color-apple-gray-200: #3A3A3C;
+  --color-apple-gray-300: #48484A;
+  --color-apple-gray-400: #8E8E93;
+  --color-apple-gray-500: #AEAEB2;
+  --color-apple-gray-600: #C7C7CC;
+  --color-apple-gray-700: #D1D1D6;
+  --color-apple-gray-800: #E5E5EA;
+  --color-apple-gray-900: #F5F5F7;
+
+  /* ── Override built-in Tailwind colors for dark mode ────── */
+
+  /* Semantic status backgrounds (green-50/100, red-50/100, etc.) */
+  --color-green-50: rgba(52, 199, 89, 0.1);
+  --color-green-100: rgba(52, 199, 89, 0.18);
+  --color-green-200: rgba(52, 199, 89, 0.25);
+  --color-green-600: #34C759;
+  --color-red-50: rgba(255, 59, 48, 0.1);
+  --color-red-100: rgba(255, 59, 48, 0.18);
+  --color-orange-100: rgba(255, 149, 0, 0.18);
+  --color-gray-100: #2C2C2E;
+  --color-gray-200: #3A3A3C;
 }
 
 @layer base {

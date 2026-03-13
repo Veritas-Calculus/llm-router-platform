@@ -511,7 +511,7 @@ function DocsPage() {
       <div className="flex gap-8">
         {/* Sidebar Navigation */}
         <nav className="w-64 shrink-0">
-          <div className="sticky top-8 space-y-1 bg-white rounded-apple-lg p-3 shadow-apple">
+          <div className="sticky top-8 space-y-1 bg-[var(--theme-bg-card)] rounded-apple-lg p-3 shadow-apple">
             {sections.map((section) => (
               <button
                 key={section.id}

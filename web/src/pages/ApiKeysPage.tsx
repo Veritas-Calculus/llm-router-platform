@@ -38,7 +38,7 @@ function ConfirmModal({
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4"
+        className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4"
       >
         <div className="flex items-start gap-4">
           <div
@@ -211,7 +211,7 @@ function ApiKeysPage() {
               <p className="text-sm text-apple-gray-600 mb-4">
                 Please copy your API key now. You will not be able to see it again.
               </p>
-              <div className="flex items-center gap-2 bg-white rounded-apple border border-apple-gray-200 p-3">
+              <div className="flex items-center gap-2 bg-[var(--theme-bg-input)] rounded-apple border border-apple-gray-200 p-3">
                 <code className="text-sm text-apple-gray-900 flex-1 break-all">
                   {createdKey.key}
                 </code>
@@ -325,7 +325,7 @@ function ApiKeysPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4"
+            className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4"
           >
             <h2 className="text-xl font-semibold text-apple-gray-900 mb-4">Create API Key</h2>
             <div className="mb-6">

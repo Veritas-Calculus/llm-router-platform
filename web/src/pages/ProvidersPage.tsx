@@ -40,7 +40,7 @@ function ConfirmModal({
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4"
+        className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4"
       >
         <div className="flex items-start gap-4">
           <div
@@ -836,7 +836,7 @@ function ProvidersPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4"
+            className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4"
           >
             <h2 className="text-xl font-semibold text-apple-gray-900 mb-4">
               Add API Key for {selectedProvider?.name}
