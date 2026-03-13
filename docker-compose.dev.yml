@@ -1,15 +1,17 @@
 # Development overrides — NOT for production use.
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 #
-# This file provides convenience defaults for LOCAL DEVELOPMENT ONLY.
-# In production, set proper values via environment variables or .env file.
+# This file overrides the default config for LOCAL DEVELOPMENT:
+#   - Builds images from source instead of pulling from GHCR
+#   - Uses convenience passwords and debug settings
+#   - Exposes DB/Redis ports to all interfaces for dev tools
 
 services:
   postgres:
     environment:
       POSTGRES_PASSWORD: devpassword
     ports:
-      - "5432:5432" # Expose to all interfaces for dev tools
+      - "5432:5432"
 
   redis:
     command: redis-server --requirepass devpassword
@@ -17,6 +19,13 @@ services:
       - "6379:6379"
 
   server:
+    image: llm-router-server:dev
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      args:
+        VERSION: dev
+        GIT_COMMIT: local
     environment:
       - DB_PASSWORD=devpassword
       - REDIS_PASSWORD=devpassword
@@ -26,3 +35,9 @@ services:
       - CORS_ORIGINS=http://localhost:3000,http://localhost:80
       - GIN_MODE=debug
       - LOG_LEVEL=debug
+
+  web:
+    image: llm-router-web:dev
+    build:
+      context: ./web
+      dockerfile: Dockerfile

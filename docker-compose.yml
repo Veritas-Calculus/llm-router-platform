@@ -56,12 +56,7 @@ services:
         max-file: "3"
 
   server:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
-      args:
-        VERSION: ${APP_VERSION:-dev}
-        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    image: ghcr.io/veritas-calculus/llm-router-platform/server:latest
     container_name: llm-router-server
     ports:
       - "8080:8080"
@@ -121,9 +116,7 @@ services:
         max-file: "10"
 
   web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
+    image: ghcr.io/veritas-calculus/llm-router-platform/web:latest
     container_name: llm-router-web
     ports:
       - "80:80"
