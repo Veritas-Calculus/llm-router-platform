@@ -1,12 +1,14 @@
 package provider
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"llm-router-platform/internal/config"
@@ -155,28 +157,104 @@ func (c *AnthropicClient) CheckHealth(ctx context.Context) (bool, time.Duration,
 	return err == nil, latency, err
 }
 
-// StreamChat sends a streaming chat completion request to Anthropic.
+// StreamChat sends a real SSE streaming request to Anthropic Messages API.
 func (c *AnthropicClient) StreamChat(ctx context.Context, req *ChatRequest) (<-chan StreamChunk, error) {
-	// Anthropic streaming not yet implemented, fallback to non-streaming
+	maxTokens := req.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 1024
+	}
+
+	anthropicReq := map[string]interface{}{
+		"model":      req.Model,
+		"messages":   req.Messages,
+		"max_tokens": maxTokens,
+		"stream":     true,
+	}
+
+	body, err := json.Marshal(anthropicReq)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/messages", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-api-key", c.apiKey)
+	httpReq.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return nil, errors.New(string(respBody))
+	}
+
 	chunks := make(chan StreamChunk)
 	go func() {
 		defer close(chunks)
-		resp, err := c.Chat(ctx, req)
-		if err != nil {
-			chunks <- StreamChunk{Error: err}
-			return
-		}
-		if len(resp.Choices) > 0 {
-			chunks <- StreamChunk{
-				ID:    resp.ID,
-				Model: resp.Model,
-				Choices: []DeltaChoice{{
-					Index: 0,
-					Delta: Delta{Content: resp.Choices[0].Message.Content.Text},
-				}},
+		defer func() { _ = resp.Body.Close() }()
+
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			data := strings.TrimPrefix(line, "data: ")
+
+			var event struct {
+				Type  string `json:"type"`
+				Index int    `json:"index"`
+				Delta struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"delta"`
+				Usage struct {
+					OutputTokens int `json:"output_tokens"`
+				} `json:"usage"`
+			}
+			if err := json.Unmarshal([]byte(data), &event); err != nil {
+				continue
+			}
+
+			switch event.Type {
+			case "content_block_delta":
+				if event.Delta.Type == "text_delta" && event.Delta.Text != "" {
+					chunks <- StreamChunk{
+						Model: req.Model,
+						Choices: []DeltaChoice{{
+							Index: 0,
+							Delta: Delta{Content: event.Delta.Text},
+						}},
+					}
+				}
+			case "message_delta":
+				// Final usage info
+				if event.Usage.OutputTokens > 0 {
+					chunks <- StreamChunk{
+						Usage: &Usage{
+							CompletionTokens: event.Usage.OutputTokens,
+						},
+					}
+				}
+			case "message_stop":
+				chunks <- StreamChunk{Done: true}
+				return
 			}
 		}
+
+		// If we exit the loop without message_stop, send done
 		chunks <- StreamChunk{Done: true}
 	}()
+
 	return chunks, nil
 }

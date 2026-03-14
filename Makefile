@@ -6,6 +6,7 @@ GO_FILES=$(shell find . -name '*.go' -type f)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+DOCKER_REGISTRY ?= ghcr.io/veritas-calculus
 LDFLAGS=-ldflags="-w -s -X llm-router-platform/internal/api/routes.Version=$(VERSION) -X llm-router-platform/internal/api/routes.GitCommit=$(GIT_COMMIT) -X llm-router-platform/internal/api/routes.BuildTime=$(BUILD_TIME)"
 
 all: build
@@ -75,6 +76,16 @@ docker-down:
 docker-logs:
 	@echo "Showing Docker logs..."
 	docker-compose logs -f
+
+docker-multiarch:
+	@echo "Building multi-platform Docker images (amd64 + arm64)..."
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		--build-arg VERSION=$(VERSION) --build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		-t $(DOCKER_REGISTRY)/llm-router-server:$(VERSION) \
+		-f server/Dockerfile server/ --push
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		-t $(DOCKER_REGISTRY)/llm-router-web:$(VERSION) \
+		-f web/Dockerfile web/ --push
 
 # Lint
 lint:
