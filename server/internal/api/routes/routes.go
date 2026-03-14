@@ -189,8 +189,8 @@ func Setup(
 	}
 	backpressureLimiter := middleware.NewBackpressure(sqlDB, logger)
 
-	// pprof debug endpoints (only enabled in debug mode, requires admin auth)
-	if cfg.Server.Mode == "debug" {
+	// pprof debug endpoints (opt-in via PPROF_ENABLED=true, always requires admin auth)
+	if cfg.Server.PprofEnabled {
 		pprofGroup := engine.Group("/debug/pprof")
 		pprofGroup.Use(authMiddleware.JWT())
 		pprofGroup.Use(middleware.AdminOnly())
@@ -367,42 +367,36 @@ func Setup(
 				}
 			}
 
+			// ─── LLM API Endpoints ──────────────────────────────
+			// Shared middleware chain for all LLM API endpoints.
+			applyLLMMiddleware := func(g *gin.RouterGroup) {
+				g.Use(authMiddleware.APIKey())
+				g.Use(perKeyLimiter.Limit())
+				g.Use(quotaChecker.Check())
+				g.Use(rateLimiter.Limit())
+				g.Use(backpressureLimiter.Protect())
+			}
+
 			chat := v1.Group("/chat")
-			chat.Use(authMiddleware.APIKey())
-			chat.Use(perKeyLimiter.Limit())
-			chat.Use(quotaChecker.Check())
-			chat.Use(rateLimiter.Limit())
-			chat.Use(backpressureLimiter.Protect())
+			applyLLMMiddleware(chat)
 			{
 				chat.POST("/completions", chatHandler.ChatCompletion)
 			}
 
 			embeddings := v1.Group("/embeddings")
-			embeddings.Use(authMiddleware.APIKey())
-			embeddings.Use(perKeyLimiter.Limit())
-			embeddings.Use(quotaChecker.Check())
-			embeddings.Use(rateLimiter.Limit())
-			embeddings.Use(backpressureLimiter.Protect())
+			applyLLMMiddleware(embeddings)
 			{
 				embeddings.POST("", chatHandler.Embeddings)
 			}
 
 			images := v1.Group("/images")
-			images.Use(authMiddleware.APIKey())
-			images.Use(perKeyLimiter.Limit())
-			images.Use(quotaChecker.Check())
-			images.Use(rateLimiter.Limit())
-			images.Use(backpressureLimiter.Protect())
+			applyLLMMiddleware(images)
 			{
 				images.POST("/generations", chatHandler.GenerateImage)
 			}
 
 			audio := v1.Group("/audio")
-			audio.Use(authMiddleware.APIKey())
-			audio.Use(perKeyLimiter.Limit())
-			audio.Use(quotaChecker.Check())
-			audio.Use(rateLimiter.Limit())
-			audio.Use(backpressureLimiter.Protect())
+			applyLLMMiddleware(audio)
 			{
 				audio.POST("/transcriptions", chatHandler.TranscribeAudio)
 			}
