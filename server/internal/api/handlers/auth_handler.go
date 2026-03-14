@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
 )
 
@@ -23,11 +25,12 @@ type AuthHandler struct {
 	auditService     *audit.Service
 	jwtConfig        *config.JWTConfig
 	registrationMode string
+	redisClient      *redis.Client // nil-safe: JTI tracking disabled without Redis
 	logger           *zap.Logger
 }
 
 // NewAuthHandler creates a new auth handler.
-func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, jwtConfig *config.JWTConfig, registrationMode string, logger *zap.Logger) *AuthHandler {
+func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, jwtConfig *config.JWTConfig, registrationMode string, redisClient *redis.Client, logger *zap.Logger) *AuthHandler {
 	if registrationMode == "" {
 		registrationMode = "open"
 	}
@@ -36,6 +39,7 @@ func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, jwtConfi
 		auditService:     auditSvc,
 		jwtConfig:        jwtConfig,
 		registrationMode: registrationMode,
+		redisClient:      redisClient,
 		logger:           logger,
 	}
 }
@@ -361,6 +365,7 @@ type RefreshTokenRequest struct {
 
 // RotateRefreshToken accepts a valid refresh token and returns a new access+refresh pair.
 // This implements the refresh-token rotation pattern: each refresh token is single-use.
+// If Redis is available, the token's JTI is tracked to prevent reuse.
 func (h *AuthHandler) RotateRefreshToken(c *gin.Context) {
 	var req RefreshTokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -393,6 +398,18 @@ func (h *AuthHandler) RotateRefreshToken(c *gin.Context) {
 		return
 	}
 
+	// JTI reuse detection: each refresh token can only be used once
+	jti, _ := claims["jti"].(string)
+	if jti != "" {
+		if consumed := h.isJTIConsumed(c.Request.Context(), jti); consumed {
+			h.logger.Warn("refresh token reuse detected — possible token theft",
+				zap.String("jti", jti),
+				zap.String("ip", c.ClientIP()))
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token has already been used"})
+			return
+		}
+	}
+
 	sub, _ := claims["sub"].(string)
 	userID, err := uuid.Parse(sub)
 	if err != nil {
@@ -421,6 +438,13 @@ func (h *AuthHandler) RotateRefreshToken(c *gin.Context) {
 		}
 	}
 
+	// Mark the JTI as consumed BEFORE issuing new tokens
+	if jti != "" {
+		exp, _ := claims["exp"].(float64)
+		ttl := time.Until(time.Unix(int64(exp), 0))
+		h.consumeJTI(c.Request.Context(), jti, ttl)
+	}
+
 	// Issue new access token + refresh token (rotation)
 	newAccessToken, err := h.generateToken(userObj.ID, userObj.Email, userObj.Role)
 	if err != nil {
@@ -440,6 +464,35 @@ func (h *AuthHandler) RotateRefreshToken(c *gin.Context) {
 		"token_type":    "Bearer",
 		"expires_in":    int(h.jwtConfig.ExpiresIn.Seconds()),
 	})
+}
+
+// isJTIConsumed checks if a refresh token JTI has already been used.
+// Returns false if Redis is unavailable (fail-open for availability).
+func (h *AuthHandler) isJTIConsumed(ctx context.Context, jti string) bool {
+	if h.redisClient == nil {
+		return false
+	}
+	key := "rt:jti:" + jti
+	exists, err := h.redisClient.Exists(ctx, key).Result()
+	if err != nil {
+		h.logger.Warn("redis JTI check failed, allowing token", zap.Error(err))
+		return false
+	}
+	return exists > 0
+}
+
+// consumeJTI marks a refresh token JTI as consumed in Redis.
+func (h *AuthHandler) consumeJTI(ctx context.Context, jti string, ttl time.Duration) {
+	if h.redisClient == nil {
+		return
+	}
+	if ttl <= 0 {
+		ttl = 7 * 24 * time.Hour // fallback: refresh token lifetime
+	}
+	key := "rt:jti:" + jti
+	if err := h.redisClient.Set(ctx, key, "1", ttl).Err(); err != nil {
+		h.logger.Error("failed to mark JTI as consumed", zap.String("jti", jti), zap.Error(err))
+	}
 }
 
 // APIKeyHandler handles API key endpoints.

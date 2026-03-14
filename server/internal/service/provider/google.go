@@ -202,9 +202,104 @@ func (c *GoogleClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 	}, nil
 }
 
-// Embeddings returns ErrNotImplemented as Gemini uses a different API for embeddings (/v1beta/models/...:embedContent).
+// geminiEmbedRequest represents a Google Gemini embed content request.
+type geminiEmbedRequest struct {
+	Model   string        `json:"model"`
+	Content geminiContent `json:"content"`
+}
+
+// geminiEmbedResponse represents a Google Gemini embed content response.
+type geminiEmbedResponse struct {
+	Embedding struct {
+		Values []float32 `json:"values"`
+	} `json:"embedding"`
+}
+
+// Embeddings generates embeddings using Google Gemini's embedContent API.
 func (c *GoogleClient) Embeddings(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error) {
-	return nil, ErrNotImplemented
+	// Normalize input to []string
+	var inputs []string
+	switch v := req.Input.(type) {
+	case string:
+		inputs = []string{v}
+	case []string:
+		inputs = v
+	case []interface{}:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				inputs = append(inputs, s)
+			}
+		}
+	default:
+		return nil, errors.New("invalid input type for embeddings")
+	}
+
+	model := req.Model
+	if model == "" {
+		model = "text-embedding-004"
+	}
+
+	var embeddings []EmbeddingData
+	totalTokens := 0
+
+	for i, text := range inputs {
+		embedReq := geminiEmbedRequest{
+			Model: "models/" + model,
+			Content: geminiContent{
+				Parts: []geminiPart{{Text: text}},
+			},
+		}
+
+		body, err := json.Marshal(embedReq)
+		if err != nil {
+			return nil, err
+		}
+
+		endpoint := c.baseURL + "/v1beta/models/" + model + ":embedContent?key=" + c.apiKey
+
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(httpReq)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			return nil, errors.New(string(respBody))
+		}
+
+		var embedResp geminiEmbedResponse
+		err = json.NewDecoder(resp.Body).Decode(&embedResp)
+		_ = resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		embeddings = append(embeddings, EmbeddingData{
+			Object:    "embedding",
+			Embedding: embedResp.Embedding.Values,
+			Index:     i,
+		})
+
+		// Approximate token count (Gemini doesn't return this for embeddings)
+		totalTokens += len(text) / 4
+	}
+
+	return &EmbeddingResponse{
+		Object: "list",
+		Data:   embeddings,
+		Model:  model,
+		Usage: Usage{
+			PromptTokens: totalTokens,
+			TotalTokens:  totalTokens,
+		},
+	}, nil
 }
 
 // GenerateImage returns ErrNotImplemented.
