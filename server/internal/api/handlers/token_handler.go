@@ -10,6 +10,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+
+	"llm-router-platform/pkg/sanitize"
 )
 
 // ─── Token Generation ───────────────────────────────────────────────────
@@ -139,8 +141,8 @@ func (h *AuthHandler) RotateRefreshToken(c *gin.Context) {
 	if jti != "" {
 		if consumed := h.isJTIConsumed(c.Request.Context(), jti); consumed {
 			h.logger.Warn("refresh token reuse detected — possible token theft",
-				zap.String("jti", jti),
-				zap.String("ip", c.ClientIP()))
+				zap.String("jti", sanitize.LogValue(jti)),
+				zap.String("ip", sanitize.LogValue(c.ClientIP())))
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "refresh token has already been used"})
 			return
 		}
@@ -229,6 +231,6 @@ func (h *AuthHandler) consumeJTI(ctx context.Context, jti string, ttl time.Durat
 	}
 	key := "rt:jti:" + jti
 	if err := h.redisClient.Set(ctx, key, "1", ttl).Err(); err != nil {
-		h.logger.Error("failed to mark JTI as consumed", zap.String("jti", jti), zap.Error(err))
+		h.logger.Error("failed to mark JTI as consumed", zap.String("jti", sanitize.LogValue(jti)), zap.Error(err))
 	}
 }

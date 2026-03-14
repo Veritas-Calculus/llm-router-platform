@@ -13,6 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
+
+	"llm-router-platform/pkg/sanitize"
 )
 
 // RateLimiter provides request rate limiting backed by Redis.
@@ -83,7 +85,7 @@ func (r *RateLimiter) Limit() gin.HandlerFunc {
 		if err != nil {
 			r.logger.Warn("rate limiter redis error, using in-memory fallback",
 				zap.Error(err),
-				zap.String("identifier", identifier),
+				zap.String("identifier", sanitize.LogValue(identifier)),
 			)
 			RateLimitFallbackTotal.Inc()
 			r.fallbackEnabled.Store(true)
