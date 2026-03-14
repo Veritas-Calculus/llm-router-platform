@@ -6,254 +6,109 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"llm-router-platform/internal/config"
-	"llm-router-platform/internal/service/user"
-	"llm-router-platform/pkg/sanitize"
-
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
-
-// sanitizeLog wraps sanitize.LogValue for request logging.
-var sanitizeLog = sanitize.LogValue
-
-// AuthMiddleware handles JWT authentication.
-type AuthMiddleware struct {
-	jwtSecret   []byte
-	userService *user.Service
-	logger      *zap.Logger
-}
-
-// NewAuthMiddleware creates a new auth middleware.
-func NewAuthMiddleware(cfg *config.JWTConfig, userService *user.Service, logger *zap.Logger) *AuthMiddleware {
-	return &AuthMiddleware{
-		jwtSecret:   []byte(cfg.Secret),
-		userService: userService,
-		logger:      logger,
-	}
-}
-
-// JWT validates JWT token in Authorization header.
-// After signature verification, it queries the database to confirm
-// the user's current role and active status (defense against stale claims).
-func (m *AuthMiddleware) JWT() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
-			return
-		}
-
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization format"})
-			return
-		}
-
-		token, err := jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return m.jwtSecret, nil
-		})
-
-		if err != nil || !token.Valid {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
-			return
-		}
-
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid claims"})
-			return
-		}
-
-		userIDStr, _ := claims["sub"].(string)
-
-		// Query database for real-time user state instead of trusting JWT claims.
-		// This ensures role changes and account disabling take effect immediately.
-		userID, err := uuid.Parse(userIDStr)
-		if err != nil {
-			AuthFailuresTotal.WithLabelValues("invalid_token").Inc()
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
-			return
-		}
-
-		userObj, err := m.userService.GetByID(c.Request.Context(), userID)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
-			return
-		}
-
-		if !userObj.IsActive {
-			AuthFailuresTotal.WithLabelValues("account_disabled").Inc()
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "account is disabled"})
-			return
-		}
-
-		if userObj.RequirePasswordChange {
-			path := c.Request.URL.Path
-			if path != "/api/v1/user/password" && path != "/api/v1/user/profile" && path != "/api/v1/auth/logout" {
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "password_change_required"})
-				return
-			}
-		}
-
-		// Check if token was issued before a forced invalidation
-		// (password change, admin force-logout, etc.)
-		if !userObj.TokensInvalidatedAt.IsZero() {
-			iat, _ := claims.GetIssuedAt()
-			if iat != nil && iat.Before(userObj.TokensInvalidatedAt) {
-				AuthFailuresTotal.WithLabelValues("token_revoked").Inc()
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token has been revoked"})
-				return
-			}
-		}
-
-		c.Set("user_id", userIDStr)
-		c.Set("email", userObj.Email)
-		c.Set("role", userObj.Role) // Real-time role from DB, not from JWT
-
-		// Set quota/rate-limit info for downstream middleware
-		c.Set("user_monthly_token_limit", userObj.MonthlyTokenLimit)
-		c.Set("user_monthly_budget_usd", userObj.MonthlyBudgetUSD)
-		c.Set("user_rate_limit", userObj.RateLimitPerMinute)
-
-		c.Next()
-	}
-}
-
-// APIKey validates API key in header.
-func (m *AuthMiddleware) APIKey() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		apiKey := c.GetHeader("X-API-Key")
-		if apiKey == "" {
-			apiKey = c.GetHeader("Authorization")
-			apiKey = strings.TrimPrefix(apiKey, "Bearer ")
-		}
-
-		if apiKey == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing API key"})
-			return
-		}
-
-		userObj, key, err := m.userService.ValidateAPIKey(c.Request.Context(), apiKey)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.Set("user", userObj)
-		c.Set("api_key", key)
-		c.Set("user_id", userObj.ID.String())
-		c.Next()
-	}
-}
 
 // RateLimiter provides request rate limiting backed by Redis.
 // Falls back to an in-memory counter when Redis is unavailable (fail-closed).
 type RateLimiter struct {
-	redisClient       *redis.Client
 	requestsPerMinute int
+	redisClient       *redis.Client
 	logger            *zap.Logger
-	// In-memory fallback counters (per-identifier)
-	fallback     sync.Map
-	fallbackUsed atomic.Bool
+
+	// In-memory fallback when Redis is unavailable
+	fallbackMu      sync.Mutex
+	fallbackCounter map[string]*fallbackEntry
+	fallbackEnabled atomic.Bool
 }
 
 // fallbackEntry tracks request count for in-memory rate limiting.
 type fallbackEntry struct {
-	count     atomic.Int64
-	resetTime time.Time
+	count    int
+	windowAt time.Time
 }
 
 // NewRateLimiter creates a new Redis-backed rate limiter.
 // If redisClient is nil, the in-memory fallback is used instead of disabling rate limiting.
 func NewRateLimiter(requestsPerMinute int, redisClient *redis.Client, logger *zap.Logger) *RateLimiter {
 	return &RateLimiter{
-		redisClient:       redisClient,
 		requestsPerMinute: requestsPerMinute,
+		redisClient:       redisClient,
 		logger:            logger,
+		fallbackCounter:   make(map[string]*fallbackEntry),
 	}
 }
 
 // Limit applies sliding-window rate limiting per API key (or client IP as fallback).
 func (r *RateLimiter) Limit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Identify the client: prefer API key, fallback to IP
-		identifier := c.GetString("user_id")
+		identifier := c.GetHeader("X-API-Key")
 		if identifier == "" {
 			identifier = c.ClientIP()
 		}
 
-		// If Redis is not configured, use in-memory fallback
+		// Determine effective rate limit
+		effectiveLimit := r.requestsPerMinute
+
+		// Check for per-user rate limit set by auth middleware
+		if userLimit, exists := c.Get("user_rate_limit"); exists {
+			if ul, ok := userLimit.(int); ok && ul > 0 {
+				effectiveLimit = ul
+			}
+		}
+
 		if r.redisClient == nil {
 			r.limitInMemory(c, identifier)
 			return
 		}
 
 		key := fmt.Sprintf("ratelimit:%s", identifier)
-
-		now := time.Now()
-		windowStart := now.Add(-time.Minute)
 		ctx := context.Background()
+		now := time.Now().UnixMilli()
+		windowStart := now - 60000
 
 		pipe := r.redisClient.Pipeline()
-
-		// Remove entries outside the sliding window
-		pipe.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(windowStart.UnixNano(), 10))
-
-		// Count current entries in the window
+		pipe.ZRemRangeByScore(ctx, key, "0", fmt.Sprintf("%d", windowStart))
+		pipe.ZAdd(ctx, key, &redis.Z{Score: float64(now), Member: now})
 		countCmd := pipe.ZCard(ctx, key)
-
-		// Add the current request
-		pipe.ZAdd(ctx, key, &redis.Z{
-			Score:  float64(now.UnixNano()),
-			Member: fmt.Sprintf("%d:%d", now.UnixNano(), now.Nanosecond()),
-		})
-
-		// Set expiry to auto-cleanup
 		pipe.Expire(ctx, key, 2*time.Minute)
 
-		if _, err := pipe.Exec(ctx); err != nil {
-			// Fail-closed: fall back to in-memory rate limiting
-			RateLimitFailOpenTotal.Inc() // Keep metric name for backward compat
-			if !r.fallbackUsed.Load() {
-				r.fallbackUsed.Store(true)
-				r.logger.Warn("rate limiter redis error, switching to in-memory fallback",
-					zap.Error(err),
-				)
-			}
+		_, err := pipe.Exec(ctx)
+		if err != nil {
+			r.logger.Warn("rate limiter redis error, using in-memory fallback",
+				zap.Error(err),
+				zap.String("identifier", identifier),
+			)
+			RateLimitFallbackTotal.Inc()
+			r.fallbackEnabled.Store(true)
 			r.limitInMemory(c, identifier)
 			return
 		}
 
-		// Redis recovered — clear fallback flag
-		if r.fallbackUsed.CompareAndSwap(true, false) {
-			r.logger.Info("rate limiter redis recovered, switching back to Redis")
+		// Clear fallback flag on successful Redis operation
+		r.fallbackEnabled.Store(false)
+
+		count := countCmd.Val()
+		remaining := int64(effectiveLimit) - count
+		if remaining < 0 {
+			remaining = 0
 		}
 
-		currentCount := countCmd.Val()
+		c.Header("X-RateLimit-Limit", strconv.Itoa(effectiveLimit))
+		c.Header("X-RateLimit-Remaining", strconv.FormatInt(remaining, 10))
+		c.Header("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10))
 
-		// Set rate limit headers
-		c.Header("X-RateLimit-Limit", strconv.Itoa(r.requestsPerMinute))
-		c.Header("X-RateLimit-Remaining", strconv.Itoa(max(0, r.requestsPerMinute-int(currentCount)-1)))
-
-		if int(currentCount) >= r.requestsPerMinute {
-			retryAfter := 60 // seconds until window resets
-			c.Header("Retry-After", strconv.Itoa(retryAfter))
-			c.Header("X-RateLimit-Remaining", "0")
+		if count > int64(effectiveLimit) {
+			RateLimitExceededTotal.WithLabelValues(identifier).Inc()
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error":       "rate limit exceeded",
-				"retry_after": retryAfter,
+				"retry_after": 60,
 			})
 			return
 		}
@@ -264,215 +119,26 @@ func (r *RateLimiter) Limit() gin.HandlerFunc {
 
 // limitInMemory applies a simple per-minute counter as fallback when Redis is down.
 func (r *RateLimiter) limitInMemory(c *gin.Context, identifier string) {
+	r.fallbackMu.Lock()
+	defer r.fallbackMu.Unlock()
+
 	now := time.Now()
-
-	val, _ := r.fallback.LoadOrStore(identifier, &fallbackEntry{
-		resetTime: now.Add(time.Minute),
-	})
-	entry := val.(*fallbackEntry)
-
-	// Reset counter if window expired
-	if now.After(entry.resetTime) {
-		entry.count.Store(0)
-		entry.resetTime = now.Add(time.Minute)
+	entry, exists := r.fallbackCounter[identifier]
+	if !exists || now.Sub(entry.windowAt) > time.Minute {
+		r.fallbackCounter[identifier] = &fallbackEntry{count: 1, windowAt: now}
+		c.Next()
+		return
 	}
 
-	current := entry.count.Add(1)
-
-	c.Header("X-RateLimit-Limit", strconv.Itoa(r.requestsPerMinute))
-	c.Header("X-RateLimit-Remaining", strconv.Itoa(max(0, r.requestsPerMinute-int(current))))
-	c.Header("X-RateLimit-Source", "memory") // Indicate fallback mode
-
-	if int(current) > r.requestsPerMinute {
-		c.Header("X-RateLimit-Remaining", "0")
-		c.Header("Retry-After", "60")
+	entry.count++
+	if entry.count > r.requestsPerMinute {
+		RateLimitExceededTotal.WithLabelValues(identifier).Inc()
 		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-			"error":       "rate limit exceeded",
+			"error":       "rate limit exceeded (fallback)",
 			"retry_after": 60,
 		})
 		return
 	}
 
 	c.Next()
-}
-
-// LoggingMiddleware provides request logging.
-type LoggingMiddleware struct {
-	logger *zap.Logger
-}
-
-// NewLoggingMiddleware creates a new logging middleware.
-func NewLoggingMiddleware(logger *zap.Logger) *LoggingMiddleware {
-	return &LoggingMiddleware{logger: logger}
-}
-
-// Log logs request details including the request ID for correlation.
-func (m *LoggingMiddleware) Log() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		path := sanitizeLog(c.Request.URL.Path)
-		query := sanitizeLog(c.Request.URL.RawQuery)
-		method := sanitizeLog(c.Request.Method)
-		clientIP := sanitizeLog(c.ClientIP())
-
-		c.Next()
-
-		latency := time.Since(start)
-		status := c.Writer.Status()
-
-		if query != "" {
-			path = path + "?" + query
-		}
-
-		// Include request_id if available (set by RequestIDMiddleware)
-		requestID, _ := c.Get(RequestIDKey)
-		reqIDStr, _ := requestID.(string)
-
-		m.logger.Info("request",
-			zap.String("request_id", reqIDStr),
-			zap.String("method", method),
-			zap.String("path", path),
-			zap.Int("status", status),
-			zap.Duration("latency", latency),
-			zap.String("client_ip", clientIP),
-		)
-	}
-}
-
-// CORSMiddleware handles CORS headers.
-type CORSMiddleware struct {
-	allowOrigins []string
-}
-
-// NewCORSMiddleware creates a new CORS middleware.
-// If no origins are configured, CORS is denied by default (secure default).
-func NewCORSMiddleware(origins []string) *CORSMiddleware {
-	return &CORSMiddleware{allowOrigins: origins}
-}
-
-// Handle adds CORS headers.
-func (m *CORSMiddleware) Handle() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		origin := c.Request.Header.Get("Origin")
-		allowed := false
-
-		for _, o := range m.allowOrigins {
-			if o == "*" || o == origin {
-				allowed = true
-				break
-			}
-		}
-
-		if allowed {
-			if m.allowOrigins[0] == "*" {
-				c.Header("Access-Control-Allow-Origin", "*")
-			} else {
-				c.Header("Access-Control-Allow-Origin", origin)
-			}
-		}
-
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-API-Key")
-		c.Header("Access-Control-Max-Age", "86400")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(http.StatusNoContent)
-			return
-		}
-
-		c.Next()
-	}
-}
-
-// RecoveryMiddleware handles panic recovery.
-type RecoveryMiddleware struct {
-	logger *zap.Logger
-}
-
-// NewRecoveryMiddleware creates a new recovery middleware.
-func NewRecoveryMiddleware(logger *zap.Logger) *RecoveryMiddleware {
-	return &RecoveryMiddleware{logger: logger}
-}
-
-// Recover handles panics gracefully.
-func (m *RecoveryMiddleware) Recover() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		defer func() {
-			if err := recover(); err != nil {
-				m.logger.Error("panic recovered",
-					zap.Any("error", err),
-					zap.String("path", sanitizeLog(c.Request.URL.Path)),
-				)
-				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-					"error": "internal server error",
-				})
-			}
-		}()
-		c.Next()
-	}
-}
-
-// AdminOnly restricts access to admin users.
-func AdminOnly() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		role, exists := c.Get("role")
-		if !exists || role != "admin" {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin access required"})
-			return
-		}
-		c.Next()
-	}
-}
-
-// AuthRateLimiter limits login/register attempts per IP to prevent brute force.
-type AuthRateLimiter struct {
-	redisClient *redis.Client
-	maxAttempts int
-	logger      *zap.Logger
-}
-
-// NewAuthRateLimiter creates a rate limiter for authentication endpoints.
-func NewAuthRateLimiter(redisClient *redis.Client, maxAttempts int, logger *zap.Logger) *AuthRateLimiter {
-	if maxAttempts <= 0 {
-		maxAttempts = 5
-	}
-	return &AuthRateLimiter{
-		redisClient: redisClient,
-		maxAttempts: maxAttempts,
-		logger:      logger,
-	}
-}
-
-// Limit applies per-IP rate limiting for auth endpoints (5 attempts/minute).
-func (l *AuthRateLimiter) Limit() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if l.redisClient == nil {
-			c.Next()
-			return
-		}
-
-		key := fmt.Sprintf("auth_ratelimit:%s", c.ClientIP())
-		ctx := context.Background()
-
-		count, err := l.redisClient.Incr(ctx, key).Result()
-		if err != nil {
-			l.logger.Warn("auth rate limiter redis error", zap.Error(err))
-			c.Next()
-			return
-		}
-
-		if count == 1 {
-			l.redisClient.Expire(ctx, key, time.Minute)
-		}
-
-		if int(count) > l.maxAttempts {
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-				"error":       "too many authentication attempts, try again later",
-				"retry_after": 60,
-			})
-			return
-		}
-
-		c.Next()
-	}
 }

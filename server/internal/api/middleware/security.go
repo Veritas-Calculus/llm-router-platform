@@ -34,7 +34,7 @@ var (
 		},
 	)
 
-	// ActiveUsersGauge tracks the number of unique users making requests.
+	// QuotaExceededTotal tracks requests rejected due to quota limits.
 	QuotaExceededTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "llm_router",
@@ -43,6 +43,27 @@ var (
 			Help:      "Total number of requests rejected due to quota limits.",
 		},
 		[]string{"type"}, // token_limit, budget_limit
+	)
+
+	// RateLimitFallbackTotal tracks when the in-memory fallback rate limiter is engaged.
+	RateLimitFallbackTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "llm_router",
+			Subsystem: "security",
+			Name:      "ratelimit_fallback_total",
+			Help:      "Number of times the in-memory rate limiter fallback was used.",
+		},
+	)
+
+	// RateLimitExceededTotal tracks rate limit rejections by identifier.
+	RateLimitExceededTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "llm_router",
+			Subsystem: "security",
+			Name:      "ratelimit_exceeded_total",
+			Help:      "Total number of requests rejected due to rate limits.",
+		},
+		[]string{"identifier"},
 	)
 )
 

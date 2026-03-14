@@ -1,0 +1,216 @@
+package middleware
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"llm-router-platform/internal/config"
+	"llm-router-platform/internal/service/user"
+
+	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+)
+
+// AuthMiddleware handles JWT authentication.
+type AuthMiddleware struct {
+	jwtSecret   []byte
+	userService *user.Service
+	logger      *zap.Logger
+}
+
+// NewAuthMiddleware creates a new auth middleware.
+func NewAuthMiddleware(cfg *config.JWTConfig, userService *user.Service, logger *zap.Logger) *AuthMiddleware {
+	return &AuthMiddleware{
+		jwtSecret:   []byte(cfg.Secret),
+		userService: userService,
+		logger:      logger,
+	}
+}
+
+// JWT validates JWT token in Authorization header.
+// After signature verification, it queries the database to confirm
+// the user's current role and active status (defense against stale claims).
+func (m *AuthMiddleware) JWT() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
+			return
+		}
+
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization format"})
+			return
+		}
+
+		token, err := jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			return m.jwtSecret, nil
+		})
+
+		if err != nil || !token.Valid {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid claims"})
+			return
+		}
+
+		userIDStr, _ := claims["sub"].(string)
+
+		// Query database for real-time user state instead of trusting JWT claims.
+		// This ensures role changes and account disabling take effect immediately.
+		userID, err := uuid.Parse(userIDStr)
+		if err != nil {
+			AuthFailuresTotal.WithLabelValues("invalid_token").Inc()
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			return
+		}
+
+		userObj, err := m.userService.GetByID(c.Request.Context(), userID)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+			return
+		}
+
+		if !userObj.IsActive {
+			AuthFailuresTotal.WithLabelValues("account_disabled").Inc()
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "account is disabled"})
+			return
+		}
+
+		if userObj.RequirePasswordChange {
+			path := c.Request.URL.Path
+			if path != "/api/v1/user/password" && path != "/api/v1/user/profile" && path != "/api/v1/auth/logout" {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "password_change_required"})
+				return
+			}
+		}
+
+		// Check if token was issued before a forced invalidation
+		// (password change, admin force-logout, etc.)
+		if !userObj.TokensInvalidatedAt.IsZero() {
+			iat, _ := claims.GetIssuedAt()
+			if iat != nil && iat.Before(userObj.TokensInvalidatedAt) {
+				AuthFailuresTotal.WithLabelValues("token_revoked").Inc()
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token has been revoked"})
+				return
+			}
+		}
+
+		c.Set("user_id", userIDStr)
+		c.Set("email", userObj.Email)
+		c.Set("role", userObj.Role) // Real-time role from DB, not from JWT
+
+		// Set quota/rate-limit info for downstream middleware
+		c.Set("user_monthly_token_limit", userObj.MonthlyTokenLimit)
+		c.Set("user_monthly_budget_usd", userObj.MonthlyBudgetUSD)
+		c.Set("user_rate_limit", userObj.RateLimitPerMinute)
+
+		c.Next()
+	}
+}
+
+// APIKey validates API key in header.
+func (m *AuthMiddleware) APIKey() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		apiKey := c.GetHeader("X-API-Key")
+		if apiKey == "" {
+			apiKey = c.GetHeader("Authorization")
+			apiKey = strings.TrimPrefix(apiKey, "Bearer ")
+		}
+
+		if apiKey == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing API key"})
+			return
+		}
+
+		userObj, key, err := m.userService.ValidateAPIKey(c.Request.Context(), apiKey)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.Set("user", userObj)
+		c.Set("api_key", key)
+		c.Set("user_id", userObj.ID.String())
+		c.Next()
+	}
+}
+
+// AdminOnly restricts access to admin users.
+func AdminOnly() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, exists := c.Get("role")
+		if !exists || role != "admin" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin access required"})
+			return
+		}
+		c.Next()
+	}
+}
+
+// AuthRateLimiter limits login/register attempts per IP to prevent brute force.
+type AuthRateLimiter struct {
+	redisClient *redis.Client
+	maxAttempts int
+	logger      *zap.Logger
+}
+
+// NewAuthRateLimiter creates a rate limiter for authentication endpoints.
+func NewAuthRateLimiter(redisClient *redis.Client, maxAttempts int, logger *zap.Logger) *AuthRateLimiter {
+	if maxAttempts <= 0 {
+		maxAttempts = 5
+	}
+	return &AuthRateLimiter{
+		redisClient: redisClient,
+		maxAttempts: maxAttempts,
+		logger:      logger,
+	}
+}
+
+// Limit applies per-IP rate limiting for auth endpoints (5 attempts/minute).
+func (l *AuthRateLimiter) Limit() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if l.redisClient == nil {
+			c.Next()
+			return
+		}
+
+		key := fmt.Sprintf("auth_ratelimit:%s", c.ClientIP())
+		ctx := context.Background()
+
+		count, err := l.redisClient.Incr(ctx, key).Result()
+		if err != nil {
+			l.logger.Warn("auth rate limiter redis error", zap.Error(err))
+			c.Next()
+			return
+		}
+
+		if count == 1 {
+			l.redisClient.Expire(ctx, key, time.Minute)
+		}
+
+		if int(count) > l.maxAttempts {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+				"error":       "too many authentication attempts, try again later",
+				"retry_after": 60,
+			})
+			return
+		}
+
+		c.Next()
+	}
+}
