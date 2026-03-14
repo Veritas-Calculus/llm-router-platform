@@ -114,7 +114,7 @@ func run() error {
 		Handler:           engine,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      300 * time.Second, // LLM streaming responses can take minutes
 		IdleTimeout:       120 * time.Second,
 	}
 
