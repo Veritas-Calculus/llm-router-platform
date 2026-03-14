@@ -1,5 +1,9 @@
 # Build stage
-FROM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+
+ARG TARGETPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -13,10 +17,10 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build binary with version info
+# Build binary with version info (cross-compile for target platform)
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -ldflags="-w -s -X llm-router-platform/internal/api/routes.Version=${VERSION} -X llm-router-platform/internal/api/routes.GitCommit=${GIT_COMMIT} -X llm-router-platform/internal/api/routes.BuildTime=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
     -o /app/server ./cmd/server
 

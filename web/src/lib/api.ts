@@ -1,4 +1,5 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
+import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
 
 const BASE_URL = '/api/v1';
@@ -31,11 +32,19 @@ class ApiClient {
 
     this.client.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
-        if (error.response?.status === 401) {
+      (error: AxiosError<{ error?: string; message?: string }>) => {
+        const status = error.response?.status;
+        const msg = error.response?.data?.error || error.response?.data?.message;
+
+        if (status === 401) {
           useAuthStore.getState().logout();
           window.location.href = '/login';
+        } else if (status === 403) {
+          toast.error(msg || 'Access denied');
+        } else if (status && status >= 500) {
+          toast.error(msg || 'Server error — please try again later');
         }
+
         return Promise.reject(error);
       }
     );
