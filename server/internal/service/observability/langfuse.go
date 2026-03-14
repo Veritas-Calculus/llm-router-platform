@@ -18,13 +18,30 @@ type LangfuseService struct {
 }
 
 // NewLangfuseService initializes a new Langfuse observability client.
+// Falls back to NoopService if initialization fails or panics (graceful degradation).
 func NewLangfuseService(cfg config.ObservabilityConfig, logger *zap.Logger) Service {
 	if !cfg.LangfuseEnabled || cfg.LangfusePublicKey == "" || cfg.LangfuseSecretKey == "" {
 		logger.Info("Langfuse observability is disabled or missing credentials")
 		return NewNoopService()
 	}
 
-	client := langfuse.NewClient(cfg.LangfuseHost, cfg.LangfusePublicKey, cfg.LangfuseSecretKey)
+	// Recover from any panic during Langfuse SDK initialization
+	var client *langfuse.Langfuse
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("Langfuse SDK initialization panicked, falling back to noop",
+					zap.Any("panic", r),
+				)
+				client = nil
+			}
+		}()
+		client = langfuse.NewClient(cfg.LangfuseHost, cfg.LangfusePublicKey, cfg.LangfuseSecretKey)
+	}()
+
+	if client == nil {
+		return NewNoopService()
+	}
 
 	logger.Info("Langfuse observability initialized successfully", zap.String("host", cfg.LangfuseHost))
 

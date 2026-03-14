@@ -201,10 +201,16 @@ func (s *Scheduler) Stop() {
 	close(s.stopCh)
 }
 
-// runHealthChecks runs all health checks.
+// runHealthChecks runs all health checks (providers, API keys, proxies).
 func (s *Scheduler) runHealthChecks(ctx context.Context) {
 	s.logger.Debug("running scheduled health checks")
 
+	// Check providers
+	if err := s.healthService.CheckAllProviders(ctx); err != nil {
+		s.logger.Error("failed to check providers health", zap.Error(err))
+	}
+
+	// Check API keys
 	apiKeyStatuses, err := s.healthService.GetAPIKeysHealth(ctx)
 	if err != nil {
 		s.logger.Error("failed to get API key statuses", zap.Error(err))
@@ -218,6 +224,7 @@ func (s *Scheduler) runHealthChecks(ctx context.Context) {
 		}
 	}
 
+	// Check proxies
 	proxyStatuses, err := s.healthService.GetProxiesHealth(ctx)
 	if err != nil {
 		s.logger.Error("failed to get proxy statuses", zap.Error(err))
