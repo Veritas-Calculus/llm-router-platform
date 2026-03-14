@@ -95,7 +95,7 @@ function ApiKeysPage() {
     try {
       const response = await apiKeysApi.list();
       setApiKeys(response?.data || []);
-    } catch (error) {
+    } catch {
       toast.error('Failed to load API keys');
       setApiKeys([]);
     } finally {
@@ -116,7 +116,7 @@ function ApiKeysPage() {
       setApiKeys((prev) => [key, ...prev]);
       setNewKeyName('');
       toast.success('API key created successfully');
-    } catch (error) {
+    } catch {
       toast.error('Failed to create API key');
     } finally {
       setCreating(false);
@@ -152,7 +152,7 @@ function ApiKeysPage() {
         toast.success('API key deleted');
       }
       closeConfirmModal();
-    } catch (error) {
+    } catch {
       toast.error(type === 'revoke' ? 'Failed to revoke API key' : 'Failed to delete API key');
     } finally {
       setProcessing(false);
@@ -163,7 +163,7 @@ function ApiKeysPage() {
     try {
       await navigator.clipboard.writeText(text);
       toast.success('Copied to clipboard');
-    } catch (error) {
+    } catch {
       toast.error('Failed to copy');
     }
   };

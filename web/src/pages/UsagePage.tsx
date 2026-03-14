@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   LineChart,
@@ -20,11 +20,7 @@ function UsagePage() {
   const [loading, setLoading] = useState(true);
   const pageSize = 20;
 
-  useEffect(() => {
-    loadUsageData();
-  }, [page]);
-
-  const loadUsageData = async () => {
+  const loadUsageData = useCallback(async () => {
     try {
       const [dailyRes, recordsRes, monthlyRes] = await Promise.all([
         usageApi.getDailyStats(30),
@@ -44,7 +40,11 @@ function UsagePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page]);
+
+  useEffect(() => {
+    loadUsageData();
+  }, [loadUsageData]);
 
   const formatCurrency = (value: number): string => {
     return new Intl.NumberFormat('en-US', {

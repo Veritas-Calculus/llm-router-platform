@@ -303,7 +303,7 @@ export const authApi = {
 
 export const userApi = {
   getProfile: () => api.get<User>('/user/profile'),
-  changePassword: (data: any) => api.put('/user/password', data),
+  changePassword: (data: { old_password: string; new_password: string }) => api.put('/user/password', data),
 };
 
 export const dashboardApi = {

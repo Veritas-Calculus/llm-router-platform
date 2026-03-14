@@ -161,33 +161,6 @@ func (s *Service) GetSystemUsageSummary(ctx context.Context, startTime, endTime 
 	return summary, nil
 }
 
-// aggregateLogs aggregates usage logs into a summary.
-func (s *Service) aggregateLogs(logs []models.UsageLog) *UsageSummary {
-	summary := &UsageSummary{}
-	var totalLatency int64
-	var successCount int64
-
-	for _, log := range logs {
-		summary.TotalRequests++
-		summary.TotalTokens += int64(log.TotalTokens)
-		summary.TotalCost += log.Cost
-		totalLatency += log.Latency
-
-		if log.StatusCode >= 200 && log.StatusCode < 300 {
-			successCount++
-		} else {
-			summary.ErrorCount++
-		}
-	}
-
-	if summary.TotalRequests > 0 {
-		summary.AvgLatency = float64(totalLatency) / float64(summary.TotalRequests)
-		summary.SuccessRate = float64(successCount) / float64(summary.TotalRequests) * 100
-	}
-
-	return summary
-}
-
 // DailyUsage represents daily usage data.
 type DailyUsage struct {
 	Date     string  `json:"date"`

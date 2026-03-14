@@ -38,7 +38,7 @@ function LoginPage() {
         toast.success('Account created successfully!');
       }
       navigate('/dashboard');
-    } catch (error) {
+    } catch {
       toast.error(isLogin ? 'Invalid credentials' : 'Registration failed');
     } finally {
       setLoading(false);
