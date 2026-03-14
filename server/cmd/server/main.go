@@ -129,7 +129,8 @@ func run() error {
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 
 	if cfg.HealthCheck.Enabled {
-		scheduler := health.NewScheduler(services.Health, cfg.HealthCheck.Interval, logger)
+		alertNotifier := health.NewAlertNotifier(repos.Alert, repos.AlertConfig, logger)
+		scheduler := health.NewScheduler(services.Health, alertNotifier, cfg.HealthCheck.Interval, logger)
 		go scheduler.Start(lifecycleCtx)
 	}
 

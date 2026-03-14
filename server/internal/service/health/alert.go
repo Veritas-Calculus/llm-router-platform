@@ -160,15 +160,18 @@ func (n *AlertNotifier) sendWebhook(ctx context.Context, url string, alert *mode
 // Scheduler runs periodic health checks.
 type Scheduler struct {
 	healthService *Service
+	notifier      *AlertNotifier
 	interval      time.Duration
 	stopCh        chan struct{}
 	logger        *zap.Logger
 }
 
 // NewScheduler creates a new health check scheduler.
-func NewScheduler(healthService *Service, interval time.Duration, logger *zap.Logger) *Scheduler {
+// notifier may be nil — in that case alerts are logged but not dispatched.
+func NewScheduler(healthService *Service, notifier *AlertNotifier, interval time.Duration, logger *zap.Logger) *Scheduler {
 	return &Scheduler{
 		healthService: healthService,
+		notifier:      notifier,
 		interval:      interval,
 		stopCh:        make(chan struct{}),
 		logger:        logger,
@@ -216,10 +219,18 @@ func (s *Scheduler) runHealthChecks(ctx context.Context) {
 		s.logger.Error("failed to get API key statuses", zap.Error(err))
 	} else {
 		for _, status := range apiKeyStatuses {
-			if _, err := s.healthService.CheckSingleAPIKey(ctx, status.ID); err != nil {
+			result, err := s.healthService.CheckSingleAPIKey(ctx, status.ID)
+			if err != nil {
 				s.logger.Error("failed to check API key health",
 					zap.String("id", status.ID.String()),
 					zap.Error(err))
+				continue
+			}
+			// Alert on unhealthy API keys
+			if result != nil && !result.IsHealthy {
+				s.notify(ctx, "api_key", status.ID,
+					"api_key_unhealthy",
+					"API key "+status.ID.String()+" is unhealthy")
 			}
 		}
 	}
@@ -230,11 +241,36 @@ func (s *Scheduler) runHealthChecks(ctx context.Context) {
 		s.logger.Error("failed to get proxy statuses", zap.Error(err))
 	} else {
 		for _, status := range proxyStatuses {
-			if _, err := s.healthService.CheckSingleProxy(ctx, status.ID); err != nil {
+			result, err := s.healthService.CheckSingleProxy(ctx, status.ID)
+			if err != nil {
 				s.logger.Error("failed to check proxy health",
 					zap.String("id", status.ID.String()),
 					zap.Error(err))
+				continue
+			}
+			// Alert on unhealthy proxies
+			if result != nil && !result.IsHealthy {
+				s.notify(ctx, "proxy", status.ID,
+					"proxy_unhealthy",
+					"Proxy "+status.ID.String()+" is unhealthy")
 			}
 		}
+	}
+}
+
+// notify dispatches an alert through the AlertNotifier if available.
+func (s *Scheduler) notify(ctx context.Context, targetType string, targetID uuid.UUID, alertType, message string) {
+	if s.notifier == nil {
+		s.logger.Warn("health check alert (no notifier configured)",
+			zap.String("target_type", targetType),
+			zap.String("target_id", targetID.String()),
+			zap.String("alert_type", alertType),
+			zap.String("message", message))
+		return
+	}
+	if err := s.notifier.Notify(ctx, targetType, targetID, alertType, message); err != nil {
+		s.logger.Error("failed to send health alert",
+			zap.String("target_type", targetType),
+			zap.Error(err))
 	}
 }
