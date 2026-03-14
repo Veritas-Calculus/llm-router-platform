@@ -21,12 +21,13 @@ type AuthHandler struct {
 	auditService     *audit.Service
 	jwtConfig        *config.JWTConfig
 	registrationMode string
+	inviteCode       string // static invite code for mode="invite"
 	redisClient      *redis.Client // nil-safe: JTI tracking disabled without Redis
 	logger           *zap.Logger
 }
 
 // NewAuthHandler creates a new auth handler.
-func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, jwtConfig *config.JWTConfig, registrationMode string, redisClient *redis.Client, logger *zap.Logger) *AuthHandler {
+func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, jwtConfig *config.JWTConfig, registrationMode, inviteCode string, redisClient *redis.Client, logger *zap.Logger) *AuthHandler {
 	if registrationMode == "" {
 		registrationMode = "open"
 	}
@@ -35,6 +36,7 @@ func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, jwtConfi
 		auditService:     auditSvc,
 		jwtConfig:        jwtConfig,
 		registrationMode: registrationMode,
+		inviteCode:       inviteCode,
 		redisClient:      redisClient,
 		logger:           logger,
 	}
@@ -45,8 +47,9 @@ func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, jwtConfi
 // RegisterRequest represents registration request (input only, never serialized).
 type RegisterRequest struct {
 	Email    string `json:"email" binding:"required,email,max=255"`
-	Password string `json:"password" binding:"required,min=8,max=128"` // #nosec G101 -- request input only
-	Name     string `json:"name" binding:"required,min=1,max=100"`
+	Password   string `json:"password" binding:"required,min=8,max=128"` // #nosec G101 -- request input only
+	Name       string `json:"name" binding:"required,min=1,max=100"`
+	InviteCode string `json:"invite_code"`
 }
 
 // validatePassword enforces password complexity: min 8 chars, must contain
@@ -91,7 +94,17 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// TODO: validate invite code when registrationMode == "invite"
+	// Invite code validation: when mode=invite, a valid code is required
+	if h.registrationMode == "invite" {
+		if h.inviteCode == "" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "invite-only registration is not configured"})
+			return
+		}
+		if req.InviteCode != h.inviteCode {
+			c.JSON(http.StatusForbidden, gin.H{"error": "invalid invite code"})
+			return
+		}
+	}
 	if h.registrationMode == "closed" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "registration is closed"})
 		return

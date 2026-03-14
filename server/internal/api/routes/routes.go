@@ -212,7 +212,7 @@ func Setup(
 	// ─── API Routes ────────────────────────────────────────────────────
 	auditService := audit.NewService(services.DB, logger)
 
-	authHandler := handlers.NewAuthHandler(services.User, auditService, &cfg.JWT, cfg.Registration.Mode, services.RedisClient, logger)
+	authHandler := handlers.NewAuthHandler(services.User, auditService, &cfg.JWT, cfg.Registration.Mode, cfg.Registration.InviteCode, services.RedisClient, logger)
 	apiKeyHandler := handlers.NewAPIKeyHandler(services.User, logger)
 	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Observability, logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)

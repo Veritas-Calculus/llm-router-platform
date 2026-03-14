@@ -128,7 +128,8 @@ type AdminConfig struct {
 
 // RegistrationConfig holds user registration settings.
 type RegistrationConfig struct {
-	Mode string // "open", "invite", "closed"
+	Mode       string // "open", "invite", "closed"
+	InviteCode string // Required when Mode == "invite"
 }
 
 // ObservabilityConfig holds observability configuration (e.g. Langfuse).
@@ -228,7 +229,8 @@ func Load() (*Config, error) {
 			Name:     viper.GetString("ADMIN_NAME"),
 		},
 		Registration: RegistrationConfig{
-			Mode: viper.GetString("REGISTRATION_MODE"),
+			Mode:       viper.GetString("REGISTRATION_MODE"),
+			InviteCode: viper.GetString("INVITE_CODE"),
 		},
 		Observability: ObservabilityConfig{
 			LangfuseEnabled:   viper.GetBool("LANGFUSE_ENABLED"),
@@ -267,6 +269,7 @@ func setDefaults() {
 	viper.SetDefault("LOG_FORMAT", "json")
 	viper.SetDefault("ADMIN_NAME", "Administrator")
 	viper.SetDefault("REGISTRATION_MODE", "open") // open, invite, closed
+	viper.SetDefault("INVITE_CODE", "")            // required when mode=invite
 	viper.SetDefault("LANGFUSE_ENABLED", false)
 	viper.SetDefault("LANGFUSE_HOST", "https://cloud.langfuse.com")
 }

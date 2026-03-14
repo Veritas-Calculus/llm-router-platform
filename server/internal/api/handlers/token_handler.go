@@ -45,7 +45,14 @@ func (h *AuthHandler) generateRefreshToken(userID uuid.UUID) (string, error) {
 
 // ─── Refresh Token Rotation ─────────────────────────────────────────────
 
-// RefreshToken refreshes JWT token using current DB state.
+// RefreshToken godoc
+// @Summary      Refresh access token
+// @Description  Issue a new JWT access token using the authenticated user's current state
+// @Tags         auth
+// @Produce      json
+// @Success      200 {object} map[string]string
+// @Failure      401 {object} map[string]string
+// @Router       /api/v1/auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -85,9 +92,16 @@ type RefreshTokenRequest struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
-// RotateRefreshToken accepts a valid refresh token and returns a new access+refresh pair.
-// This implements the refresh-token rotation pattern: each refresh token is single-use.
-// If Redis is available, the token's JTI is tracked to prevent reuse.
+// RotateRefreshToken godoc
+// @Summary      Rotate refresh token
+// @Description  Exchange a valid refresh token for a new access+refresh pair (single-use)
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body body RefreshTokenRequest true "Refresh token"
+// @Success      200 {object} map[string]string
+// @Failure      401 {object} map[string]string
+// @Router       /api/v1/auth/token/rotate [post]
 func (h *AuthHandler) RotateRefreshToken(c *gin.Context) {
 	var req RefreshTokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

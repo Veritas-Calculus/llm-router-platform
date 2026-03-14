@@ -29,7 +29,16 @@ type CreateAPIKeyRequest struct {
 	Name string `json:"name" binding:"required"`
 }
 
-// Create creates a new API key.
+// Create godoc
+// @Summary      Create API key
+// @Description  Generate a new API key for the authenticated user
+// @Tags         api-keys
+// @Accept       json
+// @Produce      json
+// @Param        body body CreateAPIKeyReq true "API key details"
+// @Success      201 {object} map[string]interface{}
+// @Failure      400 {object} map[string]string
+// @Router       /api/v1/api-keys [post]
 func (h *APIKeyHandler) Create(c *gin.Context) {
 	var req CreateAPIKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -69,7 +78,13 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 	})
 }
 
-// List returns all API keys for the authenticated user.
+// List godoc
+// @Summary      List API keys
+// @Description  Return all API keys for the authenticated user
+// @Tags         api-keys
+// @Produce      json
+// @Success      200 {object} map[string]interface{}
+// @Router       /api/v1/api-keys [get]
 func (h *APIKeyHandler) List(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -92,7 +107,15 @@ func (h *APIKeyHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": keys})
 }
 
-// Revoke deactivates an API key.
+// Revoke godoc
+// @Summary      Revoke API key
+// @Description  Deactivate an API key (does not delete it)
+// @Tags         api-keys
+// @Produce      json
+// @Param        id path string true "API Key ID"
+// @Success      200 {object} map[string]string
+// @Failure      400 {object} map[string]string
+// @Router       /api/v1/api-keys/{id}/revoke [put]
 func (h *APIKeyHandler) Revoke(c *gin.Context) {
 	keyID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -120,7 +143,15 @@ func (h *APIKeyHandler) Revoke(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "API key revoked"})
 }
 
-// Delete permanently removes an API key.
+// Delete godoc
+// @Summary      Delete API key
+// @Description  Permanently remove an API key
+// @Tags         api-keys
+// @Produce      json
+// @Param        id path string true "API Key ID"
+// @Success      200 {object} map[string]string
+// @Failure      400 {object} map[string]string
+// @Router       /api/v1/api-keys/{id} [delete]
 func (h *APIKeyHandler) Delete(c *gin.Context) {
 	keyID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
