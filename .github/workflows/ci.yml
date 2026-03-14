@@ -114,11 +114,11 @@ jobs:
 
       - name: Run lint
         working-directory: web
-        run: npm run lint || true
+        run: npm run lint
 
       - name: Run tests
         working-directory: web
-        run: npm test -- --run --coverage || true
+        run: npm test -- --run --coverage
 
   frontend-build:
     name: Frontend Build

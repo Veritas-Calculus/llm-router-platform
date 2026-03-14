@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -28,9 +29,10 @@ type Config struct {
 
 // ServerConfig holds server-related configuration.
 type ServerConfig struct {
-	Port        string
-	Mode        string
-	CORSOrigins []string // Allowed CORS origins; empty or ["*"] = allow all
+	Port         string
+	Mode         string
+	CORSOrigins  []string // Allowed CORS origins; empty or ["*"] = allow all
+	PprofEnabled bool     // Opt-in pprof endpoints; default false
 }
 
 // DatabaseConfig holds database connection configuration.
@@ -164,9 +166,10 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		Server: ServerConfig{
-			Port:        viper.GetString("SERVER_PORT"),
-			Mode:        viper.GetString("GIN_MODE"),
-			CORSOrigins: corsOrigins,
+			Port:         viper.GetString("SERVER_PORT"),
+			Mode:         viper.GetString("GIN_MODE"),
+			CORSOrigins:  corsOrigins,
+			PprofEnabled: viper.GetBool("PPROF_ENABLED"),
 		},
 		Database: DatabaseConfig{
 			Host:     viper.GetString("DB_HOST"),
@@ -268,14 +271,10 @@ func setDefaults() {
 	viper.SetDefault("LANGFUSE_HOST", "https://cloud.langfuse.com")
 }
 
-// GetDSN returns the database connection string.
+// GetDSN returns the database connection string with proper escaping.
 func (c *DatabaseConfig) GetDSN() string {
-	return "host=" + c.Host +
-		" user=" + c.User +
-		" password=" + c.Password +
-		" dbname=" + c.Name +
-		" port=" + c.Port +
-		" sslmode=" + c.SSLMode
+	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
+		c.Host, c.User, c.Password, c.Name, c.Port, c.SSLMode)
 }
 
 // GetRedisAddr returns the Redis connection address.

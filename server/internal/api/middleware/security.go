@@ -64,6 +64,9 @@ func SecurityHeaders() gin.HandlerFunc {
 		// Control referrer information
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 
+		// Content Security Policy — restrict resources to same-origin
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'")
+
 		// Disable browser features not needed by API
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 

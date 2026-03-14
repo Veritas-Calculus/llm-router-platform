@@ -125,11 +125,12 @@ func run() error {
 		}
 	}()
 
+	// Lifecycle context: cancelled when shutdown signal is received.
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
+
 	if cfg.HealthCheck.Enabled {
 		scheduler := health.NewScheduler(services.Health, cfg.HealthCheck.Interval, logger)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		go scheduler.Start(ctx)
+		go scheduler.Start(lifecycleCtx)
 	}
 
 	quit := make(chan os.Signal, 1)
@@ -144,7 +145,7 @@ func run() error {
 			case <-ticker.C:
 				_, _ = db.CleanupOldHealthHistory(30) // 30-day retention
 				_, _ = db.CleanupOldAlerts(90)        // 90-day retention for resolved alerts
-			case <-quit:
+			case <-lifecycleCtx.Done():
 				return
 			}
 		}
@@ -152,21 +153,36 @@ func run() error {
 
 	<-quit
 
-	logger.Info("shutting down server")
+	logger.Info("shutting down server — draining connections…")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// 1. Cancel background goroutines (health scheduler, cleanup ticker)
+	lifecycleCancel()
+
+	// 2. Shutdown HTTP server with deadline
+	shutdownTimeout := 15 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-
-	if err := services.Observability.Shutdown(ctx); err != nil {
-		logger.Error("observability shutdown error", zap.Error(err))
-	}
 
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Error("server shutdown error", zap.Error(err))
 		return err
 	}
+	logger.Info("http server stopped")
 
-	logger.Info("server stopped")
+	// 3. Shutdown observability (flush traces)
+	if err := services.Observability.Shutdown(ctx); err != nil {
+		logger.Error("observability shutdown error", zap.Error(err))
+	}
+
+	// 4. Close Redis connection
+	if redisClient != nil {
+		if err := redisClient.Close(); err != nil {
+			logger.Error("redis close error", zap.Error(err))
+		}
+		logger.Info("redis connection closed")
+	}
+
+	logger.Info("shutdown complete")
 	return nil
 }
 

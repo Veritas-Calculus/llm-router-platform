@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"llm-router-platform/internal/config"
@@ -157,14 +159,24 @@ func (m *AuthMiddleware) APIKey() gin.HandlerFunc {
 }
 
 // RateLimiter provides request rate limiting backed by Redis.
+// Falls back to an in-memory counter when Redis is unavailable (fail-closed).
 type RateLimiter struct {
 	redisClient       *redis.Client
 	requestsPerMinute int
 	logger            *zap.Logger
+	// In-memory fallback counters (per-identifier)
+	fallback     sync.Map
+	fallbackUsed atomic.Bool
+}
+
+// fallbackEntry tracks request count for in-memory rate limiting.
+type fallbackEntry struct {
+	count     atomic.Int64
+	resetTime time.Time
 }
 
 // NewRateLimiter creates a new Redis-backed rate limiter.
-// If redisClient is nil, rate limiting is disabled (fail-open).
+// If redisClient is nil, the in-memory fallback is used instead of disabling rate limiting.
 func NewRateLimiter(requestsPerMinute int, redisClient *redis.Client, logger *zap.Logger) *RateLimiter {
 	return &RateLimiter{
 		redisClient:       redisClient,
@@ -176,17 +188,18 @@ func NewRateLimiter(requestsPerMinute int, redisClient *redis.Client, logger *za
 // Limit applies sliding-window rate limiting per API key (or client IP as fallback).
 func (r *RateLimiter) Limit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Fail-open if Redis is not configured
-		if r.redisClient == nil {
-			c.Next()
-			return
-		}
-
 		// Identify the client: prefer API key, fallback to IP
 		identifier := c.GetString("user_id")
 		if identifier == "" {
 			identifier = c.ClientIP()
 		}
+
+		// If Redis is not configured, use in-memory fallback
+		if r.redisClient == nil {
+			r.limitInMemory(c, identifier)
+			return
+		}
+
 		key := fmt.Sprintf("ratelimit:%s", identifier)
 
 		now := time.Now()
@@ -211,14 +224,21 @@ func (r *RateLimiter) Limit() gin.HandlerFunc {
 		pipe.Expire(ctx, key, 2*time.Minute)
 
 		if _, err := pipe.Exec(ctx); err != nil {
-			// Fail-open: if Redis is down, allow the request through
-			RateLimitFailOpenTotal.Inc() // Track for alerting
-			r.logger.Warn("rate limiter redis error, allowing request",
-				zap.Error(err),
-				zap.String("identifier", sanitize.LogValue(identifier)),
-			)
-			c.Next()
+			// Fail-closed: fall back to in-memory rate limiting
+			RateLimitFailOpenTotal.Inc() // Keep metric name for backward compat
+			if !r.fallbackUsed.Load() {
+				r.fallbackUsed.Store(true)
+				r.logger.Warn("rate limiter redis error, switching to in-memory fallback",
+					zap.Error(err),
+				)
+			}
+			r.limitInMemory(c, identifier)
 			return
+		}
+
+		// Redis recovered — clear fallback flag
+		if r.fallbackUsed.CompareAndSwap(true, false) {
+			r.logger.Info("rate limiter redis recovered, switching back to Redis")
 		}
 
 		currentCount := countCmd.Val()
@@ -240,6 +260,40 @@ func (r *RateLimiter) Limit() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// limitInMemory applies a simple per-minute counter as fallback when Redis is down.
+func (r *RateLimiter) limitInMemory(c *gin.Context, identifier string) {
+	now := time.Now()
+
+	val, _ := r.fallback.LoadOrStore(identifier, &fallbackEntry{
+		resetTime: now.Add(time.Minute),
+	})
+	entry := val.(*fallbackEntry)
+
+	// Reset counter if window expired
+	if now.After(entry.resetTime) {
+		entry.count.Store(0)
+		entry.resetTime = now.Add(time.Minute)
+	}
+
+	current := entry.count.Add(1)
+
+	c.Header("X-RateLimit-Limit", strconv.Itoa(r.requestsPerMinute))
+	c.Header("X-RateLimit-Remaining", strconv.Itoa(max(0, r.requestsPerMinute-int(current))))
+	c.Header("X-RateLimit-Source", "memory") // Indicate fallback mode
+
+	if int(current) > r.requestsPerMinute {
+		c.Header("X-RateLimit-Remaining", "0")
+		c.Header("Retry-After", "60")
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+			"error":       "rate limit exceeded",
+			"retry_after": 60,
+		})
+		return
+	}
+
+	c.Next()
 }
 
 // LoggingMiddleware provides request logging.
