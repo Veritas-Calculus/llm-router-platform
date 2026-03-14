@@ -52,9 +52,15 @@ func NewLangfuseService(cfg config.ObservabilityConfig, logger *zap.Logger) Serv
 }
 
 // StartTrace creates a base trace for an incoming request.
-func (s *LangfuseService) StartTrace(ctx context.Context, id, name, userID, sessionID string, metadata map[string]interface{}) Trace {
-	// Note: go SDK StartTrace takes name only; we manually assign ID and metadata to the underlying struct if available.
-	// But according to git-hulk SDK docs, StartTrace acts as a simplified wrapper, so we map fields directly to the Trace struct.
+// If the Langfuse SDK panics, it gracefully degrades to a noop trace.
+func (s *LangfuseService) StartTrace(ctx context.Context, id, name, userID, sessionID string, metadata map[string]interface{}) (result Trace) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Warn("Langfuse StartTrace panicked, degrading to noop", zap.Any("panic", r))
+			result = &NoopTrace{}
+		}
+	}()
+
 	t := s.client.StartTrace(ctx, name)
 
 	if id != "" {
@@ -68,7 +74,15 @@ func (s *LangfuseService) StartTrace(ctx context.Context, id, name, userID, sess
 }
 
 // StartGeneration kicks off an LLM call record tied to the given trace.
-func (s *LangfuseService) StartGeneration(ctx context.Context, pTrace Trace, name, model string, modelParams map[string]interface{}, input interface{}) Generation {
+// Panics in the Langfuse SDK are caught and degraded to a noop generation.
+func (s *LangfuseService) StartGeneration(ctx context.Context, pTrace Trace, name, model string, modelParams map[string]interface{}, input interface{}) (result Generation) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Warn("Langfuse StartGeneration panicked, degrading to noop", zap.Any("panic", r))
+			result = &NoopGeneration{}
+		}
+	}()
+
 	lt, ok := pTrace.(*LangfuseTrace)
 	if !ok {
 		return &NoopGeneration{}
