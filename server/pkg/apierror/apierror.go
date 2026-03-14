@@ -118,6 +118,16 @@ func NotImplementedError(message string) *APIError {
 	return &APIError{HTTPStatus: http.StatusNotImplemented, Code: CodeNotImplemented, Message: message}
 }
 
+// BadGateway creates a 502 error for upstream/proxy failures.
+func BadGateway(message string) *APIError {
+	return &APIError{HTTPStatus: http.StatusBadGateway, Code: CodeBadGateway, Message: message}
+}
+
+// Timeout creates a 504 error.
+func Timeout(message string) *APIError {
+	return &APIError{HTTPStatus: http.StatusGatewayTimeout, Code: CodeTimeout, Message: message}
+}
+
 // WithDetail adds additional detail to the error.
 func (e *APIError) WithDetail(detail string) *APIError {
 	e.Detail = detail

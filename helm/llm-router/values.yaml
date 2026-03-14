@@ -25,6 +25,10 @@ server:
     HEALTH_CHECK_ENABLED: "true"
     HEALTH_CHECK_INTERVAL: "60"
     CORS_ORIGINS: ""
+    REGISTRATION_MODE: "open"         # open | invite | closed
+    JWT_EXPIRES_IN: "24h"
+    ADMIN_NAME: "Administrator"
+    DB_SSL_MODE: "disable"            # disable | require | verify-full
 
 # ─── Web (React Frontend) ────────────────────────────────────
 web:

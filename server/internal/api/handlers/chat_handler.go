@@ -13,6 +13,7 @@ import (
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/router"
+	"llm-router-platform/pkg/apierror"
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
@@ -132,7 +133,7 @@ type ImageGenerationRequest struct {
 func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 	var req ChatCompletionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(err.Error()).Respond(c)
 		return
 	}
 
@@ -140,7 +141,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	selectedProvider, apiKey, err := h.router.Route(c.Request.Context(), req.Model)
 	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no available providers"})
+		apierror.ServiceUnavailable("no available providers for model: " + req.Model).Respond(c)
 		return
 	}
 
@@ -338,7 +339,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		}
 		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 
-		c.JSON(http.StatusBadGateway, gin.H{"error": "provider request failed after retries"})
+		apierror.BadGateway("provider request failed after retries").Respond(c)
 		return
 	}
 
