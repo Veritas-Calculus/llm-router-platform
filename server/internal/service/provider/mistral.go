@@ -34,7 +34,7 @@ func NewMistralClient(cfg *config.ProviderConfig, logger *zap.Logger) *MistralCl
 		baseURL = "https://api.mistral.ai"
 	}
 
-	httpClient := &http.Client{Timeout: 120 * time.Second}
+	httpClient := &http.Client{Timeout: 600 * time.Second}
 	if cfg.HTTPClient != nil {
 		httpClient = cfg.HTTPClient()
 	}

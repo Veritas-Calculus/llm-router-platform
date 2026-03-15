@@ -77,14 +77,14 @@ func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) 
 			proxies, err := r.proxyRepo.GetActive(ctx)
 			if err != nil || len(proxies) == 0 {
 				// Return default client if no proxy available
-				return &http.Client{Timeout: 60 * time.Second}
+				return &http.Client{Timeout: 600 * time.Second}
 			}
 			proxyInfo = &proxies[0]
 		}
 
 		proxyURL, err := url.Parse(proxyInfo.URL)
 		if err != nil {
-			return &http.Client{Timeout: 60 * time.Second}
+			return &http.Client{Timeout: 600 * time.Second}
 		}
 
 		// Add authentication if available
