@@ -225,6 +225,15 @@ func Setup(
 	finopsHandler := handlers.NewFinOpsHandler(services.Billing, services.BudgetService, logger)
 	userHandler := handlers.NewUserHandler(services.User, services.Billing, logger)
 
+	// Shared middleware chain for all LLM API endpoints.
+	applyLLMMiddleware := func(g *gin.RouterGroup) {
+		g.Use(authMiddleware.APIKey())
+		g.Use(perKeyLimiter.Limit())
+		g.Use(quotaChecker.Check())
+		g.Use(rateLimiter.Limit())
+		g.Use(backpressureLimiter.Protect())
+	}
+
 	api := engine.Group("/api")
 	{
 		v1 := api.Group("/v1")
@@ -368,15 +377,6 @@ func Setup(
 			}
 
 			// ─── LLM API Endpoints ──────────────────────────────
-			// Shared middleware chain for all LLM API endpoints.
-			applyLLMMiddleware := func(g *gin.RouterGroup) {
-				g.Use(authMiddleware.APIKey())
-				g.Use(perKeyLimiter.Limit())
-				g.Use(quotaChecker.Check())
-				g.Use(rateLimiter.Limit())
-				g.Use(backpressureLimiter.Protect())
-			}
-
 			chat := v1.Group("/chat")
 			applyLLMMiddleware(chat)
 			{
@@ -408,5 +408,25 @@ func Setup(
 				models.GET("/providers", modelHandler.ListProviders)
 			}
 		}
+	}
+
+	// ─── OpenAI-Compatible Route Alias ─────────────────────────────
+	// Cline, Open WebUI, and other OpenAI-compatible clients expect
+	// endpoints at /v1/chat/completions, /v1/models, etc.
+	// These aliases mirror the /api/v1/ LLM endpoints above.
+	compat := engine.Group("/v1")
+	applyLLMMiddleware(compat)
+	{
+		compat.POST("/chat/completions", chatHandler.ChatCompletion)
+		compat.POST("/embeddings", chatHandler.Embeddings)
+		compat.POST("/images/generations", chatHandler.GenerateImage)
+		compat.POST("/audio/transcriptions", chatHandler.TranscribeAudio)
+	}
+
+	compatModels := engine.Group("/v1/models")
+	compatModels.Use(authMiddleware.APIKey())
+	{
+		compatModels.GET("", modelHandler.List)
+		compatModels.GET("/providers", modelHandler.ListProviders)
 	}
 }

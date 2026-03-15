@@ -26,7 +26,11 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client
 	chunks, err := client.StreamChat(c.Request.Context(), req)
 	if err != nil {
 		gen.EndWithError(err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "provider request failed"})
+		c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{
+			"message": "provider request failed",
+			"type":    "server_error",
+			"code":    "provider_error",
+		}})
 		return
 	}
 

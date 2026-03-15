@@ -177,8 +177,15 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		messages = append(messages, provider.Message{Role: "system", Content: provider.StringContent(resumeContext)})
 	}
 
+	// Strip provider prefix from model name (e.g., "openai/gpt-oss-120b" → "gpt-oss-120b")
+	// so the upstream provider receives a clean model name.
+	upstreamModel := req.Model
+	if idx := strings.Index(req.Model, "/"); idx > 0 {
+		upstreamModel = req.Model[idx+1:]
+	}
+
 	providerReq := &provider.ChatRequest{
-		Model:       req.Model,
+		Model:       upstreamModel,
 		Messages:    messages,
 		MaxTokens:   req.MaxTokens,
 		Temperature: req.Temperature,
@@ -217,7 +224,11 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, apiKey)
 		if err != nil {
 			h.logger.Error("failed to create provider client", zap.Error(err))
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client creation failed"})
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
+				"message": "provider client creation failed",
+				"type":    "server_error",
+				"code":    "provider_error",
+			}})
 			return
 		}
 		h.handleStreamingChat(c, client, providerReq, selectedProvider, userObj, userAPIKey, start, trace, req.ConversationID, req.Messages)
@@ -235,7 +246,11 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, nil)
 		if err != nil {
 			h.logger.Error("failed to create provider client", zap.Error(err))
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client creation failed"})
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
+				"message": "provider client creation failed",
+				"type":    "server_error",
+				"code":    "provider_error",
+			}})
 			return
 		}
 

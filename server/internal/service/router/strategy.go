@@ -13,8 +13,28 @@ import (
 )
 
 // findProviderForModel tries to find the appropriate provider for a given model name.
+// It supports provider-prefixed names (e.g., "openai/gpt-oss-120b") used by clients
+// like Cline, and falls back to a database model lookup if pattern matching fails.
 func (r *Router) findProviderForModel(modelName string, providers []models.Provider) *models.Provider {
-	modelLower := strings.ToLower(modelName)
+	// Strip "provider/" prefix if present (e.g., "openai/gpt-4" → hint="openai", model="gpt-4")
+	actualModel := modelName
+	providerHint := ""
+	if idx := strings.Index(modelName, "/"); idx > 0 {
+		providerHint = strings.ToLower(modelName[:idx])
+		actualModel = modelName[idx+1:]
+	}
+
+	// If an explicit provider hint was given, try a direct name match first.
+	if providerHint != "" {
+		for i := range providers {
+			if strings.EqualFold(providers[i].Name, providerHint) {
+				return &providers[i]
+			}
+		}
+	}
+
+	// Pattern-based matching using the (possibly stripped) model name.
+	modelLower := strings.ToLower(actualModel)
 
 	for i := range providers {
 		p := &providers[i]
@@ -54,7 +74,9 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 				strings.Contains(modelLower, "codellama") ||
 				strings.Contains(modelLower, "vicuna") ||
 				strings.Contains(modelLower, "phi") ||
-				strings.Contains(modelLower, "yi-") {
+				strings.Contains(modelLower, "yi-") ||
+				strings.Contains(modelLower, "qwen") ||
+				strings.Contains(modelLower, "mistral") {
 				return p
 			}
 		case "deepseek":
@@ -71,6 +93,26 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 				strings.HasPrefix(modelLower, "open-mistral") ||
 				strings.HasPrefix(modelLower, "open-mixtral") {
 				return p
+			}
+		}
+	}
+
+	// Fallback: query database models table to find which provider offers this model.
+	if r.modelRepo != nil {
+		for i := range providers {
+			p := &providers[i]
+			dbModels, err := r.modelRepo.GetByProvider(context.Background(), p.ID)
+			if err != nil {
+				continue
+			}
+			for _, m := range dbModels {
+				if strings.EqualFold(m.Name, actualModel) && m.IsActive {
+					r.logger.Debug("model matched via database lookup",
+						zap.String("model", sanitize.LogValue(modelName)),
+						zap.String("provider", p.Name),
+					)
+					return p
+				}
 			}
 		}
 	}
