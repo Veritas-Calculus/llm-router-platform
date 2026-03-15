@@ -148,6 +148,12 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		return
 	}
 
+	h.logger.Info("model routed to provider",
+		zap.String("model", sanitize.LogValue(req.Model)),
+		zap.String("provider", selectedProvider.Name),
+		zap.String("base_url", selectedProvider.BaseURL),
+	)
+
 	userObj := c.MustGet("user").(*models.User)
 	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 
