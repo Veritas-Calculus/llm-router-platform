@@ -8,9 +8,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
+	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/internal/service/provider"
@@ -36,6 +38,13 @@ type FailedKeyInfo struct {
 	Reason   string
 }
 
+// modelDiscoveryCache caches discovered model→provider mappings.
+type modelDiscoveryCache struct {
+	// modelToProvider maps model name (lowercase) → provider name.
+	modelToProvider map[string]string
+	fetchedAt       time.Time
+}
+
 // Router handles request routing to LLM providers.
 type Router struct {
 	providerRepo    *repository.ProviderRepository
@@ -48,6 +57,8 @@ type Router struct {
 	failedKeys      map[uuid.UUID]*FailedKeyInfo // Track failed keys temporarily
 	failedKeysMu    sync.RWMutex
 	mu              sync.Mutex
+	discoveryCache  *modelDiscoveryCache
+	discoveryCacheMu sync.RWMutex
 	logger          *zap.Logger
 }
 
@@ -70,6 +81,54 @@ func NewRouter(
 		failedKeys:      make(map[uuid.UUID]*FailedKeyInfo),
 		logger:          logger,
 	}
+}
+
+// getDiscoveryCache returns the cached model→provider map if still valid.
+func (r *Router) getDiscoveryCache() map[string]string {
+	r.discoveryCacheMu.RLock()
+	defer r.discoveryCacheMu.RUnlock()
+	if r.discoveryCache == nil || time.Since(r.discoveryCache.fetchedAt) > 5*time.Minute {
+		return nil
+	}
+	return r.discoveryCache.modelToProvider
+}
+
+// refreshDiscoveryCache rebuilds the model→provider cache by querying upstreams.
+func (r *Router) refreshDiscoveryCache(providers []models.Provider) map[string]string {
+	result := make(map[string]string)
+	for i := range providers {
+		p := &providers[i]
+		client, ok := r.registry.Get(p.Name)
+		if !ok && !p.RequiresAPIKey {
+			cfg := &config.ProviderConfig{BaseURL: p.BaseURL}
+			var err error
+			client, err = r.createProviderClient(p.Name, cfg)
+			if err != nil || client == nil {
+				continue
+			}
+		} else if !ok {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		upstreamModels, err := client.ListModels(ctx)
+		cancel()
+		if err != nil {
+			continue
+		}
+		for _, m := range upstreamModels {
+			result[strings.ToLower(m.ID)] = p.Name
+		}
+	}
+
+	r.discoveryCacheMu.Lock()
+	r.discoveryCache = &modelDiscoveryCache{
+		modelToProvider: result,
+		fetchedAt:       time.Now(),
+	}
+	r.discoveryCacheMu.Unlock()
+
+	r.logger.Debug("model discovery cache refreshed", zap.Int("models_found", len(result)))
+	return result
 }
 
 // SetStrategy sets the routing strategy.

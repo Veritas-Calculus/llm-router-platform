@@ -5,9 +5,7 @@ package router
 import (
 	"context"
 	"strings"
-	"time"
 
-	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/pkg/sanitize"
 
@@ -46,37 +44,23 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 		}
 	}
 
-	// 2. Live upstream model discovery: query each provider's /models endpoint
-	//    to find which one actually serves this model. This correctly routes
-	//    custom models like "gpt-oss-120b" on vLLM that would otherwise be
-	//    hijacked by the prefix heuristic matching "gpt-" → openai.
-	for i := range providers {
-		p := &providers[i]
-		client, ok := r.registry.Get(p.Name)
-		if !ok {
-			// Try to create a client for this provider
-			var clientErr error
-			if !p.RequiresAPIKey {
-				cfg := &config.ProviderConfig{BaseURL: p.BaseURL}
-				client, clientErr = r.createProviderClient(p.Name, cfg)
-			}
-			if clientErr != nil || client == nil {
-				continue
-			}
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		upstreamModels, err := client.ListModels(ctx)
-		cancel()
-		if err != nil {
-			continue
-		}
-		for _, m := range upstreamModels {
-			if strings.EqualFold(m.ID, actualModel) {
-				r.logger.Debug("model matched via upstream discovery",
+	// 2. Cached upstream model discovery: look up which provider actually
+	//    serves this model. Cache is refreshed every 5 minutes; individual
+	//    requests always read from memory (no per-request upstream queries).
+	discoveryMap := r.getDiscoveryCache()
+	if discoveryMap == nil {
+		// Cache expired or first request — refresh in the background for next time,
+		// but also use the result now. The refresh has a 2s per-provider timeout.
+		discoveryMap = r.refreshDiscoveryCache(providers)
+	}
+	if providerName, ok := discoveryMap[strings.ToLower(actualModel)]; ok {
+		for i := range providers {
+			if strings.EqualFold(providers[i].Name, providerName) {
+				r.logger.Debug("model matched via upstream discovery cache",
 					zap.String("model", sanitize.LogValue(modelName)),
-					zap.String("provider", p.Name),
+					zap.String("provider", providerName),
 				)
-				return p
+				return &providers[i]
 			}
 		}
 	}
