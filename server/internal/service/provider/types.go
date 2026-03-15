@@ -33,6 +33,11 @@ type ContentPart struct {
 func (fc *FlexibleContent) UnmarshalJSON(data []byte) error {
 	fc.Raw = append(fc.Raw[:0], data...)
 
+	// Handle null content (common in tool_call responses where content is null)
+	if string(data) == "null" {
+		return nil
+	}
+
 	// Try string first
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
@@ -87,7 +92,7 @@ type Client interface {
 type StreamChunk struct {
 	ID      string        `json:"id,omitempty"`
 	Model   string        `json:"model,omitempty"`
-	Choices []DeltaChoice `json:"choices,omitempty"`
+	Choices []DeltaChoice `json:"choices"`
 	Usage   *Usage        `json:"usage,omitempty"`
 	Error   error         `json:"-"`
 	Done    bool          `json:"-"`
