@@ -5,7 +5,9 @@ package router
 import (
 	"context"
 	"strings"
+	"time"
 
+	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/pkg/sanitize"
 
@@ -13,29 +15,18 @@ import (
 )
 
 // findProviderForModel tries to find the appropriate provider for a given model name.
-// It supports provider-prefixed names (e.g., "openai/gpt-oss-120b") used by clients
-// like Cline, and prioritises explicit DB model assignments over heuristic prefix matching.
+// It strips client-format prefixes (e.g., "openai/gpt-oss-120b" → "gpt-oss-120b"),
+// then prioritises explicit DB model assignments over heuristic prefix matching.
 func (r *Router) findProviderForModel(modelName string, providers []models.Provider) *models.Provider {
-	// Strip "provider/" prefix if present (e.g., "openai/gpt-4" → hint="openai", model="gpt-4")
+	// Strip client prefix if present (e.g., "openai/gpt-oss-120b" → "gpt-oss-120b").
+	// The prefix is a client-side format marker (Cline uses "openai/" to mean
+	// "OpenAI-compatible API format"), NOT a routing hint to a specific provider.
 	actualModel := modelName
-	providerHint := ""
 	if idx := strings.Index(modelName, "/"); idx > 0 {
-		providerHint = strings.ToLower(modelName[:idx])
 		actualModel = modelName[idx+1:]
 	}
 
-	// 1. If an explicit provider hint was given, try a direct name match first.
-	if providerHint != "" {
-		for i := range providers {
-			if strings.EqualFold(providers[i].Name, providerHint) {
-				return &providers[i]
-			}
-		}
-	}
-
-	// 2. Check database model assignments (explicit registration takes priority
-	//    over heuristic prefix matching). This allows custom models like
-	//    "gpt-oss-120b" to be routed to vLLM instead of openai.
+	// 1. Check database model assignments (explicit registration takes priority).
 	if r.modelRepo != nil {
 		for i := range providers {
 			p := &providers[i]
@@ -51,6 +42,41 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 					)
 					return p
 				}
+			}
+		}
+	}
+
+	// 2. Live upstream model discovery: query each provider's /models endpoint
+	//    to find which one actually serves this model. This correctly routes
+	//    custom models like "gpt-oss-120b" on vLLM that would otherwise be
+	//    hijacked by the prefix heuristic matching "gpt-" → openai.
+	for i := range providers {
+		p := &providers[i]
+		client, ok := r.registry.Get(p.Name)
+		if !ok {
+			// Try to create a client for this provider
+			var clientErr error
+			if !p.RequiresAPIKey {
+				cfg := &config.ProviderConfig{BaseURL: p.BaseURL}
+				client, clientErr = r.createProviderClient(p.Name, cfg)
+			}
+			if clientErr != nil || client == nil {
+				continue
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		upstreamModels, err := client.ListModels(ctx)
+		cancel()
+		if err != nil {
+			continue
+		}
+		for _, m := range upstreamModels {
+			if strings.EqualFold(m.ID, actualModel) {
+				r.logger.Debug("model matched via upstream discovery",
+					zap.String("model", sanitize.LogValue(modelName)),
+					zap.String("provider", p.Name),
+				)
+				return p
 			}
 		}
 	}
