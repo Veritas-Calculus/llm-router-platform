@@ -410,10 +410,15 @@ func Setup(
 		}
 	}
 
-	// ─── OpenAI-Compatible Route Alias ─────────────────────────────
-	// Cline, Open WebUI, and other OpenAI-compatible clients expect
-	// endpoints at /v1/chat/completions, /v1/models, etc.
-	// These aliases mirror the /api/v1/ LLM endpoints above.
+	// ─── OpenAI-Compatible Route Aliases ───────────────────────────
+	// OpenAI-compatible clients (Cline, Open WebUI, etc.) may call
+	// endpoints with or without the /v1/ prefix depending on how the
+	// base URL is configured:
+	//   Base URL = "http://host:80"    → SDK calls /v1/chat/completions
+	//   Base URL = "http://host:80/v1" → SDK calls /chat/completions
+	// We register both levels to handle either configuration.
+
+	// With /v1/ prefix
 	compat := engine.Group("/v1")
 	applyLLMMiddleware(compat)
 	{
@@ -428,5 +433,36 @@ func Setup(
 	{
 		compatModels.GET("", modelHandler.List)
 		compatModels.GET("/providers", modelHandler.ListProviders)
+	}
+
+	// Without /v1/ prefix (root-level, for SDKs that include /v1 in base URL)
+	rootChat := engine.Group("/chat")
+	applyLLMMiddleware(rootChat)
+	{
+		rootChat.POST("/completions", chatHandler.ChatCompletion)
+	}
+
+	rootEmbeddings := engine.Group("/embeddings")
+	applyLLMMiddleware(rootEmbeddings)
+	{
+		rootEmbeddings.POST("", chatHandler.Embeddings)
+	}
+
+	rootImages := engine.Group("/images")
+	applyLLMMiddleware(rootImages)
+	{
+		rootImages.POST("/generations", chatHandler.GenerateImage)
+	}
+
+	rootAudio := engine.Group("/audio")
+	applyLLMMiddleware(rootAudio)
+	{
+		rootAudio.POST("/transcriptions", chatHandler.TranscribeAudio)
+	}
+
+	rootModels := engine.Group("/models")
+	rootModels.Use(authMiddleware.APIKey())
+	{
+		rootModels.GET("", modelHandler.List)
 	}
 }
