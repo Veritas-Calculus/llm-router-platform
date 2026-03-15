@@ -183,15 +183,8 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		messages = append(messages, provider.Message{Role: "system", Content: provider.StringContent(resumeContext)})
 	}
 
-	// Strip provider prefix from model name (e.g., "openai/gpt-oss-120b" → "gpt-oss-120b")
-	// so the upstream provider receives a clean model name.
-	upstreamModel := req.Model
-	if idx := strings.Index(req.Model, "/"); idx > 0 {
-		upstreamModel = req.Model[idx+1:]
-	}
-
 	providerReq := &provider.ChatRequest{
-		Model:       upstreamModel,
+		Model:       req.Model,
 		Messages:    messages,
 		MaxTokens:   req.MaxTokens,
 		Temperature: req.Temperature,
