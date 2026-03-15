@@ -352,14 +352,22 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	if resp == nil {
 		usageLog.StatusCode = http.StatusBadGateway
+		errMsg := "all API keys failed"
 		if lastErr != nil {
-			usageLog.ErrorMessage = lastErr.Error()
+			errMsg = lastErr.Error()
+			usageLog.ErrorMessage = errMsg
 		} else {
-			usageLog.ErrorMessage = "all API keys failed"
+			usageLog.ErrorMessage = errMsg
 		}
 		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 
-		apierror.BadGateway("provider request failed after retries").Respond(c)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": gin.H{
+				"message": "provider request failed: " + errMsg,
+				"type":    "server_error",
+				"code":    "provider_error",
+			},
+		})
 		return
 	}
 

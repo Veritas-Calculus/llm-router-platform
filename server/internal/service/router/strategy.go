@@ -14,7 +14,7 @@ import (
 
 // findProviderForModel tries to find the appropriate provider for a given model name.
 // It supports provider-prefixed names (e.g., "openai/gpt-oss-120b") used by clients
-// like Cline, and falls back to a database model lookup if pattern matching fails.
+// like Cline, and prioritises explicit DB model assignments over heuristic prefix matching.
 func (r *Router) findProviderForModel(modelName string, providers []models.Provider) *models.Provider {
 	// Strip "provider/" prefix if present (e.g., "openai/gpt-4" → hint="openai", model="gpt-4")
 	actualModel := modelName
@@ -24,7 +24,7 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 		actualModel = modelName[idx+1:]
 	}
 
-	// If an explicit provider hint was given, try a direct name match first.
+	// 1. If an explicit provider hint was given, try a direct name match first.
 	if providerHint != "" {
 		for i := range providers {
 			if strings.EqualFold(providers[i].Name, providerHint) {
@@ -33,71 +33,9 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 		}
 	}
 
-	// Pattern-based matching using the (possibly stripped) model name.
-	modelLower := strings.ToLower(actualModel)
-
-	for i := range providers {
-		p := &providers[i]
-		switch p.Name {
-		case "google":
-			// Google Gemini models
-			if strings.HasPrefix(modelLower, "gemini") ||
-				strings.HasPrefix(modelLower, "gemma") ||
-				strings.HasPrefix(modelLower, "embedding") ||
-				strings.HasPrefix(modelLower, "text-embedding") ||
-				strings.HasPrefix(modelLower, "imagen") ||
-				strings.HasPrefix(modelLower, "veo") ||
-				strings.HasPrefix(modelLower, "aqa") {
-				return p
-			}
-		case "openai":
-			// OpenAI models
-			if strings.HasPrefix(modelLower, "gpt-") ||
-				strings.HasPrefix(modelLower, "o1") ||
-				strings.HasPrefix(modelLower, "o3") ||
-				strings.HasPrefix(modelLower, "o4") ||
-				strings.HasPrefix(modelLower, "chatgpt") ||
-				strings.HasPrefix(modelLower, "text-davinci") ||
-				strings.HasPrefix(modelLower, "dall-e") ||
-				strings.HasPrefix(modelLower, "whisper") ||
-				strings.HasPrefix(modelLower, "tts") {
-				return p
-			}
-		case "anthropic":
-			// Anthropic Claude models
-			if strings.HasPrefix(modelLower, "claude") {
-				return p
-			}
-		case "ollama", "lmstudio", "vllm":
-			// Check for common open-source model patterns
-			if strings.Contains(modelLower, "llama") ||
-				strings.Contains(modelLower, "codellama") ||
-				strings.Contains(modelLower, "vicuna") ||
-				strings.Contains(modelLower, "phi") ||
-				strings.Contains(modelLower, "yi-") ||
-				strings.Contains(modelLower, "qwen") ||
-				strings.Contains(modelLower, "mistral") {
-				return p
-			}
-		case "deepseek":
-			// DeepSeek models
-			if strings.HasPrefix(modelLower, "deepseek") {
-				return p
-			}
-		case "mistral":
-			// Mistral AI models
-			if strings.HasPrefix(modelLower, "mistral") ||
-				strings.HasPrefix(modelLower, "mixtral") ||
-				strings.HasPrefix(modelLower, "codestral") ||
-				strings.HasPrefix(modelLower, "pixtral") ||
-				strings.HasPrefix(modelLower, "open-mistral") ||
-				strings.HasPrefix(modelLower, "open-mixtral") {
-				return p
-			}
-		}
-	}
-
-	// Fallback: query database models table to find which provider offers this model.
+	// 2. Check database model assignments (explicit registration takes priority
+	//    over heuristic prefix matching). This allows custom models like
+	//    "gpt-oss-120b" to be routed to vLLM instead of openai.
 	if r.modelRepo != nil {
 		for i := range providers {
 			p := &providers[i]
@@ -113,6 +51,64 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 					)
 					return p
 				}
+			}
+		}
+	}
+
+	// 3. Heuristic prefix-based matching (fallback).
+	modelLower := strings.ToLower(actualModel)
+
+	for i := range providers {
+		p := &providers[i]
+		switch p.Name {
+		case "google":
+			if strings.HasPrefix(modelLower, "gemini") ||
+				strings.HasPrefix(modelLower, "gemma") ||
+				strings.HasPrefix(modelLower, "embedding") ||
+				strings.HasPrefix(modelLower, "text-embedding") ||
+				strings.HasPrefix(modelLower, "imagen") ||
+				strings.HasPrefix(modelLower, "veo") ||
+				strings.HasPrefix(modelLower, "aqa") {
+				return p
+			}
+		case "openai":
+			if strings.HasPrefix(modelLower, "gpt-") ||
+				strings.HasPrefix(modelLower, "o1") ||
+				strings.HasPrefix(modelLower, "o3") ||
+				strings.HasPrefix(modelLower, "o4") ||
+				strings.HasPrefix(modelLower, "chatgpt") ||
+				strings.HasPrefix(modelLower, "text-davinci") ||
+				strings.HasPrefix(modelLower, "dall-e") ||
+				strings.HasPrefix(modelLower, "whisper") ||
+				strings.HasPrefix(modelLower, "tts") {
+				return p
+			}
+		case "anthropic":
+			if strings.HasPrefix(modelLower, "claude") {
+				return p
+			}
+		case "ollama", "lmstudio", "vllm":
+			if strings.Contains(modelLower, "llama") ||
+				strings.Contains(modelLower, "codellama") ||
+				strings.Contains(modelLower, "vicuna") ||
+				strings.Contains(modelLower, "phi") ||
+				strings.Contains(modelLower, "yi-") ||
+				strings.Contains(modelLower, "qwen") ||
+				strings.Contains(modelLower, "mistral") {
+				return p
+			}
+		case "deepseek":
+			if strings.HasPrefix(modelLower, "deepseek") {
+				return p
+			}
+		case "mistral":
+			if strings.HasPrefix(modelLower, "mistral") ||
+				strings.HasPrefix(modelLower, "mixtral") ||
+				strings.HasPrefix(modelLower, "codestral") ||
+				strings.HasPrefix(modelLower, "pixtral") ||
+				strings.HasPrefix(modelLower, "open-mistral") ||
+				strings.HasPrefix(modelLower, "open-mixtral") {
+				return p
 			}
 		}
 	}
