@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -103,6 +104,8 @@ type ChatCompletionRequest struct {
 	MaxTokens          int              `json:"max_tokens,omitempty"`
 	Temperature        float64          `json:"temperature,omitempty"`
 	Stream             bool             `json:"stream,omitempty"`
+	Tools              json.RawMessage  `json:"tools,omitempty"`
+	ToolChoice         json.RawMessage  `json:"tool_choice,omitempty"`
 	ConversationID     string           `json:"conversation_id,omitempty"`
 	ResumeFromStreamID string           `json:"resume_from_stream_id,omitempty"` // For resuming broken streams
 }
@@ -180,6 +183,8 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		MaxTokens:   req.MaxTokens,
 		Temperature: req.Temperature,
 		Stream:      req.Stream,
+		Tools:       req.Tools,
+		ToolChoice:  req.ToolChoice,
 	}
 
 	// Observability: Start Trace

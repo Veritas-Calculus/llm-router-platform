@@ -140,6 +140,10 @@ services:
       - /tmp:uid=10001,gid=10001
     security_opt:
       - no-new-privileges:true
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 8192
     deploy:
       resources:
         limits:

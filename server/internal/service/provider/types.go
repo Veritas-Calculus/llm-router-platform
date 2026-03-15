@@ -102,8 +102,9 @@ type DeltaChoice struct {
 
 // Delta represents the delta content in a streaming chunk.
 type Delta struct {
-	Role    string `json:"role,omitempty"`
-	Content string `json:"content,omitempty"`
+	Role      string          `json:"role,omitempty"`
+	Content   string          `json:"content,omitempty"`
+	ToolCalls json.RawMessage `json:"tool_calls,omitempty"`
 }
 
 // ChatRequest represents a chat completion request.
@@ -114,12 +115,17 @@ type ChatRequest struct {
 	Temperature   float64                `json:"temperature,omitempty"`
 	Stream        bool                   `json:"stream,omitempty"`
 	StreamOptions map[string]interface{} `json:"stream_options,omitempty"`
+	Tools         json.RawMessage        `json:"tools,omitempty"`
+	ToolChoice    json.RawMessage        `json:"tool_choice,omitempty"`
 }
 
 // Message represents a chat message.
 type Message struct {
-	Role    string          `json:"role"`
-	Content FlexibleContent `json:"content"`
+	Role       string          `json:"role"`
+	Content    FlexibleContent `json:"content"`
+	ToolCalls  json.RawMessage `json:"tool_calls,omitempty"`
+	ToolCallID string          `json:"tool_call_id,omitempty"`
+	Name       string          `json:"name,omitempty"`
 }
 
 // ChatResponse represents a chat completion response.
