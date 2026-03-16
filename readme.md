@@ -57,12 +57,16 @@
 
 ### 安全
 
-- **JWT 双 Token**: Access Token (15min) + Refresh Token (7d) 旋转机制
-- **AES-256-GCM 加密**: Provider API Key 加密存储 (HMAC 完整性校验)
+- **JWT 双 Token**: Access Token (1h, 可配置) + Refresh Token (7d, 可配置) 旋转机制
+- **AES-256-GCM 加密**: Provider API Key 加密存储，fail-hard (无明文回退)
 - **审计日志**: 登录、Key 管理、用户变更等关键操作全量记录
-- **多级限流**: Global / Per-User / Per-Key / Backpressure 四级速率限制
-- **安全头**: HSTS、X-Frame-Options、CSP 等安全响应头
-- **注册模式**: open / invite (邀请码) / closed 三种注册策略
+- **多级限流 (Fail-Closed)**: Global / Per-User / Per-Key / Auth / Backpressure，Redis 不可用时内存回退
+- **账户锁定**: 10 次失败登录 → 30 分钟锁定 (per-account)
+- **安全头**: HSTS、X-Frame-Options (DENY)、CSP (无 unsafe-inline script)、Permissions-Policy
+- **SSRF 防护**: Webhook URL 自动校验，阻止私有 IP/保留网段
+- **注册模式**: open / invite (DB 邀请码, 一次性/限次/过期) / closed (默认)
+- **JTI 单次使用**: Refresh Token 单次旋转，Redis 宕机时拒绝 (fail-closed)
+- **启动安全检查**: ENCRYPTION_KEY 必填、JWT_SECRET ≥ 32 字符、Admin 密码复杂度校验、CORS 通配符告警
 
 ### 可观测性
 
@@ -181,8 +185,8 @@ make build        # 生产构建
 
 ```env
 # 必须配置
-ENCRYPTION_KEY=your-32-byte-encryption-key    # AES-256 加密密钥
-JWT_SECRET=your-jwt-secret-at-least-32-chars  # JWT 签名密钥
+ENCRYPTION_KEY=your-32-byte-encryption-key    # AES-256 加密密钥 (必填)
+JWT_SECRET=your-jwt-secret-at-least-32-chars  # JWT 签名密钥 (≥ 32 字符)
 
 # 数据库
 DB_HOST=localhost
@@ -190,6 +194,7 @@ DB_PORT=5432
 DB_USER=postgres
 DB_PASSWORD=your_password
 DB_NAME=llm_router
+DB_SSL_MODE=require                            # 默认 require; 开发环境可设 disable
 
 # Redis
 REDIS_HOST=localhost
@@ -197,10 +202,14 @@ REDIS_PORT=6379
 
 # 默认管理员 (首次启动自动创建)
 ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=changeme
+ADMIN_PASSWORD=Admin123!                       # 需满足: ≥ 8 字符, 大小写 + 数字
 
-# 注册模式: open / invite / closed
-REGISTRATION_MODE=open
+# 注册模式: open / invite / closed (默认 closed)
+REGISTRATION_MODE=closed
+
+# Token 过期 (可选)
+JWT_EXPIRES_IN=1h                              # Access Token 有效期
+JWT_REFRESH_EXPIRES_IN=168h                    # Refresh Token 有效期 (7 天)
 
 # 可观测性 (可选)
 LANGFUSE_ENABLED=false
@@ -284,6 +293,8 @@ VITE_APP_TITLE=LLM Router Platform
 | `/api/v1/health/proxies` | GET | 代理健康状态 |
 | `/api/v1/alerts` | GET | 告警列表 |
 | `/api/v1/alerts/config` | GET/PUT | 告警配置 |
+| `/api/v1/invite-codes` | POST | 创建邀请码 |
+| `/api/v1/invite-codes` | GET | 邀请码列表 |
 
 ### 运维端点
 
@@ -293,8 +304,8 @@ VITE_APP_TITLE=LLM Router Platform
 | `/healthz` | Readiness 探针 (PG + Redis) |
 | `/readyz` | Ready 探针 |
 | `/version` | 版本信息 |
-| `/metrics` | Prometheus 指标 |
-| `/swagger/*` | OpenAPI 文档 |
+| `/metrics` | Prometheus 指标 (需 Admin JWT 认证) |
+| `/swagger/*` | OpenAPI 文档 (仅 debug 模式) |
 
 ### 使用示例
 
@@ -367,7 +378,9 @@ llm-router-platform/
 │   │       ├── observability/       # Langfuse + Prometheus
 │   │       ├── proxy/               # 代理池管理
 │   │       └── user/                # 用户服务
-│   ├── pkg/                         # 公共工具包
+│   ├── pkg/
+│   │   ├── apierror/                # 统一错误响应
+│   │   └── sanitize/                # 输入消毒 + SSRF 校验
 │   ├── docs/                        # Swagger 文档
 │   └── go.mod
 │
@@ -425,6 +438,7 @@ llm-router-platform/
 - [x] 异步任务 + Webhook 回调系统
 - [x] 多维度计费 (按秒/按张/按分钟)
 - [x] 国际化 (i18n: 中/英)
+- [x] 安全加固 (Fail-closed 限流, 账户锁定, SSRF 防护, JTI 单次旋转, DB 邀请码, HSTS, 错误脱敏)
 - [ ] Kubernetes 生产部署 (Helm Chart)
 - [ ] 移动端适配
 
