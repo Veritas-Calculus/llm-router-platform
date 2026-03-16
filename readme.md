@@ -57,16 +57,16 @@
 
 ### 安全
 
-- **JWT 双 Token**: Access Token (1h, 可配置) + Refresh Token (7d, 可配置) 旋转机制
-- **AES-256-GCM 加密**: Provider API Key 加密存储，fail-hard (无明文回退)
+- **JWT 双 Token**: Access Token (1h, 可配置) + Refresh Token (7d, 可配置) 轮换机制
+- **AES-256-GCM 加密**: Provider API Key 加密存储，fail-hard (无明文降级)
 - **审计日志**: 登录、Key 管理、用户变更等关键操作全量记录
-- **多级限流 (Fail-Closed)**: Global / Per-User / Per-Key / Auth / Backpressure，Redis 不可用时内存回退
-- **账户锁定**: 10 次失败登录 → 30 分钟锁定 (per-account)
-- **安全头**: HSTS、X-Frame-Options (DENY)、CSP (无 unsafe-inline script)、Permissions-Policy
-- **SSRF 防护**: Webhook URL 自动校验，阻止私有 IP/保留网段
-- **注册模式**: open / invite (DB 邀请码, 一次性/限次/过期) / closed (默认)
-- **JTI 单次使用**: Refresh Token 单次旋转，Redis 宕机时拒绝 (fail-closed)
-- **启动安全检查**: ENCRYPTION_KEY 必填、JWT_SECRET ≥ 32 字符、Admin 密码复杂度校验、CORS 通配符告警
+- **多级限流 (Fail-Closed)**: Global / Per-User / Per-Key / Auth / Backpressure，Redis 不可用时自动降级至内存限流
+- **账户锁定**: 10 次失败登录 → 30 分钟锁定 (按账户)
+- **安全响应头**: HSTS、X-Frame-Options (DENY)、CSP (无 unsafe-inline script)、Permissions-Policy
+- **SSRF 防护**: Webhook URL 自动校验，拦截内网 IP 及保留地址
+- **注册模式**: open / invite (DB 邀请码, 一次性/限次/可设过期) / closed (默认)
+- **JTI 一次性令牌**: Refresh Token 单次轮换，Redis 不可用时拒绝轮换 (fail-closed)
+- **启动安全检查**: ENCRYPTION_KEY 必填、JWT_SECRET ≥ 32 字符、管理员密码复杂度校验、CORS 通配符告警
 
 ### 可观测性
 
@@ -253,7 +253,7 @@ VITE_APP_TITLE=LLM Router Platform
 | `/api/v1/auth/register` | POST | 用户注册 |
 | `/api/v1/auth/login` | POST | 登录 (返回 JWT) |
 | `/api/v1/auth/refresh` | POST | 刷新 Access Token |
-| `/api/v1/auth/token/rotate` | POST | Refresh Token 旋转 |
+| `/api/v1/auth/token/rotate` | POST | Refresh Token 轮换 |
 
 #### 用户功能 (JWT 认证)
 
@@ -262,7 +262,7 @@ VITE_APP_TITLE=LLM Router Platform
 | `/api/v1/user/profile` | GET/PUT | 个人资料 |
 | `/api/v1/user/password` | PUT | 修改密码 |
 | `/api/v1/api-keys` | GET/POST | API Key 管理 |
-| `/api/v1/api-keys/:id/revoke` | POST | 吊销 Key |
+| `/api/v1/api-keys/:id/revoke` | POST | 撤销 Key |
 | `/api/v1/usage/summary` | GET | 用量概览 |
 | `/api/v1/usage/daily` | GET | 每日用量 |
 | `/api/v1/usage/by-provider` | GET | 按 Provider 用量 |
@@ -362,7 +362,7 @@ llm-router-platform/
 │   │   │   ├── middleware/          # 中间件 (CORS, 限流, JWT, 安全头, Backpressure)
 │   │   │   └── routes/             # 路由注册
 │   │   ├── config/                  # Viper 配置管理
-│   │   ├── crypto/                  # AES-GCM + HMAC 加密
+│   │   ├── crypto/                  # AES-GCM 加密
 │   │   ├── database/                # GORM AutoMigrate + 数据清理
 │   │   ├── models/                  # 数据模型 (User, Provider, Model, UsageLog, AsyncTask, ...)
 │   │   ├── repository/              # 数据访问层
@@ -380,7 +380,7 @@ llm-router-platform/
 │   │       └── user/                # 用户服务
 │   ├── pkg/
 │   │   ├── apierror/                # 统一错误响应
-│   │   └── sanitize/                # 输入消毒 + SSRF 校验
+│   │   └── sanitize/                # 输入清洗 + SSRF 校验
 │   ├── docs/                        # Swagger 文档
 │   └── go.mod
 │
@@ -425,7 +425,7 @@ llm-router-platform/
 - [x] API Key 池化 + 自动故障切换
 - [x] 代理池管理 + 健康检查
 - [x] 计费 & 用量统计 & FinOps
-- [x] JWT 双 Token + Refresh 旋转
+- [x] JWT 双 Token + Refresh 轮换
 - [x] AES-256 加密存储 + 审计日志
 - [x] 多级速率限制 (Global/Per-User/Per-Key/Backpressure)
 - [x] 多渠道告警 (Webhook/Email/钉钉/飞书)
@@ -438,7 +438,7 @@ llm-router-platform/
 - [x] 异步任务 + Webhook 回调系统
 - [x] 多维度计费 (按秒/按张/按分钟)
 - [x] 国际化 (i18n: 中/英)
-- [x] 安全加固 (Fail-closed 限流, 账户锁定, SSRF 防护, JTI 单次旋转, DB 邀请码, HSTS, 错误脱敏)
+- [x] 安全加固 (Fail-closed 限流, 账户锁定, SSRF 防护, JTI 一次性轮换, DB 邀请码, HSTS, 错误信息脱敏)
 - [ ] Kubernetes 生产部署 (Helm Chart)
 - [ ] 移动端适配
 
