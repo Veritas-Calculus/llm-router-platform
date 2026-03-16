@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { userApi } from '@/lib/api';
+import { userApi, getApiErrorMessage } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 
 function ForcePasswordChangePage() {
@@ -49,8 +48,7 @@ function ForcePasswordChangePage() {
             toast.success('Password changed successfully');
             navigate('/dashboard');
         } catch (error: unknown) {
-            const msg = axios.isAxiosError(error) ? error.response?.data?.error : undefined;
-            toast.error(msg || 'Failed to change password');
+            toast.error(getApiErrorMessage(error, 'Failed to change password'));
         } finally {
             setLoading(false);
         }

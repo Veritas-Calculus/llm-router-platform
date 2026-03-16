@@ -3,9 +3,7 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"llm-router-platform/internal/models"
@@ -22,38 +20,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// isQuotaOrRateLimitError checks if an error message indicates a quota or rate limit issue.
-func isQuotaOrRateLimitError(errMsg string) bool {
-	errLower := strings.ToLower(errMsg)
-	quotaKeywords := []string{
-		"quota",
-		"rate limit",
-		"rate_limit",
-		"ratelimit",
-		"too many requests",
-		"429",
-		"insufficient_quota",
-		"billing",
-		"exceeded",
-		"limit reached",
-		"resource exhausted",
-		"resourceexhausted",
-	}
-	for _, keyword := range quotaKeywords {
-		if strings.Contains(errLower, keyword) {
-			return true
-		}
-	}
-	return false
-}
-
-// truncatePrefix returns at most maxLen characters of s for safe log output.
-func truncatePrefix(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen]
-}
 
 // ChatHandler handles chat completion endpoints.
 type ChatHandler struct {
@@ -228,152 +194,51 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	// Handle streaming requests
 	if req.Stream {
-		// For streaming, try with the first key; if it fails, the stream handler will manage
-		client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, apiKey)
+		// ExecuteStreamChat retries key rotation before the stream is established
+		// (before SSE headers are sent), giving streaming the same resilience as non-streaming.
+		streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
 		if err != nil {
-			h.logger.Error("failed to create provider client", zap.Error(err))
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
-				"message": "provider client creation failed",
+			h.logger.Error("failed to establish stream", zap.Error(err))
+			c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{
+				"message": "upstream provider error",
 				"type":    "server_error",
 				"code":    "provider_error",
 			}})
 			return
 		}
-		h.handleStreamingChat(c, client, providerReq, selectedProvider, userObj, userAPIKey, start, trace, req.ConversationID, req.Messages)
+		h.handleStreamingChat(c, streamResult.Stream, providerReq, selectedProvider, userObj, userAPIKey, start, trace, req.ConversationID, req.Messages)
 		return
 	}
 
-	// Non-streaming: try with API key pooling (retry with different keys on failure)
-	maxRetries := 3
-	var resp *provider.ChatResponse
-	var lastErr error
-	currentAPIKey := apiKey
+	// Non-streaming: delegate to Router.ExecuteChat which handles key-rotation retry
+	gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, "Provider: "+selectedProvider.Name, req.Model, map[string]interface{}{
+		"temperature": req.Temperature,
+		"max_tokens":  req.MaxTokens,
+	}, req.Messages)
 
-	// For providers that don't require API keys, we still need to make a request
-	if !selectedProvider.RequiresAPIKey {
-		client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, nil)
+	result, err := h.router.ExecuteChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
+
+	if err != nil || result == nil {
+		gen.EndWithError(err)
+		latency := time.Since(start)
+		usageLog := &models.UsageLog{
+			UserID:       userObj.ID,
+			APIKeyID:     userAPIKey.ID,
+			ProviderID:   selectedProvider.ID,
+			ModelName:    req.Model,
+			Latency:      latency.Milliseconds(),
+			StatusCode:   http.StatusBadGateway,
+			ErrorMessage: "all API keys failed",
+		}
 		if err != nil {
-			h.logger.Error("failed to create provider client", zap.Error(err))
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
-				"message": "provider client creation failed",
-				"type":    "server_error",
-				"code":    "provider_error",
-			}})
-			return
-		}
-
-		genName := "Provider: " + selectedProvider.Name
-		gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, req.Model, map[string]interface{}{
-			"temperature": req.Temperature,
-			"max_tokens":  req.MaxTokens,
-		}, req.Messages)
-
-		resp, lastErr = client.Chat(c.Request.Context(), providerReq)
-		if lastErr != nil {
-			gen.EndWithError(lastErr)
-		} else if resp != nil {
-			// calculate tokens if we can
-			outText := ""
-			if len(resp.Choices) > 0 {
-				outText = resp.Choices[0].Message.Content.Text
-			}
-			gen.End(outText, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
-
-			if req.ConversationID != "" && h.memory != nil {
-				for _, m := range req.Messages {
-					_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, m.Role, m.Content.Text, 0)
-				}
-				_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, "assistant", outText, resp.Usage.CompletionTokens)
-			}
-		}
-	} else {
-		// For providers that require API keys, retry with different keys on failure
-		for attempt := 0; attempt < maxRetries && currentAPIKey != nil; attempt++ {
-			client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, currentAPIKey)
-			if err != nil {
-				h.logger.Error("failed to create provider client", zap.Error(err), zap.Int("attempt", attempt+1))
-				lastErr = err
-				// Try next key
-				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
-				continue
-			}
-
-			genName := "Provider: " + selectedProvider.Name
-			if attempt > 0 {
-				genName += fmt.Sprintf(" (Retry %d)", attempt)
-			}
-			gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, req.Model, map[string]interface{}{
-				"temperature": req.Temperature,
-				"max_tokens":  req.MaxTokens,
-			}, req.Messages)
-
-			resp, err = client.Chat(c.Request.Context(), providerReq)
-			if err != nil {
-				gen.EndWithError(err)
-				lastErr = err
-				h.logger.Warn("chat request failed, trying next API key",
-					zap.Error(err),
-					zap.Int("attempt", attempt+1),
-					zap.String("key_prefix", truncatePrefix(currentAPIKey.KeyPrefix, 8)),
-				)
-
-				// Check if this is a rate limit or quota error
-				errStr := err.Error()
-				if isQuotaOrRateLimitError(errStr) {
-					// Mark this key as temporarily failed
-					h.router.MarkKeyFailed(currentAPIKey.ID, errStr)
-				}
-
-				// Try next key
-				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
-				continue
-			}
-
-			// Success - clear any previous failure for this key
-			outText := ""
-			if resp != nil && len(resp.Choices) > 0 {
-				outText = resp.Choices[0].Message.Content.Text
-			}
-			if resp != nil {
-				gen.End(outText, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
-				if req.ConversationID != "" && h.memory != nil {
-					for _, m := range req.Messages {
-						_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, m.Role, m.Content.Text, 0)
-					}
-					_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, "assistant", outText, resp.Usage.CompletionTokens)
-				}
-			}
-			h.router.ClearKeyFailure(currentAPIKey.ID)
-			break
-		}
-	}
-
-	latency := time.Since(start)
-
-	usageLog := &models.UsageLog{
-		UserID:     userObj.ID,
-		APIKeyID:   userAPIKey.ID,
-		ProviderID: selectedProvider.ID,
-		ModelName:  req.Model,
-		Latency:    latency.Milliseconds(),
-	}
-
-	if resp == nil {
-		usageLog.StatusCode = http.StatusBadGateway
-		errMsg := "all API keys failed"
-		if lastErr != nil {
-			errMsg = lastErr.Error()
-			usageLog.ErrorMessage = errMsg
-		} else {
-			usageLog.ErrorMessage = errMsg
+			usageLog.ErrorMessage = err.Error()
 		}
 		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 
-		// R1: Log full error server-side, return generic message to client
 		h.logger.Error("provider request failed",
 			zap.String("model", sanitize.LogValue(req.Model)),
 			zap.String("provider", selectedProvider.Name),
-			zap.String("error", errMsg),
+			zap.Error(err),
 		)
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": gin.H{
@@ -385,13 +250,34 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		return
 	}
 
-	usageLog.StatusCode = http.StatusOK
-	usageLog.RequestTokens = resp.Usage.PromptTokens
-	usageLog.ResponseTokens = resp.Usage.CompletionTokens
-	usageLog.TotalTokens = resp.Usage.TotalTokens
-	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+	resp := result.Response
+	outText := ""
+	if len(resp.Choices) > 0 {
+		outText = resp.Choices[0].Message.Content.Text
+	}
+	gen.End(outText, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 
-	_ = apiKey
+	// Save conversation memory
+	if req.ConversationID != "" && h.memory != nil {
+		for _, m := range req.Messages {
+			_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, m.Role, m.Content.Text, 0)
+		}
+		_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, "assistant", outText, resp.Usage.CompletionTokens)
+	}
+
+	latency := time.Since(start)
+	usageLog := &models.UsageLog{
+		UserID:         userObj.ID,
+		APIKeyID:       userAPIKey.ID,
+		ProviderID:     selectedProvider.ID,
+		ModelName:      req.Model,
+		Latency:        latency.Milliseconds(),
+		StatusCode:     http.StatusOK,
+		RequestTokens:  resp.Usage.PromptTokens,
+		ResponseTokens: resp.Usage.CompletionTokens,
+		TotalTokens:    resp.Usage.TotalTokens,
+	}
+	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":      resp.ID,

@@ -2,10 +2,8 @@
 package routes
 
 import (
-	"context"
 	"database/sql"
 	"net/http/pprof"
-	"time"
 
 	"llm-router-platform/internal/api/handlers"
 	"llm-router-platform/internal/api/middleware"
@@ -88,86 +86,11 @@ func Setup(
 	engine.MaxMultipartMemory = 10 << 20 // 10 MB
 
 	// ─── Operational Endpoints ─────────────────────────────────────────
-	// Basic liveness probe (always returns ok)
-	engine.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
-
-	// Deep health check (checks PG + Redis connectivity)
-	engine.GET("/healthz", func(c *gin.Context) {
-		checks := gin.H{}
-		healthy := true
-
-		// Check PostgreSQL
-		if services.DB != nil {
-			sqlDB, err := services.DB.DB()
-			if err != nil {
-				checks["postgres"] = gin.H{"status": "error"}
-				healthy = false
-			} else {
-				ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
-				defer cancel()
-				if err := sqlDB.PingContext(ctx); err != nil {
-					checks["postgres"] = gin.H{"status": "error"}
-					healthy = false
-				} else {
-					checks["postgres"] = gin.H{"status": "ok"}
-				}
-			}
-		}
-
-		// Check Redis
-		if services.RedisClient != nil {
-			ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
-			defer cancel()
-			if err := services.RedisClient.Ping(ctx).Err(); err != nil {
-				checks["redis"] = gin.H{"status": "error"}
-				healthy = false
-			} else {
-				checks["redis"] = gin.H{"status": "ok"}
-			}
-		}
-
-		status := "ok"
-		httpCode := 200
-		if !healthy {
-			status = "degraded"
-			httpCode = 503
-		}
-
-		c.JSON(httpCode, gin.H{
-			"status": status,
-			"checks": checks,
-		})
-	})
-
-	// Readiness probe (for K8s — service is ready to accept traffic)
-	engine.GET("/readyz", func(c *gin.Context) {
-		// Check that critical dependencies are available
-		if services.DB != nil {
-			sqlDB, err := services.DB.DB()
-			if err != nil {
-				c.JSON(503, gin.H{"status": "not ready", "error": err.Error()})
-				return
-			}
-			ctx, cancel := context.WithTimeout(c.Request.Context(), 1*time.Second)
-			defer cancel()
-			if err := sqlDB.PingContext(ctx); err != nil {
-				c.JSON(503, gin.H{"status": "not ready", "error": "database unavailable"})
-				return
-			}
-		}
-		c.JSON(200, gin.H{"status": "ready"})
-	})
-
-	// Version endpoint
-	engine.GET("/version", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"version":    Version,
-			"git_commit": GitCommit,
-			"build_time": BuildTime,
-		})
-	})
+	opsHandler := handlers.NewOperationalHandler(services.DB, services.RedisClient, Version, GitCommit, BuildTime)
+	engine.GET("/health", opsHandler.Liveness)
+	engine.GET("/healthz", opsHandler.DeepHealth)
+	engine.GET("/readyz", opsHandler.Readiness)
+	engine.GET("/version", opsHandler.Version)
 
 	// ─── Auth & Rate Limiter middleware (created early for /metrics guard) ──
 	authMiddleware := middleware.NewAuthMiddleware(&cfg.JWT, services.User, logger)
@@ -412,36 +335,8 @@ func Setup(
 			}
 
 			// ─── LLM API Endpoints ──────────────────────────────
-			chat := v1.Group("/chat")
-			applyLLMMiddleware(chat)
-			{
-				chat.POST("/completions", chatHandler.ChatCompletion)
-			}
-
-			embeddings := v1.Group("/embeddings")
-			applyLLMMiddleware(embeddings)
-			{
-				embeddings.POST("", chatHandler.Embeddings)
-			}
-
-			images := v1.Group("/images")
-			applyLLMMiddleware(images)
-			{
-				images.POST("/generations", chatHandler.GenerateImage)
-			}
-
-			audio := v1.Group("/audio")
-			applyLLMMiddleware(audio)
-			{
-				audio.POST("/transcriptions", chatHandler.TranscribeAudio)
-				audio.POST("/speech", chatHandler.SynthesizeSpeech)
-			}
-			models := v1.Group("/models")
-			models.Use(authMiddleware.APIKey())
-			{
-				models.GET("", modelHandler.List)
-				models.GET("/providers", modelHandler.ListProviders)
-			}
+			// Registered under /api/v1 (management API namespace).
+			registerLLMEndpoints(v1, applyLLMMiddleware, chatHandler, modelHandler, authMiddleware)
 		}
 	}
 
@@ -453,53 +348,42 @@ func Setup(
 	//   Base URL = "http://host:80/v1" → SDK calls /chat/completions
 	// We register both levels to handle either configuration.
 
-	// With /v1/ prefix
-	compat := engine.Group("/v1")
-	applyLLMMiddleware(compat)
-	{
-		compat.POST("/chat/completions", chatHandler.ChatCompletion)
-		compat.POST("/embeddings", chatHandler.Embeddings)
-		compat.POST("/images/generations", chatHandler.GenerateImage)
-		compat.POST("/audio/transcriptions", chatHandler.TranscribeAudio)
-		compat.POST("/audio/speech", chatHandler.SynthesizeSpeech)
-	}
-
-	compatModels := engine.Group("/v1/models")
-	compatModels.Use(authMiddleware.APIKey())
-	{
-		compatModels.GET("", modelHandler.List)
-		compatModels.GET("/providers", modelHandler.ListProviders)
-	}
+	// With /v1/ prefix (OpenAI SDK default)
+	registerLLMEndpoints(engine.Group("/v1"), applyLLMMiddleware, chatHandler, modelHandler, authMiddleware)
 
 	// Without /v1/ prefix (root-level, for SDKs that include /v1 in base URL)
-	rootChat := engine.Group("/chat")
-	applyLLMMiddleware(rootChat)
-	{
-		rootChat.POST("/completions", chatHandler.ChatCompletion)
-	}
+	registerLLMEndpoints(engine, applyLLMMiddleware, chatHandler, modelHandler, authMiddleware)
+}
 
-	rootEmbeddings := engine.Group("/embeddings")
-	applyLLMMiddleware(rootEmbeddings)
-	{
-		rootEmbeddings.POST("", chatHandler.Embeddings)
-	}
+// registerLLMEndpoints registers the OpenAI-compatible LLM API endpoints
+// (chat, embeddings, images, audio, models) on the given router group.
+// This is called multiple times to support different base URL configurations.
+func registerLLMEndpoints(
+	parent gin.IRouter,
+	applyLLMMiddleware func(*gin.RouterGroup),
+	chatHandler *handlers.ChatHandler,
+	modelHandler *handlers.ModelHandler,
+	authMiddleware *middleware.AuthMiddleware,
+) {
+	chat := parent.Group("/chat")
+	applyLLMMiddleware(chat)
+	chat.POST("/completions", chatHandler.ChatCompletion)
 
-	rootImages := engine.Group("/images")
-	applyLLMMiddleware(rootImages)
-	{
-		rootImages.POST("/generations", chatHandler.GenerateImage)
-	}
+	embeddings := parent.Group("/embeddings")
+	applyLLMMiddleware(embeddings)
+	embeddings.POST("", chatHandler.Embeddings)
 
-	rootAudio := engine.Group("/audio")
-	applyLLMMiddleware(rootAudio)
-	{
-		rootAudio.POST("/transcriptions", chatHandler.TranscribeAudio)
-		rootAudio.POST("/speech", chatHandler.SynthesizeSpeech)
-	}
+	images := parent.Group("/images")
+	applyLLMMiddleware(images)
+	images.POST("/generations", chatHandler.GenerateImage)
 
-	rootModels := engine.Group("/models")
-	rootModels.Use(authMiddleware.APIKey())
-	{
-		rootModels.GET("", modelHandler.List)
-	}
+	audio := parent.Group("/audio")
+	applyLLMMiddleware(audio)
+	audio.POST("/transcriptions", chatHandler.TranscribeAudio)
+	audio.POST("/speech", chatHandler.SynthesizeSpeech)
+
+	models := parent.Group("/models")
+	models.Use(authMiddleware.APIKey())
+	models.GET("", modelHandler.List)
+	models.GET("/providers", modelHandler.ListProviders)
 }

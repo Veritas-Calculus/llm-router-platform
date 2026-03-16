@@ -3,12 +3,17 @@
 package router
 
 import (
+	"cmp"
 	"context"
+	"math"
+	"path"
+	"slices"
 	"strings"
 
 	"llm-router-platform/internal/models"
 	"llm-router-platform/pkg/sanitize"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -17,30 +22,20 @@ import (
 // then prioritises explicit DB model assignments over heuristic prefix matching.
 func (r *Router) findProviderForModel(modelName string, providers []models.Provider) *models.Provider {
 	// Strip client prefix if present (e.g., "openai/gpt-oss-120b" → "gpt-oss-120b").
-	// The prefix is a client-side format marker (Cline uses "openai/" to mean
-	// "OpenAI-compatible API format"), NOT a routing hint to a specific provider.
 	actualModel := modelName
 	if idx := strings.Index(modelName, "/"); idx > 0 {
 		actualModel = modelName[idx+1:]
 	}
 
-	// 1. Check database model assignments (explicit registration takes priority).
+	// 1. Check cached DB model assignments (refreshed every 5 minutes).
 	if r.modelRepo != nil {
-		for i := range providers {
-			p := &providers[i]
-			dbModels, err := r.modelRepo.GetByProvider(context.Background(), p.ID)
-			if err != nil {
-				continue
-			}
-			for _, m := range dbModels {
-				if strings.EqualFold(m.Name, actualModel) && m.IsActive {
-					r.logger.Debug("model matched via database lookup",
-						zap.String("model", sanitize.LogValue(modelName)),
-						zap.String("provider", p.Name),
-					)
-					return p
-				}
-			}
+		modelMap := r.getModelProviderCache(providers)
+		if providerIdx, ok := modelMap[strings.ToLower(actualModel)]; ok {
+			r.logger.Debug("model matched via database cache",
+				zap.String("model", sanitize.LogValue(modelName)),
+				zap.String("provider", providers[providerIdx].Name),
+			)
+			return &providers[providerIdx]
 		}
 	}
 
@@ -65,9 +60,30 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 		}
 	}
 
-	// 3. Heuristic prefix-based matching (fallback).
 	modelLower := strings.ToLower(actualModel)
 
+	// 3. Configurable model patterns from Provider.ModelPatterns.
+	//    Each provider can define glob patterns (e.g., ["gpt-*","o1*"]).
+	//    This takes priority over the hardcoded heuristic fallback.
+	for i := range providers {
+		patterns := providers[i].GetModelPatterns()
+		if len(patterns) == 0 {
+			continue
+		}
+		for _, pattern := range patterns {
+			if matchesGlobPattern(modelLower, strings.ToLower(pattern)) {
+				r.logger.Debug("model matched via configured patterns",
+					zap.String("model", sanitize.LogValue(modelName)),
+					zap.String("provider", providers[i].Name),
+					zap.String("pattern", pattern),
+				)
+				return &providers[i]
+			}
+		}
+	}
+
+	// 4. Heuristic prefix-based matching (last-resort fallback).
+	//    Used only when no provider has matching ModelPatterns configured.
 	for i := range providers {
 		p := &providers[i]
 		switch p.Name {
@@ -130,6 +146,18 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 	return nil
 }
 
+// matchesGlobPattern checks if a model name matches a glob-style pattern.
+// Supports "*" (match any sequence) and "?" (match single char) wildcards.
+// Pattern matching is case-insensitive (both inputs should be lowercased).
+func matchesGlobPattern(modelName, pattern string) bool {
+	// Use path.Match for glob-style matching.
+	matched, err := path.Match(pattern, modelName)
+	if err != nil {
+		return false
+	}
+	return matched
+}
+
 // selectRoundRobin selects provider using round-robin.
 func (r *Router) selectRoundRobin(providers []models.Provider) *models.Provider {
 	r.mu.Lock()
@@ -162,9 +190,53 @@ func (r *Router) selectWeighted(providers []models.Provider) *models.Provider {
 	return &providers[len(providers)-1]
 }
 
-// selectLeastLatency selects provider with lowest latency.
+// selectLeastLatency selects the provider with the lowest observed latency.
+// Uses EWMA (exponentially weighted moving average) data from RecordLatency().
+// Falls back to weighted selection when no latency data exists.
 func (r *Router) selectLeastLatency(providers []models.Provider) *models.Provider {
-	return r.selectWeighted(providers)
+	r.latencyMu.RLock()
+	defer r.latencyMu.RUnlock()
+
+	var bestProvider *models.Provider
+	bestLatency := int64(math.MaxInt64)
+	hasData := false
+
+	for i := range providers {
+		if avg, ok := r.providerLatency[providers[i].ID]; ok && avg > 0 {
+			hasData = true
+			if avg < bestLatency {
+				bestLatency = avg
+				bestProvider = &providers[i]
+			}
+		}
+	}
+
+	if !hasData || bestProvider == nil {
+		return r.selectWeighted(providers)
+	}
+
+	return bestProvider
+}
+
+// RecordLatency records the observed latency for a provider.
+// Uses EWMA with α=0.3 to smooth out spikes while staying responsive.
+func (r *Router) RecordLatency(providerID uuid.UUID, latencyMs int64) {
+	r.latencyMu.Lock()
+	defer r.latencyMu.Unlock()
+
+	if r.providerLatency == nil {
+		r.providerLatency = make(map[uuid.UUID]int64)
+	}
+
+	current, exists := r.providerLatency[providerID]
+	if !exists {
+		r.providerLatency[providerID] = latencyMs
+		return
+	}
+
+	// EWMA: new = α * sample + (1-α) * old, with α = 0.3
+	const alpha = 0.3
+	r.providerLatency[providerID] = int64(alpha*float64(latencyMs) + (1-alpha)*float64(current))
 }
 
 // selectCostOptimized selects the provider with the lowest cost for a given model.
@@ -219,11 +291,7 @@ func (r *Router) selectCostOptimized(ctx context.Context, modelName string, prov
 
 // sortByPriority sorts providers by priority descending.
 func sortByPriority(providers []models.Provider) {
-	for i := 0; i < len(providers)-1; i++ {
-		for j := i + 1; j < len(providers); j++ {
-			if providers[j].Priority > providers[i].Priority {
-				providers[i], providers[j] = providers[j], providers[i]
-			}
-		}
-	}
+	slices.SortFunc(providers, func(a, b models.Provider) int {
+		return cmp.Compare(b.Priority, a.Priority) // descending
+	})
 }

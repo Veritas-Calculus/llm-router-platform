@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
-import { userApi } from '@/lib/api';
+import { userApi, getApiErrorMessage } from '@/lib/api';
 
 function SettingsPage() {
   const { user } = useAuthStore();
@@ -58,8 +57,7 @@ function SettingsPage() {
       }));
       toast.success('Password changed');
     } catch (error: unknown) {
-      const msg = axios.isAxiosError(error) ? error.response?.data?.error : undefined;
-      toast.error(msg || 'Failed to change password');
+      toast.error(getApiErrorMessage(error, 'Failed to change password'));
     } finally {
       setSaving(false);
     }

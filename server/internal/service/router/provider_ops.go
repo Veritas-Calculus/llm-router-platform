@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"llm-router-platform/internal/config"
@@ -17,6 +18,277 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
+
+// ChatResult contains the result of an ExecuteChat call.
+type ChatResult struct {
+	Response *provider.ChatResponse
+	UsedKey  *models.ProviderAPIKey // nil for providers that don't require keys
+}
+
+// ExecuteChat sends a chat request to the given provider with automatic key-rotation retry.
+// For providers that don't require API keys, it makes a single attempt.
+// For providers that require API keys, it retries with different keys on failure (up to maxRetries).
+// This centralizes the retry/key-failure logic that was previously in the HTTP handler.
+func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, req *provider.ChatRequest, maxRetries int) (*ChatResult, error) {
+	if !p.RequiresAPIKey {
+		return r.executeChatOnce(ctx, p, nil, req)
+	}
+
+	currentKey := apiKey
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries && currentKey != nil; attempt++ {
+		result, err := r.executeChatOnce(ctx, p, currentKey, req)
+		if err == nil {
+			r.ClearKeyFailure(currentKey.ID)
+			return result, nil
+		}
+
+		lastErr = err
+		r.logger.Warn("chat request failed, trying next API key",
+			zap.Error(err),
+			zap.Int("attempt", attempt+1),
+			zap.String("provider", p.Name),
+		)
+
+		// Mark key as failed if it's a quota/rate-limit error
+		if isQuotaOrRateLimitError(err.Error()) {
+			r.MarkKeyFailed(currentKey.ID, err.Error())
+		}
+
+		// Try next key
+		currentKey, _ = r.SelectNextAPIKey(ctx, p.ID, currentKey.ID)
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, errors.New("all API keys failed")
+}
+
+// executeChatOnce makes a single chat request using the given provider and key.
+func (r *Router) executeChatOnce(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, req *provider.ChatRequest) (*ChatResult, error) {
+	client, err := r.GetProviderClientWithKey(ctx, p, apiKey)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Chat(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ChatResult{Response: resp, UsedKey: apiKey}, nil
+}
+
+// isQuotaOrRateLimitError checks if an error message indicates a quota or rate limit issue.
+func isQuotaOrRateLimitError(errMsg string) bool {
+	errLower := strings.ToLower(errMsg)
+	quotaKeywords := []string{
+		"quota", "rate limit", "rate_limit", "ratelimit",
+		"too many requests", "429", "insufficient_quota",
+		"billing", "exceeded", "limit reached",
+		"resource exhausted", "resourceexhausted",
+	}
+	for _, keyword := range quotaKeywords {
+		if strings.Contains(errLower, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// executeWithKeyRetry runs fn with automatic key-rotation retry.
+// fn receives a provider.Client and should make a single request.
+// If the provider doesn't require API keys, fn is called once with a keyless client.
+func (r *Router) executeWithKeyRetry(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, maxRetries int, fn func(client provider.Client) error) (*models.ProviderAPIKey, error) {
+	if !p.RequiresAPIKey {
+		client, err := r.GetProviderClientWithKey(ctx, p, nil)
+		if err != nil {
+			return nil, err
+		}
+		return nil, fn(client)
+	}
+
+	currentKey := apiKey
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries && currentKey != nil; attempt++ {
+		client, err := r.GetProviderClientWithKey(ctx, p, currentKey)
+		if err != nil {
+			lastErr = err
+			currentKey, _ = r.SelectNextAPIKey(ctx, p.ID, currentKey.ID)
+			continue
+		}
+
+		if err := fn(client); err != nil {
+			lastErr = err
+			r.logger.Warn("request failed, trying next API key",
+				zap.Error(err),
+				zap.Int("attempt", attempt+1),
+				zap.String("provider", p.Name),
+			)
+			if isQuotaOrRateLimitError(err.Error()) {
+				r.MarkKeyFailed(currentKey.ID, err.Error())
+			}
+			currentKey, _ = r.SelectNextAPIKey(ctx, p.ID, currentKey.ID)
+			continue
+		}
+
+		r.ClearKeyFailure(currentKey.ID)
+		return currentKey, nil
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, errors.New("all API keys failed")
+}
+
+// EmbeddingResult contains the result of an ExecuteEmbeddings call.
+type EmbeddingResult struct {
+	Response *provider.EmbeddingResponse
+	UsedKey  *models.ProviderAPIKey
+}
+
+// ExecuteEmbeddings sends an embedding request with automatic key-rotation retry.
+func (r *Router) ExecuteEmbeddings(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, req *provider.EmbeddingRequest, maxRetries int) (*EmbeddingResult, error) {
+	var resp *provider.EmbeddingResponse
+	usedKey, err := r.executeWithKeyRetry(ctx, p, apiKey, maxRetries, func(client provider.Client) error {
+		var e error
+		resp, e = client.Embeddings(ctx, req)
+		return e
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &EmbeddingResult{Response: resp, UsedKey: usedKey}, nil
+}
+
+// ImageResult contains the result of an ExecuteImage call.
+type ImageResult struct {
+	Response *provider.ImageGenerationResponse
+	UsedKey  *models.ProviderAPIKey
+}
+
+// ExecuteImage sends an image generation request with automatic key-rotation retry.
+func (r *Router) ExecuteImage(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, req *provider.ImageGenerationRequest, maxRetries int) (*ImageResult, error) {
+	var resp *provider.ImageGenerationResponse
+	usedKey, err := r.executeWithKeyRetry(ctx, p, apiKey, maxRetries, func(client provider.Client) error {
+		var e error
+		resp, e = client.GenerateImage(ctx, req)
+		return e
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ImageResult{Response: resp, UsedKey: usedKey}, nil
+}
+
+// AudioResult contains the result of an ExecuteAudio call.
+type AudioResult struct {
+	Response *provider.AudioTranscriptionResponse
+	UsedKey  *models.ProviderAPIKey
+}
+
+// ExecuteAudio sends an audio transcription request with automatic key-rotation retry.
+func (r *Router) ExecuteAudio(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, req *provider.AudioTranscriptionRequest, maxRetries int) (*AudioResult, error) {
+	var resp *provider.AudioTranscriptionResponse
+	usedKey, err := r.executeWithKeyRetry(ctx, p, apiKey, maxRetries, func(client provider.Client) error {
+		var e error
+		resp, e = client.TranscribeAudio(ctx, req)
+		return e
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &AudioResult{Response: resp, UsedKey: usedKey}, nil
+}
+
+// SpeechResult contains the result of an ExecuteSpeech call.
+type SpeechResult struct {
+	Response *provider.SpeechResponse
+	UsedKey  *models.ProviderAPIKey
+}
+
+// ExecuteSpeech sends a TTS request with automatic key-rotation retry.
+func (r *Router) ExecuteSpeech(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, req *provider.SpeechRequest, maxRetries int) (*SpeechResult, error) {
+	var resp *provider.SpeechResponse
+	usedKey, err := r.executeWithKeyRetry(ctx, p, apiKey, maxRetries, func(client provider.Client) error {
+		var e error
+		resp, e = client.SynthesizeSpeech(ctx, req)
+		return e
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &SpeechResult{Response: resp, UsedKey: usedKey}, nil
+}
+
+// StreamResult contains the result of an ExecuteStreamChat call.
+type StreamResult struct {
+	Client  provider.Client
+	Stream  <-chan provider.StreamChunk
+	UsedKey *models.ProviderAPIKey
+}
+
+// ExecuteStreamChat obtains a streaming connection with automatic key-rotation retry.
+// Retry is safe here because SSE headers have NOT yet been sent to the client.
+// Once a stream channel is successfully obtained, it returns the client and stream for
+// the handler to consume. After SSE headers are sent, retries are no longer possible.
+func (r *Router) ExecuteStreamChat(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, req *provider.ChatRequest, maxRetries int) (*StreamResult, error) {
+	if !p.RequiresAPIKey {
+		client, err := r.GetProviderClientWithKey(ctx, p, nil)
+		if err != nil {
+			return nil, err
+		}
+		stream, err := client.StreamChat(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		return &StreamResult{Client: client, Stream: stream}, nil
+	}
+
+	currentKey := apiKey
+	var lastErr error
+
+	for attempt := 0; attempt < maxRetries && currentKey != nil; attempt++ {
+		client, err := r.GetProviderClientWithKey(ctx, p, currentKey)
+		if err != nil {
+			lastErr = err
+			r.logger.Warn("stream: failed to create provider client, trying next key",
+				zap.Error(err),
+				zap.Int("attempt", attempt+1),
+				zap.String("provider", p.Name),
+			)
+			currentKey, _ = r.SelectNextAPIKey(ctx, p.ID, currentKey.ID)
+			continue
+		}
+
+		stream, err := client.StreamChat(ctx, req)
+		if err != nil {
+			lastErr = err
+			r.logger.Warn("stream: connection failed, trying next key",
+				zap.Error(err),
+				zap.Int("attempt", attempt+1),
+				zap.String("provider", p.Name),
+			)
+			if isQuotaOrRateLimitError(err.Error()) {
+				r.MarkKeyFailed(currentKey.ID, err.Error())
+			}
+			currentKey, _ = r.SelectNextAPIKey(ctx, p.ID, currentKey.ID)
+			continue
+		}
+
+		r.ClearKeyFailure(currentKey.ID)
+		return &StreamResult{Client: client, Stream: stream, UsedKey: currentKey}, nil
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, errors.New("all API keys failed for streaming")
+}
 
 // GetProviderClient returns the provider client from the registry.
 func (r *Router) GetProviderClient(name string) (provider.Client, bool) {
@@ -109,28 +381,9 @@ func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) 
 }
 
 // createProviderClient creates a provider client based on provider name.
+// Delegates to the shared factory in the provider package.
 func (r *Router) createProviderClient(name string, cfg *config.ProviderConfig) (provider.Client, error) {
-	switch name {
-	case "openai":
-		return provider.NewOpenAIClient(cfg, r.logger), nil
-	case "anthropic":
-		return provider.NewAnthropicClient(cfg, r.logger), nil
-	case "google":
-		return provider.NewGoogleClient(cfg, r.logger), nil
-	case "ollama":
-		return provider.NewOllamaClient(cfg, r.logger), nil
-	case "lmstudio":
-		return provider.NewLMStudioClient(cfg, r.logger), nil
-	case "deepseek":
-		return provider.NewDeepSeekClient(cfg, r.logger), nil
-	case "mistral":
-		return provider.NewMistralClient(cfg, r.logger), nil
-	case "vllm":
-		return provider.NewOpenAIClient(cfg, r.logger), nil
-	default:
-		// Default to OpenAI-compatible client
-		return provider.NewOpenAIClient(cfg, r.logger), nil
-	}
+	return provider.NewClientByName(name, cfg, r.logger)
 }
 
 // ─── Provider CRUD Operations ──────────────────────────────────────────────

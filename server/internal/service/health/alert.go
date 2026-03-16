@@ -4,6 +4,8 @@ package health
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -178,25 +180,38 @@ func NewScheduler(healthService *Service, notifier *AlertNotifier, interval time
 	}
 }
 
-// Start starts the health check scheduler.
+// Start starts the health check scheduler with ±20% jitter to avoid thundering herd.
 func (s *Scheduler) Start(ctx context.Context) {
-	ticker := time.NewTicker(s.interval)
-	defer ticker.Stop()
-
 	s.logger.Info("health check scheduler started", zap.Duration("interval", s.interval))
 
 	for {
+		// Apply ±20% jitter: interval * (0.8 + rand(0, 0.4))
+		jitteredInterval := s.jitteredInterval()
+		timer := time.NewTimer(jitteredInterval)
+
 		select {
-		case <-ticker.C:
+		case <-timer.C:
 			s.runHealthChecks(ctx)
 		case <-s.stopCh:
+			timer.Stop()
 			s.logger.Info("health check scheduler stopped")
 			return
 		case <-ctx.Done():
+			timer.Stop()
 			s.logger.Info("health check scheduler context cancelled")
 			return
 		}
 	}
+}
+
+// jitteredInterval returns the interval with ±20% random jitter.
+func (s *Scheduler) jitteredInterval() time.Duration {
+	var buf [8]byte
+	_, _ = cryptorand.Read(buf[:])
+	randVal := float64(binary.LittleEndian.Uint64(buf[:])) / float64(^uint64(0)) // [0, 1)
+	// Scale to [0.8, 1.2)
+	jitter := 0.8 + randVal*0.4
+	return time.Duration(float64(s.interval) * jitter)
 }
 
 // Stop stops the health check scheduler.

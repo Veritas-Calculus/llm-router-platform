@@ -13,7 +13,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"go.uber.org/zap"
 )
 
 // TranscribeAudio handles audio transcription requests.
@@ -91,99 +90,36 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 		return
 	}
 
-	maxRetries := 3
-	var resp *provider.AudioTranscriptionResponse
-	var lastErr error
-	currentAPIKey := apiKey
+	gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, "Provider: "+selectedProvider.Name, model, map[string]interface{}{
+		"language":        providerReq.Language,
+		"response_format": providerReq.ResponseFormat,
+		"temperature":     providerReq.Temperature,
+	}, providerReq.Prompt)
 
-	if !selectedProvider.RequiresAPIKey {
-		client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, nil)
+	result, err := h.router.ExecuteAudio(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
+
+	if err != nil || result == nil {
+		gen.EndWithError(err)
+		latency := time.Since(start)
+		usageLog := &models.UsageLog{
+			UserID:     userObj.ID,
+			APIKeyID:   userAPIKey.ID,
+			ProviderID: selectedProvider.ID,
+			ModelName:  model,
+			Latency:    latency.Milliseconds(),
+			StatusCode: http.StatusBadGateway,
+		}
 		if err != nil {
-			h.logger.Error("failed to create provider client", zap.Error(err))
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client creation failed"})
-			return
-		}
-		genName := "Provider: " + selectedProvider.Name
-		gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, model, map[string]interface{}{
-			"language":        providerReq.Language,
-			"response_format": providerReq.ResponseFormat,
-			"temperature":     providerReq.Temperature,
-		}, providerReq.Prompt)
-
-		resp, lastErr = client.TranscribeAudio(c.Request.Context(), providerReq)
-		if lastErr != nil {
-			gen.EndWithError(lastErr)
-		} else if resp != nil {
-			gen.End(resp.Text, 0, 0)
-		}
-	} else {
-		for attempt := 0; attempt < maxRetries && currentAPIKey != nil; attempt++ {
-			client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, currentAPIKey)
-			if err != nil {
-				h.logger.Error("failed to create provider client", zap.Error(err), zap.Int("attempt", attempt+1))
-				lastErr = err
-				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
-				continue
-			}
-
-			genName := "Provider: " + selectedProvider.Name
-			if attempt > 0 {
-				genName += fmt.Sprintf(" (Retry %d)", attempt)
-			}
-			gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, model, map[string]interface{}{
-				"language":        providerReq.Language,
-				"response_format": providerReq.ResponseFormat,
-				"temperature":     providerReq.Temperature,
-			}, providerReq.Prompt)
-
-			resp, err = client.TranscribeAudio(c.Request.Context(), providerReq)
-			if err != nil {
-				gen.EndWithError(err)
-				lastErr = err
-				h.logger.Warn("audio transcription request failed, trying next API key",
-					zap.Error(err),
-					zap.Int("attempt", attempt+1),
-					zap.String("key_prefix", currentAPIKey.KeyPrefix),
-				)
-
-				errStr := err.Error()
-				if isQuotaOrRateLimitError(errStr) {
-					h.router.MarkKeyFailed(currentAPIKey.ID, errStr)
-				}
-				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
-				continue
-			}
-			if resp != nil {
-				gen.End(resp.Text, 0, 0)
-			}
-			h.router.ClearKeyFailure(currentAPIKey.ID)
-			break
-		}
-	}
-
-	latency := time.Since(start)
-
-	usageLog := &models.UsageLog{
-		UserID:     userObj.ID,
-		APIKeyID:   userAPIKey.ID,
-		ProviderID: selectedProvider.ID,
-		ModelName:  model,
-		Latency:    latency.Milliseconds(),
-	}
-
-	if resp == nil {
-		usageLog.StatusCode = http.StatusBadGateway
-		if lastErr != nil {
-			if lastErr == provider.ErrNotImplemented {
+			usageLog.ErrorMessage = err.Error()
+			if err == provider.ErrNotImplemented {
 				usageLog.StatusCode = http.StatusNotImplemented
 			}
-			usageLog.ErrorMessage = lastErr.Error()
 		} else {
 			usageLog.ErrorMessage = "all API keys failed"
 		}
 		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 
-		if lastErr == provider.ErrNotImplemented {
+		if err == provider.ErrNotImplemented {
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "audio transcription not supported by this provider"})
 			return
 		}
@@ -191,7 +127,18 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 		return
 	}
 
-	usageLog.StatusCode = http.StatusOK
+	resp := result.Response
+	gen.End(resp.Text, 0, 0)
+
+	latency := time.Since(start)
+	usageLog := &models.UsageLog{
+		UserID:     userObj.ID,
+		APIKeyID:   userAPIKey.ID,
+		ProviderID: selectedProvider.ID,
+		ModelName:  model,
+		Latency:    latency.Milliseconds(),
+		StatusCode: http.StatusOK,
+	}
 	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 
 	// In OpenAI's API, the text format requests return plain text string directly.

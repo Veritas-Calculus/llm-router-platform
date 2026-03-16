@@ -124,24 +124,9 @@ func (s *Service) getProviderClient(p *models.Provider, apiKey *models.ProviderA
 }
 
 // createProviderClient creates a provider client based on provider name.
+// Delegates to the shared factory in the provider package.
 func (s *Service) createProviderClient(name string, cfg *config.ProviderConfig) (provider.Client, error) {
-	switch name {
-	case "openai":
-		return provider.NewOpenAIClient(cfg, s.logger), nil
-	case "anthropic":
-		return provider.NewAnthropicClient(cfg, s.logger), nil
-	case "google":
-		return provider.NewGoogleClient(cfg, s.logger), nil
-	case "ollama":
-		return provider.NewOllamaClient(cfg, s.logger), nil
-	case "lmstudio":
-		return provider.NewLMStudioClient(cfg, s.logger), nil
-	case "vllm":
-		return provider.NewOpenAIClient(cfg, s.logger), nil
-	default:
-		// Default to OpenAI-compatible client
-		return provider.NewOpenAIClient(cfg, s.logger), nil
-	}
+	return provider.NewClientByName(name, cfg, s.logger)
 }
 
 // ─── Alert Management ───────────────────────────────────────────────────

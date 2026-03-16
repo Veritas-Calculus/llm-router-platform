@@ -2,6 +2,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -98,7 +99,23 @@ type Provider struct {
 	UseProxy       bool       `gorm:"default:false" json:"use_proxy"`
 	DefaultProxyID *uuid.UUID `gorm:"type:uuid" json:"default_proxy_id,omitempty"`
 	RequiresAPIKey bool       `gorm:"default:true" json:"requires_api_key"`
+	// ModelPatterns is a JSON array of glob patterns used for model→provider routing.
+	// Examples: ["gpt-*","o1*","dall-e*","whisper*","tts*"]
+	// When empty, falls back to hardcoded heuristics.
+	ModelPatterns  json.RawMessage `gorm:"type:jsonb" json:"model_patterns,omitempty"`
 	Models         []Model    `gorm:"foreignKey:ProviderID" json:"models,omitempty"`
+}
+
+// GetModelPatterns deserializes the ModelPatterns JSON field into a string slice.
+func (p *Provider) GetModelPatterns() []string {
+	if len(p.ModelPatterns) == 0 {
+		return nil
+	}
+	var patterns []string
+	if err := json.Unmarshal(p.ModelPatterns, &patterns); err != nil {
+		return nil
+	}
+	return patterns
 }
 
 // Model represents an LLM model.
@@ -231,6 +248,7 @@ type Budget struct {
 	APIKeyID        *uuid.UUID `gorm:"type:uuid;index" json:"api_key_id,omitempty"`
 	MonthlyLimitUSD float64    `gorm:"not null" json:"monthly_limit_usd"`
 	AlertThreshold  float64    `gorm:"default:0.8" json:"alert_threshold"`
+	EnforceHardLimit bool      `gorm:"default:false" json:"enforce_hard_limit"` // true = block requests on over-budget
 	IsActive        bool       `gorm:"default:true" json:"is_active"`
 	WebhookURL      string     `json:"webhook_url,omitempty"`
 	Email           string     `json:"email,omitempty"`

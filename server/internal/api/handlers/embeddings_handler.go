@@ -3,7 +3,6 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -12,7 +11,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"go.uber.org/zap"
 )
 
 // Embeddings handles embedding generation requests.
@@ -63,97 +61,34 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 		return
 	}
 
-	maxRetries := 3
-	var resp *provider.EmbeddingResponse
-	var lastErr error
-	currentAPIKey := apiKey
+	gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, "Provider: "+selectedProvider.Name, req.Model, map[string]interface{}{
+		"encoding_format": req.EncodingFormat,
+	}, req.Input)
 
-	if !selectedProvider.RequiresAPIKey {
-		client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, nil)
+	result, err := h.router.ExecuteEmbeddings(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
+
+	if err != nil || result == nil {
+		gen.EndWithError(err)
+		latency := time.Since(start)
+		usageLog := &models.UsageLog{
+			UserID:     userObj.ID,
+			APIKeyID:   userAPIKey.ID,
+			ProviderID: selectedProvider.ID,
+			ModelName:  req.Model,
+			Latency:    latency.Milliseconds(),
+			StatusCode: http.StatusBadGateway,
+		}
 		if err != nil {
-			h.logger.Error("failed to create provider client", zap.Error(err))
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider client creation failed"})
-			return
-		}
-
-		genName := "Provider: " + selectedProvider.Name
-		gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, req.Model, map[string]interface{}{
-			"encoding_format": req.EncodingFormat,
-		}, req.Input)
-
-		resp, lastErr = client.Embeddings(c.Request.Context(), providerReq)
-		if lastErr != nil {
-			gen.EndWithError(lastErr)
-		} else if resp != nil {
-			gen.End("Embedded representation generated successfully", resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
-		}
-	} else {
-		for attempt := 0; attempt < maxRetries && currentAPIKey != nil; attempt++ {
-			client, err := h.router.GetProviderClientWithKey(c.Request.Context(), selectedProvider, currentAPIKey)
-			if err != nil {
-				h.logger.Error("failed to create provider client", zap.Error(err), zap.Int("attempt", attempt+1))
-				lastErr = err
-				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
-				continue
-			}
-
-			genName := "Provider: " + selectedProvider.Name
-			if attempt > 0 {
-				genName += fmt.Sprintf(" (Retry %d)", attempt)
-			}
-			gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, genName, req.Model, map[string]interface{}{
-				"encoding_format": req.EncodingFormat,
-			}, req.Input)
-
-			resp, err = client.Embeddings(c.Request.Context(), providerReq)
-			if err != nil {
-				gen.EndWithError(err)
-				lastErr = err
-				h.logger.Warn("embeddings request failed, trying next API key",
-					zap.Error(err),
-					zap.Int("attempt", attempt+1),
-					zap.String("key_prefix", currentAPIKey.KeyPrefix),
-				)
-
-				errStr := err.Error()
-				if isQuotaOrRateLimitError(errStr) {
-					h.router.MarkKeyFailed(currentAPIKey.ID, errStr)
-				}
-				currentAPIKey, _ = h.router.SelectNextAPIKey(c.Request.Context(), selectedProvider.ID, currentAPIKey.ID)
-				continue
-			}
-
-			if resp != nil {
-				gen.End("Embedded representation generated successfully", resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
-			}
-			h.router.ClearKeyFailure(currentAPIKey.ID)
-			break
-		}
-	}
-
-	latency := time.Since(start)
-
-	usageLog := &models.UsageLog{
-		UserID:     userObj.ID,
-		APIKeyID:   userAPIKey.ID,
-		ProviderID: selectedProvider.ID,
-		ModelName:  req.Model,
-		Latency:    latency.Milliseconds(),
-	}
-
-	if resp == nil {
-		usageLog.StatusCode = http.StatusBadGateway
-		if lastErr != nil {
-			if lastErr == provider.ErrNotImplemented {
+			usageLog.ErrorMessage = err.Error()
+			if err == provider.ErrNotImplemented {
 				usageLog.StatusCode = http.StatusNotImplemented
 			}
-			usageLog.ErrorMessage = lastErr.Error()
 		} else {
 			usageLog.ErrorMessage = "all API keys failed"
 		}
 		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 
-		if lastErr == provider.ErrNotImplemented {
+		if err == provider.ErrNotImplemented {
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "embeddings not supported by this provider"})
 			return
 		}
@@ -161,10 +96,21 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 		return
 	}
 
-	usageLog.StatusCode = http.StatusOK
-	usageLog.RequestTokens = resp.Usage.PromptTokens
-	usageLog.ResponseTokens = resp.Usage.CompletionTokens
-	usageLog.TotalTokens = resp.Usage.TotalTokens
+	resp := result.Response
+	gen.End("Embedded representation generated successfully", resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+
+	latency := time.Since(start)
+	usageLog := &models.UsageLog{
+		UserID:         userObj.ID,
+		APIKeyID:       userAPIKey.ID,
+		ProviderID:     selectedProvider.ID,
+		ModelName:      req.Model,
+		Latency:        latency.Milliseconds(),
+		StatusCode:     http.StatusOK,
+		RequestTokens:  resp.Usage.PromptTokens,
+		ResponseTokens: resp.Usage.CompletionTokens,
+		TotalTokens:    resp.Usage.TotalTokens,
+	}
 	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 
 	c.JSON(http.StatusOK, resp)

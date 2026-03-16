@@ -4,7 +4,6 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -12,37 +11,18 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
-	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // handleStreamingChat handles streaming chat completion requests.
-func (h *ChatHandler) handleStreamingChat(c *gin.Context, client provider.Client, req *provider.ChatRequest, selectedProvider *models.Provider, userObj *models.User, userAPIKey *models.APIKey, start time.Time, trace observability.Trace, conversationID string, originalMessages []MessageRequest) {
+// It receives a pre-established stream channel (connection already opened with retry by Router).
+func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider.StreamChunk, req *provider.ChatRequest, selectedProvider *models.Provider, userObj *models.User, userAPIKey *models.APIKey, start time.Time, trace observability.Trace, conversationID string, originalMessages []MessageRequest) {
 	gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, "Provider: "+selectedProvider.Name, req.Model, map[string]interface{}{
 		"temperature": req.Temperature,
 		"max_tokens":  req.MaxTokens,
 		"stream":      true,
 	}, req.Messages)
-
-	chunks, err := client.StreamChat(c.Request.Context(), req)
-	if err != nil {
-		gen.EndWithError(err)
-		errMsg := fmt.Sprintf("provider %s request failed: %s", selectedProvider.Name, err.Error())
-		h.logger.Error("streaming chat failed",
-			zap.String("provider", selectedProvider.Name),
-			zap.String("model", sanitize.LogValue(req.Model)),
-			zap.String("base_url", selectedProvider.BaseURL),
-			zap.Error(err),
-		)
-		c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{
-			"message": errMsg,
-			"type":    "server_error",
-			"code":    "provider_error",
-		}})
-		return
-	}
 
 	// Set headers for SSE
 	c.Header("Content-Type", "text/event-stream")

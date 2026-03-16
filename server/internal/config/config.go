@@ -242,7 +242,76 @@ func Load() (*Config, error) {
 		},
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
 	return cfg, nil
+}
+
+// Validate checks the configuration for common misconfigurations.
+// Returns an error describing all issues found (not just the first).
+func (c *Config) Validate() error {
+	var errs []string
+
+	// Server port must be numeric and in valid range
+	if c.Server.Port != "" {
+		port := 0
+		if _, err := fmt.Sscanf(c.Server.Port, "%d", &port); err != nil || port < 1 || port > 65535 {
+			errs = append(errs, fmt.Sprintf("SERVER_PORT %q is not a valid port (1-65535)", c.Server.Port))
+		}
+	}
+
+	// Database port
+	if c.Database.Port != "" {
+		port := 0
+		if _, err := fmt.Sscanf(c.Database.Port, "%d", &port); err != nil || port < 1 || port > 65535 {
+			errs = append(errs, fmt.Sprintf("DB_PORT %q is not a valid port (1-65535)", c.Database.Port))
+		}
+	}
+
+	// Redis port
+	if c.Redis.Port != "" {
+		port := 0
+		if _, err := fmt.Sscanf(c.Redis.Port, "%d", &port); err != nil || port < 1 || port > 65535 {
+			errs = append(errs, fmt.Sprintf("REDIS_PORT %q is not a valid port (1-65535)", c.Redis.Port))
+		}
+	}
+
+	// JWT expires must be positive
+	if c.JWT.ExpiresIn <= 0 {
+		errs = append(errs, "JWT_EXPIRES_IN must be a positive duration")
+	}
+	if c.JWT.RefreshExpiresIn <= 0 {
+		errs = append(errs, "JWT_REFRESH_EXPIRES_IN must be a positive duration")
+	}
+
+	// Rate limit value
+	if c.RateLimit.Enabled && c.RateLimit.RequestsPerMinute <= 0 {
+		errs = append(errs, "RATE_LIMIT_REQUESTS_PER_MINUTE must be > 0 when rate limiting is enabled")
+	}
+
+	// Log level must be a known value
+	validLogLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true, "fatal": true}
+	if c.Log.Level != "" && !validLogLevels[strings.ToLower(c.Log.Level)] {
+		errs = append(errs, fmt.Sprintf("LOG_LEVEL %q is not valid (debug|info|warn|error|fatal)", c.Log.Level))
+	}
+
+	// Registration mode
+	validModes := map[string]bool{"open": true, "invite": true, "closed": true}
+	if c.Registration.Mode != "" && !validModes[c.Registration.Mode] {
+		errs = append(errs, fmt.Sprintf("REGISTRATION_MODE %q is not valid (open|invite|closed)", c.Registration.Mode))
+	}
+
+	// Health check interval
+	if c.HealthCheck.Enabled && c.HealthCheck.Interval < 5*time.Second {
+		errs = append(errs, "HEALTH_CHECK_INTERVAL must be at least 5 seconds")
+	}
+
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s", strings.Join(errs, "; "))
 }
 
 // setDefaults sets default values for configuration.

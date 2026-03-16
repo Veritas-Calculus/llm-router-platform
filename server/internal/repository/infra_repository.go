@@ -103,6 +103,32 @@ func (r *UsageLogRepository) GetByTimeRange(ctx context.Context, start, end time
 	return logs, nil
 }
 
+// GetByUserIDAndTimeRangePaginated retrieves usage logs for a user with LIMIT/OFFSET pagination.
+func (r *UsageLogRepository) GetByUserIDAndTimeRangePaginated(ctx context.Context, userID uuid.UUID, start, end time.Time, limit, offset int) ([]models.UsageLog, error) {
+	var logs []models.UsageLog
+	if err := r.db.WithContext(ctx).
+		Where("user_id = ? AND created_at >= ? AND created_at <= ?", userID, start, end).
+		Order("created_at ASC").
+		Limit(limit).Offset(offset).
+		Find(&logs).Error; err != nil {
+		return nil, err
+	}
+	return logs, nil
+}
+
+// GetByTimeRangePaginated retrieves all usage logs with LIMIT/OFFSET pagination.
+func (r *UsageLogRepository) GetByTimeRangePaginated(ctx context.Context, start, end time.Time, limit, offset int) ([]models.UsageLog, error) {
+	var logs []models.UsageLog
+	if err := r.db.WithContext(ctx).
+		Where("created_at >= ? AND created_at <= ?", start, end).
+		Order("created_at ASC").
+		Limit(limit).Offset(offset).
+		Find(&logs).Error; err != nil {
+		return nil, err
+	}
+	return logs, nil
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // SQL-level aggregation methods — avoid loading full rows into memory.
 // ────────────────────────────────────────────────────────────────────────────

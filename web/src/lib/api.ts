@@ -73,6 +73,27 @@ class ApiClient {
 
 export const api = new ApiClient();
 
+// ── Error Helpers ────────────────────────────────────────────
+// Use these instead of importing axios directly in pages.
+
+/**
+ * Type-guard: checks if an unknown error is an Axios API error.
+ */
+export function isApiError(error: unknown): error is AxiosError<{ error?: string; message?: string }> {
+  return axios.isAxiosError(error);
+}
+
+/**
+ * Extracts a user-friendly error message from an API error.
+ * Returns the fallback string if the error is not an API error.
+ */
+export function getApiErrorMessage(error: unknown, fallback = 'An error occurred'): string {
+  if (isApiError(error)) {
+    return error.response?.data?.error || error.response?.data?.message || fallback;
+  }
+  return fallback;
+}
+
 export interface LoginRequest {
   email: string;
   password: string;

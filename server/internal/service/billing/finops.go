@@ -99,15 +99,13 @@ func (s *BudgetService) CheckBudget(ctx context.Context, userID uuid.UUID) (*Bud
 	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	periodEnd := periodStart.AddDate(0, 1, 0).Add(-time.Second)
 
-	logs, err := s.usageRepo.GetByUserIDAndTimeRange(ctx, userID, periodStart, periodEnd)
+	// Use SQL SUM aggregation instead of loading all rows
+	row, err := s.usageRepo.AggregateByTimeRange(ctx, &userID, periodStart, periodEnd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get usage logs: %w", err)
+		return nil, fmt.Errorf("failed to aggregate usage: %w", err)
 	}
 
-	var currentSpend float64
-	for _, log := range logs {
-		currentSpend += log.Cost
-	}
+	currentSpend := row.TotalCost
 
 	usagePercent := 0.0
 	if budget.MonthlyLimitUSD > 0 {
@@ -152,6 +150,7 @@ type AnomalyResult struct {
 
 // DetectCostAnomaly compares today's cost against a sliding window.
 // Returns anomaly if current day cost exceeds mean + threshold*σ.
+// Uses SQL daily aggregation to avoid loading individual rows.
 func (s *Service) DetectCostAnomaly(ctx context.Context, userID uuid.UUID, windowDays int, sigmaThreshold float64) (*AnomalyResult, error) {
 	if windowDays <= 1 {
 		windowDays = 14 // default 14-day window
@@ -164,38 +163,26 @@ func (s *Service) DetectCostAnomaly(ctx context.Context, userID uuid.UUID, windo
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	windowStart := todayStart.AddDate(0, 0, -windowDays)
 
-	logs, err := s.usageRepo.GetByUserIDAndTimeRange(ctx, userID, windowStart, now)
+	// Use SQL aggregation: one row per day instead of loading all individual logs
+	dailyRows, err := s.usageRepo.AggregateDailyByTimeRange(ctx, &userID, windowStart, now)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get usage logs: %w", err)
+		return nil, fmt.Errorf("failed to aggregate daily usage: %w", err)
 	}
 
-	// Group costs by day
-	dailyCosts := make(map[string]float64)
-	var todayCost float64
+	// Build daily cost map from SQL result
+	dailyCosts := make(map[string]float64, len(dailyRows))
+	for _, row := range dailyRows {
+		dailyCosts[row.Date] = row.Cost
+	}
+
 	todayKey := todayStart.Format("2006-01-02")
+	todayCost := dailyCosts[todayKey]
 
-	for _, log := range logs {
-		dayKey := log.CreatedAt.Format("2006-01-02")
-		dailyCosts[dayKey] += log.Cost
-		if dayKey == todayKey {
-			todayCost += log.Cost
-		}
-	}
-
-	// Calculate mean and stddev of historical days (excluding today)
+	// Build historical costs (excluding today), filling zero-cost days
 	var historicalCosts []float64
-	for key, cost := range dailyCosts {
-		if key != todayKey {
-			historicalCosts = append(historicalCosts, cost)
-		}
-	}
-
-	// Fill zero-cost days in the window
-	for d := 0; d < windowDays; d++ {
-		dayKey := todayStart.AddDate(0, 0, -d-1).Format("2006-01-02")
-		if _, exists := dailyCosts[dayKey]; !exists {
-			historicalCosts = append(historicalCosts, 0)
-		}
+	for d := 1; d <= windowDays; d++ {
+		dayKey := todayStart.AddDate(0, 0, -d).Format("2006-01-02")
+		historicalCosts = append(historicalCosts, dailyCosts[dayKey]) // 0 if missing
 	}
 
 	if len(historicalCosts) < 3 {
@@ -316,13 +303,10 @@ func (s *Service) DetectSystemCostAnomaly(ctx context.Context, windowDays int, s
 
 // ─── CSV Export ──────────────────────────────────────────────
 
-// ExportUsageCSV writes usage logs to a CSV writer.
-func (s *Service) ExportUsageCSV(ctx context.Context, userID uuid.UUID, startTime, endTime time.Time, w *csv.Writer) error {
-	logs, err := s.usageRepo.GetByUserIDAndTimeRange(ctx, userID, startTime, endTime)
-	if err != nil {
-		return fmt.Errorf("failed to get usage logs: %w", err)
-	}
+const csvBatchSize = 1000 // rows per batch for streaming export
 
+// ExportUsageCSV writes usage logs to a CSV writer in streaming batches.
+func (s *Service) ExportUsageCSV(ctx context.Context, userID uuid.UUID, startTime, endTime time.Time, w *csv.Writer) error {
 	// Write header
 	header := []string{
 		"Timestamp", "Model", "Input Tokens", "Output Tokens", "Total Tokens",
@@ -332,35 +316,47 @@ func (s *Service) ExportUsageCSV(ctx context.Context, userID uuid.UUID, startTim
 		return err
 	}
 
-	// Write rows
-	for _, log := range logs {
-		row := []string{
-			log.CreatedAt.Format(time.RFC3339),
-			log.ModelName,
-			strconv.Itoa(log.RequestTokens),
-			strconv.Itoa(log.ResponseTokens),
-			strconv.Itoa(log.TotalTokens),
-			fmt.Sprintf("%.6f", log.Cost),
-			strconv.FormatInt(log.Latency, 10),
-			strconv.Itoa(log.StatusCode),
-			log.ErrorMessage,
+	// Stream in batches to avoid OOM
+	offset := 0
+	for {
+		logs, err := s.usageRepo.GetByUserIDAndTimeRangePaginated(ctx, userID, startTime, endTime, csvBatchSize, offset)
+		if err != nil {
+			return fmt.Errorf("failed to get usage logs (offset %d): %w", offset, err)
 		}
-		if err := w.Write(row); err != nil {
+		if len(logs) == 0 {
+			break
+		}
+		for _, log := range logs {
+			row := []string{
+				log.CreatedAt.Format(time.RFC3339),
+				log.ModelName,
+				strconv.Itoa(log.RequestTokens),
+				strconv.Itoa(log.ResponseTokens),
+				strconv.Itoa(log.TotalTokens),
+				fmt.Sprintf("%.6f", log.Cost),
+				strconv.FormatInt(log.Latency, 10),
+				strconv.Itoa(log.StatusCode),
+				log.ErrorMessage,
+			}
+			if err := w.Write(row); err != nil {
+				return err
+			}
+		}
+		w.Flush()
+		if err := w.Error(); err != nil {
 			return err
 		}
+		if len(logs) < csvBatchSize {
+			break
+		}
+		offset += csvBatchSize
 	}
 
-	w.Flush()
-	return w.Error()
+	return nil
 }
 
-// ExportSystemUsageCSV writes system-wide usage to CSV.
+// ExportSystemUsageCSV writes system-wide usage to CSV in streaming batches.
 func (s *Service) ExportSystemUsageCSV(ctx context.Context, startTime, endTime time.Time, w *csv.Writer) error {
-	logs, err := s.usageRepo.GetByTimeRange(ctx, startTime, endTime)
-	if err != nil {
-		return fmt.Errorf("failed to get usage logs: %w", err)
-	}
-
 	header := []string{
 		"Timestamp", "User ID", "API Key ID", "Model", "Input Tokens", "Output Tokens",
 		"Total Tokens", "Cost (USD)", "Latency (ms)", "Status Code", "Error",
@@ -369,27 +365,44 @@ func (s *Service) ExportSystemUsageCSV(ctx context.Context, startTime, endTime t
 		return err
 	}
 
-	for _, log := range logs {
-		row := []string{
-			log.CreatedAt.Format(time.RFC3339),
-			log.UserID.String(),
-			log.APIKeyID.String(),
-			log.ModelName,
-			strconv.Itoa(log.RequestTokens),
-			strconv.Itoa(log.ResponseTokens),
-			strconv.Itoa(log.TotalTokens),
-			fmt.Sprintf("%.6f", log.Cost),
-			strconv.FormatInt(log.Latency, 10),
-			strconv.Itoa(log.StatusCode),
-			log.ErrorMessage,
+	offset := 0
+	for {
+		logs, err := s.usageRepo.GetByTimeRangePaginated(ctx, startTime, endTime, csvBatchSize, offset)
+		if err != nil {
+			return fmt.Errorf("failed to get usage logs (offset %d): %w", offset, err)
 		}
-		if err := w.Write(row); err != nil {
+		if len(logs) == 0 {
+			break
+		}
+		for _, log := range logs {
+			row := []string{
+				log.CreatedAt.Format(time.RFC3339),
+				log.UserID.String(),
+				log.APIKeyID.String(),
+				log.ModelName,
+				strconv.Itoa(log.RequestTokens),
+				strconv.Itoa(log.ResponseTokens),
+				strconv.Itoa(log.TotalTokens),
+				fmt.Sprintf("%.6f", log.Cost),
+				strconv.FormatInt(log.Latency, 10),
+				strconv.Itoa(log.StatusCode),
+				log.ErrorMessage,
+			}
+			if err := w.Write(row); err != nil {
+				return err
+			}
+		}
+		w.Flush()
+		if err := w.Error(); err != nil {
 			return err
 		}
+		if len(logs) < csvBatchSize {
+			break
+		}
+		offset += csvBatchSize
 	}
 
-	w.Flush()
-	return w.Error()
+	return nil
 }
 
 // ─── Helpers ────────────────────────────────────────────────

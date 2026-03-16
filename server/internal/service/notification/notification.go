@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/smtp"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -356,7 +357,7 @@ func (d *Dispatcher) AddChannel(ch Channel) {
 	d.logger.Info("notification channel registered", zap.String("type", string(ch.Type())))
 }
 
-// Dispatch sends an alert to all registered channels (best-effort, logs errors).
+// Dispatch sends an alert to all registered channels concurrently (best-effort, logs errors).
 func (d *Dispatcher) Dispatch(ctx context.Context, payload *AlertPayload) {
 	if payload.Timestamp == "" {
 		payload.Timestamp = time.Now().Format(time.RFC3339)
@@ -365,17 +366,23 @@ func (d *Dispatcher) Dispatch(ctx context.Context, payload *AlertPayload) {
 		payload.Severity = "warning"
 	}
 
+	var wg sync.WaitGroup
 	for _, ch := range d.channels {
-		if err := ch.Send(ctx, payload); err != nil {
-			d.logger.Error("notification delivery failed",
-				zap.String("channel", string(ch.Type())),
-				zap.Error(err),
-			)
-		} else {
-			d.logger.Info("notification delivered",
-				zap.String("channel", string(ch.Type())),
-				zap.String("alert_type", payload.AlertType),
-			)
-		}
+		wg.Add(1)
+		go func(ch Channel) {
+			defer wg.Done()
+			if err := ch.Send(ctx, payload); err != nil {
+				d.logger.Error("notification delivery failed",
+					zap.String("channel", string(ch.Type())),
+					zap.Error(err),
+				)
+			} else {
+				d.logger.Info("notification delivered",
+					zap.String("channel", string(ch.Type())),
+					zap.String("alert_type", payload.AlertType),
+				)
+			}
+		}(ch)
 	}
+	wg.Wait()
 }
