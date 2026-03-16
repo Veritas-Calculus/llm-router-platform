@@ -168,14 +168,23 @@ func Setup(
 			"build_time": BuildTime,
 		})
 	})
-	// Prometheus metrics endpoint
-	engine.GET("/metrics", middleware.MetricsHandler())
 
-	// Swagger API Docs
-	engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
-	// ─── Auth & Rate Limiter middleware ───────────────────────────────
+	// ─── Auth & Rate Limiter middleware (created early for /metrics guard) ──
 	authMiddleware := middleware.NewAuthMiddleware(&cfg.JWT, services.User, logger)
+
+	// Prometheus metrics endpoint — admin only to prevent info leakage
+	metricsGroup := engine.Group("/metrics")
+	metricsGroup.Use(authMiddleware.JWT())
+	metricsGroup.Use(middleware.AdminOnly())
+	metricsGroup.GET("", middleware.MetricsHandler())
+
+	// Swagger API Docs — disabled in release/production mode
+	if cfg.Server.Mode != "release" {
+		engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+		logger.Info("swagger docs enabled at /swagger/ (non-release mode)")
+	}
+
+	// ─── Rate Limiter middleware ──────────────────────────────────────
 	rateLimiter := middleware.NewRateLimiter(cfg.RateLimit.RequestsPerMinute, services.RedisClient, logger)
 	authorLimiter := middleware.NewAuthRateLimiter(services.RedisClient, 5, logger)
 
@@ -214,7 +223,7 @@ func Setup(
 	// ─── API Routes ────────────────────────────────────────────────────
 	auditService := audit.NewService(services.DB, logger)
 
-	authHandler := handlers.NewAuthHandler(services.User, auditService, &cfg.JWT, cfg.Registration.Mode, cfg.Registration.InviteCode, services.RedisClient, logger)
+	authHandler := handlers.NewAuthHandler(services.User, auditService, &cfg.JWT, cfg.Registration.Mode, cfg.Registration.InviteCode, services.RedisClient, services.DB, logger)
 	apiKeyHandler := handlers.NewAPIKeyHandler(services.User, logger)
 	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Observability, logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)
@@ -225,7 +234,7 @@ func Setup(
 	proxyHandler := handlers.NewProxyHandler(services.Proxy, logger)
 	providerHandler := handlers.NewProviderHandler(services.Router, services.Health, logger)
 	finopsHandler := handlers.NewFinOpsHandler(services.Billing, services.BudgetService, logger)
-	userHandler := handlers.NewUserHandler(services.User, services.Billing, logger)
+	userHandler := handlers.NewUserHandler(services.User, services.Billing, services.RedisClient, logger)
 
 	// Task handler (optional: only created if task service is wired)
 	var taskHandler *handlers.TaskHandler
@@ -357,6 +366,13 @@ func Setup(
 					alerts.POST("/:id/resolve", alertHandler.Resolve)
 					alerts.GET("/config/:target_type/:target_id", alertHandler.GetConfig)
 					alerts.PUT("/config", alertHandler.UpdateConfig)
+				}
+
+				// Invite code management (admin only)
+				invites := admin.Group("/invite-codes")
+				{
+					invites.POST("", authHandler.CreateInviteCode)
+					invites.GET("", authHandler.ListInviteCodes)
 				}
 
 				// Proxy management (admin only)

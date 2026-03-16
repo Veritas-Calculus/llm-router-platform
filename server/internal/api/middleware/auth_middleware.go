@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"llm-router-platform/internal/config"
@@ -164,9 +165,17 @@ func AdminOnly() gin.HandlerFunc {
 
 // AuthRateLimiter limits login/register attempts per IP to prevent brute force.
 type AuthRateLimiter struct {
-	redisClient *redis.Client
-	maxAttempts int
-	logger      *zap.Logger
+	redisClient     *redis.Client
+	maxAttempts     int
+	logger          *zap.Logger
+	fallbackMu      sync.Mutex
+	fallbackCounter map[string]*authRateEntry
+}
+
+// authRateEntry tracks per-IP auth attempt counts for in-memory fallback.
+type authRateEntry struct {
+	count    int
+	windowAt time.Time
 }
 
 // NewAuthRateLimiter creates a rate limiter for authentication endpoints.
@@ -175,26 +184,44 @@ func NewAuthRateLimiter(redisClient *redis.Client, maxAttempts int, logger *zap.
 		maxAttempts = 5
 	}
 	return &AuthRateLimiter{
-		redisClient: redisClient,
-		maxAttempts: maxAttempts,
-		logger:      logger,
+		redisClient:     redisClient,
+		maxAttempts:     maxAttempts,
+		logger:          logger,
+		fallbackCounter: make(map[string]*authRateEntry),
 	}
 }
 
-// Limit applies per-IP rate limiting for auth endpoints (5 attempts/minute).
+// Limit applies per-IP rate limiting for auth endpoints (maxAttempts/minute).
 func (l *AuthRateLimiter) Limit() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ip := c.ClientIP()
+
 		if l.redisClient == nil {
+			// No Redis — use in-memory fallback
+			if l.checkInMemory(ip) {
+				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+					"error":       "too many authentication attempts, try again later",
+					"retry_after": 60,
+				})
+				return
+			}
 			c.Next()
 			return
 		}
 
-		key := fmt.Sprintf("auth_ratelimit:%s", c.ClientIP())
+		key := fmt.Sprintf("auth_ratelimit:%s", ip)
 		ctx := context.Background()
 
 		count, err := l.redisClient.Incr(ctx, key).Result()
 		if err != nil {
-			l.logger.Warn("auth rate limiter redis error", zap.Error(err))
+			l.logger.Warn("auth rate limiter redis error, using in-memory fallback", zap.Error(err))
+			if l.checkInMemory(ip) {
+				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+					"error":       "too many authentication attempts, try again later",
+					"retry_after": 60,
+				})
+				return
+			}
 			c.Next()
 			return
 		}
@@ -213,4 +240,20 @@ func (l *AuthRateLimiter) Limit() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// checkInMemory returns true if the IP has exceeded maxAttempts in the current 1-minute window.
+func (l *AuthRateLimiter) checkInMemory(ip string) bool {
+	l.fallbackMu.Lock()
+	defer l.fallbackMu.Unlock()
+
+	now := time.Now()
+	entry, exists := l.fallbackCounter[ip]
+	if !exists || now.Sub(entry.windowAt) > time.Minute {
+		l.fallbackCounter[ip] = &authRateEntry{count: 1, windowAt: now}
+		return false
+	}
+
+	entry.count++
+	return entry.count > l.maxAttempts
 }

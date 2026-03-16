@@ -74,14 +74,11 @@ func TestDecryptLegacyData(t *testing.T) {
 	}
 	enc := GetEncryptor()
 
-	// Simulating unencrypted legacy data (not base64)
+	// Unencrypted legacy data should now return an error (fail-hard policy)
 	legacy := "sk-legacy-plain-api-key"
-	result, err := enc.Decrypt(legacy)
-	if err != nil {
-		t.Fatalf("Decrypt legacy data failed: %v", err)
-	}
-	if result != legacy {
-		t.Errorf("Legacy data should be returned as-is, got %q", result)
+	_, err := enc.Decrypt(legacy)
+	if err == nil {
+		t.Fatal("Decrypt of non-encrypted data should return an error")
 	}
 }
 
@@ -99,21 +96,15 @@ func TestInitializeInvalidKey(t *testing.T) {
 func TestNilEncryptor(t *testing.T) {
 	var enc *Encryptor
 
-	// Should return plaintext when encryptor is nil
-	result, err := enc.Encrypt("test")
-	if err != nil {
-		t.Fatalf("nil encryptor Encrypt should not error: %v", err)
-	}
-	if result != "test" {
-		t.Errorf("nil encryptor should return plaintext, got %q", result)
+	// Should return ErrNotInitialized when encryptor is nil (fail-hard)
+	_, err := enc.Encrypt("test")
+	if err != ErrNotInitialized {
+		t.Fatalf("nil encryptor Encrypt should return ErrNotInitialized, got: %v", err)
 	}
 
-	result, err = enc.Decrypt("test")
-	if err != nil {
-		t.Fatalf("nil encryptor Decrypt should not error: %v", err)
-	}
-	if result != "test" {
-		t.Errorf("nil encryptor should return ciphertext, got %q", result)
+	_, err = enc.Decrypt("test")
+	if err != ErrNotInitialized {
+		t.Fatalf("nil encryptor Decrypt should return ErrNotInitialized, got: %v", err)
 	}
 }
 

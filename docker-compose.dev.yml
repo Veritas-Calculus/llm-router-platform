@@ -28,10 +28,12 @@ services:
         GIT_COMMIT: local
     environment:
       - DB_PASSWORD=devpassword
+      - DB_SSL_MODE=disable
       - REDIS_PASSWORD=devpassword
       - JWT_SECRET=dev-jwt-secret-key-at-least-32-characters-long
       - ADMIN_PASSWORD=DevAdmin123!
       - ENCRYPTION_KEY=dev-32-byte-encryption-key-here!
+      - REGISTRATION_MODE=open
       - CORS_ORIGINS=http://localhost:3000,http://localhost:80
       - GIN_MODE=debug
       - LOG_LEVEL=debug

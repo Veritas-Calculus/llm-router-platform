@@ -8,6 +8,7 @@ import (
 
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/task"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -52,6 +53,12 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 	}
 	if !validTypes[req.Type] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task type, must be one of: tts, batch_tts, video_analysis, batch_image"})
+		return
+	}
+
+	// SSRF prevention: validate webhook URL does not point to internal networks
+	if err := sanitize.ValidateWebhookURL(req.WebhookURL, false); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid webhook_url: " + err.Error()})
 		return
 	}
 

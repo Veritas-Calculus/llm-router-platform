@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"llm-router-platform/internal/service/billing"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -53,6 +54,12 @@ func (h *FinOpsHandler) SetBudget(c *gin.Context) {
 	var req SetBudgetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// SSRF prevention: validate webhook URL does not point to internal networks
+	if err := sanitize.ValidateWebhookURL(req.WebhookURL, false); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid webhook_url: " + err.Error()})
 		return
 	}
 

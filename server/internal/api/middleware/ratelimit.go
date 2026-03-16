@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"llm-router-platform/internal/models"
@@ -16,16 +17,27 @@ import (
 
 // PerKeyRateLimiter enforces per-API-key rate limits using Redis sliding window.
 // It checks both per-minute and per-day limits from the APIKey model.
+// When Redis is unavailable, it falls back to an in-memory counter.
 type PerKeyRateLimiter struct {
 	redis  *redis.Client
 	logger *zap.Logger
+	// In-memory fallback when Redis is down
+	fallbackMu      sync.Mutex
+	fallbackCounter map[string]*rateFallbackEntry
+}
+
+// rateFallbackEntry tracks request count for in-memory rate limiting.
+type rateFallbackEntry struct {
+	count    int
+	windowAt time.Time
 }
 
 // NewPerKeyRateLimiter creates a new per-key rate limiter.
 func NewPerKeyRateLimiter(redisClient *redis.Client, logger *zap.Logger) *PerKeyRateLimiter {
 	return &PerKeyRateLimiter{
-		redis:  redisClient,
-		logger: logger,
+		redis:           redisClient,
+		logger:          logger,
+		fallbackCounter: make(map[string]*rateFallbackEntry),
 	}
 }
 
@@ -114,8 +126,8 @@ func (l *PerKeyRateLimiter) checkSlidingWindow(ctx context.Context, key string, 
 	pipe.Expire(ctx, key, window+time.Second)
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		l.logger.Warn("per-key rate limiter redis error", zap.Error(err))
-		return false, 0 // fail-open
+		l.logger.Warn("per-key rate limiter redis error, using in-memory fallback", zap.Error(err))
+		return l.fallbackCheck(key, limit, window)
 	}
 
 	count := countCmd.Val()
@@ -127,8 +139,8 @@ func (l *PerKeyRateLimiter) checkSlidingWindow(ctx context.Context, key string, 
 func (l *PerKeyRateLimiter) checkDailyCounter(ctx context.Context, key string, limit int) (bool, int64) {
 	count, err := l.redis.Incr(ctx, key).Result()
 	if err != nil {
-		l.logger.Warn("per-key daily limiter redis error", zap.Error(err))
-		return false, 0 // fail-open
+		l.logger.Warn("per-key daily limiter redis error, using in-memory fallback", zap.Error(err))
+		return l.fallbackCheck(key, limit, 24*time.Hour)
 	}
 
 	if count == 1 {
@@ -146,22 +158,41 @@ func (l *PerKeyRateLimiter) secondsUntilMidnight() int {
 	return int(midnight.Sub(now).Seconds())
 }
 
+// fallbackCheck provides in-memory rate limiting when Redis is unavailable.
+func (l *PerKeyRateLimiter) fallbackCheck(key string, limit int, window time.Duration) (bool, int64) {
+	l.fallbackMu.Lock()
+	defer l.fallbackMu.Unlock()
+
+	now := time.Now()
+	entry, exists := l.fallbackCounter[key]
+	if !exists || now.Sub(entry.windowAt) > window {
+		l.fallbackCounter[key] = &rateFallbackEntry{count: 1, windowAt: now}
+		return false, 1
+	}
+
+	entry.count++
+	return entry.count > limit, int64(entry.count)
+}
+
 // ─── Per-User Rate Limiter ──────────────────────────────────────────────
 
 // PerUserRateLimiter enforces per-user rate limits.
 // Uses User.RateLimitPerMinute if set, otherwise falls through to global limiter.
 type PerUserRateLimiter struct {
-	redis         *redis.Client
-	globalDefault int // fallback if user has no custom limit
-	logger        *zap.Logger
+	redis           *redis.Client
+	globalDefault   int // fallback if user has no custom limit
+	logger          *zap.Logger
+	fallbackMu      sync.Mutex
+	fallbackCounter map[string]*rateFallbackEntry
 }
 
 // NewPerUserRateLimiter creates a per-user rate limiter.
 func NewPerUserRateLimiter(redisClient *redis.Client, globalDefault int, logger *zap.Logger) *PerUserRateLimiter {
 	return &PerUserRateLimiter{
-		redis:         redisClient,
-		globalDefault: globalDefault,
-		logger:        logger,
+		redis:           redisClient,
+		globalDefault:   globalDefault,
+		logger:          logger,
+		fallbackCounter: make(map[string]*rateFallbackEntry),
 	}
 }
 
@@ -207,8 +238,8 @@ func (l *PerUserRateLimiter) Limit() gin.HandlerFunc {
 		pipe.Expire(ctx, key, 2*time.Minute)
 
 		if _, err := pipe.Exec(ctx); err != nil {
-			l.logger.Warn("per-user rate limiter redis error", zap.Error(err))
-			c.Next()
+			l.logger.Warn("per-user rate limiter redis error, using in-memory fallback", zap.Error(err))
+			l.limitInMemoryFallback(c, key, limit)
 			return
 		}
 
@@ -231,4 +262,29 @@ func (l *PerUserRateLimiter) Limit() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// limitInMemoryFallback applies in-memory rate limiting when Redis is unavailable.
+func (l *PerUserRateLimiter) limitInMemoryFallback(c *gin.Context, key string, limit int) {
+	l.fallbackMu.Lock()
+	defer l.fallbackMu.Unlock()
+
+	now := time.Now()
+	entry, exists := l.fallbackCounter[key]
+	if !exists || now.Sub(entry.windowAt) > time.Minute {
+		l.fallbackCounter[key] = &rateFallbackEntry{count: 1, windowAt: now}
+		c.Next()
+		return
+	}
+
+	entry.count++
+	if entry.count > limit {
+		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+			"error":       "user rate limit exceeded (fallback)",
+			"retry_after": 60,
+		})
+		return
+	}
+
+	c.Next()
 }

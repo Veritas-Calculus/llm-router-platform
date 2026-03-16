@@ -88,6 +88,7 @@ func (r *UserRepository) Search(ctx context.Context, query string) ([]models.Use
 	if err := r.db.WithContext(ctx).
 		Where("email ILIKE ? OR name ILIKE ?", pattern, pattern).
 		Order("created_at DESC").
+		Limit(100).
 		Find(&users).Error; err != nil {
 		return nil, err
 	}

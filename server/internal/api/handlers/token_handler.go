@@ -31,13 +31,17 @@ func (h *AuthHandler) generateToken(userID uuid.UUID, email, role string) (strin
 	return token.SignedString([]byte(h.jwtConfig.Secret))
 }
 
-// generateRefreshToken creates a long-lived refresh token (7 days).
+// generateRefreshToken creates a long-lived refresh token.
 func (h *AuthHandler) generateRefreshToken(userID uuid.UUID) (string, error) {
+	refreshDuration := h.jwtConfig.RefreshExpiresIn
+	if refreshDuration <= 0 {
+		refreshDuration = 7 * 24 * time.Hour // fallback default
+	}
 	claims := jwt.MapClaims{
 		"sub":  userID.String(),
 		"type": "refresh",
 		"jti":  uuid.New().String(), // unique token ID for rotation
-		"exp":  time.Now().Add(7 * 24 * time.Hour).Unix(),
+		"exp":  time.Now().Add(refreshDuration).Unix(),
 		"iat":  time.Now().Unix(),
 	}
 
@@ -139,7 +143,13 @@ func (h *AuthHandler) RotateRefreshToken(c *gin.Context) {
 	// JTI reuse detection: each refresh token can only be used once
 	jti, _ := claims["jti"].(string)
 	if jti != "" {
-		if consumed := h.isJTIConsumed(c.Request.Context(), jti); consumed {
+		consumed, err := h.isJTIConsumed(c.Request.Context(), jti)
+		if err != nil {
+			h.logger.Warn("JTI check unavailable — rejecting refresh token for safety", zap.Error(err))
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "token rotation temporarily unavailable"})
+			return
+		}
+		if consumed {
 			h.logger.Warn("refresh token reuse detected — possible token theft",
 				zap.String("jti", sanitize.LogValue(jti)),
 				zap.String("ip", sanitize.LogValue(c.ClientIP())))
@@ -207,18 +217,17 @@ func (h *AuthHandler) RotateRefreshToken(c *gin.Context) {
 // ─── JTI Tracking ───────────────────────────────────────────────────────
 
 // isJTIConsumed checks if a refresh token JTI has already been used.
-// Returns false if Redis is unavailable (fail-open for availability).
-func (h *AuthHandler) isJTIConsumed(ctx context.Context, jti string) bool {
+// Returns (consumed, error). Error is returned if Redis is unavailable.
+func (h *AuthHandler) isJTIConsumed(ctx context.Context, jti string) (bool, error) {
 	if h.redisClient == nil {
-		return false
+		return false, fmt.Errorf("redis unavailable for JTI tracking")
 	}
 	key := "rt:jti:" + jti
 	exists, err := h.redisClient.Exists(ctx, key).Result()
 	if err != nil {
-		h.logger.Warn("redis JTI check failed, allowing token", zap.Error(err))
-		return false
+		return false, fmt.Errorf("redis JTI check failed: %w", err)
 	}
-	return exists > 0
+	return exists > 0, nil
 }
 
 // consumeJTI marks a refresh token JTI as consumed in Redis.

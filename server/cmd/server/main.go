@@ -74,6 +74,16 @@ func run() error {
 		logger.Fatal("JWT_SECRET must be at least 32 characters")
 	}
 
+	// Warn if admin password does not meet complexity requirements
+	if cfg.Admin.Password != "" && !isStrongPassword(cfg.Admin.Password) {
+		logger.Warn("ADMIN_PASSWORD does not meet complexity requirements (min 8 chars, upper+lower+digit). Consider updating it.")
+	}
+
+	// R7: Warn if CORS allows all origins in non-debug mode
+	if len(cfg.Server.CORSOrigins) > 0 && cfg.Server.CORSOrigins[0] == "*" && cfg.Log.Level != "debug" {
+		logger.Warn("CORS_ORIGINS is set to '*' — this allows any origin. Consider restricting to specific domains in production.")
+	}
+
 	db, err := database.New(&cfg.Database, logger)
 	if err != nil {
 		return err
@@ -264,4 +274,24 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		RedisClient:   redisClient,
 		DB:            gormDB, // For health checks
 	}
+}
+
+// isStrongPassword checks if a password contains at least 8 chars,
+// one uppercase, one lowercase, and one digit.
+func isStrongPassword(pw string) bool {
+	if len(pw) < 8 {
+		return false
+	}
+	var hasUpper, hasLower, hasDigit bool
+	for _, c := range pw {
+		switch {
+		case 'A' <= c && c <= 'Z':
+			hasUpper = true
+		case 'a' <= c && c <= 'z':
+			hasLower = true
+		case '0' <= c && c <= '9':
+			hasDigit = true
+		}
+	}
+	return hasUpper && hasLower && hasDigit
 }

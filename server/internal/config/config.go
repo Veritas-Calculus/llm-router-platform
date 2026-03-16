@@ -103,8 +103,9 @@ type EmailConfig struct {
 
 // JWTConfig holds JWT authentication configuration.
 type JWTConfig struct {
-	Secret    string // #nosec G101 -- internal config, never serialized to API responses
-	ExpiresIn time.Duration
+	Secret           string // #nosec G101 -- internal config, never serialized to API responses
+	ExpiresIn        time.Duration
+	RefreshExpiresIn time.Duration
 }
 
 // RateLimitConfig holds rate limiting configuration.
@@ -212,8 +213,9 @@ func Load() (*Config, error) {
 			},
 		},
 		JWT: JWTConfig{
-			Secret:    viper.GetString("JWT_SECRET"),
-			ExpiresIn: viper.GetDuration("JWT_EXPIRES_IN"),
+			Secret:           viper.GetString("JWT_SECRET"),
+			ExpiresIn:        viper.GetDuration("JWT_EXPIRES_IN"),
+			RefreshExpiresIn: viper.GetDuration("JWT_REFRESH_EXPIRES_IN"),
 		},
 		RateLimit: RateLimitConfig{
 			Enabled:           viper.GetBool("RATE_LIMIT_ENABLED"),
@@ -250,7 +252,7 @@ func setDefaults() {
 	viper.SetDefault("CORS_ORIGINS", "") // Empty = deny by default in production; set to "*" or specific origins
 	viper.SetDefault("DB_HOST", "localhost")
 	viper.SetDefault("DB_PORT", "5432")
-	viper.SetDefault("DB_SSL_MODE", "disable")
+	viper.SetDefault("DB_SSL_MODE", "require") // Production default; override to "disable" for local dev
 	viper.SetDefault("REDIS_HOST", "localhost")
 	viper.SetDefault("REDIS_PORT", "6379")
 	viper.SetDefault("REDIS_DB", 0)
@@ -263,12 +265,13 @@ func setDefaults() {
 	viper.SetDefault("HEALTH_CHECK_TIMEOUT", 10)
 	viper.SetDefault("HEALTH_CHECK_RETRY_COUNT", 3)
 	viper.SetDefault("HEALTH_CHECK_FAILURE_THRESHOLD", 3)
-	viper.SetDefault("JWT_EXPIRES_IN", "24h")
+	viper.SetDefault("JWT_EXPIRES_IN", "1h") // Short-lived access tokens; use refresh tokens for renewal
+	viper.SetDefault("JWT_REFRESH_EXPIRES_IN", "168h") // 7 days
 	viper.SetDefault("RATE_LIMIT_REQUESTS_PER_MINUTE", 60)
 	viper.SetDefault("LOG_LEVEL", "info")
 	viper.SetDefault("LOG_FORMAT", "json")
 	viper.SetDefault("ADMIN_NAME", "Administrator")
-	viper.SetDefault("REGISTRATION_MODE", "open") // open, invite, closed
+	viper.SetDefault("REGISTRATION_MODE", "closed") // closed by default; set to "open" or "invite" as needed
 	viper.SetDefault("INVITE_CODE", "")            // required when mode=invite
 	viper.SetDefault("LANGFUSE_ENABLED", false)
 	viper.SetDefault("LANGFUSE_HOST", "https://cloud.langfuse.com")

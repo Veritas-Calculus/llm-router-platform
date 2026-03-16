@@ -33,6 +33,31 @@ type User struct {
 	TokensInvalidatedAt   time.Time `json:"-"`                                      // tokens issued before this time are rejected
 }
 
+// InviteCode represents a one-time or limited-use invite code for registration.
+type InviteCode struct {
+	BaseModel
+	Code      string     `gorm:"uniqueIndex;not null" json:"code"`
+	CreatedBy uuid.UUID  `gorm:"type:uuid;not null" json:"created_by"` // Admin who created this code
+	MaxUses   int        `gorm:"default:1" json:"max_uses"`            // 0 = unlimited
+	UseCount  int        `gorm:"default:0" json:"use_count"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"` // nil = never expires
+	IsActive  bool       `gorm:"default:true" json:"is_active"`
+}
+
+// IsValid returns true if the invite code can still be used.
+func (ic *InviteCode) IsValid() bool {
+	if !ic.IsActive {
+		return false
+	}
+	if ic.MaxUses > 0 && ic.UseCount >= ic.MaxUses {
+		return false
+	}
+	if ic.ExpiresAt != nil && ic.ExpiresAt.Before(time.Now()) {
+		return false
+	}
+	return true
+}
+
 // APIKey represents an API key for authentication.
 type APIKey struct {
 	BaseModel

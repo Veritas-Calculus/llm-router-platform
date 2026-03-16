@@ -47,6 +47,14 @@ func isQuotaOrRateLimitError(errMsg string) bool {
 	return false
 }
 
+// truncatePrefix returns at most maxLen characters of s for safe log output.
+func truncatePrefix(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen]
+}
+
 // ChatHandler handles chat completion endpoints.
 type ChatHandler struct {
 	router  *router.Router
@@ -81,7 +89,8 @@ func (h *ChatHandler) checkUserQuota(c *gin.Context, userObj *models.User) *stri
 	summary, err := h.billing.GetUsageSummary(c.Request.Context(), userObj.ID, monthStart, now)
 	if err != nil {
 		h.logger.Error("quota check failed", zap.Error(err))
-		return nil // fail open — don't block on error
+		msg := "unable to verify quota — please try again"
+		return &msg // fail-closed: reject if quota cannot be verified
 	}
 
 	if userObj.MonthlyTokenLimit > 0 && summary.TotalTokens >= userObj.MonthlyTokenLimit {
@@ -305,7 +314,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 				h.logger.Warn("chat request failed, trying next API key",
 					zap.Error(err),
 					zap.Int("attempt", attempt+1),
-					zap.String("key_prefix", currentAPIKey.KeyPrefix),
+					zap.String("key_prefix", truncatePrefix(currentAPIKey.KeyPrefix, 8)),
 				)
 
 				// Check if this is a rate limit or quota error
@@ -360,9 +369,15 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		}
 		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 
+		// R1: Log full error server-side, return generic message to client
+		h.logger.Error("provider request failed",
+			zap.String("model", sanitize.LogValue(req.Model)),
+			zap.String("provider", selectedProvider.Name),
+			zap.String("error", errMsg),
+		)
 		c.JSON(http.StatusBadGateway, gin.H{
 			"error": gin.H{
-				"message": "provider request failed: " + errMsg,
+				"message": "upstream provider error",
 				"type":    "server_error",
 				"code":    "provider_error",
 			},

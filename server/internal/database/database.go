@@ -63,6 +63,7 @@ func (d *Database) Migrate() error {
 		&models.AuditLog{},
 		&models.Budget{},
 		&models.AsyncTask{},
+		&models.InviteCode{},
 	)
 }
 

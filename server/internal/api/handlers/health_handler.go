@@ -7,6 +7,7 @@ import (
 
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/health"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -237,6 +238,12 @@ func (h *AlertHandler) UpdateConfig(c *gin.Context) {
 	targetID, err := uuid.Parse(req.TargetID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid target_id"})
+		return
+	}
+
+	// SSRF prevention: validate webhook URL does not point to internal networks
+	if err := sanitize.ValidateWebhookURL(req.WebhookURL, false); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid webhook_url: " + err.Error()})
 		return
 	}
 

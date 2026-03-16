@@ -24,16 +24,6 @@ var (
 		[]string{"type"}, // login_failed, invalid_token, token_revoked, account_disabled, rate_limited
 	)
 
-	// RateLimitFailOpenTotal tracks when rate limiting fails open due to Redis errors.
-	RateLimitFailOpenTotal = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: "llm_router",
-			Subsystem: "security",
-			Name:      "ratelimit_failopen_total",
-			Help:      "Number of times rate limiting failed open due to Redis unavailability.",
-		},
-	)
-
 	// QuotaExceededTotal tracks requests rejected due to quota limits.
 	QuotaExceededTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -85,11 +75,14 @@ func SecurityHeaders() gin.HandlerFunc {
 		// Control referrer information
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 
-		// Content Security Policy — restrict resources to same-origin
+		// Restrict resources to same-origin
 		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'")
 
 		// Disable browser features not needed by API
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+
+		// R8: HSTS — enforce HTTPS for direct API access (complements nginx HSTS)
+		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 
 		// Cache control for API responses (no caching sensitive data)
 		if c.Request.URL.Path != "/health" && c.Request.URL.Path != "/readyz" {

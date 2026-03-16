@@ -3,6 +3,8 @@
 package handlers
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"llm-router-platform/internal/service/user"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -18,14 +21,16 @@ import (
 type UserHandler struct {
 	userService *user.Service
 	billing     *billing.Service
+	redisClient *redis.Client
 	logger      *zap.Logger
 }
 
 // NewUserHandler creates a new user handler.
-func NewUserHandler(userService *user.Service, billing *billing.Service, logger *zap.Logger) *UserHandler {
+func NewUserHandler(userService *user.Service, billing *billing.Service, redisClient *redis.Client, logger *zap.Logger) *UserHandler {
 	return &UserHandler{
 		userService: userService,
 		billing:     billing,
+		redisClient: redisClient,
 		logger:      logger,
 	}
 }
@@ -228,6 +233,14 @@ func (h *UserHandler) ToggleUser(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// R12: Clear lockout counter when admin re-enables a user
+	if u.IsActive && h.redisClient != nil {
+		key := fmt.Sprintf("auth:lockout:%s", u.Email)
+		if err := h.redisClient.Del(context.Background(), key).Err(); err != nil {
+			h.logger.Warn("failed to clear lockout on re-enable", zap.String("email", u.Email), zap.Error(err))
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{

@@ -3,9 +3,7 @@ package user
 
 import (
 	"context"
-	"crypto/hmac"
 	cryptorand "crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"strings"
@@ -76,7 +74,7 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (*mo
 	}
 
 	if !user.IsActive {
-		return nil, errors.New("account is disabled")
+		return nil, errors.New("invalid credentials") // Generic to prevent user enumeration
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
@@ -349,14 +347,10 @@ func generateAPIKey() string {
 // 2. We need O(1) lookup by hash, which bcrypt/Argon2 cannot provide
 // 3. HMAC-SHA256 with a system-level salt prevents rainbow table attacks
 func hashAPIKey(key string) string {
-	// If encryption is not initialized, fall back to simple SHA-256 for stability
-	// but in production we should always have a salt.
 	if !crypto.IsInitialized() {
-		// Fallback HMAC for startup/testing when ENCRYPTION_KEY is not yet configured.
-		// Uses a static key — production must always have crypto initialized.
-		h := hmac.New(sha256.New, []byte("llm-router-fallback-hmac-key-v1!"))
-		h.Write([]byte(key))
-		return hex.EncodeToString(h.Sum(nil))
+		// This should never be reached after MustInitialize at startup.
+		// Hard-fail to prevent keys being hashed with a predictable key.
+		panic("hashAPIKey called before crypto initialization")
 	}
 
 	// Use HMAC-SHA256 via crypto package (key stays internal)

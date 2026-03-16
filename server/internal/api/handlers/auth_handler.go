@@ -2,10 +2,16 @@
 package handlers
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"net/http"
+	"time"
 	"unicode"
 
 	"llm-router-platform/internal/config"
+	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/user"
 
@@ -13,6 +19,13 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
+)
+
+// Account lockout constants — per-email protection against distributed brute force.
+const (
+	accountLockoutThreshold = 10              // Failed attempts before lockout
+	accountLockoutDuration  = 30 * time.Minute // Lockout window
 )
 
 // AuthHandler handles authentication endpoints.
@@ -21,15 +34,16 @@ type AuthHandler struct {
 	auditService     *audit.Service
 	jwtConfig        *config.JWTConfig
 	registrationMode string
-	inviteCode       string // static invite code for mode="invite"
-	redisClient      *redis.Client // nil-safe: JTI tracking disabled without Redis
+	inviteCode       string // static invite code (legacy fallback)
+	redisClient      *redis.Client
+	db               *gorm.DB // for DB-backed invite codes
 	logger           *zap.Logger
 }
 
 // NewAuthHandler creates a new auth handler.
-func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, jwtConfig *config.JWTConfig, registrationMode, inviteCode string, redisClient *redis.Client, logger *zap.Logger) *AuthHandler {
+func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, jwtConfig *config.JWTConfig, registrationMode, inviteCode string, redisClient *redis.Client, db *gorm.DB, logger *zap.Logger) *AuthHandler {
 	if registrationMode == "" {
-		registrationMode = "open"
+		registrationMode = "closed"
 	}
 	return &AuthHandler{
 		userService:      userService,
@@ -38,6 +52,7 @@ func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, jwtConfi
 		registrationMode: registrationMode,
 		inviteCode:       inviteCode,
 		redisClient:      redisClient,
+		db:               db,
 		logger:           logger,
 	}
 }
@@ -94,14 +109,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// Invite code validation: when mode=invite, a valid code is required
+	// Invite code validation: when mode=invite, check DB codes first, fallback to static code
 	if h.registrationMode == "invite" {
-		if h.inviteCode == "" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "invite-only registration is not configured"})
+		if req.InviteCode == "" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "invite code is required"})
 			return
 		}
-		if req.InviteCode != h.inviteCode {
-			c.JSON(http.StatusForbidden, gin.H{"error": "invalid invite code"})
+		if !h.validateAndConsumeInviteCode(c.Request.Context(), req.InviteCode) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "invalid or expired invite code"})
 			return
 		}
 	}
@@ -156,6 +171,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// M7: Per-account lockout — check if this email is locked out
+	if h.isAccountLockedOut(c.Request.Context(), req.Email) {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error":       "account temporarily locked due to too many failed attempts",
+			"retry_after": int(accountLockoutDuration.Seconds()),
+		})
+		return
+	}
+
 	userObj, err := h.userService.Authenticate(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
 		// Audit: failed login
@@ -163,9 +187,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			h.auditService.Log(c.Request.Context(), audit.ActionLoginFailed, uuid.Nil, uuid.Nil,
 				c.ClientIP(), c.Request.UserAgent(), map[string]interface{}{"email": req.Email})
 		}
+		// Increment lockout counter
+		h.recordFailedLogin(c.Request.Context(), req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Clear lockout counter on successful login
+	h.clearFailedLogins(c.Request.Context(), req.Email)
 
 	token, err := h.generateToken(userObj.ID, userObj.Email, userObj.Role)
 	if err != nil {
@@ -306,4 +335,128 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "password changed"})
+}
+
+// ─── Account Lockout Helpers ────────────────────────────────────────────
+
+// isAccountLockedOut checks whether the given email has exceeded the lockout threshold.
+func (h *AuthHandler) isAccountLockedOut(ctx context.Context, email string) bool {
+	if h.redisClient == nil {
+		return false // No Redis = no lockout (per-IP rate limit still applies)
+	}
+	key := fmt.Sprintf("auth:lockout:%s", email)
+	count, err := h.redisClient.Get(ctx, key).Int()
+	if err != nil {
+		return false
+	}
+	return count >= accountLockoutThreshold
+}
+
+// recordFailedLogin increments the per-account failure counter in Redis.
+func (h *AuthHandler) recordFailedLogin(ctx context.Context, email string) {
+	if h.redisClient == nil {
+		return
+	}
+	key := fmt.Sprintf("auth:lockout:%s", email)
+	count, err := h.redisClient.Incr(ctx, key).Result()
+	if err != nil {
+		h.logger.Warn("failed to record login failure", zap.Error(err))
+		return
+	}
+	if count == 1 {
+		h.redisClient.Expire(ctx, key, accountLockoutDuration)
+	}
+}
+
+// clearFailedLogins removes the per-account failure counter after successful login.
+func (h *AuthHandler) clearFailedLogins(ctx context.Context, email string) {
+	if h.redisClient == nil {
+		return
+	}
+	key := fmt.Sprintf("auth:lockout:%s", email)
+	h.redisClient.Del(ctx, key)
+}
+
+// ─── Invite Code Methods ────────────────────────────────────────────────
+
+// validateAndConsumeInviteCode checks the invite code against DB records
+// then falls back to the legacy static INVITE_CODE env var.
+func (h *AuthHandler) validateAndConsumeInviteCode(ctx context.Context, code string) bool {
+	// 1. Try DB-backed invite codes
+	if h.db != nil {
+		var ic models.InviteCode
+		if err := h.db.WithContext(ctx).Where("code = ?", code).First(&ic).Error; err == nil {
+			if ic.IsValid() {
+				h.db.Model(&ic).UpdateColumn("use_count", gorm.Expr("use_count + 1"))
+				return true
+			}
+			return false // Code exists but is expired/exhausted/disabled
+		}
+	}
+
+	// 2. Fallback: legacy static invite code
+	if h.inviteCode != "" && code == h.inviteCode {
+		return true
+	}
+
+	return false
+}
+
+// CreateInviteCodeRequest represents a request to create an invite code (admin only).
+type CreateInviteCodeRequest struct {
+	MaxUses   int        `json:"max_uses"` // 0 = unlimited, 1 = one-time
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
+// CreateInviteCode generates a new invite code (admin only).
+func (h *AuthHandler) CreateInviteCode(c *gin.Context) {
+	var req CreateInviteCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.MaxUses == 0 {
+		req.MaxUses = 1 // Default: one-time use
+	}
+
+	// Generate cryptographically secure invite code
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate code"})
+		return
+	}
+	code := "inv_" + hex.EncodeToString(buf)
+
+	adminID, _ := uuid.Parse(c.GetString("user_id"))
+
+	ic := models.InviteCode{
+		Code:      code,
+		CreatedBy: adminID,
+		MaxUses:   req.MaxUses,
+		ExpiresAt: req.ExpiresAt,
+		IsActive:  true,
+	}
+
+	if err := h.db.Create(&ic).Error; err != nil {
+		h.logger.Error("failed to create invite code", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create invite code"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"code":       ic.Code,
+		"max_uses":   ic.MaxUses,
+		"expires_at": ic.ExpiresAt,
+	})
+}
+
+// ListInviteCodes returns all invite codes (admin only).
+func (h *AuthHandler) ListInviteCodes(c *gin.Context) {
+	var codes []models.InviteCode
+	if err := h.db.Order("created_at DESC").Find(&codes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list invite codes"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": codes})
 }

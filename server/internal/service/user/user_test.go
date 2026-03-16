@@ -1,14 +1,22 @@
 package user
 
 import (
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
+	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
 )
+
+// TestMain initializes the crypto module required by hashAPIKey.
+func TestMain(m *testing.M) {
+	_ = crypto.Initialize("test-32byte-encryption-key-xtra!")
+	os.Exit(m.Run())
+}
 
 func TestGenerateAPIKey(t *testing.T) {
 	key := generateAPIKey()

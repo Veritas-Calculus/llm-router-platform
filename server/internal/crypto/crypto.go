@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 )
@@ -18,6 +19,8 @@ var (
 	ErrInvalidKey = errors.New("encryption key must be 32 bytes")
 	// ErrInvalidCiphertext is returned when the ciphertext is invalid.
 	ErrInvalidCiphertext = errors.New("invalid ciphertext")
+	// ErrNotInitialized is returned when encryption is used before initialization.
+	ErrNotInitialized = errors.New("encryption not initialized: ENCRYPTION_KEY is required")
 )
 
 // Encryptor handles encryption and decryption of sensitive data.
@@ -47,6 +50,14 @@ func Initialize(key string) error {
 	return nil
 }
 
+// MustInitialize calls Initialize and panics on error.
+// Use at application startup to guarantee encryption is available.
+func MustInitialize(key string) {
+	if err := Initialize(key); err != nil {
+		panic("crypto: " + err.Error())
+	}
+}
+
 // GetEncryptor returns the default encryptor instance.
 func GetEncryptor() *Encryptor {
 	return defaultEncryptor
@@ -55,8 +66,7 @@ func GetEncryptor() *Encryptor {
 // Encrypt encrypts plaintext using AES-256-GCM.
 func (e *Encryptor) Encrypt(plaintext string) (string, error) {
 	if e == nil || len(e.key) == 0 {
-		// If no encryption key is set, return plaintext (for backward compatibility)
-		return plaintext, nil
+		return "", ErrNotInitialized
 	}
 
 	e.mu.RLock()
@@ -84,8 +94,7 @@ func (e *Encryptor) Encrypt(plaintext string) (string, error) {
 // Decrypt decrypts ciphertext using AES-256-GCM.
 func (e *Encryptor) Decrypt(ciphertext string) (string, error) {
 	if e == nil || len(e.key) == 0 {
-		// If no encryption key is set, return ciphertext as-is (for backward compatibility)
-		return ciphertext, nil
+		return "", ErrNotInitialized
 	}
 
 	e.mu.RLock()
@@ -93,8 +102,7 @@ func (e *Encryptor) Decrypt(ciphertext string) (string, error) {
 
 	data, err := base64.StdEncoding.DecodeString(ciphertext)
 	if err != nil {
-		// If it's not base64, it might be unencrypted legacy data
-		return ciphertext, nil
+		return "", fmt.Errorf("%w: base64 decode failed: %v", ErrInvalidCiphertext, err)
 	}
 
 	block, err := aes.NewCipher(e.key)
@@ -109,15 +117,13 @@ func (e *Encryptor) Decrypt(ciphertext string) (string, error) {
 
 	nonceSize := gcm.NonceSize()
 	if len(data) < nonceSize {
-		// Too short to be encrypted, return as-is (legacy unencrypted data)
-		return ciphertext, nil
+		return "", fmt.Errorf("%w: ciphertext too short", ErrInvalidCiphertext)
 	}
 
 	nonce, ciphertextBytes := data[:nonceSize], data[nonceSize:]
 	plaintext, err := gcm.Open(nil, nonce, ciphertextBytes, nil)
 	if err != nil {
-		// Decryption failed, might be unencrypted legacy data
-		return ciphertext, nil
+		return "", fmt.Errorf("%w: %v", ErrInvalidCiphertext, err)
 	}
 
 	return string(plaintext), nil
