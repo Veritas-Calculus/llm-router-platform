@@ -323,3 +323,45 @@ func (c *OpenAIClient) TranscribeAudio(ctx context.Context, req *AudioTranscript
 
 	return &audioResp, nil
 }
+
+// SynthesizeSpeech sends a text-to-speech request to OpenAI.
+func (c *OpenAIClient) SynthesizeSpeech(ctx context.Context, req *SpeechRequest) (*SpeechResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/audio/speech", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, errors.New(string(respBody))
+	}
+
+	audioData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "audio/mpeg"
+	}
+
+	return &SpeechResponse{
+		Audio:       audioData,
+		ContentType: contentType,
+	}, nil
+}

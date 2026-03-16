@@ -84,6 +84,9 @@ type Model struct {
 	DisplayName      string    `json:"display_name"`
 	InputPricePer1K  float64   `gorm:"default:0" json:"input_price_per_1k"`
 	OutputPricePer1K float64   `gorm:"default:0" json:"output_price_per_1k"`
+	PricePerSecond   float64   `gorm:"default:0" json:"price_per_second,omitempty"`  // TTS per-second pricing
+	PricePerImage    float64   `gorm:"default:0" json:"price_per_image,omitempty"`   // Image generation per-image pricing
+	PricePerMinute   float64   `gorm:"default:0" json:"price_per_minute,omitempty"` // Video per-minute pricing
 	MaxTokens        int       `gorm:"default:4096" json:"max_tokens"`
 	IsActive         bool      `gorm:"default:true" json:"is_active"`
 	Provider         Provider  `gorm:"foreignKey:ProviderID" json:"-"`
@@ -141,6 +144,9 @@ type UsageLog struct {
 	RequestTokens  int       `gorm:"column:request_tokens" json:"input_tokens"`
 	ResponseTokens int       `gorm:"column:response_tokens" json:"output_tokens"`
 	TotalTokens    int       `json:"total_tokens"`
+	DurationMs     int64     `json:"duration_ms,omitempty"`      // TTS/Audio duration in milliseconds
+	ItemCount      int       `json:"item_count,omitempty"`       // Number of items (images, frames)
+	BytesProcessed int64     `json:"bytes_processed,omitempty"` // File size in bytes
 	Cost           float64   `json:"cost"`
 	Latency        int64     `gorm:"column:latency" json:"latency_ms"`
 	StatusCode     int       `json:"status_code"`
@@ -203,4 +209,18 @@ type Budget struct {
 	IsActive        bool       `gorm:"default:true" json:"is_active"`
 	WebhookURL      string     `json:"webhook_url,omitempty"`
 	Email           string     `json:"email,omitempty"`
+}
+
+// AsyncTask represents a long-running asynchronous task.
+type AsyncTask struct {
+	BaseModel
+	UserID      uuid.UUID  `gorm:"type:uuid;not null;index" json:"user_id"`
+	Type        string     `gorm:"not null;index" json:"type"`           // "tts", "batch_tts", "video_analysis", "batch_image"
+	Status      string     `gorm:"default:pending;index" json:"status"`  // pending, running, completed, failed, cancelled
+	Input       string     `gorm:"type:text" json:"input"`               // JSON-encoded input parameters
+	Result      string     `gorm:"type:text" json:"result,omitempty"`    // JSON-encoded result
+	WebhookURL  string     `json:"webhook_url,omitempty"`                // Callback URL for completion notification
+	Progress    int        `gorm:"default:0" json:"progress"`            // 0-100
+	Error       string     `json:"error,omitempty"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }

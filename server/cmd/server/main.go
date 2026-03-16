@@ -34,6 +34,7 @@ import (
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/proxy"
 	"llm-router-platform/internal/service/router"
+	"llm-router-platform/internal/service/task"
 	"llm-router-platform/internal/service/user"
 
 	"github.com/gin-gonic/gin"
@@ -247,6 +248,8 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		logger,
 	)
 
+	taskService := task.NewService(gormDB, logger)
+
 	return &routes.Services{
 		User:          userService,
 		Router:        routerService,
@@ -257,6 +260,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		Observability: obsService,
 		Proxy:         proxyService,
 		Provider:      providerRegistry,
+		TaskService:   taskService,
 		RedisClient:   redisClient,
 		DB:            gormDB, // For health checks
 	}

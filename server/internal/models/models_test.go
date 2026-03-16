@@ -153,3 +153,138 @@ func TestAlertConfigModel(t *testing.T) {
 	assert.True(t, config.IsEnabled)
 	assert.Equal(t, 3, config.FailureThreshold)
 }
+
+func TestModelMultiDimensionalPricing(t *testing.T) {
+	providerID := uuid.New()
+
+	// TTS model with per-second pricing
+	ttsModel := Model{
+		ProviderID:      providerID,
+		Name:            "tts-1",
+		DisplayName:     "TTS-1",
+		PricePerSecond:  0.015,
+		MaxTokens:       0,
+		IsActive:        true,
+	}
+	assert.Equal(t, "tts-1", ttsModel.Name)
+	assert.Equal(t, 0.015, ttsModel.PricePerSecond)
+	assert.Equal(t, 0.0, ttsModel.InputPricePer1K)
+
+	// Image model with per-image pricing
+	imageModel := Model{
+		ProviderID:    providerID,
+		Name:          "dall-e-3",
+		DisplayName:   "DALL-E 3",
+		PricePerImage: 0.04,
+		IsActive:      true,
+	}
+	assert.Equal(t, 0.04, imageModel.PricePerImage)
+	assert.Equal(t, 0.0, imageModel.PricePerSecond)
+
+	// Video model with per-minute pricing
+	videoModel := Model{
+		ProviderID:     providerID,
+		Name:           "gemini-2.0-flash",
+		DisplayName:    "Gemini 2.0 Flash",
+		PricePerMinute: 0.05,
+		IsActive:       true,
+	}
+	assert.Equal(t, 0.05, videoModel.PricePerMinute)
+}
+
+func TestUsageLogExtendedFields(t *testing.T) {
+	// TTS usage log with duration
+	ttsLog := UsageLog{
+		UserID:     uuid.New(),
+		APIKeyID:   uuid.New(),
+		ProviderID: uuid.New(),
+		ModelName:  "tts-1",
+		DurationMs: 15000, // 15 seconds of audio
+		Cost:       0.225, // 15 * 0.015
+		StatusCode: 200,
+	}
+	assert.Equal(t, int64(15000), ttsLog.DurationMs)
+	assert.Equal(t, 0, ttsLog.RequestTokens)
+	assert.Equal(t, 0, ttsLog.TotalTokens)
+
+	// Image generation usage log with item count
+	imageLog := UsageLog{
+		UserID:     uuid.New(),
+		APIKeyID:   uuid.New(),
+		ProviderID: uuid.New(),
+		ModelName:  "dall-e-3",
+		ItemCount:  2,
+		Cost:       0.08, // 2 * 0.04
+		StatusCode: 200,
+	}
+	assert.Equal(t, 2, imageLog.ItemCount)
+
+	// Video analysis usage log with bytes processed
+	videoLog := UsageLog{
+		UserID:         uuid.New(),
+		APIKeyID:       uuid.New(),
+		ProviderID:     uuid.New(),
+		ModelName:      "gemini-2.0-flash",
+		BytesProcessed: 52428800, // 50 MB
+		DurationMs:     120000,   // 2 minutes
+		Cost:           0.10,
+		StatusCode:     200,
+	}
+	assert.Equal(t, int64(52428800), videoLog.BytesProcessed)
+	assert.Equal(t, int64(120000), videoLog.DurationMs)
+}
+
+func TestAsyncTaskModel(t *testing.T) {
+	task := AsyncTask{
+		UserID:     uuid.New(),
+		Type:       "batch_tts",
+		Status:     "pending",
+		Input:      `[{"text":"hello"},{"text":"world"}]`,
+		WebhookURL: "https://example.com/callback",
+		Progress:   0,
+	}
+
+	assert.Equal(t, "batch_tts", task.Type)
+	assert.Equal(t, "pending", task.Status)
+	assert.Equal(t, 0, task.Progress)
+	assert.Contains(t, task.Input, "hello")
+	assert.NotEmpty(t, task.WebhookURL)
+	assert.Nil(t, task.CompletedAt)
+	assert.Empty(t, task.Error)
+	assert.Empty(t, task.Result)
+}
+
+func TestAsyncTaskStatusTransitions(t *testing.T) {
+	now := time.Now()
+
+	// Completed task
+	completed := AsyncTask{
+		UserID:      uuid.New(),
+		Type:        "tts",
+		Status:      "completed",
+		Input:       `{"text":"test"}`,
+		Result:      `{"audio_url":"https://cdn.example.com/output.mp3"}`,
+		Progress:    100,
+		CompletedAt: &now,
+	}
+	assert.Equal(t, "completed", completed.Status)
+	assert.Equal(t, 100, completed.Progress)
+	assert.NotNil(t, completed.CompletedAt)
+	assert.Contains(t, completed.Result, "audio_url")
+
+	// Failed task
+	failed := AsyncTask{
+		UserID:      uuid.New(),
+		Type:        "video_analysis",
+		Status:      "failed",
+		Input:       `{"video_url":"https://example.com/video.mp4"}`,
+		Error:       "provider timeout after 30s",
+		Progress:    45,
+		CompletedAt: &now,
+	}
+	assert.Equal(t, "failed", failed.Status)
+	assert.Equal(t, 45, failed.Progress)
+	assert.Contains(t, failed.Error, "timeout")
+}
+
+

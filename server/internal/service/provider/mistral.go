@@ -240,3 +240,8 @@ func (c *MistralClient) GenerateImage(_ context.Context, _ *ImageGenerationReque
 func (c *MistralClient) TranscribeAudio(_ context.Context, _ *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
 	return nil, errors.New("audio transcription not supported by Mistral")
 }
+
+// SynthesizeSpeech is not supported by Mistral.
+func (c *MistralClient) SynthesizeSpeech(_ context.Context, _ *SpeechRequest) (*SpeechResponse, error) {
+	return nil, ErrNotImplemented
+}

@@ -108,7 +108,12 @@ func (c *LMStudioClient) GenerateImage(ctx context.Context, req *ImageGeneration
 }
 
 // TranscribeAudio returns ErrNotImplemented.
-func (c *LMStudioClient) TranscribeAudio(ctx context.Context, req *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
+func (c *LMStudioClient) TranscribeAudio(_ context.Context, _ *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
+	return nil, ErrNotImplemented
+}
+
+// SynthesizeSpeech returns ErrNotImplemented.
+func (c *LMStudioClient) SynthesizeSpeech(_ context.Context, _ *SpeechRequest) (*SpeechResponse, error) {
 	return nil, ErrNotImplemented
 }
 

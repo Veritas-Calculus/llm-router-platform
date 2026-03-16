@@ -13,6 +13,8 @@ const (
 	CapEmbeddings Capability = "embeddings"
 	CapImage      Capability = "image"
 	CapAudio      Capability = "audio"
+	CapTTS        Capability = "tts"
+	CapVideo      Capability = "video"
 )
 
 // ProviderInfo holds a client and its declared capabilities.

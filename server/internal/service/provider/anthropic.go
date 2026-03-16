@@ -126,7 +126,12 @@ func (c *AnthropicClient) GenerateImage(ctx context.Context, req *ImageGeneratio
 }
 
 // TranscribeAudio returns ErrNotImplemented.
-func (c *AnthropicClient) TranscribeAudio(ctx context.Context, req *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
+func (c *AnthropicClient) TranscribeAudio(_ context.Context, _ *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
+	return nil, ErrNotImplemented
+}
+
+// SynthesizeSpeech returns ErrNotImplemented.
+func (c *AnthropicClient) SynthesizeSpeech(_ context.Context, _ *SpeechRequest) (*SpeechResponse, error) {
 	return nil, ErrNotImplemented
 }
 

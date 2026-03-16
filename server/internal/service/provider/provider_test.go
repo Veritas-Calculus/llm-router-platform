@@ -1,9 +1,12 @@
 package provider
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func TestChatRequest(t *testing.T) {
@@ -136,3 +139,148 @@ func TestEmptyResponse(t *testing.T) {
 	assert.Empty(t, resp.Choices)
 	assert.Equal(t, 0, resp.Usage.TotalTokens)
 }
+
+func TestSpeechRequest(t *testing.T) {
+	req := SpeechRequest{
+		Model:          "tts-1",
+		Input:          "Hello, this is a test.",
+		Voice:          "alloy",
+		ResponseFormat: "mp3",
+		Speed:          1.0,
+	}
+
+	assert.Equal(t, "tts-1", req.Model)
+	assert.Equal(t, "Hello, this is a test.", req.Input)
+	assert.Equal(t, "alloy", req.Voice)
+	assert.Equal(t, "mp3", req.ResponseFormat)
+	assert.Equal(t, 1.0, req.Speed)
+}
+
+func TestSpeechRequestDefaults(t *testing.T) {
+	req := SpeechRequest{
+		Model: "tts-1-hd",
+		Input: "Test",
+		Voice: "nova",
+	}
+
+	assert.Equal(t, "tts-1-hd", req.Model)
+	assert.Empty(t, req.ResponseFormat)
+	assert.Equal(t, 0.0, req.Speed)
+}
+
+func TestSpeechResponse(t *testing.T) {
+	resp := SpeechResponse{
+		Audio:       []byte{0x49, 0x44, 0x33}, // ID3 header
+		ContentType: "audio/mpeg",
+	}
+
+	assert.Equal(t, 3, len(resp.Audio))
+	assert.Equal(t, "audio/mpeg", resp.ContentType)
+}
+
+func TestCapabilityConstants(t *testing.T) {
+	assert.Equal(t, Capability("chat"), CapChat)
+	assert.Equal(t, Capability("stream"), CapStream)
+	assert.Equal(t, Capability("embeddings"), CapEmbeddings)
+	assert.Equal(t, Capability("image"), CapImage)
+	assert.Equal(t, Capability("audio"), CapAudio)
+	assert.Equal(t, Capability("tts"), CapTTS)
+	assert.Equal(t, Capability("video"), CapVideo)
+}
+
+func TestRegistryTTSCapability(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	registry := NewRegistry(logger)
+
+	// Register a mock provider with TTS capability
+	registry.RegisterWithCapabilities("test-tts", nil, CapChat, CapTTS)
+
+	assert.True(t, registry.HasCapability("test-tts", CapTTS))
+	assert.True(t, registry.HasCapability("test-tts", CapChat))
+	assert.False(t, registry.HasCapability("test-tts", CapImage))
+	assert.False(t, registry.HasCapability("nonexistent", CapTTS))
+
+	matrix := registry.CapabilityMatrix()
+	assert.Contains(t, matrix, "test-tts")
+	assert.Contains(t, matrix["test-tts"], CapTTS)
+	assert.Contains(t, matrix["test-tts"], CapChat)
+}
+
+func TestFlexibleContentVideoTransparency(t *testing.T) {
+	// Multimodal content with video_url part (used by Gemini 2.x, GPT-4o)
+	rawJSON := `[{"type":"text","text":"Describe this video"},{"type":"video_url","video_url":{"url":"https://example.com/video.mp4"}}]`
+
+	var fc FlexibleContent
+	err := json.Unmarshal([]byte(rawJSON), &fc)
+	require.NoError(t, err)
+
+	// Text should be extracted
+	assert.Equal(t, "Describe this video", fc.Text)
+
+	// Raw should preserve the original JSON including the video_url part
+	assert.NotNil(t, fc.Raw)
+
+	// MarshalJSON should re-emit the original JSON (transparent forwarding)
+	marshaled, err := fc.MarshalJSON()
+	require.NoError(t, err)
+	assert.JSONEq(t, rawJSON, string(marshaled))
+}
+
+func TestFlexibleContentImageURLTransparency(t *testing.T) {
+	// Multimodal content with image_url part (GPT-4 Vision, Gemini)
+	rawJSON := `[{"type":"text","text":"What's in this image?"},{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBOR..."}}]`
+
+	var fc FlexibleContent
+	err := json.Unmarshal([]byte(rawJSON), &fc)
+	require.NoError(t, err)
+
+	assert.Equal(t, "What's in this image?", fc.Text)
+
+	// Raw should preserve image_url part as-is
+	marshaled, err := fc.MarshalJSON()
+	require.NoError(t, err)
+	assert.JSONEq(t, rawJSON, string(marshaled))
+}
+
+func TestFlexibleContentMixedMultimodal(t *testing.T) {
+	// Content with text + image + video (OpenClaw scenario: video editing)
+	rawJSON := `[{"type":"text","text":"Analyze this frame"},{"type":"image_url","image_url":{"url":"https://cdn.example.com/frame001.jpg"}},{"type":"video_url","video_url":{"url":"https://cdn.example.com/clip.mp4","detail":"low"}}]`
+
+	var fc FlexibleContent
+	err := json.Unmarshal([]byte(rawJSON), &fc)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Analyze this frame", fc.Text)
+
+	// Full roundtrip preserves all parts
+	marshaled, err := fc.MarshalJSON()
+	require.NoError(t, err)
+	assert.JSONEq(t, rawJSON, string(marshaled))
+
+	// Verify it works in a ChatRequest context
+	chatReq := ChatRequest{
+		Model: "gemini-2.0-flash",
+		Messages: []Message{
+			{Role: "user", Content: fc},
+		},
+	}
+
+	chatJSON, err := json.Marshal(chatReq)
+	require.NoError(t, err)
+	assert.Contains(t, string(chatJSON), "video_url")
+	assert.Contains(t, string(chatJSON), "image_url")
+}
+
+func TestFlexibleContentNullPreserved(t *testing.T) {
+	// Tool call response with null content
+	var fc FlexibleContent
+	err := json.Unmarshal([]byte("null"), &fc)
+	require.NoError(t, err)
+
+	assert.Empty(t, fc.Text)
+
+	marshaled, err := fc.MarshalJSON()
+	require.NoError(t, err)
+	assert.Equal(t, "null", string(marshaled))
+}
+

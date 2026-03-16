@@ -84,6 +84,7 @@ type Client interface {
 	Embeddings(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error)
 	GenerateImage(ctx context.Context, req *ImageGenerationRequest) (*ImageGenerationResponse, error)
 	TranscribeAudio(ctx context.Context, req *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error)
+	SynthesizeSpeech(ctx context.Context, req *SpeechRequest) (*SpeechResponse, error)
 	ListModels(ctx context.Context) ([]ModelInfo, error)
 	CheckHealth(ctx context.Context) (bool, time.Duration, error)
 }
@@ -220,4 +221,19 @@ type AudioTranscriptionRequest struct {
 // AudioTranscriptionResponse represents a transcription response.
 type AudioTranscriptionResponse struct {
 	Text string `json:"text"`
+}
+
+// SpeechRequest represents a text-to-speech synthesis request (OpenAI-compatible).
+type SpeechRequest struct {
+	Model          string  `json:"model"`                       // e.g., "tts-1", "tts-1-hd", "cosyvoice-v2"
+	Input          string  `json:"input"`                       // The text to synthesize
+	Voice          string  `json:"voice"`                       // e.g., "alloy", "echo", "fable", "onyx", "nova", "shimmer"
+	ResponseFormat string  `json:"response_format,omitempty"`   // "mp3", "opus", "aac", "flac", "wav", "pcm"
+	Speed          float64 `json:"speed,omitempty"`             // 0.25 to 4.0, default 1.0
+}
+
+// SpeechResponse holds the synthesized audio binary data.
+type SpeechResponse struct {
+	Audio       []byte `json:"-"`  // Raw audio bytes
+	ContentType string `json:"-"`  // MIME type, e.g., "audio/mpeg"
 }

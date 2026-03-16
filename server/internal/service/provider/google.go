@@ -308,7 +308,12 @@ func (c *GoogleClient) GenerateImage(ctx context.Context, req *ImageGenerationRe
 }
 
 // TranscribeAudio returns ErrNotImplemented.
-func (c *GoogleClient) TranscribeAudio(ctx context.Context, req *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
+func (c *GoogleClient) TranscribeAudio(_ context.Context, _ *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
+	return nil, ErrNotImplemented
+}
+
+// SynthesizeSpeech returns ErrNotImplemented.
+func (c *GoogleClient) SynthesizeSpeech(_ context.Context, _ *SpeechRequest) (*SpeechResponse, error) {
 	return nil, ErrNotImplemented
 }
 

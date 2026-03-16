@@ -326,3 +326,116 @@ func TestProviderHandlerValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestTTSHandlerValidation(t *testing.T) {
+	router := gin.New()
+	router.POST("/speech", func(c *gin.Context) {
+		var req SpeechSynthesisRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "ok"})
+	})
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+	}{
+		{
+			name:       "valid request",
+			body:       `{"model":"tts-1","input":"Hello world","voice":"alloy"}`,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "valid request with optional fields",
+			body:       `{"model":"tts-1-hd","input":"Hello world","voice":"nova","response_format":"opus","speed":1.5}`,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "missing model",
+			body:       `{"input":"Hello world","voice":"alloy"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing input",
+			body:       `{"model":"tts-1","voice":"alloy"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing voice",
+			body:       `{"model":"tts-1","input":"Hello world"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "empty body",
+			body:       `{}`,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("POST", "/speech", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(w, req)
+			assert.Equal(t, tt.wantStatus, w.Code)
+		})
+	}
+}
+
+func TestTaskHandlerValidation(t *testing.T) {
+	router := gin.New()
+	router.POST("/tasks", func(c *gin.Context) {
+		var req CreateTaskRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "ok"})
+	})
+
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+	}{
+		{
+			name:       "valid task request",
+			body:       `{"type":"tts","input":"{\"text\":\"hello\"}"}`,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "valid batch_tts request",
+			body:       `{"type":"batch_tts","input":"[{\"text\":\"hello\"},{\"text\":\"world\"}]","webhook_url":"https://example.com/callback"}`,
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "missing type",
+			body:       `{"input":"{\"text\":\"hello\"}"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing input",
+			body:       `{"type":"tts"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "empty body",
+			body:       `{}`,
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("POST", "/tasks", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(w, req)
+			assert.Equal(t, tt.wantStatus, w.Code)
+		})
+	}
+}

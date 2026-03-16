@@ -108,7 +108,12 @@ func (c *OllamaClient) GenerateImage(ctx context.Context, req *ImageGenerationRe
 }
 
 // TranscribeAudio returns ErrNotImplemented.
-func (c *OllamaClient) TranscribeAudio(ctx context.Context, req *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
+func (c *OllamaClient) TranscribeAudio(_ context.Context, _ *AudioTranscriptionRequest) (*AudioTranscriptionResponse, error) {
+	return nil, ErrNotImplemented
+}
+
+// SynthesizeSpeech returns ErrNotImplemented.
+func (c *OllamaClient) SynthesizeSpeech(_ context.Context, _ *SpeechRequest) (*SpeechResponse, error) {
 	return nil, ErrNotImplemented
 }
 

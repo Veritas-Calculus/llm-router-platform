@@ -104,7 +104,11 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 				strings.Contains(modelLower, "phi") ||
 				strings.Contains(modelLower, "yi-") ||
 				strings.Contains(modelLower, "qwen") ||
-				strings.Contains(modelLower, "mistral") {
+				strings.Contains(modelLower, "mistral") ||
+				strings.Contains(modelLower, "cosyvoice") ||
+				strings.Contains(modelLower, "fish-speech") ||
+				strings.Contains(modelLower, "chattts") ||
+				strings.Contains(modelLower, "bark") {
 				return p
 			}
 		case "deepseek":

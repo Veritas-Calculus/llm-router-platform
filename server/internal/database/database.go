@@ -62,6 +62,7 @@ func (d *Database) Migrate() error {
 		&models.ConversationMemory{},
 		&models.AuditLog{},
 		&models.Budget{},
+		&models.AsyncTask{},
 	)
 }
 

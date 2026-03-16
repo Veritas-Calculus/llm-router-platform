@@ -18,6 +18,7 @@ import (
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/proxy"
 	"llm-router-platform/internal/service/router"
+	"llm-router-platform/internal/service/task"
 	"llm-router-platform/internal/service/user"
 
 	"github.com/gin-gonic/gin"
@@ -49,6 +50,7 @@ type Services struct {
 	Observability observability.Service
 	Proxy         *proxy.Service
 	Provider      *provider.Registry
+	TaskService   *task.Service
 	RedisClient   *redis.Client // For rate limiting
 	DB            *gorm.DB      // For health checks
 }
@@ -225,6 +227,12 @@ func Setup(
 	finopsHandler := handlers.NewFinOpsHandler(services.Billing, services.BudgetService, logger)
 	userHandler := handlers.NewUserHandler(services.User, services.Billing, logger)
 
+	// Task handler (optional: only created if task service is wired)
+	var taskHandler *handlers.TaskHandler
+	if services.TaskService != nil {
+		taskHandler = handlers.NewTaskHandler(services.TaskService, logger)
+	}
+
 	// Shared middleware chain for all LLM API endpoints.
 	applyLLMMiddleware := func(g *gin.RouterGroup) {
 		g.Use(authMiddleware.APIKey())
@@ -287,6 +295,17 @@ func Setup(
 					finops.DELETE("/budget", finopsHandler.DeleteBudget)
 					finops.GET("/budget/status", finopsHandler.GetBudgetStatus)
 					finops.GET("/anomaly", finopsHandler.DetectAnomaly)
+				}
+
+				// Async task management
+				if taskHandler != nil {
+					tasks := protected.Group("/tasks")
+					{
+						tasks.POST("", taskHandler.CreateTask)
+						tasks.GET("", taskHandler.ListTasks)
+						tasks.GET("/:id", taskHandler.GetTask)
+						tasks.POST("/:id/cancel", taskHandler.CancelTask)
+					}
 				}
 
 				// Dashboard stats (returns per-user or system data depending on role)
@@ -399,8 +418,8 @@ func Setup(
 			applyLLMMiddleware(audio)
 			{
 				audio.POST("/transcriptions", chatHandler.TranscribeAudio)
+				audio.POST("/speech", chatHandler.SynthesizeSpeech)
 			}
-
 			models := v1.Group("/models")
 			models.Use(authMiddleware.APIKey())
 			{
@@ -426,6 +445,7 @@ func Setup(
 		compat.POST("/embeddings", chatHandler.Embeddings)
 		compat.POST("/images/generations", chatHandler.GenerateImage)
 		compat.POST("/audio/transcriptions", chatHandler.TranscribeAudio)
+		compat.POST("/audio/speech", chatHandler.SynthesizeSpeech)
 	}
 
 	compatModels := engine.Group("/v1/models")
@@ -458,6 +478,7 @@ func Setup(
 	applyLLMMiddleware(rootAudio)
 	{
 		rootAudio.POST("/transcriptions", chatHandler.TranscribeAudio)
+		rootAudio.POST("/speech", chatHandler.SynthesizeSpeech)
 	}
 
 	rootModels := engine.Group("/models")
