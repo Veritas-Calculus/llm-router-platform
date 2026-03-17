@@ -12,15 +12,25 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          // React core — rarely changes, cached long-term
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          // Charting — heavy, loaded only on dashboard
-          'vendor-charts': ['recharts'],
-          // Animation + UI utilities
-          'vendor-ui': ['framer-motion', 'react-hot-toast'],
-          // State management + HTTP
-          'vendor-state': ['zustand', 'axios'],
+        manualChunks(id: string) {
+          if (id.includes('node_modules')) {
+            // React core — rarely changes, cached long-term
+            if (/[\\/](react|react-dom|react-router-dom)[\\/]/.test(id)) {
+              return 'vendor-react';
+            }
+            // Charting — heavy, loaded only on dashboard
+            if (/[\\/]recharts[\\/]/.test(id)) {
+              return 'vendor-charts';
+            }
+            // Animation + UI utilities
+            if (/[\\/](framer-motion|react-hot-toast)[\\/]/.test(id)) {
+              return 'vendor-ui';
+            }
+            // State management + HTTP
+            if (/[\\/](zustand|axios)[\\/]/.test(id)) {
+              return 'vendor-state';
+            }
+          }
         },
       },
     },
