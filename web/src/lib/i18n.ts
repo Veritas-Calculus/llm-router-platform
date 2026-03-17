@@ -75,5 +75,5 @@ export function useTranslation() {
  */
 export const availableLocales: { code: Locale; label: string; nativeLabel: string }[] = [
     { code: 'en', label: 'English', nativeLabel: 'English' },
-    { code: 'zh-CN', label: 'Chinese (Simplified)', nativeLabel: '�体中文' },
+    { code: 'zh-CN', label: 'Chinese (Simplified)', nativeLabel: '简体中文' },
 ];
