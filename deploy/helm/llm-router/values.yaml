@@ -22,7 +22,7 @@ server:
     JWT_SECRET: ""               # Required: set via --set or sealed-secret
     ENCRYPTION_KEY: ""           # Required: set via --set or sealed-secret
     ADMIN_EMAIL: admin@example.com
-    ADMIN_PASSWORD: ""           # Required on first deploy
+    ADMIN_PASSWORD: "CHANGEME_SECRET"           # Required on first deploy
 
 # ── PostgreSQL ──────────────────────────────────────────────────────────
 postgresql:
@@ -31,7 +31,7 @@ postgresql:
   auth:
     database: llm_router
     username: llm_router
-    password: ""                 # Required: set via --set or sealed-secret
+    password: "CHANGEME_SECRET"                 # Required: set via --set or sealed-secret
   primary:
     persistence:
       size: 10Gi
@@ -41,7 +41,7 @@ postgresql:
     port: 5432
     database: llm_router
     username: ""
-    password: ""
+    password: "CHANGEME_SECRET"
     sslMode: require
 
 # ── Redis ───────────────────────────────────────────────────────────────
@@ -49,7 +49,7 @@ redis:
   # Set to false if using an external Redis
   enabled: true
   auth:
-    password: ""
+    password: "CHANGEME_SECRET"
   master:
     persistence:
       size: 2Gi
@@ -57,7 +57,7 @@ redis:
   external:
     host: ""
     port: 6379
-    password: ""
+    password: "CHANGEME_SECRET"
 
 # ── Langfuse (Optional) ────────────────────────────────────────────────
 langfuse:

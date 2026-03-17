@@ -74,12 +74,12 @@ redis:
 # ─── Secrets (must be provided) ──────────────────────────────
 secrets:
   # These will be stored in a Kubernetes Secret
-  dbPassword: ""       # Required
-  redisPassword: ""    # Required
-  jwtSecret: ""        # Required (at least 32 chars)
-  encryptionKey: ""    # Required (32 bytes for AES-256)
+  dbPassword: "CHANGEME_SECRET"       # Required
+  redisPassword: "CHANGEME_SECRET"    # Required
+  jwtSecret: "CHANGEME_SECRET_AT_LEAST_32_CHARS"        # Required (at least 32 chars)
+  encryptionKey: "CHANGEME_SECRET_32_BYTES_AES256"    # Required (32 bytes for AES-256)
   adminEmail: "admin@example.com"
-  adminPassword: ""    # Required
+  adminPassword: "CHANGEME_SECRET"    # Required
 
 # ─── Ingress ─────────────────────────────────────────────────
 ingress:
