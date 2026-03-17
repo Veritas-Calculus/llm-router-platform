@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import { healthApi, alertsApi, ApiKeyHealth, ProxyHealth, ProviderHealth, Alert } from '@/lib/api';
+import { healthApi, alertsApi, ApiKeyHealth, ProxyHealth, ProviderHealth, Alert, AlertConfig } from '@/lib/api';
 
-export type HealthTab = 'providers' | 'api-keys' | 'proxies' | 'alerts';
+export type HealthTab = 'providers' | 'api-keys' | 'proxies' | 'alerts' | 'config';
 
 /**
  * Custom hook encapsulating all Health Monitor state and API logic.
@@ -12,6 +12,7 @@ export function useHealth() {
   const [proxyHealth, setProxyHealth] = useState<ProxyHealth[]>([]);
   const [providerHealth, setProviderHealth] = useState<ProviderHealth[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alertConfigs, setAlertConfigs] = useState<Map<string, AlertConfig>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<HealthTab>('providers');
@@ -39,7 +40,50 @@ export function useHealth() {
     }
   }, []);
 
+  // Load alert configs for all providers when config tab is activated
+  const loadAlertConfigs = useCallback(async (providers: ProviderHealth[]) => {
+    const newConfigs = new Map<string, AlertConfig>();
+    for (const p of providers) {
+      try {
+        const config = await alertsApi.getConfig('provider', p.id);
+        newConfigs.set(`provider:${p.id}`, config);
+      } catch {
+        // No config exists yet — use defaults
+        newConfigs.set(`provider:${p.id}`, {
+          target_type: 'provider',
+          target_id: p.id,
+          is_enabled: false,
+          failure_threshold: 3,
+          webhook_url: '',
+          email: '',
+        });
+      }
+    }
+    setAlertConfigs(newConfigs);
+  }, []);
+
+  const saveAlertConfig = useCallback(async (config: Omit<AlertConfig, 'id'>) => {
+    try {
+      await alertsApi.updateConfig(config);
+      setAlertConfigs((prev) => {
+        const next = new Map(prev);
+        next.set(`${config.target_type}:${config.target_id}`, config);
+        return next;
+      });
+      toast.success('Alert configuration saved');
+    } catch {
+      toast.error('Failed to save alert configuration');
+    }
+  }, []);
+
   useEffect(() => { loadHealthData(); }, [loadHealthData]);
+
+  // Load configs when switching to config tab
+  useEffect(() => {
+    if (activeTab === 'config' && providerHealth.length > 0) {
+      loadAlertConfigs(providerHealth);
+    }
+  }, [activeTab, providerHealth, loadAlertConfigs]);
 
   const refreshAll = useCallback(async () => {
     setRefreshing(true);
@@ -128,6 +172,7 @@ export function useHealth() {
     proxyHealth,
     providerHealth,
     alerts,
+    alertConfigs,
     loading,
     refreshing,
     activeTab,
@@ -140,6 +185,7 @@ export function useHealth() {
     checkAllProviders,
     acknowledgeAlert,
     resolveAlert,
+    saveAlertConfig,
     formatDate,
   };
 }

@@ -309,7 +309,7 @@ func (r *Router) GetProviderClientWithKey(ctx context.Context, p *models.Provide
 			BaseURL:    p.BaseURL,
 			HTTPClient: r.getHTTPClientProvider(ctx, p),
 		}
-		return r.createProviderClient(p.Name, cfg)
+		return r.createProviderClientWithRetry(p.Name, cfg, p.MaxRetries, p.Timeout)
 	}
 
 	// Decrypt the API key
@@ -324,7 +324,7 @@ func (r *Router) GetProviderClientWithKey(ctx context.Context, p *models.Provide
 		HTTPClient: r.getHTTPClientProvider(ctx, p),
 	}
 
-	return r.createProviderClient(p.Name, cfg)
+	return r.createProviderClientWithRetry(p.Name, cfg, p.MaxRetries, p.Timeout)
 }
 
 // getHTTPClientProvider returns a function that creates an HTTP client with optional proxy.
@@ -382,8 +382,15 @@ func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) 
 
 // createProviderClient creates a provider client based on provider name.
 // Delegates to the shared factory in the provider package.
+// Uses per-provider retry config when maxRetries > 0 or timeout > 0.
 func (r *Router) createProviderClient(name string, cfg *config.ProviderConfig) (provider.Client, error) {
 	return provider.NewClientByName(name, cfg, r.logger)
+}
+
+// createProviderClientWithRetry creates a provider client with per-provider retry overrides.
+func (r *Router) createProviderClientWithRetry(name string, cfg *config.ProviderConfig, maxRetries, timeout int) (provider.Client, error) {
+	retryCfg := provider.RetryConfigFromProvider(maxRetries, timeout)
+	return provider.NewClientByNameWithRetry(name, cfg, retryCfg, r.logger)
 }
 
 // ─── Provider CRUD Operations ──────────────────────────────────────────────

@@ -35,6 +35,19 @@ func DefaultRetryConfig() RetryConfig {
 	}
 }
 
+// RetryConfigFromProvider builds a RetryConfig using per-provider settings.
+// Zero values fall back to defaults.
+func RetryConfigFromProvider(maxRetries, timeoutSecs int) RetryConfig {
+	cfg := DefaultRetryConfig()
+	if maxRetries > 0 {
+		cfg.MaxRetries = maxRetries
+	}
+	if timeoutSecs > 0 {
+		cfg.MaxDelay = time.Duration(timeoutSecs) * time.Second
+	}
+	return cfg
+}
+
 // RetryClient wraps a Client with automatic retry on transient errors.
 type RetryClient struct {
 	inner  Client

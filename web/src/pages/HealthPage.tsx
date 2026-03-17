@@ -1,6 +1,8 @@
+import { useState as useReactState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowPathIcon, CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon, ServerIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon, ServerIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
 import { useHealth } from '@/hooks/useHealth';
+import type { AlertConfig } from '@/lib/api';
 
 function getStatusIcon(status: string | boolean) {
   if (typeof status === 'boolean') {
@@ -26,6 +28,7 @@ function HealthPage() {
     proxyHealth,
     providerHealth,
     alerts,
+    alertConfigs,
     loading,
     refreshing,
     activeTab,
@@ -38,6 +41,7 @@ function HealthPage() {
     checkAllProviders,
     acknowledgeAlert,
     resolveAlert,
+    saveAlertConfig,
     formatDate,
   } = useHealth();
 
@@ -63,7 +67,7 @@ function HealthPage() {
       </div>
 
       <div className="flex gap-4 border-b border-apple-gray-200">
-        {(['providers', 'api-keys', 'proxies', 'alerts'] as const).map((tab) => (
+        {(['providers', 'api-keys', 'proxies', 'alerts', 'config'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -71,7 +75,8 @@ function HealthPage() {
               activeTab === tab ? 'text-apple-blue border-b-2 border-apple-blue' : 'text-apple-gray-500 hover:text-apple-gray-700'
             }`}
           >
-            {tab === 'api-keys' ? 'API Keys' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === 'api-keys' ? 'API Keys' : tab === 'config' ? 'Alert Config' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === 'config' && <Cog6ToothIcon className="w-4 h-4" />}
             {tab === 'alerts' && activeAlerts > 0 && (
               <span className="bg-apple-red text-white text-xs px-2 py-0.5 rounded-full">{activeAlerts}</span>
             )}
@@ -245,6 +250,130 @@ function HealthPage() {
           )}
         </motion.div>
       )}
+      {activeTab === 'config' && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+          <div className="card">
+            <h3 className="text-lg font-medium text-apple-gray-900 mb-2">Alert Channel Configuration</h3>
+            <p className="text-sm text-apple-gray-500 mb-4">Configure notification channels for each provider. Alerts will be sent when health checks fail.</p>
+          </div>
+          {providerHealth.length === 0 ? (
+            <p className="text-center text-apple-gray-500 py-8">No providers to configure</p>
+          ) : (
+            providerHealth.map((provider) => {
+              const configKey = `provider:${provider.id}`;
+              const config = alertConfigs.get(configKey);
+              return (
+                <AlertConfigCard
+                  key={provider.id}
+                  providerName={provider.name}
+                  providerId={provider.id}
+                  config={config}
+                  onSave={saveAlertConfig}
+                />
+              );
+            })
+          )}
+        </motion.div>
+      )}
+    </div>
+  );
+}
+
+/** Inline alert config editor for a single provider. */
+function AlertConfigCard({
+  providerName, providerId, config, onSave,
+}: {
+  providerName: string;
+  providerId: string;
+  config?: AlertConfig;
+  onSave: (c: Omit<AlertConfig, 'id'>) => Promise<void>;
+}) {
+  const [isEnabled, setIsEnabled] = useReactState(config?.is_enabled ?? false);
+  const [threshold, setThreshold] = useReactState(config?.failure_threshold ?? 3);
+  const [webhookUrl, setWebhookUrl] = useReactState(config?.webhook_url ?? '');
+  const [email, setEmail] = useReactState(config?.email ?? '');
+  const [saving, setSaving] = useReactState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave({
+      target_type: 'provider',
+      target_id: providerId,
+      is_enabled: isEnabled,
+      failure_threshold: threshold,
+      webhook_url: webhookUrl,
+      email,
+    });
+    setSaving(false);
+  };
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <ServerIcon className="w-5 h-5 text-apple-gray-400" />
+          <h4 className="font-medium text-apple-gray-900">{providerName}</h4>
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <span className="text-sm text-apple-gray-500">{isEnabled ? 'Enabled' : 'Disabled'}</span>
+          <div
+            className={`relative w-10 h-6 rounded-full transition-colors ${isEnabled ? 'bg-apple-blue' : 'bg-apple-gray-300'}`}
+            onClick={() => setIsEnabled(!isEnabled)}
+          >
+            <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${isEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          </div>
+        </label>
+      </div>
+
+      <div className={`space-y-4 ${!isEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-apple-gray-700 mb-1">Webhook URL</label>
+            <input
+              type="url"
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              placeholder="https://hooks.slack.com/... or DingTalk webhook"
+              className="input w-full"
+            />
+            <p className="text-xs text-apple-gray-400 mt-1">Supports Slack, DingTalk, Feishu, or any HTTP endpoint</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-apple-gray-700 mb-1">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="ops-team@company.com"
+              className="input w-full"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-apple-gray-700 mb-1">
+            Failure Threshold: <span className="text-apple-blue">{threshold}</span> consecutive failures
+          </label>
+          <input
+            type="range"
+            min={1}
+            max={10}
+            value={threshold}
+            onChange={(e) => setThreshold(Number(e.target.value))}
+            className="w-full accent-apple-blue"
+          />
+          <div className="flex justify-between text-xs text-apple-gray-400">
+            <span>1 (sensitive)</span>
+            <span>10 (tolerant)</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-end mt-4 pt-4 border-t border-apple-gray-100">
+        <button onClick={handleSave} disabled={saving} className="btn btn-primary text-sm">
+          {saving ? 'Saving...' : 'Save Configuration'}
+        </button>
+      </div>
     </div>
   );
 }

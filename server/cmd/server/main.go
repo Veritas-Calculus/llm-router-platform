@@ -104,6 +104,7 @@ func run() error {
 	_ = db.SeedDefaultModels()
 	_ = db.SeedDefaultAdmin(&cfg.Admin)
 
+	gormDB := db.DB
 	repos := initRepositories(db)
 
 	// Initialize Redis client for rate limiting
@@ -127,7 +128,7 @@ func run() error {
 		logger.Info("redis connected for rate limiting")
 	}
 
-	services := initServices(repos, cfg, logger, redisClient, db.DB)
+	services := initServices(repos, cfg, logger, redisClient, gormDB)
 
 	gin.SetMode(cfg.Server.Mode)
 	engine := gin.New()
@@ -158,6 +159,11 @@ func run() error {
 		scheduler := health.NewScheduler(services.Health, alertNotifier, cfg.HealthCheck.Interval, logger)
 		go scheduler.Start(lifecycleCtx)
 	}
+
+	// Start async task worker pool
+	workerPool := task.NewWorkerPool(services.TaskService, gormDB, task.DefaultWorkerPoolConfig(), logger)
+	task.RegisterDefaultExecutors(workerPool, logger)
+	go workerPool.Start(lifecycleCtx)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

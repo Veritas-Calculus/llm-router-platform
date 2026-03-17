@@ -232,6 +232,16 @@ export interface Alert {
   created_at: string;
 }
 
+export interface AlertConfig {
+  id?: string;
+  target_type: string;
+  target_id: string;
+  is_enabled: boolean;
+  failure_threshold: number;
+  webhook_url: string;
+  email: string;
+}
+
 export interface Provider {
   id: string;
   name: string;
@@ -363,6 +373,10 @@ export const alertsApi = {
     api.get<{ data: Alert[]; total: number }>(`/alerts${status ? `?status=${status}` : ''}`),
   acknowledge: (id: string) => api.post(`/alerts/${id}/acknowledge`),
   resolve: (id: string) => api.post(`/alerts/${id}/resolve`),
+  getConfig: (targetType: string, targetId: string) =>
+    api.get<AlertConfig>(`/alerts/config/${targetType}/${targetId}`),
+  updateConfig: (data: Omit<AlertConfig, 'id'>) =>
+    api.put<{ message: string }>('/alerts/config', data),
 };
 
 export const providersApi = {
