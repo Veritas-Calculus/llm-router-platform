@@ -9,10 +9,9 @@ import (
 	"time"
 
 	"llm-router-platform/internal/models"
+	"llm-router-platform/internal/repository"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 // Executor defines the interface for task execution.
@@ -47,7 +46,7 @@ func DefaultWorkerPoolConfig() WorkerPoolConfig {
 // them to registered Executor implementations via a bounded goroutine pool.
 type WorkerPool struct {
 	service   *Service
-	db        *gorm.DB
+	repo      repository.TaskRepo
 	config    WorkerPoolConfig
 	executors map[string]Executor // task type → executor
 	sem       chan struct{}       // concurrency semaphore
@@ -58,10 +57,10 @@ type WorkerPool struct {
 }
 
 // NewWorkerPool creates a new worker pool.
-func NewWorkerPool(service *Service, db *gorm.DB, cfg WorkerPoolConfig, logger *zap.Logger) *WorkerPool {
+func NewWorkerPool(service *Service, repo repository.TaskRepo, cfg WorkerPoolConfig, logger *zap.Logger) *WorkerPool {
 	return &WorkerPool{
 		service:   service,
-		db:        db,
+		repo:      repo,
 		config:    cfg,
 		executors: make(map[string]Executor),
 		sem:       make(chan struct{}, cfg.Concurrency),
@@ -122,7 +121,7 @@ func (wp *WorkerPool) pollAndDispatch(ctx context.Context) {
 		return // all worker slots are busy
 	}
 
-	tasks, err := wp.fetchPendingTasks(ctx, available)
+	tasks, err := wp.repo.ClaimPending(ctx, available)
 	if err != nil {
 		wp.logger.Error("failed to fetch pending tasks", zap.Error(err))
 		return
@@ -153,61 +152,20 @@ func (wp *WorkerPool) pollAndDispatch(ctx context.Context) {
 	}
 }
 
-// fetchPendingTasks atomically claims up to `limit` pending tasks by
-// transitioning them to "running" status using SELECT … FOR UPDATE SKIP LOCKED.
-func (wp *WorkerPool) fetchPendingTasks(ctx context.Context, limit int) ([]models.AsyncTask, error) {
-	var tasks []models.AsyncTask
-
-	err := wp.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Find pending tasks and lock them
-		if err := tx.Raw(`
-			SELECT * FROM async_tasks
-			WHERE status = 'pending' AND deleted_at IS NULL
-			ORDER BY created_at ASC
-			LIMIT ?
-			FOR UPDATE SKIP LOCKED
-		`, limit).Scan(&tasks).Error; err != nil {
-			return err
-		}
-
-		if len(tasks) == 0 {
-			return nil
-		}
-
-		// Transition all fetched tasks to "running"
-		ids := make([]uuid.UUID, len(tasks))
-		for i := range tasks {
-			ids[i] = tasks[i].ID
-		}
-
-		return tx.Model(&models.AsyncTask{}).
-			Where("id IN ?", ids).
-			Update("status", "running").Error
-	})
-
-	return tasks, err
-}
-
 // recoverStaleTasks resets tasks that have been "running" for too long
 // (e.g. process crash) back to "pending" so they can be retried.
 func (wp *WorkerPool) recoverStaleTasks(ctx context.Context) {
 	staleThreshold := time.Now().Add(-wp.config.StaleTimeout)
 
-	result := wp.db.WithContext(ctx).Model(&models.AsyncTask{}).
-		Where("status = ? AND updated_at < ? AND deleted_at IS NULL", "running", staleThreshold).
-		Updates(map[string]interface{}{
-			"status":   "pending",
-			"progress": 0,
-		})
-
-	if result.Error != nil {
-		wp.logger.Error("failed to recover stale tasks", zap.Error(result.Error))
+	count, err := wp.repo.RecoverStale(ctx, staleThreshold)
+	if err != nil {
+		wp.logger.Error("failed to recover stale tasks", zap.Error(err))
 		return
 	}
 
-	if result.RowsAffected > 0 {
+	if count > 0 {
 		wp.logger.Warn("recovered stale tasks",
-			zap.Int64("count", result.RowsAffected),
+			zap.Int64("count", count),
 			zap.Duration("stale_timeout", wp.config.StaleTimeout),
 		)
 	}

@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import toast from 'react-hot-toast';
+import * as Sentry from '@sentry/react';
 import { useAuthStore } from '@/stores/authStore';
 
 const BASE_URL = '/api/v1';
@@ -43,6 +44,9 @@ class ApiClient {
           toast.error(msg || 'Access denied');
         } else if (status && status >= 500) {
           toast.error(msg || 'Server error — please try again later');
+          Sentry.captureException(error, {
+            extra: { status, url: error.config?.url, method: error.config?.method },
+          });
         }
 
         return Promise.reject(error);

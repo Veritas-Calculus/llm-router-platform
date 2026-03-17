@@ -5,25 +5,24 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"llm-router-platform/internal/models"
+	"llm-router-platform/internal/repository"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 // Service records security-relevant events.
 type Service struct {
-	db     *gorm.DB
+	repo   repository.AuditLogRepo
 	logger *zap.Logger
 }
 
 // NewService creates a new audit service.
-func NewService(db *gorm.DB, logger *zap.Logger) *Service {
-	return &Service{db: db, logger: logger}
+func NewService(repo repository.AuditLogRepo, logger *zap.Logger) *Service {
+	return &Service{repo: repo, logger: logger}
 }
 
 // Log records an audit event. This is fire-and-forget — never blocks the caller.
@@ -44,7 +43,7 @@ func (s *Service) Log(ctx context.Context, action string, actorID, targetID uuid
 		Detail:    detailJSON,
 	}
 
-	if err := s.db.WithContext(ctx).Create(entry).Error; err != nil {
+	if err := s.repo.Create(ctx, entry); err != nil {
 		s.logger.Error("failed to write audit log",
 			zap.String("action", action),
 			zap.String("actor_id", actorID.String()),
@@ -65,41 +64,15 @@ type QueryFilter struct {
 
 // Query retrieves audit logs with optional filtering and pagination.
 func (s *Service) Query(ctx context.Context, filter QueryFilter) ([]models.AuditLog, int64, error) {
-	query := s.db.WithContext(ctx).Model(&models.AuditLog{})
-
-	if filter.ActorID != nil {
-		query = query.Where("actor_id = ?", *filter.ActorID)
+	repoFilter := repository.AuditQueryFilter{
+		ActorID: filter.ActorID,
+		Action:  filter.Action,
+		StartAt: filter.StartAt,
+		EndAt:   filter.EndAt,
+		Limit:   filter.Limit,
+		Offset:  filter.Offset,
 	}
-	if filter.Action != "" {
-		query = query.Where("action = ?", filter.Action)
-	}
-	if filter.StartAt != nil {
-		query = query.Where("created_at >= ?", *filter.StartAt)
-	}
-	if filter.EndAt != nil {
-		query = query.Where("created_at <= ?", *filter.EndAt)
-	}
-
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	if filter.Limit <= 0 {
-		filter.Limit = 50
-	}
-	if filter.Limit > 1000 {
-		filter.Limit = 1000
-	}
-
-	var logs []models.AuditLog
-	if err := query.Order("created_at DESC").
-		Limit(filter.Limit).Offset(filter.Offset).
-		Find(&logs).Error; err != nil {
-		return nil, 0, err
-	}
-
-	return logs, total, nil
+	return s.repo.Query(ctx, repoFilter)
 }
 
 // ExportCSV writes audit logs to a CSV writer with streaming pagination.
@@ -109,28 +82,19 @@ func (s *Service) ExportCSV(ctx context.Context, filter QueryFilter, w *csv.Writ
 		return err
 	}
 
+	repoFilter := repository.AuditQueryFilter{
+		ActorID: filter.ActorID,
+		Action:  filter.Action,
+		StartAt: filter.StartAt,
+		EndAt:   filter.EndAt,
+	}
+
 	const batchSize = 1000
 	offset := 0
 	for {
-		query := s.db.WithContext(ctx).Model(&models.AuditLog{})
-		if filter.ActorID != nil {
-			query = query.Where("actor_id = ?", *filter.ActorID)
-		}
-		if filter.Action != "" {
-			query = query.Where("action = ?", filter.Action)
-		}
-		if filter.StartAt != nil {
-			query = query.Where("created_at >= ?", *filter.StartAt)
-		}
-		if filter.EndAt != nil {
-			query = query.Where("created_at <= ?", *filter.EndAt)
-		}
-
-		var logs []models.AuditLog
-		if err := query.Order("created_at ASC").
-			Limit(batchSize).Offset(offset).
-			Find(&logs).Error; err != nil {
-			return fmt.Errorf("failed to query audit logs (offset %d): %w", offset, err)
+		logs, err := s.repo.QueryBatch(ctx, repoFilter, batchSize, offset)
+		if err != nil {
+			return err
 		}
 		if len(logs) == 0 {
 			break
@@ -167,19 +131,17 @@ func (s *Service) ExportCSV(ctx context.Context, filter QueryFilter, w *csv.Writ
 // Returns the number of deleted rows.
 func (s *Service) PurgeOlderThan(ctx context.Context, retention time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-retention)
-	result := s.db.WithContext(ctx).
-		Where("created_at < ?", cutoff).
-		Delete(&models.AuditLog{})
-	if result.Error != nil {
-		return 0, result.Error
+	count, err := s.repo.PurgeOlderThan(ctx, cutoff)
+	if err != nil {
+		return 0, err
 	}
-	if result.RowsAffected > 0 {
+	if count > 0 {
 		s.logger.Info("purged old audit logs",
-			zap.Int64("deleted", result.RowsAffected),
+			zap.Int64("deleted", count),
 			zap.Time("cutoff", cutoff),
 		)
 	}
-	return result.RowsAffected, nil
+	return count, nil
 }
 
 // Actions constants for audit logging.

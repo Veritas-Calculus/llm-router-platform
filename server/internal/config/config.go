@@ -143,12 +143,16 @@ type RegistrationConfig struct {
 	InviteCode string // Required when Mode == "invite"
 }
 
-// ObservabilityConfig holds observability configuration (e.g. Langfuse).
+// ObservabilityConfig holds observability configuration (e.g. Langfuse, Sentry).
 type ObservabilityConfig struct {
 	LangfuseEnabled   bool
 	LangfusePublicKey string
 	LangfuseSecretKey string // #nosec G101
 	LangfuseHost      string
+	SentryEnabled     bool
+	SentryDSN         string
+	SentryEnvironment string
+	SentrySampleRate  float64
 }
 
 // Load reads configuration from environment variables and .env file.
@@ -253,6 +257,10 @@ func Load() (*Config, error) {
 			LangfusePublicKey: viper.GetString("LANGFUSE_PUBLIC_KEY"),
 			LangfuseSecretKey: viper.GetString("LANGFUSE_SECRET_KEY"),
 			LangfuseHost:      viper.GetString("LANGFUSE_HOST"),
+			SentryEnabled:     viper.GetBool("SENTRY_ENABLED"),
+			SentryDSN:         viper.GetString("SENTRY_DSN"),
+			SentryEnvironment: viper.GetString("SENTRY_ENVIRONMENT"),
+			SentrySampleRate:  viper.GetFloat64("SENTRY_SAMPLE_RATE"),
 		},
 		Frontend: FrontendConfig{
 			URL: viper.GetString("FRONTEND_URL"),
@@ -376,6 +384,9 @@ func setDefaults() {
 	viper.SetDefault("INVITE_CODE", "")            // required when mode=invite
 	viper.SetDefault("LANGFUSE_ENABLED", false)
 	viper.SetDefault("LANGFUSE_HOST", "https://cloud.langfuse.com")
+	viper.SetDefault("SENTRY_ENABLED", false)
+	viper.SetDefault("SENTRY_ENVIRONMENT", "production")
+	viper.SetDefault("SENTRY_SAMPLE_RATE", 1.0)
 }
 
 // GetDSN returns the database connection string with proper escaping.

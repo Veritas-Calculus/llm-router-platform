@@ -23,11 +23,13 @@ import (
 	"syscall"
 	"time"
 
+	"llm-router-platform/internal/api/middleware"
 	"llm-router-platform/internal/api/routes"
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/database"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/billing"
 	"llm-router-platform/internal/service/health"
 	"llm-router-platform/internal/service/memory"
@@ -140,6 +142,16 @@ func run() error {
 	gin.SetMode(cfg.Server.Mode)
 	engine := gin.New()
 
+	// Sentry must be initialized before middleware registration
+	if err := observability.InitSentry(cfg.Observability, logger); err != nil {
+		logger.Error("sentry init failed (non-fatal)", zap.Error(err))
+	}
+	defer observability.ShutdownSentry(logger)
+
+	// Register Sentry panic capture BEFORE Recovery so panics are reported
+	engine.Use(middleware.SentryMiddleware())
+	engine.Use(middleware.SentryUserContext())
+
 	routes.Setup(engine, cfg, services, logger)
 
 	server := &http.Server{
@@ -168,7 +180,7 @@ func run() error {
 	}
 
 	// Start async task worker pool
-	workerPool := task.NewWorkerPool(services.TaskService, gormDB, task.DefaultWorkerPoolConfig(), logger)
+	workerPool := task.NewWorkerPool(services.TaskService, repos.Task, task.DefaultWorkerPoolConfig(), logger)
 	task.RegisterDefaultExecutors(workerPool, logger)
 	go workerPool.Start(lifecycleCtx)
 
@@ -239,6 +251,8 @@ type Repositories struct {
 	Alert          *repository.AlertRepository
 	AlertConfig    *repository.AlertConfigRepository
 	Budget         *repository.BudgetRepository
+	Task           *repository.TaskRepository
+	AuditLog       *repository.AuditLogRepository
 }
 
 func initRepositories(db *database.Database) *Repositories {
@@ -255,6 +269,8 @@ func initRepositories(db *database.Database) *Repositories {
 		Alert:          repository.NewAlertRepository(db.DB),
 		AlertConfig:    repository.NewAlertConfigRepository(db.DB),
 		Budget:         repository.NewBudgetRepository(db.DB),
+		Task:           repository.NewTaskRepository(db.DB),
+		AuditLog:       repository.NewAuditLogRepository(db.DB),
 	}
 }
 
@@ -274,6 +290,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	memoryService := memory.NewService(repos.Memory, redisClient, logger)
 	proxyService := proxy.NewService(repos.Proxy, logger)
 	obsService := observability.NewLangfuseService(cfg.Observability, logger)
+	auditService := audit.NewService(repos.AuditLog, logger)
 
 	alertNotifier := health.NewAlertNotifier(repos.Alert, repos.AlertConfig, logger)
 	healthService := health.NewService(
@@ -288,7 +305,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		logger,
 	)
 
-	taskService := task.NewService(gormDB, logger)
+	taskService := task.NewService(repos.Task, logger)
 
 	return &routes.Services{
 		User:          userService,
@@ -301,8 +318,9 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		Proxy:         proxyService,
 		Provider:      providerRegistry,
 		TaskService:   taskService,
+		AuditService:  auditService,
 		RedisClient:   redisClient,
-		DB:            gormDB, // For health checks
+		DB:            gormDB, // For health checks (operational handler)
 	}
 }
 

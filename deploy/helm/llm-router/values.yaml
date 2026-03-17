@@ -66,6 +66,13 @@ langfuse:
   secretKey: ""
   host: "https://cloud.langfuse.com"
 
+# ── Sentry (Optional) ──────────────────────────────────────────────────
+sentry:
+  enabled: false
+  dsn: ""
+  environment: production
+  sampleRate: 1.0
+
 # ── Service ─────────────────────────────────────────────────────────────
 service:
   type: ClusterIP

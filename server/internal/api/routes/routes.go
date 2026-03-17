@@ -50,8 +50,9 @@ type Services struct {
 	Proxy         *proxy.Service
 	Provider      *provider.Registry
 	TaskService   *task.Service
+	AuditService  *audit.Service
 	RedisClient   *redis.Client // For rate limiting
-	DB            *gorm.DB      // For health checks
+	DB            *gorm.DB      // For operational health checks only
 }
 
 // Setup configures all API routes.
@@ -145,10 +146,9 @@ func Setup(
 	}
 
 	// ─── API Routes ────────────────────────────────────────────────────
-	auditService := audit.NewService(services.DB, logger)
 	emailService := email.NewService(cfg.Email, cfg.Frontend.URL)
 
-	authHandler := handlers.NewAuthHandler(services.User, auditService, emailService, &cfg.JWT, cfg.Registration.Mode, cfg.Registration.InviteCode, services.RedisClient, services.DB, logger)
+	authHandler := handlers.NewAuthHandler(services.User, services.AuditService, emailService, &cfg.JWT, cfg.Registration.Mode, cfg.Registration.InviteCode, services.RedisClient, services.DB, logger)
 	apiKeyHandler := handlers.NewAPIKeyHandler(services.User, logger)
 	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Observability, logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)

@@ -127,6 +127,26 @@ type BudgetRepo interface {
 	DeleteByUserID(ctx context.Context, userID uuid.UUID) error
 }
 
+// TaskRepo defines the interface for async task data access.
+type TaskRepo interface {
+	Create(ctx context.Context, task *models.AsyncTask) error
+	GetByID(ctx context.Context, id uuid.UUID) (*models.AsyncTask, error)
+	ListByUserID(ctx context.Context, userID uuid.UUID, status string, limit, offset int) ([]models.AsyncTask, int64, error)
+	UpdateProgress(ctx context.Context, id uuid.UUID, progress int) error
+	UpdateStatus(ctx context.Context, id uuid.UUID, updates map[string]interface{}) error
+	CancelByID(ctx context.Context, id uuid.UUID, completedAt *time.Time) error
+	ClaimPending(ctx context.Context, limit int) ([]models.AsyncTask, error)
+	RecoverStale(ctx context.Context, staleThreshold time.Time) (int64, error)
+}
+
+// AuditLogRepo defines the interface for audit log data access.
+type AuditLogRepo interface {
+	Create(ctx context.Context, entry *models.AuditLog) error
+	Query(ctx context.Context, filter AuditQueryFilter) ([]models.AuditLog, int64, error)
+	QueryBatch(ctx context.Context, filter AuditQueryFilter, batchSize, offset int) ([]models.AuditLog, error)
+	PurgeOlderThan(ctx context.Context, cutoff time.Time) (int64, error)
+}
+
 // Compile-time interface satisfaction checks.
 var (
 	_ UserRepo               = (*UserRepository)(nil)
@@ -141,4 +161,6 @@ var (
 	_ AlertRepo              = (*AlertRepository)(nil)
 	_ AlertConfigRepo        = (*AlertConfigRepository)(nil)
 	_ BudgetRepo             = (*BudgetRepository)(nil)
+	_ TaskRepo               = (*TaskRepository)(nil)
+	_ AuditLogRepo           = (*AuditLogRepository)(nil)
 )
