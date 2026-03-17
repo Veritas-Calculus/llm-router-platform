@@ -66,7 +66,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 
 	t, err := h.taskService.CreateTask(c.Request.Context(), userObj.ID, req.Type, req.Input, req.WebhookURL)
 	if err != nil {
-		h.logger.Error("failed to create task", zap.Error(err))
+		h.logger.Error("failed to create task", zap.String("error", sanitize.LogValue(err.Error())))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create task"})
 		return
 	}

@@ -9,6 +9,7 @@ import (
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
@@ -59,7 +60,7 @@ func (s *Service) AddMessage(ctx context.Context, userID uuid.UUID, conversation
 		if err != nil {
 			s.logger.Warn("failed to encrypt conversation content, storing plaintext",
 				zap.Error(err),
-				zap.String("conversation_id", conversationID),
+				zap.String("conversation_id", sanitize.LogValue(conversationID)),
 			)
 		} else {
 			encryptedContent = enc
@@ -312,7 +313,7 @@ func (s *Service) CompressConversation(
 	if err != nil {
 		s.logger.Error("failed to generate conversation summary",
 			zap.Error(err),
-			zap.String("conversation_id", conversationID),
+			zap.String("conversation_id", sanitize.LogValue(conversationID)),
 		)
 		// Fallback: just truncate
 		return s.TruncateConversation(ctx, userID, conversationID, maxTokens)
@@ -338,7 +339,7 @@ func (s *Service) CompressConversation(
 	}
 
 	s.logger.Info("conversation compressed",
-		zap.String("conversation_id", conversationID),
+		zap.String("conversation_id", sanitize.LogValue(conversationID)),
 		zap.Int("original_messages", len(messages)),
 		zap.Int("compressed_to_messages", keepRecent+1),
 		zap.Int("original_tokens", totalTokens),
