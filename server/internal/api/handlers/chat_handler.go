@@ -194,11 +194,25 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	// Handle streaming requests
 	if req.Stream {
+		// Record initial usage log (pending) to ensure request is tracked even if stream fails early
+		usageLog := &models.UsageLog{
+			UserID:     userObj.ID,
+			APIKeyID:   userAPIKey.ID,
+			ProviderID: selectedProvider.ID,
+			ModelName:  req.Model,
+			Latency:    0,
+			StatusCode: http.StatusProcessing, // Temporary status
+		}
+		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+
 		// ExecuteStreamChat retries key rotation before the stream is established
-		// (before SSE headers are sent), giving streaming the same resilience as non-streaming.
 		streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
 		if err != nil {
 			h.logger.Error("failed to establish stream", zap.Error(err))
+			usageLog.StatusCode = http.StatusBadGateway
+			usageLog.ErrorMessage = err.Error()
+			_ = h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, err.Error())
+
 			c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{
 				"message": "upstream provider error",
 				"type":    "server_error",
@@ -206,7 +220,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			}})
 			return
 		}
-		h.handleStreamingChat(c, streamResult.Stream, providerReq, selectedProvider, userObj, userAPIKey, start, trace, req.ConversationID, req.Messages)
+		h.handleStreamingChat(c, streamResult.Stream, providerReq, selectedProvider, userObj, userAPIKey, start, trace, req.ConversationID, req.Messages, usageLog.ID)
 		return
 	}
 

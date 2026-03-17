@@ -30,8 +30,18 @@ type ChatResult struct {
 // For providers that require API keys, it retries with different keys on failure (up to maxRetries).
 // This centralizes the retry/key-failure logic that was previously in the HTTP handler.
 func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, req *provider.ChatRequest, maxRetries int) (*ChatResult, error) {
+	if !r.IsProviderHealthy(p.ID) {
+		return nil, errors.New("provider is temporarily unavailable (circuit-breaker)")
+	}
+
 	if !p.RequiresAPIKey {
-		return r.executeChatOnce(ctx, p, nil, req)
+		res, err := r.executeChatOnce(ctx, p, nil, req)
+		if err != nil && isProviderLevelError(err.Error()) {
+			r.MarkProviderFailure(p.ID)
+		} else if err == nil {
+			r.MarkProviderSuccess(p.ID)
+		}
+		return res, err
 	}
 
 	currentKey := apiKey
@@ -41,6 +51,7 @@ func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *mo
 		result, err := r.executeChatOnce(ctx, p, currentKey, req)
 		if err == nil {
 			r.ClearKeyFailure(currentKey.ID)
+			r.MarkProviderSuccess(p.ID)
 			return result, nil
 		}
 
@@ -54,6 +65,8 @@ func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *mo
 		// Mark key as failed if it's a quota/rate-limit error
 		if isQuotaOrRateLimitError(err.Error()) {
 			r.MarkKeyFailed(currentKey.ID, err.Error())
+		} else if isProviderLevelError(err.Error()) {
+			r.MarkProviderFailure(p.ID)
 		}
 
 		// Try next key
@@ -64,6 +77,24 @@ func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *mo
 		return nil, lastErr
 	}
 	return nil, errors.New("all API keys failed")
+}
+
+// ─── Support Functions ─────────────────────────────────────────────────────
+
+// isProviderLevelError checks if an error should trigger provider circuit breaking (e.g. 500, timeout).
+func isProviderLevelError(errMsg string) bool {
+	errLower := strings.ToLower(errMsg)
+	providerKeywords := []string{
+		"timeout", "deadline exceeded", "connection refused",
+		"500", "502", "503", "504", "internal server error",
+		"bad gateway", "service unavailable", "gateway timeout",
+	}
+	for _, keyword := range providerKeywords {
+		if strings.Contains(errLower, keyword) {
+			return true
+		}
+	}
+	return false
 }
 
 // executeChatOnce makes a single chat request using the given provider and key.
@@ -237,6 +268,10 @@ type StreamResult struct {
 // Once a stream channel is successfully obtained, it returns the client and stream for
 // the handler to consume. After SSE headers are sent, retries are no longer possible.
 func (r *Router) ExecuteStreamChat(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, req *provider.ChatRequest, maxRetries int) (*StreamResult, error) {
+	if !r.IsProviderHealthy(p.ID) {
+		return nil, errors.New("provider is temporarily unavailable (circuit-breaker)")
+	}
+
 	if !p.RequiresAPIKey {
 		client, err := r.GetProviderClientWithKey(ctx, p, nil)
 		if err != nil {
@@ -244,8 +279,12 @@ func (r *Router) ExecuteStreamChat(ctx context.Context, p *models.Provider, apiK
 		}
 		stream, err := client.StreamChat(ctx, req)
 		if err != nil {
+			if isProviderLevelError(err.Error()) {
+				r.MarkProviderFailure(p.ID)
+			}
 			return nil, err
 		}
+		r.MarkProviderSuccess(p.ID)
 		return &StreamResult{Client: client, Stream: stream}, nil
 	}
 
@@ -275,12 +314,15 @@ func (r *Router) ExecuteStreamChat(ctx context.Context, p *models.Provider, apiK
 			)
 			if isQuotaOrRateLimitError(err.Error()) {
 				r.MarkKeyFailed(currentKey.ID, err.Error())
+			} else if isProviderLevelError(err.Error()) {
+				r.MarkProviderFailure(p.ID)
 			}
 			currentKey, _ = r.SelectNextAPIKey(ctx, p.ID, currentKey.ID)
 			continue
 		}
 
 		r.ClearKeyFailure(currentKey.ID)
+		r.MarkProviderSuccess(p.ID)
 		return &StreamResult{Client: client, Stream: stream, UsedKey: currentKey}, nil
 	}
 

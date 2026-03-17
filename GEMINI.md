@@ -72,8 +72,24 @@ From the project root:
 - **Data Fetching:** Standardize on Axios with base URL configuration from `VITE_API_BASE_URL`.
 
 ### Database
-- **Migrations:** Managed via GORM AutoMigrate in `server/internal/database/database.go` or explicit migration scripts in `server/cmd/migrate`.
+- **Migrations:** Managed via GORM AutoMigrate in `server/internal/database/database.go` for non-release modes. Production/Release mode requires explicit SQL migrations.
 - **Primary Keys:** UUIDs are used for all record identifiers.
+
+## Security & Resilience
+
+### Resilience Patterns
+- **Provider-Level Circuit Breaking:** Automatically melts (skips) unhealthy providers after 5 consecutive 5xx or timeout errors.
+- **API Key Rotation:** Retries requests with alternative API keys upon 429 (rate limit) or quota errors.
+- **Context-Aware Streaming:** Background streaming goroutines strictly respect context cancellation to prevent resource leaks.
+
+### Billing Robustness
+- **Pre-recorded Usage:** All LLM requests (including streams) are pre-recorded in the database to ensure auditing even if the connection is interrupted.
+- **Partial Billing:** Streamed chunks are tracked, and usage logs are updated upon completion or failure to capture partial consumption.
+
+### Hardening
+- **Encryption:** Provider API keys are mandatory-encrypted at rest using AES-GCM.
+- **Security Headers:** Strict CSP, HSTS, and Cache-Control headers are enforced via middleware.
+- **Production Guardrails:** `AutoMigrate` is disabled in `release` mode to prevent accidental schema corruption.
 
 ## Key Files
 - `server/cmd/server/main.go`: Backend entry point and service initialization.

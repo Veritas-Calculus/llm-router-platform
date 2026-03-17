@@ -151,21 +151,34 @@ func (c *OpenAIClient) StreamChat(ctx context.Context, req *ChatRequest) (<-chan
 		// Increase buffer size to handle large streaming responses
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 		for scanner.Scan() {
-			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") {
-				continue
-			}
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" {
-				chunks <- StreamChunk{Done: true}
+			select {
+			case <-ctx.Done():
+				c.logger.Debug("stream cancelled by context")
 				return
-			}
+			default:
+				line := scanner.Text()
+				if !strings.HasPrefix(line, "data: ") {
+					continue
+				}
+				data := strings.TrimPrefix(line, "data: ")
+				if data == "[DONE]" {
+					select {
+					case chunks <- StreamChunk{Done: true}:
+					case <-ctx.Done():
+					}
+					return
+				}
 
-			var chunk StreamChunk
-			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-				continue
+				var chunk StreamChunk
+				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+					continue
+				}
+				select {
+				case chunks <- chunk:
+				case <-ctx.Done():
+					return
+				}
 			}
-			chunks <- chunk
 		}
 	}()
 

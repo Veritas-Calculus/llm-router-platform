@@ -76,18 +76,23 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 
 		// Restrict resources to same-origin
-		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'")
+		// CSP: self for all sources, no unsafe-inline if possible (but web app might need it), 
+		// frame-ancestors 'none' to prevent any framing (clickjacking defense).
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';")
 
 		// Disable browser features not needed by API
-		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
 
 		// R8: HSTS — enforce HTTPS for direct API access (complements nginx HSTS)
-		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		// 1 year max-age, include subdomains and preload.
+		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
 
 		// Cache control for API responses (no caching sensitive data)
-		if c.Request.URL.Path != "/health" && c.Request.URL.Path != "/readyz" {
-			c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private")
+		// We explicitly exclude health checks to allow load balancer caching if needed.
+		if c.Request.URL.Path != "/health" && c.Request.URL.Path != "/readyz" && c.Request.URL.Path != "/healthz" {
+			c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private, proxy-revalidate")
 			c.Header("Pragma", "no-cache")
+			c.Header("Expires", "0")
 		}
 
 		c.Next()

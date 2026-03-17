@@ -81,6 +81,9 @@ type Router struct {
 	mu               sync.Mutex
 	discoveryCache   *modelDiscoveryCache
 	discoveryCacheMu sync.RWMutex
+	providerFailures map[uuid.UUID]int       // Consecutive failures per provider
+	providerMelted   map[uuid.UUID]time.Time // When provider was melted (熔断开始时间)
+	circuitMu        sync.RWMutex
 	logger           *zap.Logger
 }
 
@@ -94,14 +97,61 @@ func NewRouter(
 	logger *zap.Logger,
 ) *Router {
 	return &Router{
-		providerRepo:    providerRepo,
-		providerKeyRepo: providerKeyRepo,
-		proxyRepo:       proxyRepo,
-		modelRepo:       modelRepo,
-		registry:        registry,
-		strategy:        StrategyWeighted,
-		failedKeys:      make(map[uuid.UUID]*FailedKeyInfo),
-		logger:          logger,
+		providerRepo:     providerRepo,
+		providerKeyRepo:  providerKeyRepo,
+		proxyRepo:        proxyRepo,
+		modelRepo:        modelRepo,
+		registry:         registry,
+		strategy:         StrategyWeighted,
+		failedKeys:       make(map[uuid.UUID]*FailedKeyInfo),
+		providerFailures: make(map[uuid.UUID]int),
+		providerMelted:   make(map[uuid.UUID]time.Time),
+		logger:           logger,
+	}
+}
+
+// ─── Provider Circuit Breaking ─────────────────────────────────────────────
+
+const (
+	providerFailureThreshold = 5               // 连续失败 5 次熔断
+	providerMeltDuration     = 1 * time.Minute // 熔断持续时间
+)
+
+// IsProviderHealthy checks if a provider is currently melted.
+func (r *Router) IsProviderHealthy(providerID uuid.UUID) bool {
+	r.circuitMu.RLock()
+	defer r.circuitMu.RUnlock()
+
+	meltedAt, exists := r.providerMelted[providerID]
+	if !exists {
+		return true
+	}
+
+	if time.Since(meltedAt) > providerMeltDuration {
+		return true // 熔断超时，允许尝试（半开状态逻辑简化）
+	}
+	return false
+}
+
+// MarkProviderSuccess clears failure count for a provider.
+func (r *Router) MarkProviderSuccess(providerID uuid.UUID) {
+	r.circuitMu.Lock()
+	defer r.circuitMu.Unlock()
+	delete(r.providerFailures, providerID)
+	delete(r.providerMelted, providerID)
+}
+
+// MarkProviderFailure increments failure count and triggers melt if threshold reached.
+func (r *Router) MarkProviderFailure(providerID uuid.UUID) {
+	r.circuitMu.Lock()
+	defer r.circuitMu.Unlock()
+
+	r.providerFailures[providerID]++
+	if r.providerFailures[providerID] >= providerFailureThreshold {
+		r.providerMelted[providerID] = time.Now()
+		r.logger.Warn("provider entered circuit-breaker melt state", 
+			zap.String("provider_id", providerID.String()),
+			zap.Int("consecutive_failures", r.providerFailures[providerID]))
 	}
 }
 

@@ -79,6 +79,21 @@ func (r *UsageLogRepository) Create(ctx context.Context, log *models.UsageLog) e
 	return r.db.WithContext(ctx).Create(log).Error
 }
 
+// GetByID returns a usage log by its ID.
+func (r *UsageLogRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.UsageLog, error) {
+	var log models.UsageLog
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&log).Error
+	if err != nil {
+		return nil, err
+	}
+	return &log, nil
+}
+
+// Update updates an existing usage log.
+func (r *UsageLogRepository) Update(ctx context.Context, log *models.UsageLog) error {
+	return r.db.WithContext(ctx).Save(log).Error
+}
+
 // GetByUserIDAndTimeRange retrieves usage logs for a user in time range.
 func (r *UsageLogRepository) GetByUserIDAndTimeRange(ctx context.Context, userID uuid.UUID, start, end time.Time) ([]models.UsageLog, error) {
 	var logs []models.UsageLog

@@ -38,6 +38,46 @@ func NewService(
 	}
 }
 
+// UpdateUsageTokens updates an existing usage log with final token counts and status.
+// Used for streaming requests to ensure usage is recorded even if the stream is interrupted.
+func (s *Service) UpdateUsageTokens(ctx context.Context, logID uuid.UUID, requestTokens, responseTokens int, statusCode int, errorMessage string) error {
+	log, err := s.usageRepo.GetByID(ctx, logID)
+	if err != nil {
+		return err
+	}
+
+	log.RequestTokens = requestTokens
+	log.ResponseTokens = responseTokens
+	log.TotalTokens = requestTokens + responseTokens
+	log.StatusCode = statusCode
+	log.ErrorMessage = errorMessage
+	log.IsSuccess = statusCode >= 200 && statusCode < 300
+
+	if log.ModelID != uuid.Nil {
+		model, err := s.modelRepo.GetByID(ctx, log.ModelID)
+		if err == nil {
+			log.Cost = s.calculateCost(model, log.RequestTokens, log.ResponseTokens)
+		}
+	}
+
+	err = s.usageRepo.Update(ctx, log)
+
+	// Refresh redis cache asynchronously
+	if s.redis != nil && err == nil && log.IsSuccess {
+		now := time.Now()
+		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
+		key := fmt.Sprintf("billing:usage:%s:%s", log.UserID.String(), monthStr)
+
+		pipe := s.redis.Pipeline()
+		pipe.HIncrBy(ctx, key, "total_tokens", int64(log.TotalTokens))
+		pipe.HIncrByFloat(ctx, key, "total_cost", log.Cost)
+		pipe.Expire(ctx, key, 32*24*time.Hour)
+		_, _ = pipe.Exec(ctx)
+	}
+
+	return err
+}
+
 // RecordUsage records API usage.
 func (s *Service) RecordUsage(ctx context.Context, log *models.UsageLog) error {
 	if log.ModelID != uuid.Nil {
