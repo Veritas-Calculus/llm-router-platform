@@ -47,10 +47,11 @@ type DatabaseConfig struct {
 
 // RedisConfig holds Redis connection configuration.
 type RedisConfig struct {
-	Host     string
-	Port     string
-	Password string // #nosec G101 -- internal config, never serialized to API responses
-	DB       int
+	Host       string
+	Port       string
+	Password   string // #nosec G101 -- internal config, never serialized to API responses
+	DB         int
+	TLSEnabled bool   // Enable TLS for Redis connection (recommended for production)
 }
 
 // EncryptionConfig holds encryption configuration for sensitive data.
@@ -182,10 +183,11 @@ func Load() (*Config, error) {
 			SSLMode:  viper.GetString("DB_SSL_MODE"),
 		},
 		Redis: RedisConfig{
-			Host:     viper.GetString("REDIS_HOST"),
-			Port:     viper.GetString("REDIS_PORT"),
-			Password: viper.GetString("REDIS_PASSWORD"),
-			DB:       viper.GetInt("REDIS_DB"),
+			Host:       viper.GetString("REDIS_HOST"),
+			Port:       viper.GetString("REDIS_PORT"),
+			Password:   viper.GetString("REDIS_PASSWORD"),
+			DB:         viper.GetInt("REDIS_DB"),
+			TLSEnabled: viper.GetBool("REDIS_TLS_ENABLED"),
 		},
 		Encryption: EncryptionConfig{
 			Key: viper.GetString("ENCRYPTION_KEY"),
@@ -325,6 +327,7 @@ func setDefaults() {
 	viper.SetDefault("REDIS_HOST", "localhost")
 	viper.SetDefault("REDIS_PORT", "6379")
 	viper.SetDefault("REDIS_DB", 0)
+	viper.SetDefault("REDIS_TLS_ENABLED", false)
 	viper.SetDefault("OPENAI_BASE_URL", "https://api.openai.com/v1")
 	viper.SetDefault("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 	viper.SetDefault("OLLAMA_BASE_URL", "http://host.docker.internal:11434")

@@ -183,8 +183,7 @@ func Setup(
 			{
 				auth.POST("/register", authHandler.Register)
 				auth.POST("/login", authHandler.Login)
-				auth.POST("/refresh", authHandler.RefreshToken)
-				auth.POST("/token/rotate", authHandler.RotateRefreshToken) // Refresh token rotation
+				auth.POST("/token/rotate", authHandler.RotateRefreshToken) // Refresh token rotation (validates refresh token from body)
 			}
 
 			// ── All authenticated users ─────────────────────────
@@ -192,6 +191,12 @@ func Setup(
 			protected.Use(authMiddleware.JWT())
 			protected.Use(perUserLimiter.Limit())
 			{
+				// Token refresh (requires valid JWT — H4 security fix)
+				protected.POST("/auth/refresh", authHandler.RefreshToken)
+
+				// M4: Logout — invalidates all tokens for the current user
+				protected.POST("/auth/logout", authHandler.Logout)
+
 				// Personal profile
 				user := protected.Group("/user")
 				{

@@ -183,11 +183,30 @@ func NewAuthRateLimiter(redisClient *redis.Client, maxAttempts int, logger *zap.
 	if maxAttempts <= 0 {
 		maxAttempts = 5
 	}
-	return &AuthRateLimiter{
+	l := &AuthRateLimiter{
 		redisClient:     redisClient,
 		maxAttempts:     maxAttempts,
 		logger:          logger,
 		fallbackCounter: make(map[string]*authRateEntry),
+	}
+	// M2: Start background cleanup goroutine to prevent memory leak
+	go l.cleanupLoop()
+	return l
+}
+
+// cleanupLoop periodically evicts expired entries from the in-memory auth rate limiter.
+func (l *AuthRateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		l.fallbackMu.Lock()
+		now := time.Now()
+		for key, entry := range l.fallbackCounter {
+			if now.Sub(entry.windowAt) > 2*time.Minute {
+				delete(l.fallbackCounter, key)
+			}
+		}
+		l.fallbackMu.Unlock()
 	}
 }
 

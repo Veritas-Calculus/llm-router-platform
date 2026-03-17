@@ -46,7 +46,7 @@ func (s *Service) Register(ctx context.Context, email, password, name string) (*
 		return nil, errors.New("registration failed") // generic to prevent user enumeration
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 12) // L1: cost=12 for stronger brute-force resistance
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +243,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, name strin
 		IsActive:   true,
 		RateLimit:  1000,
 		DailyLimit: 10000,
+		ExpiresAt:  time.Now().AddDate(1, 0, 0), // M5: default 1-year expiry
 	}
 
 	if err := s.apiKeyRepo.Create(ctx, apiKey); err != nil {

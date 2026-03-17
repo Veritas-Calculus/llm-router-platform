@@ -186,6 +186,7 @@ func (s *Service) PurgeOlderThan(ctx context.Context, retention time.Duration) (
 const (
 	ActionLogin             = "login"
 	ActionLoginFailed       = "login_failed"
+	ActionLogout            = "logout"
 	ActionRegister          = "register"
 	ActionPasswordChange    = "password_change"
 	ActionRoleChange        = "role_change"

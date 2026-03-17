@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 
@@ -44,17 +45,32 @@ type Message struct {
 }
 
 // AddMessage adds a message to conversation memory.
+// L4: Content is encrypted at rest using AES-256-GCM.
 func (s *Service) AddMessage(ctx context.Context, userID uuid.UUID, conversationID, role, content string, tokenCount int) error {
 	sequence, err := s.getNextSequence(ctx, userID, conversationID)
 	if err != nil {
 		return err
 	}
 
+	// L4: Encrypt content before storing
+	encryptedContent := content
+	if crypto.IsInitialized() {
+		enc, err := crypto.Encrypt(content)
+		if err != nil {
+			s.logger.Warn("failed to encrypt conversation content, storing plaintext",
+				zap.Error(err),
+				zap.String("conversation_id", conversationID),
+			)
+		} else {
+			encryptedContent = enc
+		}
+	}
+
 	memory := &models.ConversationMemory{
 		UserID:         userID,
 		ConversationID: conversationID,
 		Role:           role,
-		Content:        content,
+		Content:        encryptedContent,
 		TokenCount:     tokenCount,
 		Sequence:       sequence,
 	}
@@ -67,6 +83,7 @@ func (s *Service) AddMessage(ctx context.Context, userID uuid.UUID, conversation
 }
 
 // GetConversation retrieves conversation messages.
+// L4: Content is decrypted on read.
 func (s *Service) GetConversation(ctx context.Context, userID uuid.UUID, conversationID string) ([]Message, error) {
 	cached, err := s.getFromCache(ctx, userID, conversationID)
 	if err == nil && cached != nil {
@@ -80,9 +97,16 @@ func (s *Service) GetConversation(ctx context.Context, userID uuid.UUID, convers
 
 	messages := make([]Message, len(memories))
 	for i, m := range memories {
+		content := m.Content
+		// L4: Try to decrypt; if it fails, assume plaintext (legacy data)
+		if crypto.IsInitialized() {
+			if decrypted, err := crypto.Decrypt(content); err == nil {
+				content = decrypted
+			}
+		}
 		messages[i] = Message{
 			Role:       m.Role,
-			Content:    m.Content,
+			Content:    content,
 			TokenCount: m.TokenCount,
 		}
 	}
@@ -224,9 +248,16 @@ func (s *Service) updateCache(ctx context.Context, userID uuid.UUID, conversatio
 
 	messages := make([]Message, len(memories))
 	for i, m := range memories {
+		content := m.Content
+		// L4: Decrypt content before caching
+		if crypto.IsInitialized() {
+			if decrypted, err := crypto.Decrypt(content); err == nil {
+				content = decrypted
+			}
+		}
 		messages[i] = Message{
 			Role:       m.Role,
-			Content:    m.Content,
+			Content:    content,
 			TokenCount: m.TokenCount,
 		}
 	}

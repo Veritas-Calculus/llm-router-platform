@@ -39,11 +39,30 @@ type fallbackEntry struct {
 // NewRateLimiter creates a new Redis-backed rate limiter.
 // If redisClient is nil, the in-memory fallback is used instead of disabling rate limiting.
 func NewRateLimiter(requestsPerMinute int, redisClient *redis.Client, logger *zap.Logger) *RateLimiter {
-	return &RateLimiter{
+	r := &RateLimiter{
 		requestsPerMinute: requestsPerMinute,
 		redisClient:       redisClient,
 		logger:            logger,
 		fallbackCounter:   make(map[string]*fallbackEntry),
+	}
+	// M2: Start background cleanup goroutine to prevent memory leak
+	go r.cleanupLoop()
+	return r
+}
+
+// cleanupLoop periodically evicts expired entries from the in-memory fallback map.
+func (r *RateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		r.fallbackMu.Lock()
+		now := time.Now()
+		for key, entry := range r.fallbackCounter {
+			if now.Sub(entry.windowAt) > 2*time.Minute {
+				delete(r.fallbackCounter, key)
+			}
+		}
+		r.fallbackMu.Unlock()
 	}
 }
 

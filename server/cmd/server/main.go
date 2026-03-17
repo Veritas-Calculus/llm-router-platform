@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"net/http"
 	"os"
@@ -75,8 +76,13 @@ func run() error {
 	}
 
 	// Warn if admin password does not meet complexity requirements
+	// L5: In non-debug mode, refuse to start with a weak admin password
 	if cfg.Admin.Password != "" && !isStrongPassword(cfg.Admin.Password) {
-		logger.Warn("ADMIN_PASSWORD does not meet complexity requirements (min 8 chars, upper+lower+digit). Consider updating it.")
+		if cfg.Server.Mode == "debug" {
+			logger.Warn("ADMIN_PASSWORD does not meet complexity requirements (min 8 chars, upper+lower+digit). Consider updating it.")
+		} else {
+			logger.Fatal("ADMIN_PASSWORD does not meet complexity requirements (min 8 chars, upper+lower+digit) — refusing to start in production mode")
+		}
 	}
 
 	// R7: Warn if CORS allows all origins in non-debug mode
@@ -101,11 +107,19 @@ func run() error {
 	repos := initRepositories(db)
 
 	// Initialize Redis client for rate limiting
-	redisClient := redis.NewClient(&redis.Options{
+	redisOpts := &redis.Options{
 		Addr:     cfg.Redis.GetRedisAddr(),
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
-	})
+	}
+	// H2: Enable TLS for Redis connection when configured
+	if cfg.Redis.TLSEnabled {
+		redisOpts.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+		logger.Info("redis TLS enabled")
+	}
+	redisClient := redis.NewClient(redisOpts)
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
 		logger.Warn("redis connection failed, rate limiting will be disabled", zap.Error(err))
 		redisClient = nil

@@ -131,6 +131,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// Audit: successful registration
+	if h.auditService != nil {
+		h.auditService.Log(c.Request.Context(), audit.ActionRegister, userObj.ID, userObj.ID,
+			c.ClientIP(), c.Request.UserAgent(), map[string]interface{}{"email": userObj.Email})
+	}
+
 	token, err := h.generateToken(userObj.ID, userObj.Email, userObj.Role)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate token"})
@@ -189,7 +195,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		}
 		// Increment lockout counter
 		h.recordFailedLogin(c.Request.Context(), req.Email)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		// H3: Hardcoded error — never propagate internal error details to prevent user enumeration
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
 
@@ -337,6 +344,34 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "password changed"})
 }
 
+// Logout invalidates all existing tokens for the current user.
+func (h *AuthHandler) Logout(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	id, err := uuid.Parse(userID.(string))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+
+	if err := h.userService.InvalidateTokens(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to logout"})
+		return
+	}
+
+	// Audit: logout
+	if h.auditService != nil {
+		h.auditService.Log(c.Request.Context(), audit.ActionLogout, id, id,
+			c.ClientIP(), c.Request.UserAgent(), nil)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "logged out"})
+}
+
 // ─── Account Lockout Helpers ────────────────────────────────────────────
 
 // isAccountLockedOut checks whether the given email has exceeded the lockout threshold.
@@ -379,17 +414,22 @@ func (h *AuthHandler) clearFailedLogins(ctx context.Context, email string) {
 
 // ─── Invite Code Methods ────────────────────────────────────────────────
 
-// validateAndConsumeInviteCode checks the invite code against DB records
-// then falls back to the legacy static INVITE_CODE env var.
+// validateAndConsumeInviteCode atomically checks and consumes an invite code.
+// Uses a single SQL UPDATE with conditions to avoid race conditions (M1 fix).
 func (h *AuthHandler) validateAndConsumeInviteCode(ctx context.Context, code string) bool {
-	// 1. Try DB-backed invite codes
+	// 1. Try DB-backed invite codes — atomic check-and-consume
 	if h.db != nil {
-		var ic models.InviteCode
-		if err := h.db.WithContext(ctx).Where("code = ?", code).First(&ic).Error; err == nil {
-			if ic.IsValid() {
-				h.db.Model(&ic).UpdateColumn("use_count", gorm.Expr("use_count + 1"))
-				return true
-			}
+		now := time.Now()
+		result := h.db.WithContext(ctx).
+			Model(&models.InviteCode{}).
+			Where("code = ? AND is_active = true AND (max_uses = 0 OR use_count < max_uses) AND (expires_at IS NULL OR expires_at > ?)", code, now).
+			UpdateColumn("use_count", gorm.Expr("use_count + 1"))
+		if result.Error == nil && result.RowsAffected > 0 {
+			return true
+		}
+		// If the code exists in DB but wasn't consumed, it's invalid
+		var exists int64
+		if h.db.WithContext(ctx).Model(&models.InviteCode{}).Where("code = ?", code).Count(&exists).Error == nil && exists > 0 {
 			return false // Code exists but is expired/exhausted/disabled
 		}
 	}
