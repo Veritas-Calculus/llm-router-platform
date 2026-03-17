@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"go.uber.org/zap"
@@ -63,9 +64,9 @@ func TestWebhookChannelSendFailure(t *testing.T) {
 }
 
 func TestDispatcherMultipleChannels(t *testing.T) {
-	var count int
+	var count atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		count++
+		count.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer ts.Close()
@@ -84,8 +85,8 @@ func TestDispatcherMultipleChannels(t *testing.T) {
 
 	d.Dispatch(context.Background(), payload)
 
-	if count != 2 {
-		t.Errorf("expected 2 deliveries, got %d", count)
+	if count.Load() != 2 {
+		t.Errorf("expected 2 deliveries, got %d", count.Load())
 	}
 }
 
