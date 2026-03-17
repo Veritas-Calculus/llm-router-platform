@@ -84,9 +84,33 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (*mo
 	return user, nil
 }
 
+// GetByEmail retrieves a user by email.
+func (s *Service) GetByEmail(ctx context.Context, email string) (*models.User, error) {
+	return s.userRepo.GetByEmail(ctx, email)
+}
+
 // GetByID retrieves a user by ID.
 func (s *Service) GetByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	return s.userRepo.GetByID(ctx, id)
+}
+
+// ResetPassword resets a user's password using an ID (typically from a reset token).
+func (s *Service) ResetPassword(ctx context.Context, id uuid.UUID, newPass string) error {
+	user, err := s.userRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	user.PasswordHash = string(hashedPassword)
+	user.RequirePasswordChange = false
+	user.TokensInvalidatedAt = time.Now() // revoke all existing sessions
+
+	return s.userRepo.Update(ctx, user)
 }
 
 // ListUsers returns all users (admin only).

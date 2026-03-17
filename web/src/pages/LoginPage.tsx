@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { authApi } from '@/lib/api';
@@ -139,6 +139,16 @@ function LoginPage() {
                 required
                 minLength={6}
               />
+              {isLogin && (
+                <div className="flex justify-end mt-1">
+                  <Link
+                    to="/forgot-password"
+                    className="text-sm text-apple-blue hover:underline font-medium"
+                  >
+                    Forgot Password?
+                  </Link>
+                </div>
+              )}
             </div>
 
             <button type="submit" className="btn-primary w-full py-3" disabled={loading}>

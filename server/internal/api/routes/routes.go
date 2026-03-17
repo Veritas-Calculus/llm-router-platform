@@ -10,6 +10,7 @@ import (
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/billing"
+	"llm-router-platform/internal/service/email"
 	"llm-router-platform/internal/service/health"
 	"llm-router-platform/internal/service/memory"
 	"llm-router-platform/internal/service/observability"
@@ -145,8 +146,9 @@ func Setup(
 
 	// ─── API Routes ────────────────────────────────────────────────────
 	auditService := audit.NewService(services.DB, logger)
+	emailService := email.NewService(cfg.Email, cfg.Frontend.URL)
 
-	authHandler := handlers.NewAuthHandler(services.User, auditService, &cfg.JWT, cfg.Registration.Mode, cfg.Registration.InviteCode, services.RedisClient, services.DB, logger)
+	authHandler := handlers.NewAuthHandler(services.User, auditService, emailService, &cfg.JWT, cfg.Registration.Mode, cfg.Registration.InviteCode, services.RedisClient, services.DB, logger)
 	apiKeyHandler := handlers.NewAPIKeyHandler(services.User, logger)
 	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Observability, logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)
@@ -184,6 +186,8 @@ func Setup(
 				auth.POST("/register", authHandler.Register)
 				auth.POST("/login", authHandler.Login)
 				auth.POST("/token/rotate", authHandler.RotateRefreshToken) // Refresh token rotation (validates refresh token from body)
+				auth.POST("/forgot-password", authHandler.ForgotPassword)
+				auth.POST("/reset-password", authHandler.ResetPassword)
 			}
 
 			// ── All authenticated users ─────────────────────────

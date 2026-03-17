@@ -19,12 +19,14 @@ type Config struct {
 	ProxyPool     ProxyPoolConfig
 	HealthCheck   HealthCheckConfig
 	Alert         AlertConfig
+	Email         EmailConfig
 	JWT           JWTConfig
 	RateLimit     RateLimitConfig
 	Log           LogConfig
 	Admin         AdminConfig
 	Registration  RegistrationConfig
 	Observability ObservabilityConfig
+	Frontend      FrontendConfig
 }
 
 // ServerConfig holds server-related configuration.
@@ -91,15 +93,22 @@ type AlertConfig struct {
 	Enabled      bool
 	WebhookURL   string
 	EmailEnabled bool
-	EmailConfig  EmailConfig
 }
 
-// EmailConfig holds email notification configuration.
+// EmailConfig holds transactional email configuration.
 type EmailConfig struct {
-	SMTPHost string
-	SMTPPort int
+	Enabled  bool
+	Host     string
+	Port     int
+	Username string
+	Password string // #nosec G101
 	From     string
-	To       string
+	FromName string
+}
+
+// FrontendConfig holds frontend-related configuration.
+type FrontendConfig struct {
+	URL string
 }
 
 // JWTConfig holds JWT authentication configuration.
@@ -207,12 +216,15 @@ func Load() (*Config, error) {
 			Enabled:      viper.GetBool("ALERT_ENABLED"),
 			WebhookURL:   viper.GetString("ALERT_WEBHOOK_URL"),
 			EmailEnabled: viper.GetBool("ALERT_EMAIL_ENABLED"),
-			EmailConfig: EmailConfig{
-				SMTPHost: viper.GetString("ALERT_EMAIL_SMTP_HOST"),
-				SMTPPort: viper.GetInt("ALERT_EMAIL_SMTP_PORT"),
-				From:     viper.GetString("ALERT_EMAIL_FROM"),
-				To:       viper.GetString("ALERT_EMAIL_TO"),
-			},
+		},
+		Email: EmailConfig{
+			Enabled:  viper.GetBool("EMAIL_ENABLED"),
+			Host:     viper.GetString("EMAIL_SMTP_HOST"),
+			Port:     viper.GetInt("EMAIL_SMTP_PORT"),
+			Username: viper.GetString("EMAIL_SMTP_USER"),
+			Password: viper.GetString("EMAIL_SMTP_PASS"),
+			From:     viper.GetString("EMAIL_FROM"),
+			FromName: viper.GetString("EMAIL_FROM_NAME"),
 		},
 		JWT: JWTConfig{
 			Secret:           viper.GetString("JWT_SECRET"),
@@ -241,6 +253,9 @@ func Load() (*Config, error) {
 			LangfusePublicKey: viper.GetString("LANGFUSE_PUBLIC_KEY"),
 			LangfuseSecretKey: viper.GetString("LANGFUSE_SECRET_KEY"),
 			LangfuseHost:      viper.GetString("LANGFUSE_HOST"),
+		},
+		Frontend: FrontendConfig{
+			URL: viper.GetString("FRONTEND_URL"),
 		},
 	}
 
@@ -277,6 +292,16 @@ func (c *Config) Validate() error {
 		port := 0
 		if _, err := fmt.Sscanf(c.Redis.Port, "%d", &port); err != nil || port < 1 || port > 65535 {
 			errs = append(errs, fmt.Sprintf("REDIS_PORT %q is not a valid port (1-65535)", c.Redis.Port))
+		}
+	}
+
+	// Email config validation if enabled
+	if c.Email.Enabled {
+		if c.Email.Host == "" {
+			errs = append(errs, "EMAIL_SMTP_HOST is required when email is enabled")
+		}
+		if c.Email.From == "" {
+			errs = append(errs, "EMAIL_FROM is required when email is enabled")
 		}
 	}
 
@@ -328,6 +353,10 @@ func setDefaults() {
 	viper.SetDefault("REDIS_PORT", "6379")
 	viper.SetDefault("REDIS_DB", 0)
 	viper.SetDefault("REDIS_TLS_ENABLED", false)
+	viper.SetDefault("EMAIL_ENABLED", false)
+	viper.SetDefault("EMAIL_SMTP_PORT", 587)
+	viper.SetDefault("EMAIL_FROM_NAME", "LLM Router")
+	viper.SetDefault("FRONTEND_URL", "http://localhost:5173")
 	viper.SetDefault("OPENAI_BASE_URL", "https://api.openai.com/v1")
 	viper.SetDefault("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 	viper.SetDefault("OLLAMA_BASE_URL", "http://host.docker.internal:11434")

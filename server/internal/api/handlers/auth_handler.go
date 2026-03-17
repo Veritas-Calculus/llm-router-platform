@@ -13,6 +13,7 @@ import (
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/audit"
+	"llm-router-platform/internal/service/email"
 	"llm-router-platform/internal/service/user"
 
 	"github.com/gin-gonic/gin"
@@ -32,6 +33,7 @@ const (
 type AuthHandler struct {
 	userService      *user.Service
 	auditService     *audit.Service
+	emailService     *email.Service
 	jwtConfig        *config.JWTConfig
 	registrationMode string
 	inviteCode       string // static invite code (legacy fallback)
@@ -41,13 +43,14 @@ type AuthHandler struct {
 }
 
 // NewAuthHandler creates a new auth handler.
-func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, jwtConfig *config.JWTConfig, registrationMode, inviteCode string, redisClient *redis.Client, db *gorm.DB, logger *zap.Logger) *AuthHandler {
+func NewAuthHandler(userService *user.Service, auditSvc *audit.Service, emailSvc *email.Service, jwtConfig *config.JWTConfig, registrationMode, inviteCode string, redisClient *redis.Client, db *gorm.DB, logger *zap.Logger) *AuthHandler {
 	if registrationMode == "" {
 		registrationMode = "closed"
 	}
 	return &AuthHandler{
 		userService:      userService,
 		auditService:     auditSvc,
+		emailService:     emailSvc,
 		jwtConfig:        jwtConfig,
 		registrationMode: registrationMode,
 		inviteCode:       inviteCode,
@@ -135,6 +138,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if h.auditService != nil {
 		h.auditService.Log(c.Request.Context(), audit.ActionRegister, userObj.ID, userObj.ID,
 			c.ClientIP(), c.Request.UserAgent(), map[string]interface{}{"email": userObj.Email})
+	}
+
+	// Send welcome email (async, best-effort)
+	if h.emailService != nil {
+		go func() {
+			if err := h.emailService.SendWelcomeEmail(userObj.Email, userObj.Name); err != nil {
+				h.logger.Error("failed to send welcome email", zap.Error(err), zap.String("email", userObj.Email))
+			}
+		}()
 	}
 
 	token, err := h.generateToken(userObj.ID, userObj.Email, userObj.Role)
@@ -237,6 +249,106 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"created_at":              userObj.CreatedAt,
 		},
 	})
+}
+
+// ForgotPasswordRequest represents forgot password request.
+type ForgotPasswordRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+// ForgotPassword handles the initial step of password reset: sending a link.
+func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+	var req ForgotPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 1. Check if user exists (generic response to prevent enumeration)
+	userObj, err := h.userService.GetByEmail(c.Request.Context(), req.Email)
+	if err != nil {
+		// Even if not found, we return 200 to prevent user enumeration
+		c.JSON(http.StatusOK, gin.H{"message": "If an account exists for that email, a password reset link has been sent."})
+		return
+	}
+
+	// 2. Generate reset token
+	token := uuid.New().String()
+	key := fmt.Sprintf("auth:reset_token:%s", token)
+
+	// 3. Store token in Redis (1 hour expiry)
+	if h.redisClient != nil {
+		if err := h.redisClient.Set(c.Request.Context(), key, userObj.ID.String(), time.Hour).Err(); err != nil {
+			h.logger.Error("failed to store reset token in redis", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process request"})
+			return
+		}
+	} else {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "password reset is temporarily unavailable"})
+		return
+	}
+
+	// 4. Send email (async)
+	if h.emailService != nil {
+		go func() {
+			if err := h.emailService.SendResetPasswordEmail(userObj.Email, token); err != nil {
+				h.logger.Error("failed to send reset password email", zap.Error(err), zap.String("email", userObj.Email))
+			}
+		}()
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "If an account exists for that email, a password reset link has been sent."})
+}
+
+// ResetPasswordRequest represents reset password request.
+type ResetPasswordRequest struct {
+	Token       string `json:"token" binding:"required"`
+	NewPassword string `json:"new_password" binding:"required,min=8,max=128"`
+}
+
+// ResetPassword handles the actual password update using a valid token.
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	var req ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if msg := validatePassword(req.NewPassword); msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
+
+	// 1. Validate token in Redis
+	key := fmt.Sprintf("auth:reset_token:%s", req.Token)
+	userIDStr, err := h.redisClient.Get(c.Request.Context(), key).Result()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or expired reset token"})
+		return
+	}
+
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process request"})
+		return
+	}
+
+	// 2. Update password
+	if err := h.userService.ResetPassword(c.Request.Context(), userID, req.NewPassword); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reset password"})
+		return
+	}
+
+	// 3. Invalidate token
+	h.redisClient.Del(c.Request.Context(), key)
+
+	// Audit: password reset
+	if h.auditService != nil {
+		h.auditService.Log(c.Request.Context(), audit.ActionPasswordChange, userID, userID,
+			c.ClientIP(), c.Request.UserAgent(), map[string]interface{}{"method": "reset_token"})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Password has been successfully reset."})
 }
 
 // ─── Profile & Password ────────────────────────────────────────────────
