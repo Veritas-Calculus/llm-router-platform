@@ -27,6 +27,7 @@ type Config struct {
 	Registration  RegistrationConfig
 	Observability ObservabilityConfig
 	Frontend      FrontendConfig
+	Stripe        StripeConfig
 }
 
 // ServerConfig holds server-related configuration.
@@ -109,6 +110,14 @@ type EmailConfig struct {
 // FrontendConfig holds frontend-related configuration.
 type FrontendConfig struct {
 	URL string
+}
+
+// StripeConfig holds Stripe payment configuration.
+type StripeConfig struct {
+	Enabled        bool
+	SecretKey      string // #nosec G101
+	PublishableKey string // #nosec G101
+	WebhookSecret  string // #nosec G101
 }
 
 // JWTConfig holds JWT authentication configuration.
@@ -265,6 +274,12 @@ func Load() (*Config, error) {
 		Frontend: FrontendConfig{
 			URL: viper.GetString("FRONTEND_URL"),
 		},
+		Stripe: StripeConfig{
+			Enabled:        viper.GetBool("STRIPE_ENABLED"),
+			SecretKey:      viper.GetString("STRIPE_SECRET_KEY"),
+			PublishableKey: viper.GetString("STRIPE_PUBLISHABLE_KEY"),
+			WebhookSecret:  viper.GetString("STRIPE_WEBHOOK_SECRET"),
+		},
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -387,6 +402,7 @@ func setDefaults() {
 	viper.SetDefault("SENTRY_ENABLED", false)
 	viper.SetDefault("SENTRY_ENVIRONMENT", "production")
 	viper.SetDefault("SENTRY_SAMPLE_RATE", 1.0)
+	viper.SetDefault("STRIPE_ENABLED", false)
 }
 
 // GetDSN returns the database connection string with proper escaping.

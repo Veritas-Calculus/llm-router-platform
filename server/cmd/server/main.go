@@ -28,10 +28,13 @@ import (
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/database"
+	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/billing"
+	configService "llm-router-platform/internal/service/config"
 	"llm-router-platform/internal/service/health"
+	"llm-router-platform/internal/service/mcp"
 	"llm-router-platform/internal/service/memory"
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
@@ -111,6 +114,7 @@ func run() error {
 	_ = db.SeedDefaultProviders()
 	_ = db.SeedDefaultModels()
 	_ = db.SeedDefaultAdmin(&cfg.Admin)
+	seedDefaultPlans(db.DB)
 
 	gormDB := db.DB
 	repos := initRepositories(db)
@@ -137,6 +141,11 @@ func run() error {
 	}
 
 	services := initServices(repos, cfg, logger, redisClient, gormDB)
+
+	// Initialize MCP Service
+	if err := services.MCP.Initialize(context.Background()); err != nil {
+		logger.Error("failed to initialize MCP service", zap.Error(err))
+	}
 
 	gin.SetMode(cfg.Server.Mode)
 	engine := gin.New()
@@ -252,6 +261,11 @@ type Repositories struct {
 	Budget         *repository.BudgetRepository
 	Task           *repository.TaskRepository
 	AuditLog       *repository.AuditLogRepository
+	MCP            *repository.MCPRepository
+	Plan           *repository.PlanRepository
+	Subscription   *repository.SubscriptionRepository
+	Transaction    *repository.TransactionRepository
+	Config         *repository.ConfigRepository
 }
 
 func initRepositories(db *database.Database) *Repositories {
@@ -270,6 +284,11 @@ func initRepositories(db *database.Database) *Repositories {
 		Budget:         repository.NewBudgetRepository(db.DB),
 		Task:           repository.NewTaskRepository(db.DB),
 		AuditLog:       repository.NewAuditLogRepository(db.DB),
+		MCP:            repository.NewMCPRepository(db.DB),
+		Plan:           repository.NewPlanRepository(db.DB),
+		Subscription:   repository.NewSubscriptionRepository(db.DB),
+		Transaction:    repository.NewTransactionRepository(db.DB),
+		Config:         repository.NewConfigRepository(db.DB),
 	}
 }
 
@@ -280,12 +299,22 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	// API keys are stored encrypted in the database and configured via Web UI
 	providerRegistry := provider.NewRegistry(logger)
 
-	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, providerRegistry, logger)
+	mcpService := mcp.NewService(repos.MCP, logger)
+	configService := configService.NewService(repos.Config, logger)
+
+	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, providerRegistry, mcpService, logger)
 	if redisClient != nil {
 		routerService.SetRedisClient(redisClient)
 	}
 	billingService := billing.NewService(repos.UsageLog, repos.Model, redisClient, logger)
 	budgetService := billing.NewBudgetService(repos.UsageLog, repos.Budget, logger)
+	subscriptionService := billing.NewSubscriptionService(repos.Plan, repos.Subscription, repos.UsageLog, logger)
+	balanceService := billing.NewBalanceService(gormDB, repos.User, repos.Transaction, logger)
+	
+	// Dynamically get Stripe config from DB if available
+	stripeCfg := configService.GetStripeConfig(context.Background(), cfg.Stripe)
+	paymentService := billing.NewPaymentService(stripeCfg, cfg.Frontend.URL, repos.Plan, repos.Subscription, repos.Transaction, logger)
+	
 	memoryService := memory.NewService(repos.Memory, redisClient, logger)
 	proxyService := proxy.NewService(repos.Proxy, logger)
 	obsService := observability.NewLangfuseService(cfg.Observability, logger)
@@ -311,6 +340,10 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		Router:        routerService,
 		Billing:       billingService,
 		BudgetService: budgetService,
+		Subscription:  subscriptionService,
+		Payment:       paymentService,
+		Balance:       balanceService,
+		SystemConfig:  configService,
 		Health:        healthService,
 		Memory:        memoryService,
 		Observability: obsService,
@@ -318,8 +351,39 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		Provider:      providerRegistry,
 		TaskService:   taskService,
 		AuditService:  auditService,
+		MCP:           mcpService,
 		RedisClient:   redisClient,
 		DB:            gormDB, // For health checks (operational handler)
+	}
+}
+
+func seedDefaultPlans(db *gorm.DB) {
+	plans := []models.Plan{
+		{
+			Name:         "Free",
+			Description:  "Perfect for trying out the platform",
+			PriceMonth:   0,
+			TokenLimit:   100000,
+			RateLimit:    5,
+			SupportLevel: "standard",
+			Features:     "Basic models access, 100K tokens/month, 5 RPM",
+		},
+		{
+			Name:         "Pro",
+			Description:  "For individuals and small teams",
+			PriceMonth:   20,
+			TokenLimit:   5000000,
+			RateLimit:    50,
+			SupportLevel: "priority",
+			Features:     "All models access, MCP support, 5M tokens/month, 50 RPM",
+		},
+	}
+
+	for _, p := range plans {
+		var existing models.Plan
+		if err := db.Where("name = ?", p.Name).First(&existing).Error; err != nil {
+			db.Create(&p)
+		}
 	}
 }
 

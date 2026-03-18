@@ -131,6 +131,7 @@ export interface User {
   require_password_change?: boolean;
   monthly_token_limit?: number;
   monthly_budget_usd?: number;
+  balance?: number;
   created_at?: string;
 }
 
@@ -160,6 +161,8 @@ export interface OverviewStats {
   cost_today: number;
   tokens_today: number;
   error_count: number;
+  mcp_call_count: number;
+  mcp_error_count: number;
   api_keys: {
     total: number;
     healthy: number;
@@ -339,6 +342,65 @@ export interface MonthlyUsage {
   total_cost: number;
 }
 
+export interface McpServer {
+  id: string;
+  name: string;
+  type: 'stdio' | 'sse';
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  is_active: boolean;
+  status: 'connected' | 'disconnected' | 'error';
+  last_error?: string;
+  last_checked_at: string;
+  tools?: McpTool[];
+  created_at: string;
+}
+
+export interface McpTool {
+  id: string;
+  server_id: string;
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  is_active: boolean;
+}
+
+export interface Plan {
+  id: string;
+  name: string;
+  description: string;
+  price_month: number;
+  token_limit: number;
+  rate_limit: number;
+  support_level: string;
+  is_active: boolean;
+  features: string;
+}
+
+export interface Subscription {
+  id: string;
+  user_id: string;
+  plan_id: string;
+  status: 'active' | 'trialing' | 'canceled' | 'past_due';
+  current_period_start: string;
+  current_period_end: string;
+  cancel_at_period_end: boolean;
+  plan: Plan;
+}
+
+export interface Order {
+  id: string;
+  order_no: string;
+  amount: number;
+  currency: string;
+  status: 'pending' | 'paid' | 'failed' | 'expired';
+  payment_method: string;
+  created_at: string;
+  plan?: Plan;
+}
+
 export const authApi = {
   login: (data: LoginRequest) => api.post<LoginResponse>('/auth/login', data),
   register: (data: RegisterRequest) => api.post<LoginResponse>('/auth/register', data),
@@ -434,6 +496,26 @@ export const proxiesApi = {
     }>('/proxies/test-all'),
 };
 
+export const mcpApi = {
+  listServers: () => api.get<{ data: McpServer[] }>('/mcp/servers'),
+  getServer: (id: string) => api.get<McpServer>(`/mcp/servers/${id}`),
+  createServer: (data: Partial<McpServer>) => api.post<McpServer>('/mcp/servers', data),
+  updateServer: (id: string, data: Partial<McpServer>) => api.put<McpServer>(`/mcp/servers/${id}`, data),
+  deleteServer: (id: string) => api.delete(`/mcp/servers/${id}`),
+  refreshTools: (id: string) => api.post<{ message: string }>(`/mcp/servers/${id}/refresh`),
+  listTools: () => api.get<{ data: McpTool[] }>('/mcp/tools'),
+};
+
+export const plansApi = {
+  list: () => api.get<{ data: Plan[] }>('/plans'),
+  getMySubscription: () => api.get<Subscription>('/plans/my'),
+  checkout: (planId: string) => api.post<{ url: string }>('/plans/checkout', { plan_id: planId }),
+  getOrders: () => api.get<{ data: Order[] }>('/plans/orders'),
+  // Admin
+  create: (data: Partial<Plan>) => api.post<Plan>('/plans', data),
+  update: (id: string, data: Partial<Plan>) => api.put<Plan>(`/plans/${id}`, data),
+};
+
 // ── Admin: User Management ──────────────────────────────────
 
 export interface UserListItem {
@@ -482,4 +564,3 @@ export const usersApi = {
   updateQuota: (id: string, data: { monthly_token_limit?: number; monthly_budget_usd?: number }) =>
     api.put(`/users/${id}/quota`, data),
 };
-

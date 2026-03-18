@@ -51,9 +51,13 @@
         "dashboard": "Dashboard",
         "usage": "Usage",
         "api_keys": "API Keys",
+        "plans": "Plans",
+        "billing": "Billing",
+        "profile": "My Profile",
         "users": "Users",
         "health": "Health",
         "providers": "Providers",
+        "mcp": "MCP Tools",
         "proxies": "Proxies",
         "settings": "Settings",
         "docs": "Docs"

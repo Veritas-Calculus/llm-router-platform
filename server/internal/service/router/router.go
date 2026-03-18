@@ -15,6 +15,7 @@ import (
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/internal/service/mcp"
 	"llm-router-platform/internal/service/provider"
 
 	"github.com/go-redis/redis/v8"
@@ -69,6 +70,7 @@ type Router struct {
 	proxyRepo        repository.ProxyRepo
 	modelRepo        repository.ModelRepo
 	registry         *provider.Registry
+	mcpService       *mcp.Service
 	strategy         Strategy
 	roundRobinIndex  int
 	redisClient      *redis.Client          // nil = use in-memory fallback
@@ -94,6 +96,7 @@ func NewRouter(
 	proxyRepo repository.ProxyRepo,
 	modelRepo repository.ModelRepo,
 	registry *provider.Registry,
+	mcpService *mcp.Service,
 	logger *zap.Logger,
 ) *Router {
 	return &Router{
@@ -102,6 +105,7 @@ func NewRouter(
 		proxyRepo:        proxyRepo,
 		modelRepo:        modelRepo,
 		registry:         registry,
+		mcpService:       mcpService,
 		strategy:         StrategyWeighted,
 		failedKeys:       make(map[uuid.UUID]*FailedKeyInfo),
 		providerFailures: make(map[uuid.UUID]int),

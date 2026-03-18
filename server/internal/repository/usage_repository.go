@@ -102,6 +102,8 @@ type UsageSummaryRow struct {
 	AvgLatency    float64 `json:"avg_latency"`
 	SuccessCount  int64   `json:"success_count"`
 	ErrorCount    int64   `json:"error_count"`
+	MCPCallCount  int64   `json:"mcp_call_count"`
+	MCPErrorCount int64   `json:"mcp_error_count"`
 }
 
 // AggregateByTimeRange returns SQL-aggregated usage for a user in a time range.
@@ -113,7 +115,9 @@ func (r *UsageLogRepository) AggregateByTimeRange(ctx context.Context, userID *u
 				COALESCE(SUM(cost), 0) AS total_cost,
 				COALESCE(AVG(latency), 0) AS avg_latency,
 				COALESCE(SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END), 0) AS success_count,
-				COALESCE(SUM(CASE WHEN status_code < 200 OR status_code >= 300 THEN 1 ELSE 0 END), 0) AS error_count`).
+				COALESCE(SUM(CASE WHEN status_code < 200 OR status_code >= 300 THEN 1 ELSE 0 END), 0) AS error_count,
+				COALESCE(SUM(mcp_call_count), 0) AS mcp_call_count,
+				COALESCE(SUM(mcp_error_count), 0) AS mcp_error_count`).
 		Where("created_at >= ? AND created_at <= ?", start, end)
 
 	if userID != nil {

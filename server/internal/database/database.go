@@ -64,6 +64,13 @@ func (d *Database) Migrate() error {
 		&models.Budget{},
 		&models.AsyncTask{},
 		&models.InviteCode{},
+		&models.MCPServer{},
+		&models.MCPTool{},
+		&models.Plan{},
+		&models.Subscription{},
+		&models.Order{},
+		&models.Transaction{},
+		&models.SystemConfig{},
 	)
 }
 

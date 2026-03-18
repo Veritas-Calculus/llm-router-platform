@@ -20,30 +20,45 @@ import (
 	"go.uber.org/zap"
 )
 
-
 // ChatHandler handles chat completion endpoints.
 type ChatHandler struct {
-	router  *router.Router
-	billing *billing.Service
-	memory  *memory.Service
-	obsInfo observability.Service
-	logger  *zap.Logger
+	router     *router.Router
+	billing    *billing.Service
+	memory     *memory.Service
+	subService *billing.SubscriptionService
+	balance    *billing.BalanceService
+	obsInfo    observability.Service
+	logger     *zap.Logger
 }
 
 // NewChatHandler creates a new chat handler.
-func NewChatHandler(r *router.Router, b *billing.Service, m *memory.Service, obs observability.Service, logger *zap.Logger) *ChatHandler {
+func NewChatHandler(r *router.Router, b *billing.Service, m *memory.Service, sub *billing.SubscriptionService, bal *billing.BalanceService, obs observability.Service, logger *zap.Logger) *ChatHandler {
 	return &ChatHandler{
-		router:  r,
-		billing: b,
-		memory:  m,
-		obsInfo: obs,
-		logger:  logger,
+		router:     r,
+		billing:    b,
+		memory:     m,
+		subService: sub,
+		balance:    bal,
+		obsInfo:    obs,
+		logger:     logger,
 	}
 }
 
 // checkUserQuota verifies the user hasn't exceeded their monthly quota.
 // Returns nil if within quota, or an error message if exceeded.
 func (h *ChatHandler) checkUserQuota(c *gin.Context, userObj *models.User) *string {
+	// 1. Check Subscription-based quota (New)
+	if h.subService != nil {
+		ok, msg, err := h.subService.CheckQuota(c.Request.Context(), userObj.ID)
+		if err != nil {
+			h.logger.Error("subscription quota check failed", zap.Error(err))
+			// fallback to old budget check
+		} else if !ok {
+			return &msg
+		}
+	}
+
+	// 2. Fallback to existing manual Budget check (if any)
 	// Skip quota check if no limits set (0 = unlimited)
 	if userObj.MonthlyTokenLimit == 0 && userObj.MonthlyBudgetUSD == 0 {
 		return nil
@@ -70,6 +85,144 @@ func (h *ChatHandler) checkUserQuota(c *gin.Context, userObj *models.User) *stri
 	}
 
 	return nil
+}
+
+// AnthropicMessagesRequest represents an Anthropic messages request.
+type AnthropicMessagesRequest struct {
+	Model       string                  `json:"model" binding:"required"`
+	Messages    []AnthropicMessage      `json:"messages" binding:"required"`
+	MaxTokens   int                     `json:"max_tokens" binding:"required"`
+	Temperature *float64                `json:"temperature,omitempty"`
+	System      string                  `json:"system,omitempty"`
+	Stream      bool                    `json:"stream,omitempty"`
+	Tools       []AnthropicTool         `json:"tools,omitempty"`
+}
+
+type AnthropicMessage struct {
+	Role    string      `json:"role" binding:"required"`
+	Content interface{} `json:"content" binding:"required"`
+}
+
+type AnthropicTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+// AnthropicMessages handles Anthropic-compatible message requests.
+func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
+	var anthroReq AnthropicMessagesRequest
+	if err := c.ShouldBindJSON(&anthroReq); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Map Anthropic request to internal ChatRequest
+	internalMessages := make([]provider.Message, 0)
+	
+	// Add system message if present
+	if anthroReq.System != "" {
+		internalMessages = append(internalMessages, provider.Message{
+			Role:    "system",
+			Content: provider.StringContent(anthroReq.System),
+		})
+	}
+
+	for _, m := range anthroReq.Messages {
+		content := ""
+		switch v := m.Content.(type) {
+		case string:
+			content = v
+		case []interface{}:
+			// Simple mapping for complex content blocks
+			data, _ := json.Marshal(v)
+			content = string(data)
+		}
+		internalMessages = append(internalMessages, provider.Message{
+			Role:    m.Role,
+			Content: provider.StringContent(content),
+		})
+	}
+
+	var temp float64
+	if anthroReq.Temperature != nil {
+		temp = *anthroReq.Temperature
+	}
+
+	providerReq := &provider.ChatRequest{
+		Model:       anthroReq.Model,
+		Messages:    internalMessages,
+		MaxTokens:   anthroReq.MaxTokens,
+		Temperature: temp,
+		Stream:      anthroReq.Stream,
+	}
+
+	// Routing and quota check logic (simplified for brevity, reuses internal logic)
+	selectedProvider, apiKey, err := h.router.Route(c.Request.Context(), anthroReq.Model)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no providers available"})
+		return
+	}
+
+	userObj := c.MustGet("user").(*models.User)
+	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": *quotaErr})
+		return
+	}
+
+	// For now, only supporting non-streaming for Anthropic compat
+	if anthroReq.Stream {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "streaming not yet supported for Anthropic compatible API"})
+		return
+	}
+
+	start := time.Now()
+	result, err := h.router.ExecuteChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "provider error"})
+		return
+	}
+
+	resp := result.Response
+	latency := time.Since(start)
+
+	// Convert back to Anthropic response format
+	anthroResp := gin.H{
+		"id":    resp.ID,
+		"type":  "message",
+		"role":  "assistant",
+		"model": resp.Model,
+		"content": []gin.H{
+			{
+				"type": "text",
+				"text": resp.Choices[0].Message.Content.Text,
+			},
+		},
+		"usage": gin.H{
+			"input_tokens":  resp.Usage.PromptTokens,
+			"output_tokens": resp.Usage.CompletionTokens,
+		},
+	}
+
+	// Record usage
+	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+	usageLog := &models.UsageLog{
+		UserID:         userObj.ID,
+		APIKeyID:       userAPIKey.ID,
+		ProviderID:     selectedProvider.ID,
+		ModelName:      anthroReq.Model,
+		Latency:        latency.Milliseconds(),
+		StatusCode:     http.StatusOK,
+		RequestTokens:  resp.Usage.PromptTokens,
+		ResponseTokens: resp.Usage.CompletionTokens,
+		TotalTokens:    resp.Usage.TotalTokens,
+	}
+	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+	if h.balance != nil && usageLog.Cost > 0 {
+		_ = h.balance.DeductBalance(c.Request.Context(), userObj.ID, usageLog.Cost, "Anthropic API: "+anthroReq.Model, usageLog.ID.String())
+	}
+
+	c.JSON(http.StatusOK, anthroResp)
 }
 
 // ChatCompletionRequest represents a chat completion request.
@@ -273,9 +426,15 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	// Save conversation memory
 	if req.ConversationID != "" && h.memory != nil {
-		for _, m := range req.Messages {
-			_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, m.Role, m.Content.Text, 0)
+		// Save full message history including tool calls and results
+		for _, m := range result.FinalMessages {
+			content := m.Content.Text
+			if content == "" && len(m.ToolCalls) > 0 {
+				content = "[Tool Call]"
+			}
+			_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, m.Role, content, 0)
 		}
+		// Final assistant response
 		_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, req.ConversationID, "assistant", outText, resp.Usage.CompletionTokens)
 	}
 
@@ -290,8 +449,15 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		RequestTokens:  resp.Usage.PromptTokens,
 		ResponseTokens: resp.Usage.CompletionTokens,
 		TotalTokens:    resp.Usage.TotalTokens,
+		MCPCallCount:   result.MCPCallCount,
+		MCPErrorCount:  result.MCPErrorCount,
 	}
 	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+
+	// Deduct balance
+	if h.balance != nil && usageLog.Cost > 0 {
+		_ = h.balance.DeductBalance(c.Request.Context(), userObj.ID, usageLog.Cost, "LLM Request: "+req.Model, usageLog.ID.String())
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":      resp.ID,

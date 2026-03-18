@@ -10,8 +10,10 @@ import (
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/billing"
+	configService "llm-router-platform/internal/service/config"
 	"llm-router-platform/internal/service/email"
 	"llm-router-platform/internal/service/health"
+	"llm-router-platform/internal/service/mcp"
 	"llm-router-platform/internal/service/memory"
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
@@ -44,8 +46,13 @@ type Services struct {
 	Router        *router.Router
 	Billing       *billing.Service
 	BudgetService *billing.BudgetService
+	Subscription  *billing.SubscriptionService
+	Payment       *billing.PaymentService
+	Balance       *billing.BalanceService
+	SystemConfig  *configService.Service
 	Health        *health.Service
 	Memory        *memory.Service
+	MCP           *mcp.Service
 	Observability observability.Service
 	Proxy         *proxy.Service
 	Provider      *provider.Registry
@@ -150,7 +157,7 @@ func Setup(
 
 	authHandler := handlers.NewAuthHandler(services.User, services.AuditService, emailService, &cfg.JWT, cfg.Registration.Mode, cfg.Registration.InviteCode, services.RedisClient, services.DB, logger)
 	apiKeyHandler := handlers.NewAPIKeyHandler(services.User, logger)
-	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Observability, logger)
+	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Subscription, services.Balance, services.Observability, logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)
 	usageHandler := handlers.NewUsageHandler(services.Billing, logger)
 	healthHandler := handlers.NewHealthHandler(services.Health, logger)
@@ -160,6 +167,10 @@ func Setup(
 	providerHandler := handlers.NewProviderHandler(services.Router, services.Health, logger)
 	finopsHandler := handlers.NewFinOpsHandler(services.Billing, services.BudgetService, logger)
 	userHandler := handlers.NewUserHandler(services.User, services.Billing, services.RedisClient, logger)
+	mcpHandler := handlers.NewMCPHandler(services.MCP, logger)
+	planHandler := handlers.NewPlanHandler(services.Subscription, logger)
+	paymentHandler := handlers.NewPaymentHandler(services.Payment, logger)
+	configHandler := handlers.NewConfigHandler(services.SystemConfig, logger)
 
 	// Task handler (optional: only created if task service is wired)
 	var taskHandler *handlers.TaskHandler
@@ -258,7 +269,20 @@ func Setup(
 					dashboard.GET("/provider-stats", dashboardHandler.GetProviderStats)
 					dashboard.GET("/model-stats", dashboardHandler.GetModelStats)
 				}
+
+				// Plans & Subscriptions
+				plans := protected.Group("/plans")
+				{
+					plans.GET("", planHandler.ListPlans)
+					plans.GET("/my", planHandler.GetMySubscription)
+					plans.POST("/checkout", paymentHandler.CreateCheckoutSession)
+					plans.POST("/recharge", paymentHandler.CreateRechargeSession)
+					plans.GET("/orders", paymentHandler.GetMyOrders)
+				}
 			}
+
+			// ── Public / Webhooks ──────────────────────────────
+			v1.POST("/payments/webhook/stripe", paymentHandler.StripeWebhook)
 
 			// ── Admin only ──────────────────────────────────────
 			admin := v1.Group("")
@@ -335,6 +359,34 @@ func Setup(
 					providers.PUT("/:id/api-keys/:key_id", providerHandler.UpdateAPIKey)
 				}
 
+				// MCP management (admin only)
+				mcp := admin.Group("/mcp")
+				{
+					mcp.GET("/servers", mcpHandler.ListServers)
+					mcp.POST("/servers", mcpHandler.CreateServer)
+					mcp.GET("/servers/:id", mcpHandler.GetServer)
+					mcp.PUT("/servers/:id", mcpHandler.UpdateServer)
+					mcp.DELETE("/servers/:id", mcpHandler.DeleteServer)
+					mcp.POST("/servers/:id/refresh", mcpHandler.RefreshTools)
+					mcp.GET("/tools", mcpHandler.ListTools)
+					mcp.GET("/resources", mcpHandler.ListResources)
+					mcp.GET("/resources/read", mcpHandler.ReadResource)
+				}
+
+				// Plan management (admin only)
+				adminPlans := admin.Group("/plans")
+				{
+					adminPlans.POST("", planHandler.CreatePlan)
+					adminPlans.PUT("/:id", planHandler.UpdatePlan)
+				}
+
+				// System settings (admin only)
+				settings := admin.Group("/settings")
+				{
+					settings.GET("", configHandler.GetSettings)
+					settings.POST("", configHandler.UpdateSettings)
+				}
+
 				// System-wide FinOps (admin only)
 				adminFinops := admin.Group("/finops")
 				{
@@ -395,4 +447,9 @@ func registerLLMEndpoints(
 	models.Use(authMiddleware.APIKey())
 	models.GET("", modelHandler.List)
 	models.GET("/providers", modelHandler.ListProviders)
+
+	// ─── Anthropic-Compatible Routes ───────────────────────────
+	anthro := parent.Group("/v1/messages")
+	applyLLMMiddleware(anthro)
+	anthro.POST("", chatHandler.AnthropicMessages)
 }

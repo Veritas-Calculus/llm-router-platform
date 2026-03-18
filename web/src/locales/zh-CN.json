@@ -51,9 +51,13 @@
         "dashboard": "仪表盘",
         "usage": "用量统计",
         "api_keys": "API 密钥",
+        "plans": "付费方案",
+        "billing": "账单记录",
+        "profile": "个人中心",
         "users": "用户管理",
         "health": "健康检查",
         "providers": "服务商",
+        "mcp": "MCP 工具",
         "proxies": "代理池",
         "settings": "设置",
         "docs": "文档"

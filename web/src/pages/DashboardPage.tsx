@@ -9,6 +9,7 @@ import {
   ServerStackIcon,
   KeyIcon,
   GlobeAltIcon,
+  CommandLineIcon,
 } from '@heroicons/react/24/outline';
 import {
   LineChart,
@@ -110,8 +111,18 @@ function DashboardPage() {
       </div>
 
       {/* Quota Warnings */}
-      {user && (user.monthly_budget_usd! > 0 || user.monthly_token_limit! > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {user && (user.monthly_budget_usd! > 0 || user.monthly_token_limit! > 0 || user.balance !== undefined) && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card bg-apple-gray-50 border border-apple-gray-200">
+            <div className="flex justify-between text-sm mb-2">
+              <span className="font-semibold text-apple-gray-900">Current Balance</span>
+              <span className="text-apple-blue font-bold">
+                {formatCurrency(user.balance || 0)}
+              </span>
+            </div>
+            <div className="text-xs text-apple-gray-500">Available for pay-as-you-go usage</div>
+          </motion.div>
+
           {user.monthly_budget_usd! > 0 && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card bg-apple-gray-50 border border-apple-gray-200">
               <div className="flex justify-between text-sm mb-2">
@@ -163,7 +174,7 @@ function DashboardPage() {
       </div>
 
       {/* System Health Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -179,19 +190,34 @@ function DashboardPage() {
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="card">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-50 rounded-apple"><CommandLineIcon className="w-5 h-5 text-purple-600" /></div>
+              <div>
+                <p className="text-sm text-apple-gray-500">MCP Tool Calls</p>
+                <p className="text-xl font-semibold text-apple-gray-900">{stats?.mcp_call_count || 0}</p>
+              </div>
+            </div>
+            <div className={`px-2 py-1 rounded-full text-xs font-medium ${stats?.mcp_error_count === 0 ? 'bg-green-100 text-apple-green' : 'bg-red-100 text-apple-red'}`}>
+              {stats?.mcp_error_count || 0} errors
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
               <div className="p-2 bg-green-50 rounded-apple"><KeyIcon className="w-5 h-5 text-green-600" /></div>
               <div>
                 <p className="text-sm text-apple-gray-500">API Keys Health</p>
                 <p className="text-xl font-semibold text-apple-gray-900">{stats?.api_keys?.healthy || 0} / {stats?.api_keys?.total || 0}</p>
               </div>
             </div>
-            <div className={`px-2 py-1 rounded-full text-xs font-medium ${stats?.api_keys?.healthy === stats?.api_keys?.total ? 'bg-green-100 text-apple-green' : 'bg-orange-100 text-apple-orange'}`}>
-              {stats?.api_keys?.total ? Math.round((stats?.api_keys?.healthy || 0) / stats.api_keys.total * 100) : 0}% healthy
+            <div className={`px-2 py-1 rounded-full text-xs font-medium ${stats?.api_keys?.total ? Math.round((stats?.api_keys?.healthy || 0) / stats.api_keys.total * 100) : 0}% healthy`}>
+              {stats?.api_keys?.total ? Math.round((stats?.api_keys?.healthy || 0) / stats.api_keys.total * 100) : 0}%
             </div>
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="card">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-purple-50 rounded-apple"><GlobeAltIcon className="w-5 h-5 text-purple-600" /></div>
@@ -200,8 +226,8 @@ function DashboardPage() {
                 <p className="text-xl font-semibold text-apple-gray-900">{stats?.proxies?.healthy || 0} / {stats?.proxies?.total || 0}</p>
               </div>
             </div>
-            <div className={`px-2 py-1 rounded-full text-xs font-medium ${stats?.proxies?.healthy === stats?.proxies?.total ? 'bg-green-100 text-apple-green' : 'bg-orange-100 text-apple-orange'}`}>
-              {stats?.proxies?.total ? Math.round((stats?.proxies?.healthy || 0) / stats.proxies.total * 100) : 0}% healthy
+            <div className={`px-2 py-1 rounded-full text-xs font-medium ${stats?.proxies?.total ? Math.round((stats?.proxies?.healthy || 0) / stats.proxies.total * 100) : 0}% healthy`}>
+              {stats?.proxies?.total ? Math.round((stats?.proxies?.healthy || 0) / stats.proxies.total * 100) : 0}%
             </div>
           </div>
         </motion.div>

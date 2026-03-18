@@ -4,6 +4,7 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -21,8 +22,11 @@ import (
 
 // ChatResult contains the result of an ExecuteChat call.
 type ChatResult struct {
-	Response *provider.ChatResponse
-	UsedKey  *models.ProviderAPIKey // nil for providers that don't require keys
+	Response      *provider.ChatResponse
+	UsedKey       *models.ProviderAPIKey // nil for providers that don't require keys
+	FinalMessages []provider.Message     // Final list of messages after tool call loops
+	MCPCallCount  int
+	MCPErrorCount int
 }
 
 // ExecuteChat sends a chat request to the given provider with automatic key-rotation retry.
@@ -34,8 +38,11 @@ func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *mo
 		return nil, errors.New("provider is temporarily unavailable (circuit-breaker)")
 	}
 
+	// Phase 2: Inject MCP Tools
+	r.injectMCPTools(ctx, req)
+
 	if !p.RequiresAPIKey {
-		res, err := r.executeChatOnce(ctx, p, nil, req)
+		res, err := r.executeChatWithMCP(ctx, p, nil, req)
 		if err != nil && isProviderLevelError(err.Error()) {
 			r.MarkProviderFailure(p.ID)
 		} else if err == nil {
@@ -48,7 +55,7 @@ func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *mo
 	var lastErr error
 
 	for attempt := 0; attempt < maxRetries && currentKey != nil; attempt++ {
-		result, err := r.executeChatOnce(ctx, p, currentKey, req)
+		result, err := r.executeChatWithMCP(ctx, p, currentKey, req)
 		if err == nil {
 			r.ClearKeyFailure(currentKey.ID)
 			r.MarkProviderSuccess(p.ID)
@@ -79,7 +86,141 @@ func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *mo
 	return nil, errors.New("all API keys failed")
 }
 
+// executeChatWithMCP wraps executeChatOnce with MCP tool handling feedback loop.
+func (r *Router) executeChatWithMCP(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, req *provider.ChatRequest) (*ChatResult, error) {
+	messages := make([]provider.Message, len(req.Messages))
+	copy(messages, req.Messages)
+
+	var totalMCPCalls int
+	var totalMCPErrors int
+
+	// Max 5 loops for tool calls to prevent infinite loops
+	for loop := 0; loop < 5; loop++ {
+		result, err := r.executeChatOnce(ctx, p, apiKey, req)
+		if err != nil {
+			return nil, err
+		}
+
+		// Update current messages in the request for next potential loop
+		anyMCPHandled, mcpCalls, mcpErrors, err := r.handleMCPToolCalls(ctx, result.Response, &messages)
+		if err != nil {
+			return nil, err
+		}
+
+		totalMCPCalls += mcpCalls
+		totalMCPErrors += mcpErrors
+
+		if !anyMCPHandled {
+			result.FinalMessages = messages
+			result.MCPCallCount = totalMCPCalls
+			result.MCPErrorCount = totalMCPErrors
+			return result, nil
+		}
+
+		// Update request messages and repeat
+		req.Messages = messages
+		r.logger.Info("repeating LLM request after MCP tool execution", 
+			zap.String("provider", p.Name), 
+			zap.Int("loop", loop+1))
+	}
+
+	return nil, errors.New("too many MCP tool call loops")
+}
+
 // ─── Support Functions ─────────────────────────────────────────────────────
+
+// injectMCPTools fetches active MCP tools and adds them to the request if none are present.
+func (r *Router) injectMCPTools(ctx context.Context, req *provider.ChatRequest) {
+	if r.mcpService == nil {
+		return
+	}
+
+	// Only inject if no tools are currently specified in the request
+	if len(req.Tools) > 0 {
+		return
+	}
+
+	tools, err := r.mcpService.GetToolsForLLM(ctx)
+	if err != nil || len(tools) == 0 {
+		return
+	}
+
+	toolsJSON, err := json.Marshal(tools)
+	if err != nil {
+		return
+	}
+
+	req.Tools = toolsJSON
+}
+
+// handleMCPToolCalls intercept and executes MCP tool calls, returning true if any were handled.
+func (r *Router) handleMCPToolCalls(ctx context.Context, resp *provider.ChatResponse, messages *[]provider.Message) (bool, int, int, error) {
+	if r.mcpService == nil || len(resp.Choices) == 0 {
+		return false, 0, 0, nil
+	}
+
+	choice := resp.Choices[0]
+	if len(choice.Message.ToolCalls) == 0 {
+		return false, 0, 0, nil
+	}
+
+	var toolCalls []struct {
+		ID       string `json:"id"`
+		Type     string `json:"type"`
+		Function struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		} `json:"function"`
+	}
+
+	if err := json.Unmarshal(choice.Message.ToolCalls, &toolCalls); err != nil {
+		return false, 0, 0, err
+	}
+
+	// Add assistant message with tool calls to history
+	*messages = append(*messages, choice.Message)
+
+	anyMCPHandled := false
+	mcpCalls := 0
+	mcpErrors := 0
+	for _, tc := range toolCalls {
+		if !strings.Contains(tc.Function.Name, "__") {
+			// Not an MCP tool (might be user-defined or other)
+			continue
+		}
+
+		parts := strings.SplitN(tc.Function.Name, "__", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		serverName, toolName := parts[0], parts[1]
+		
+		var args interface{}
+		_ = json.Unmarshal(tc.Function.Arguments, &args)
+
+		r.logger.Info("executing MCP tool", zap.String("server", serverName), zap.String("tool", toolName))
+		mcpCalls++
+		result, err := r.mcpService.CallTool(ctx, serverName, toolName, args)
+		
+		resultJSON, _ := json.Marshal(result)
+		if err != nil {
+			mcpErrors++
+			resultJSON, _ = json.Marshal(map[string]string{"error": err.Error()})
+		}
+
+		// Add tool result message
+		*messages = append(*messages, provider.Message{
+			Role:       "tool",
+			ToolCallID: tc.ID,
+			Name:       tc.Function.Name,
+			Content:    provider.StringContent(string(resultJSON)),
+		})
+		anyMCPHandled = true
+	}
+
+	return anyMCPHandled, mcpCalls, mcpErrors, nil
+}
 
 // isProviderLevelError checks if an error should trigger provider circuit breaking (e.g. 500, timeout).
 func isProviderLevelError(errMsg string) bool {
@@ -271,6 +412,9 @@ func (r *Router) ExecuteStreamChat(ctx context.Context, p *models.Provider, apiK
 	if !r.IsProviderHealthy(p.ID) {
 		return nil, errors.New("provider is temporarily unavailable (circuit-breaker)")
 	}
+
+	// Phase 2: Inject MCP Tools
+	r.injectMCPTools(ctx, req)
 
 	if !p.RequiresAPIKey {
 		client, err := r.GetProviderClientWithKey(ctx, p, nil)

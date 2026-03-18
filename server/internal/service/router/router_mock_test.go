@@ -151,6 +151,7 @@ func newTestRouter(providerRepo *mockProviderRepo, keyRepo *mockProviderAPIKeyRe
 		&mockProxyRepo{},
 		&mockModelRepo{models: make(map[uuid.UUID][]models.Model)},
 		provider.NewRegistry(logger),
+		nil, // mcpService
 		logger,
 	)
 }

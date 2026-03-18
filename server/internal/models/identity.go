@@ -20,6 +20,7 @@ type User struct {
 	MonthlyTokenLimit     int64     `gorm:"default:0" json:"monthly_token_limit"`   // 0 = unlimited
 	MonthlyBudgetUSD      float64   `gorm:"default:0" json:"monthly_budget_usd"`    // 0 = unlimited
 	RateLimitPerMinute    int       `gorm:"default:0" json:"rate_limit_per_minute"` // 0 = use global default
+	Balance               float64   `gorm:"default:0" json:"balance"`               // Current credit balance in USD
 	TokensInvalidatedAt   time.Time `json:"-"`                                      // tokens issued before this time are rejected
 }
 

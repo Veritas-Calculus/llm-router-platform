@@ -9,8 +9,12 @@ import UsagePage from '@/pages/UsagePage';
 import ApiKeysPage from '@/pages/ApiKeysPage';
 import HealthPage from '@/pages/HealthPage';
 import ProvidersPage from '@/pages/ProvidersPage';
+import McpPage from '@/pages/McpPage';
+import PlansPage from '@/pages/PlansPage';
+import BillingPage from '@/pages/BillingPage';
 import ProxiesPage from '@/pages/ProxiesPage';
 import SettingsPage from '@/pages/SettingsPage';
+import AdminSettingsPage from '@/pages/AdminSettingsPage';
 import DocsPage from '@/pages/DocsPage';
 import UsersPage from '@/pages/UsersPage';
 import UserDetailPage from '@/pages/UserDetailPage';
@@ -80,14 +84,18 @@ function App() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="usage" element={<UsagePage />} />
         <Route path="api-keys" element={<ApiKeysPage />} />
+        <Route path="plans" element={<ProtectedRoute><PlansPage /></ProtectedRoute>} />
+        <Route path="billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
+        <Route path="profile" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
         <Route path="docs" element={<DocsPage />} />
         {/* Admin only */}
         <Route path="users" element={<AdminRoute><UsersPage /></AdminRoute>} />
         <Route path="users/:id" element={<AdminRoute><UserDetailPage /></AdminRoute>} />
         <Route path="health" element={<AdminRoute><HealthPage /></AdminRoute>} />
         <Route path="providers" element={<AdminRoute><ProvidersPage /></AdminRoute>} />
+        <Route path="mcp" element={<AdminRoute><McpPage /></AdminRoute>} />
         <Route path="proxies" element={<AdminRoute><ProxiesPage /></AdminRoute>} />
-        <Route path="settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
+        <Route path="settings" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
       </Route>
     </Routes>
   );

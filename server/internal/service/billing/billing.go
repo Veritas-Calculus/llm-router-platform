@@ -121,6 +121,8 @@ type UsageSummary struct {
 	AvgLatency    float64 `json:"avg_latency"`
 	SuccessRate   float64 `json:"success_rate"`
 	ErrorCount    int64   `json:"error_count"`
+	MCPCallCount  int64   `json:"mcp_call_count"`
+	MCPErrorCount int64   `json:"mcp_error_count"`
 }
 
 // GetUsageSummary returns aggregated usage for a user.
@@ -159,6 +161,8 @@ func (s *Service) GetUsageSummary(ctx context.Context, userID uuid.UUID, startTi
 		TotalCost:     row.TotalCost,
 		AvgLatency:    row.AvgLatency,
 		ErrorCount:    row.ErrorCount,
+		MCPCallCount:  row.MCPCallCount,
+		MCPErrorCount: row.MCPErrorCount,
 	}
 	if row.TotalRequests > 0 {
 		summary.SuccessRate = float64(row.SuccessCount) / float64(row.TotalRequests) * 100
@@ -193,6 +197,8 @@ func (s *Service) GetSystemUsageSummary(ctx context.Context, startTime, endTime 
 		TotalCost:     row.TotalCost,
 		AvgLatency:    row.AvgLatency,
 		ErrorCount:    row.ErrorCount,
+		MCPCallCount:  row.MCPCallCount,
+		MCPErrorCount: row.MCPErrorCount,
 	}
 	if row.TotalRequests > 0 {
 		summary.SuccessRate = float64(row.SuccessCount) / float64(row.TotalRequests) * 100
