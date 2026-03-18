@@ -98,15 +98,14 @@ func run() error {
 	}
 	defer func() { _ = db.Close() }()
 
-	// R10: Disable AutoMigrate in production to prevent schema corruption.
-	// Production should use explicit SQL migrations from server/migrations.
-	if cfg.Server.Mode != "release" {
-		logger.Info("running database automigration (non-release mode)")
-		if err := db.Migrate(); err != nil {
-			return err
-		}
-	} else {
-		logger.Info("automigration skipped in release mode — ensuring explicit migrations are up to date is required")
+	// Run database migrations.
+	// In release mode we log a warning encouraging explicit SQL migrations,
+	// but we still run AutoMigrate so that fresh databases are usable.
+	if cfg.Server.Mode == "release" {
+		logger.Warn("running AutoMigrate in release mode — consider using explicit SQL migrations for production")
+	}
+	if err := db.Migrate(); err != nil {
+		return err
 	}
 
 	_ = db.SeedDefaultProviders()
