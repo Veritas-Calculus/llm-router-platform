@@ -18,6 +18,7 @@ import (
 
 // OllamaClient implements the Client interface for Ollama (OpenAI-compatible).
 type OllamaClient struct {
+	apiKey     string
 	baseURL    string
 	httpClient *http.Client
 	logger     *zap.Logger
@@ -31,8 +32,16 @@ func NewOllamaClient(cfg *config.ProviderConfig, logger *zap.Logger) *OllamaClie
 	if cfg.HTTPClient != nil {
 		httpClient = cfg.HTTPClient()
 	}
+
+	// Ensure baseURL ends with /v1 for OpenAI compatibility if not already present
+	baseURL := cfg.BaseURL
+	if !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
+		baseURL = strings.TrimSuffix(baseURL, "/") + "/v1"
+	}
+
 	return &OllamaClient{
-		baseURL:    cfg.BaseURL,
+		apiKey:     cfg.APIKey,
+		baseURL:    baseURL,
 		httpClient: httpClient,
 		logger:     logger,
 	}
@@ -50,6 +59,9 @@ func (c *OllamaClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -82,6 +94,9 @@ func (c *OllamaClient) Embeddings(ctx context.Context, req *EmbeddingRequest) (*
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -124,6 +139,10 @@ func (c *OllamaClient) ListModels(ctx context.Context) ([]ModelInfo, error) {
 		return nil, err
 	}
 
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, err
@@ -153,6 +172,10 @@ func (c *OllamaClient) CheckHealth(ctx context.Context) (bool, time.Duration, er
 		return false, 0, err
 	}
 
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
 	resp, err := c.httpClient.Do(httpReq)
 	latency := time.Since(start)
 	if err != nil {
@@ -176,6 +199,9 @@ func (c *OllamaClient) StreamChat(ctx context.Context, req *ChatRequest) (<-chan
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -196,21 +222,33 @@ func (c *OllamaClient) StreamChat(ctx context.Context, req *ChatRequest) (<-chan
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 		for scanner.Scan() {
-			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") {
-				continue
-			}
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" {
-				chunks <- StreamChunk{Done: true}
+			select {
+			case <-ctx.Done():
 				return
-			}
+			default:
+				line := scanner.Text()
+				if !strings.HasPrefix(line, "data: ") {
+					continue
+				}
+				data := strings.TrimPrefix(line, "data: ")
+				if data == "[DONE]" {
+					select {
+					case chunks <- StreamChunk{Done: true}:
+					case <-ctx.Done():
+					}
+					return
+				}
 
-			var chunk StreamChunk
-			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-				continue
+				var chunk StreamChunk
+				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+					continue
+				}
+				select {
+				case chunks <- chunk:
+				case <-ctx.Done():
+					return
+				}
 			}
-			chunks <- chunk
 		}
 	}()
 

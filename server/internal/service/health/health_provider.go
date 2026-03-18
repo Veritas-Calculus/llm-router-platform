@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"llm-router-platform/internal/crypto"
@@ -231,6 +232,11 @@ func (s *Service) resolveHealthURL(providerName, baseURL, decryptedKey string) s
 	case "openai", "lmstudio", "vllm":
 		return baseURL + "/models"
 	case "ollama":
+		// Ollama's native health check is /api/tags, but if using OpenAI compatibility
+		// it should be /v1/models. Since we fixed OllamaClient to use /v1, we use /models here.
+		if strings.HasSuffix(baseURL, "/v1") || strings.Contains(baseURL, "/v1/") {
+			return baseURL + "/models"
+		}
 		return baseURL + "/api/tags"
 	case "anthropic":
 		return baseURL + "/v1/messages"
@@ -248,7 +254,7 @@ func (s *Service) resolveHealthURL(providerName, baseURL, decryptedKey string) s
 // setAuthHeaders adds appropriate authorization headers for the given provider.
 func (s *Service) setAuthHeaders(req *http.Request, providerName, decryptedKey string) {
 	switch providerName {
-	case "openai", "lmstudio", "vllm":
+	case "openai", "lmstudio", "vllm", "ollama":
 		if decryptedKey != "" {
 			req.Header.Set("Authorization", "Bearer "+decryptedKey)
 		}
@@ -256,6 +262,11 @@ func (s *Service) setAuthHeaders(req *http.Request, providerName, decryptedKey s
 		if decryptedKey != "" {
 			req.Header.Set("x-api-key", decryptedKey)
 			req.Header.Set("anthropic-version", "2023-06-01")
+		}
+	default:
+		// Default to OpenAI-compatible header for unknown providers
+		if decryptedKey != "" {
+			req.Header.Set("Authorization", "Bearer "+decryptedKey)
 		}
 	}
 }

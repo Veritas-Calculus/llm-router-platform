@@ -114,7 +114,7 @@ func (d *Database) SeedDefaultProviders() error {
 		},
 		{
 			Name:           "ollama",
-			BaseURL:        "http://host.docker.internal:11434",
+			BaseURL:        "http://host.docker.internal:11434/v1",
 			IsActive:       true,
 			Priority:       5,
 			Weight:         1.0,

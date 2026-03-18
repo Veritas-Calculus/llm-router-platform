@@ -18,6 +18,7 @@ import (
 
 // LMStudioClient implements the Client interface for LM Studio (OpenAI-compatible).
 type LMStudioClient struct {
+	apiKey     string
 	baseURL    string
 	httpClient *http.Client
 	logger     *zap.Logger
@@ -32,6 +33,7 @@ func NewLMStudioClient(cfg *config.ProviderConfig, logger *zap.Logger) *LMStudio
 		httpClient = cfg.HTTPClient()
 	}
 	return &LMStudioClient{
+		apiKey:     cfg.APIKey,
 		baseURL:    cfg.BaseURL,
 		httpClient: httpClient,
 		logger:     logger,
@@ -50,6 +52,9 @@ func (c *LMStudioClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespo
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -82,6 +87,9 @@ func (c *LMStudioClient) Embeddings(ctx context.Context, req *EmbeddingRequest) 
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -124,6 +132,10 @@ func (c *LMStudioClient) ListModels(ctx context.Context) ([]ModelInfo, error) {
 		return nil, err
 	}
 
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, err
@@ -153,6 +165,10 @@ func (c *LMStudioClient) CheckHealth(ctx context.Context) (bool, time.Duration, 
 		return false, 0, err
 	}
 
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
 	resp, err := c.httpClient.Do(httpReq)
 	latency := time.Since(start)
 	if err != nil {
@@ -176,6 +192,9 @@ func (c *LMStudioClient) StreamChat(ctx context.Context, req *ChatRequest) (<-ch
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -196,21 +215,33 @@ func (c *LMStudioClient) StreamChat(ctx context.Context, req *ChatRequest) (<-ch
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 		for scanner.Scan() {
-			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") {
-				continue
-			}
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" {
-				chunks <- StreamChunk{Done: true}
+			select {
+			case <-ctx.Done():
 				return
-			}
+			default:
+				line := scanner.Text()
+				if !strings.HasPrefix(line, "data: ") {
+					continue
+				}
+				data := strings.TrimPrefix(line, "data: ")
+				if data == "[DONE]" {
+					select {
+					case chunks <- StreamChunk{Done: true}:
+					case <-ctx.Done():
+					}
+					return
+				}
 
-			var chunk StreamChunk
-			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-				continue
+				var chunk StreamChunk
+				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+					continue
+				}
+				select {
+				case chunks <- chunk:
+				case <-ctx.Done():
+					return
+				}
 			}
-			chunks <- chunk
 		}
 	}()
 
