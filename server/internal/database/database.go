@@ -236,7 +236,7 @@ func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
 		Name:                  cfg.Name,
 		Role:                  "admin",
 		IsActive:              true,
-		RequirePasswordChange: true,
+		RequirePasswordChange: false,
 	}
 
 	if err := d.DB.Create(admin).Error; err != nil {
