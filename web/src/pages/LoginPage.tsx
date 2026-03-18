@@ -37,7 +37,9 @@ function LoginPage() {
         setAuth(response.token, response.user);
         toast.success('Account created successfully!');
       }
-      navigate('/dashboard');
+      // Read from store (just set above) to determine where to navigate
+      const user = useAuthStore.getState().user;
+      navigate(user?.require_password_change ? '/change-password' : '/dashboard');
     } catch {
       toast.error(isLogin ? 'Invalid credentials' : 'Registration failed');
     } finally {

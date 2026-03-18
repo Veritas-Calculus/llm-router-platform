@@ -48,6 +48,14 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AuthenticatedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated } = useAuthStore();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <Routes>
@@ -55,8 +63,9 @@ function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/change-password" element={
-        useAuthStore.getState().isAuthenticated ?
-          <ForcePasswordChangePage /> : <Navigate to="/login" replace />
+        <AuthenticatedRoute>
+          <ForcePasswordChangePage />
+        </AuthenticatedRoute>
       } />
       <Route
         path="/"
