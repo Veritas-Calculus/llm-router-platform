@@ -213,14 +213,14 @@ func (d *Database) SeedDefaultModels() error {
 // SeedDefaultAdmin creates a default admin user if configured.
 func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
 	if cfg.Email == "" || cfg.Password == "" {
-		d.logger.Debug("admin seeding skipped: ADMIN_EMAIL or ADMIN_PASSWORD not set")
+		d.logger.Info("admin seeding skipped: ADMIN_EMAIL or ADMIN_PASSWORD not set")
 		return nil
 	}
 
 	var existing models.User
 	result := d.DB.Where("email = ?", cfg.Email).First(&existing)
 	if result.Error == nil {
-		d.logger.Debug("admin user already exists", zap.String("email", cfg.Email))
+		d.logger.Info("admin user already exists, skipping seed", zap.String("email", cfg.Email))
 		return nil
 	}
 
