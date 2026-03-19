@@ -25,7 +25,7 @@ export const USER_DETAIL_QUERY = gql`
       date requests tokens cost
     }
     userApiKeys(id: $id) {
-      id name keyPreview isActive lastUsedAt createdAt expiresAt
+      id name keyPrefix isActive lastUsedAt createdAt expiresAt
     }
   }
 `;

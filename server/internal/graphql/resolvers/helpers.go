@@ -1,14 +1,26 @@
 package resolvers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
+	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/models"
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// clientInfo extracts client IP and User-Agent from the Gin context.
+func clientInfo(ctx context.Context) (ip, userAgent string) {
+	gc, err := directives.GinContextFromContext(ctx)
+	if err != nil {
+		return "", ""
+	}
+	return gc.ClientIP(), gc.Request.UserAgent()
+}
 
 // ── JWT helpers ──────────────────────────────────────────────────────
 
@@ -32,6 +44,32 @@ func (r *mutationResolver) generateRefreshJWT(u *models.User) (string, error) {
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(r.Config.JWT.Secret))
+}
+
+func (r *mutationResolver) validateRefreshJWT(tokenStr string) (*jwt.RegisteredClaims, error) {
+	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return []byte(r.Config.JWT.Secret), nil
+	})
+	if err != nil || !token.Valid {
+		return nil, fmt.Errorf("invalid token")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, fmt.Errorf("invalid claims")
+	}
+
+	// Ensure this is a refresh token, not an access token
+	tokenType, _ := claims["type"].(string)
+	if tokenType != "refresh" {
+		return nil, fmt.Errorf("not a refresh token")
+	}
+
+	sub, _ := claims["sub"].(string)
+	return &jwt.RegisteredClaims{Subject: sub}, nil
 }
 
 // ── Model → GQL converters ──────────────────────────────────────────
@@ -80,6 +118,7 @@ func providerToGQL(p *models.Provider) *model.Provider {
 		IsActive: p.IsActive, Priority: p.Priority, Weight: p.Weight,
 		MaxRetries: p.MaxRetries, Timeout: p.Timeout,
 		UseProxy: p.UseProxy, DefaultProxyID: proxyID,
+		RequiresAPIKey: p.RequiresAPIKey,
 		CreatedAt: p.CreatedAt,
 	}
 }

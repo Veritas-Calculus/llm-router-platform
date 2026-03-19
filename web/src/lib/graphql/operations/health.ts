@@ -4,9 +4,9 @@ import { gql } from '@apollo/client';
 
 export const HEALTH_OVERVIEW_QUERY = gql`
   query HealthOverview {
-    healthApiKeys { apiKeyId providerId providerName isHealthy latency lastChecked error }
-    healthProxies { proxyId host port isHealthy latency lastChecked error }
-    healthProviders { providerId providerName isHealthy latency lastChecked activeKeyCount totalKeyCount }
+    healthApiKeys { id providerId providerName keyPrefix isActive isHealthy lastCheck responseTime successRate }
+    healthProxies { id url type region isActive isHealthy responseTime lastCheck successRate }
+    healthProviders { id name baseUrl isActive isHealthy useProxy responseTime lastCheck successRate errorMessage }
     healthHistory { id targetType targetId status message createdAt }
   }
 `;
@@ -30,25 +30,25 @@ export const ALERT_CONFIG_QUERY = gql`
 
 export const CHECK_API_KEY_HEALTH = gql`
   mutation CheckApiKeyHealth($id: ID!) {
-    checkApiKeyHealth(id: $id) { apiKeyId isHealthy latency error }
+    checkApiKeyHealth(id: $id) { id providerId providerName isHealthy responseTime lastCheck }
   }
 `;
 
 export const CHECK_PROXY_HEALTH = gql`
   mutation CheckProxyHealth($id: ID!) {
-    checkProxyHealth(id: $id) { proxyId isHealthy latency error }
+    checkProxyHealth(id: $id) { id url isHealthy responseTime lastCheck }
   }
 `;
 
 export const CHECK_PROVIDER_HEALTH = gql`
   mutation CheckProviderHealth($id: ID!) {
-    checkProviderHealth(id: $id) { providerId providerName isHealthy latency }
+    checkProviderHealth(id: $id) { id name baseUrl isActive isHealthy useProxy responseTime lastCheck successRate errorMessage }
   }
 `;
 
 export const CHECK_ALL_PROVIDER_HEALTH = gql`
   mutation CheckAllProviderHealth {
-    checkAllProviderHealth { providerId providerName isHealthy latency }
+    checkAllProviderHealth { id name baseUrl isActive isHealthy useProxy responseTime lastCheck successRate errorMessage }
   }
 `;
 

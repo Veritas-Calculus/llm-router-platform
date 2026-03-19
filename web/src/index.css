@@ -131,7 +131,7 @@
     padding: 0.75rem 1rem;
     border-radius: var(--radius-apple);
     border: 1px solid var(--theme-border);
-    background-color: var(--theme-bg-input);
+    background-color: var(--color-apple-gray-50, #F5F5F7);
     color: var(--theme-text);
     font-size: 1rem;
     transition: all 0.2s ease;
@@ -233,6 +233,45 @@
   .badge-info {
     background-color: rgba(0, 122, 255, 0.15);
     color: #007AFF;
+  }
+
+  /* Segmented Control — Apple-style tab bar */
+  .segmented-control {
+    display: flex;
+    padding: 0.25rem;
+    border-radius: var(--radius-apple);
+    background-color: var(--color-apple-gray-50, #F5F5F7);
+    border: 1px solid var(--theme-border-light);
+    gap: 0.125rem;
+  }
+
+  .segmented-control-item {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--theme-text-secondary);
+    transition: all 0.2s ease;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: transparent;
+    white-space: nowrap;
+  }
+
+  .segmented-control-item:hover:not(.segmented-control-item--active) {
+    color: var(--theme-text);
+  }
+
+  .segmented-control-item--active {
+    background-color: var(--theme-bg-card);
+    color: var(--color-apple-blue);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    border-color: var(--theme-border-light);
   }
 
   .sidebar-link {

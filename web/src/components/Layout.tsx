@@ -25,6 +25,8 @@ import {
   LanguageIcon,
   CpuChipIcon,
   HeartIcon,
+  SunIcon,
+  MoonIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/stores/authStore';
 import { useTranslation } from '@/lib/i18n';
@@ -127,6 +129,12 @@ function Layout() {
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') === 'dark';
+    }
+    return false;
+  });
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   const showAdminNav = isAdmin && adminView;
@@ -139,6 +147,19 @@ function Layout() {
   const toggleLanguage = () => {
     setLocale(locale === 'en' ? 'zh-CN' : 'en');
   };
+
+  const toggleDarkMode = () => {
+    setIsDark((prev) => {
+      const next = !prev;
+      localStorage.setItem('theme', next ? 'dark' : 'light');
+      return next;
+    });
+  };
+
+  // Apply dark mode class on <html>
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDark);
+  }, [isDark]);
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
@@ -235,9 +256,9 @@ function Layout() {
               ))
             ) : (
               /* Admin view nav — grouped */
-              adminNavGroups.map((group) => (
-                <div key={group.labelKey}>
-                  <div className="pt-4 pb-1.5 px-4 first:pt-0">
+              adminNavGroups.map((group, idx) => (
+                <div key={group.labelKey} className={idx > 0 ? 'border-t border-apple-gray-100 mt-2 pt-2' : ''}>
+                  <div className="pt-3 pb-2 px-4 first:pt-0">
                     <p className="text-[11px] font-semibold text-apple-gray-400 uppercase tracking-wider">
                       {t(group.labelKey)}
                     </p>
@@ -267,6 +288,13 @@ function Layout() {
 
           <div className="flex items-center gap-2">
             <NotificationCenter />
+            <button
+              onClick={toggleDarkMode}
+              className="p-2 rounded-lg text-apple-gray-600 hover:text-apple-gray-900 hover:bg-apple-gray-50 transition-colors"
+              title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {isDark ? <SunIcon className="w-4.5 h-4.5" /> : <MoonIcon className="w-4.5 h-4.5" />}
+            </button>
             <button
               onClick={toggleLanguage}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-apple-gray-600 hover:text-apple-gray-900 hover:bg-apple-gray-50 rounded-lg transition-colors"

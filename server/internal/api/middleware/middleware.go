@@ -70,8 +70,11 @@ func (r *RateLimiter) cleanupLoop() {
 func (r *RateLimiter) Limit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		identifier := c.GetHeader("X-API-Key")
+		rlSource := "per_ip"
 		if identifier == "" {
 			identifier = c.ClientIP()
+		} else {
+			rlSource = "per_key"
 		}
 
 		// Determine effective rate limit
@@ -126,7 +129,7 @@ func (r *RateLimiter) Limit() gin.HandlerFunc {
 		c.Header("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10))
 
 		if count > int64(effectiveLimit) {
-			RateLimitExceededTotal.WithLabelValues(identifier).Inc()
+			RateLimitExceededTotal.WithLabelValues(rlSource).Inc()
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error":       "rate limit exceeded",
 				"retry_after": 60,
@@ -153,7 +156,7 @@ func (r *RateLimiter) limitInMemory(c *gin.Context, identifier string) {
 
 	entry.count++
 	if entry.count > r.requestsPerMinute {
-		RateLimitExceededTotal.WithLabelValues(identifier).Inc()
+		RateLimitExceededTotal.WithLabelValues("fallback").Inc()
 		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 			"error":       "rate limit exceeded (fallback)",
 			"retry_after": 60,

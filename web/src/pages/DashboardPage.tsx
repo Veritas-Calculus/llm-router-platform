@@ -213,7 +213,7 @@ function DashboardPage() {
                 <p className="text-xl font-semibold text-apple-gray-900">{stats?.api_keys?.healthy || 0} / {stats?.api_keys?.total || 0}</p>
               </div>
             </div>
-            <div className={`px-2 py-1 rounded-full text-xs font-medium ${stats?.api_keys?.total ? Math.round((stats?.api_keys?.healthy || 0) / stats.api_keys.total * 100) : 0}% healthy`}>
+            <div className={`px-2 py-1 rounded-full text-xs font-medium ${(stats?.api_keys?.total && (stats?.api_keys?.healthy || 0) / stats.api_keys.total >= 0.8) ? 'bg-green-100 text-apple-green' : 'bg-orange-100 text-apple-orange'}`}>
               {stats?.api_keys?.total ? Math.round((stats?.api_keys?.healthy || 0) / stats.api_keys.total * 100) : 0}%
             </div>
           </div>
@@ -228,7 +228,7 @@ function DashboardPage() {
                 <p className="text-xl font-semibold text-apple-gray-900">{stats?.proxies?.healthy || 0} / {stats?.proxies?.total || 0}</p>
               </div>
             </div>
-            <div className={`px-2 py-1 rounded-full text-xs font-medium ${stats?.proxies?.total ? Math.round((stats?.proxies?.healthy || 0) / stats.proxies.total * 100) : 0}% healthy`}>
+            <div className={`px-2 py-1 rounded-full text-xs font-medium ${(stats?.proxies?.total && (stats?.proxies?.healthy || 0) / stats.proxies.total >= 0.8) ? 'bg-green-100 text-apple-green' : 'bg-orange-100 text-apple-orange'}`}>
               {stats?.proxies?.total ? Math.round((stats?.proxies?.healthy || 0) / stats.proxies.total * 100) : 0}%
             </div>
           </div>
@@ -241,6 +241,13 @@ function DashboardPage() {
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card">
           <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Request Trend (7 Days)</h2>
           <div className="h-64" style={{ minHeight: '256px' }}>
+            {(!chartData || chartData.length === 0) ? (
+              <div className="flex flex-col items-center justify-center h-full text-apple-gray-400">
+                <ArrowTrendingUpIcon className="w-10 h-10 mb-2 opacity-50" />
+                <p className="text-sm font-medium">No request data yet</p>
+                <p className="text-xs mt-1">Data will appear once API requests are made</p>
+              </div>
+            ) : (
             <ResponsiveContainer width="100%" height="100%" minHeight={256}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
@@ -250,12 +257,20 @@ function DashboardPage() {
                 <Line type="monotone" dataKey="requests" stroke="#007AFF" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
+            )}
           </div>
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="card">
           <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Cost Trend</h2>
           <div className="h-64" style={{ minHeight: '256px' }}>
+            {(!chartData || chartData.length === 0) ? (
+              <div className="flex flex-col items-center justify-center h-full text-apple-gray-400">
+                <CurrencyDollarIcon className="w-10 h-10 mb-2 opacity-50" />
+                <p className="text-sm font-medium">No cost data yet</p>
+                <p className="text-xs mt-1">Costs will be tracked as usage grows</p>
+              </div>
+            ) : (
             <ResponsiveContainer width="100%" height="100%" minHeight={256}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
@@ -265,6 +280,7 @@ function DashboardPage() {
                 <Line type="monotone" dataKey="cost" stroke="#FF9500" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
+            )}
           </div>
         </motion.div>
       </div>
@@ -334,6 +350,13 @@ function DashboardPage() {
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="card">
         <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Token Usage Trend</h2>
         <div className="h-64" style={{ minHeight: '256px' }}>
+          {(!chartData || chartData.length === 0) ? (
+            <div className="flex flex-col items-center justify-center h-full text-apple-gray-400">
+              <ClockIcon className="w-10 h-10 mb-2 opacity-50" />
+              <p className="text-sm font-medium">No token data yet</p>
+              <p className="text-xs mt-1">Token usage will be tracked per request</p>
+            </div>
+          ) : (
           <ResponsiveContainer width="100%" height="100%" minHeight={256}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
@@ -343,6 +366,7 @@ function DashboardPage() {
               <Line type="monotone" dataKey="tokens" stroke="#AF52DE" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
+          )}
         </div>
       </motion.div>
     </div>

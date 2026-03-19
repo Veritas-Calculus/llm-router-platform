@@ -1,12 +1,13 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
     MagnifyingGlassIcon,
     ShieldCheckIcon,
     NoSymbolIcon,
     CheckCircleIcon,
+    EllipsisVerticalIcon,
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { USERS_QUERY, TOGGLE_USER, UPDATE_USER_ROLE } from '@/lib/graphql/operations';
@@ -20,6 +21,8 @@ function UsersPage() {
     const [toggleUserMut] = useMutation(TOGGLE_USER);
     const [updateRoleMut] = useMutation(UPDATE_USER_ROLE);
     const [searchQuery, setSearchQuery] = useState('');
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
 
     const users: UserListItem[] = useMemo(() =>
         (data?.users?.data || []).map((u: any) => ({
@@ -33,6 +36,17 @@ function UsersPage() {
         e.preventDefault();
         refetch({ search: searchQuery || undefined });
     };
+
+    // Close kebab menu on outside click
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+                setOpenMenuId(null);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     const handleToggle = useCallback(async (id: string, name: string) => {
         try {
@@ -72,20 +86,15 @@ function UsersPage() {
                     <p className="text-apple-gray-500 mt-1">{total} registered users</p>
                 </div>
 
-                <form onSubmit={handleSearch} className="flex gap-2">
-                    <div className="relative">
-                        <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-apple-gray-400" />
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search by name or email..."
-                            className="input pl-9 w-72"
-                        />
-                    </div>
-                    <button type="submit" className="btn-primary px-4">
-                        Search
-                    </button>
+                <form onSubmit={handleSearch} className="relative">
+                    <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-apple-gray-400" />
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search by name or email..."
+                        className="input pl-9 w-72"
+                    />
                 </form>
             </div>
 
@@ -159,25 +168,44 @@ function UsersPage() {
                                         {formatDate(user.created_at)}
                                     </td>
                                     <td className="py-3 px-4 text-right">
-                                        <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                                        <div className="relative" ref={openMenuId === user.id ? menuRef : undefined} onClick={(e) => e.stopPropagation()}>
                                             <button
-                                                onClick={() => handleToggle(user.id, user.name)}
-                                                className={`text-xs px-2 py-1 rounded-md transition-colors ${user.is_active ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'}`}
+                                                onClick={() => setOpenMenuId(openMenuId === user.id ? null : user.id)}
+                                                className="p-1.5 rounded-lg text-apple-gray-400 hover:text-apple-gray-700 hover:bg-apple-gray-100 transition-colors"
                                             >
-                                                {user.is_active ? 'Disable' : 'Enable'}
+                                                <EllipsisVerticalIcon className="w-5 h-5" />
                                             </button>
-                                            <button
-                                                onClick={() => handleRoleChange(user.id, user.name, user.role)}
-                                                className="text-xs px-2 py-1 rounded-md text-apple-gray-600 hover:bg-apple-gray-100 transition-colors"
-                                            >
-                                                {user.role === 'admin' ? 'Demote' : 'Promote'}
-                                            </button>
-                                            <button
-                                                onClick={() => navigate(`/users/${user.id}`)}
-                                                className="text-xs px-2 py-1 rounded-md text-apple-blue hover:bg-blue-50 transition-colors"
-                                            >
-                                                Details
-                                            </button>
+                                            <AnimatePresence>
+                                                {openMenuId === user.id && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                        exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                                                        transition={{ duration: 0.12 }}
+                                                        className="absolute right-0 top-full mt-1 w-36 bg-white rounded-xl shadow-lg border border-apple-gray-200 py-1 z-20"
+                                                    >
+                                                        <button
+                                                            onClick={() => { navigate(`/users/${user.id}`); setOpenMenuId(null); }}
+                                                            className="w-full text-left px-3 py-2 text-sm text-apple-gray-700 hover:bg-apple-gray-50 transition-colors"
+                                                        >
+                                                            Details
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { handleRoleChange(user.id, user.name, user.role); setOpenMenuId(null); }}
+                                                            className="w-full text-left px-3 py-2 text-sm text-apple-gray-700 hover:bg-apple-gray-50 transition-colors"
+                                                        >
+                                                            {user.role === 'admin' ? 'Demote' : 'Promote'}
+                                                        </button>
+                                                        <div className="border-t border-apple-gray-100 my-0.5" />
+                                                        <button
+                                                            onClick={() => { handleToggle(user.id, user.name); setOpenMenuId(null); }}
+                                                            className={`w-full text-left px-3 py-2 text-sm transition-colors ${user.is_active ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'}`}
+                                                        >
+                                                            {user.is_active ? 'Disable' : 'Enable'}
+                                                        </button>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
                                         </div>
                                     </td>
                                 </motion.tr>

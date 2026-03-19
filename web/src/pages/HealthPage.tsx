@@ -1,6 +1,6 @@
 import { useState as useReactState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowPathIcon, CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon, ServerIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon, ServerIcon, Cog6ToothIcon, CpuChipIcon, KeyIcon, GlobeAltIcon, BellSlashIcon } from '@heroicons/react/24/outline';
 import { useHealth } from '@/hooks/useHealth';
 import type { AlertConfig } from '@/lib/types';
 
@@ -66,19 +66,19 @@ function HealthPage() {
         </button>
       </div>
 
-      <div className="flex gap-4 border-b border-apple-gray-200">
+      <div className="segmented-control">
         {(['providers', 'api-keys', 'proxies', 'alerts', 'config'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`pb-3 px-1 font-medium transition-colors flex items-center gap-2 ${
-              activeTab === tab ? 'text-apple-blue border-b-2 border-apple-blue' : 'text-apple-gray-500 hover:text-apple-gray-700'
+            className={`segmented-control-item ${
+              activeTab === tab ? 'segmented-control-item--active' : ''
             }`}
           >
             {tab === 'api-keys' ? 'API Keys' : tab === 'config' ? 'Alert Config' : tab.charAt(0).toUpperCase() + tab.slice(1)}
             {tab === 'config' && <Cog6ToothIcon className="w-4 h-4" />}
             {tab === 'alerts' && activeAlerts > 0 && (
-              <span className="bg-apple-red text-white text-xs px-2 py-0.5 rounded-full">{activeAlerts}</span>
+              <span className="bg-apple-red text-white text-2xs px-1.5 py-0.5 rounded-full leading-none">{activeAlerts}</span>
             )}
           </button>
         ))}
@@ -93,7 +93,12 @@ function HealthPage() {
             </button>
           </div>
           {providerHealth.length === 0 ? (
-            <p className="text-center text-apple-gray-500 py-8">No active providers configured</p>
+            <div className="flex flex-col items-center justify-center py-16">
+              <CpuChipIcon className="w-12 h-12 text-apple-gray-300 mb-3" />
+              <p className="text-lg font-medium text-apple-gray-700 mb-1">No active providers</p>
+              <p className="text-sm text-apple-gray-400 mb-4">Configure a provider to start monitoring health</p>
+              <a href="/admin/providers" className="btn btn-primary text-sm px-4 py-2">Add Provider</a>
+            </div>
           ) : (
             <div className="space-y-4">
               {providerHealth.map((provider: any) => (
@@ -139,7 +144,11 @@ function HealthPage() {
       {activeTab === 'api-keys' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card">
           {apiKeyHealth.length === 0 ? (
-            <p className="text-center text-apple-gray-500 py-8">No API keys configured</p>
+            <div className="flex flex-col items-center justify-center py-16">
+              <KeyIcon className="w-12 h-12 text-apple-gray-300 mb-3" />
+              <p className="text-lg font-medium text-apple-gray-700 mb-1">No API keys found</p>
+              <p className="text-sm text-apple-gray-400">API keys will appear here once providers are configured</p>
+            </div>
           ) : (
             <div className="space-y-4">
               {apiKeyHealth.map((key: any) => (
@@ -178,7 +187,12 @@ function HealthPage() {
       {activeTab === 'proxies' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card">
           {proxyHealth.length === 0 ? (
-            <p className="text-center text-apple-gray-500 py-8">No proxies configured</p>
+            <div className="flex flex-col items-center justify-center py-16">
+              <GlobeAltIcon className="w-12 h-12 text-apple-gray-300 mb-3" />
+              <p className="text-lg font-medium text-apple-gray-700 mb-1">No proxies configured</p>
+              <p className="text-sm text-apple-gray-400 mb-4">Add proxy servers to route traffic through them</p>
+              <a href="/admin/proxies" className="btn btn-primary text-sm px-4 py-2">Add Proxy</a>
+            </div>
           ) : (
             <div className="space-y-4">
               {proxyHealth.map((proxy: any) => (
@@ -217,7 +231,11 @@ function HealthPage() {
       {activeTab === 'alerts' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card">
           {alerts.length === 0 ? (
-            <p className="text-center text-apple-gray-500 py-8">No alerts</p>
+            <div className="flex flex-col items-center justify-center py-16">
+              <BellSlashIcon className="w-12 h-12 text-apple-gray-300 mb-3" />
+              <p className="text-lg font-medium text-apple-gray-700 mb-1">No alerts</p>
+              <p className="text-sm text-apple-gray-400">Everything is running smoothly</p>
+            </div>
           ) : (
             <div className="space-y-4">
               {alerts.map((alert: any) => (

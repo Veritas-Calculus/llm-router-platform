@@ -13,7 +13,7 @@ export const PROVIDERS_QUERY = gql`
 export const PROVIDER_API_KEYS_QUERY = gql`
   query ProviderApiKeys($providerId: ID!) {
     providerApiKeys(providerId: $providerId) {
-      id keyPreview isActive priority weight lastUsedAt expiresAt createdAt
+      id providerId alias keyPrefix isActive priority weight rateLimit usageCount lastUsedAt createdAt
     }
   }
 `;
@@ -49,7 +49,7 @@ export const TOGGLE_PROVIDER_PROXY = gql`
 export const CREATE_PROVIDER_API_KEY = gql`
   mutation CreateProviderApiKey($providerId: ID!, $input: ProviderApiKeyInput!) {
     createProviderApiKey(providerId: $providerId, input: $input) {
-      id keyPreview isActive priority weight createdAt
+      id providerId alias keyPrefix isActive priority weight rateLimit usageCount createdAt
     }
   }
 `;

@@ -45,7 +45,7 @@ var (
 		},
 	)
 
-	// RateLimitExceededTotal tracks rate limit rejections by identifier.
+	// RateLimitExceededTotal tracks rate limit rejections by source type.
 	RateLimitExceededTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "llm_router",
@@ -53,7 +53,7 @@ var (
 			Name:      "ratelimit_exceeded_total",
 			Help:      "Total number of requests rejected due to rate limits.",
 		},
-		[]string{"identifier"},
+		[]string{"source"}, // per_key, per_user, fallback — fixed cardinality
 	)
 )
 

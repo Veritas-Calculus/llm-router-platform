@@ -6,6 +6,7 @@ import {
   ClipboardIcon,
   XCircleIcon,
   ExclamationTriangleIcon,
+  KeyIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { useQuery, useMutation } from '@apollo/client/react';
@@ -235,9 +236,15 @@ function ApiKeysPage() {
         className="card"
       >
         {apiKeys.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-apple-gray-500 mb-4">No API keys yet</p>
-            <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
+          <div className="text-center py-16">
+            <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <KeyIcon className="w-8 h-8 text-apple-blue" />
+            </div>
+            <h3 className="text-lg font-semibold text-apple-gray-900 mb-1">No API Keys Yet</h3>
+            <p className="text-apple-gray-500 text-sm mb-6 max-w-sm mx-auto">
+              Create an API key to start routing requests through the LLM Router.
+            </p>
+            <button onClick={() => setShowCreateModal(true)} className="btn btn-primary rounded-xl">
               Create your first API key
             </button>
           </div>

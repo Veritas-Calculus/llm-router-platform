@@ -4,12 +4,20 @@ package directives
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 
 	"llm-router-platform/internal/graphql/model"
 )
+
+// RedisClient is the minimal Redis interface needed for rate limiting.
+type RedisClient interface {
+	Incr(ctx context.Context, key string) *redis.IntCmd
+	Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
+}
 
 // contextKey is used to store user info in context.
 type contextKey string
@@ -54,13 +62,55 @@ func Auth(ctx context.Context, obj interface{}, next graphql.Resolver, role *mod
 	return next(ctx)
 }
 
-// RateLimit implements the @rateLimit directive.
-// For now, this is a placeholder. The actual rate limiting is handled by
-// the existing middleware on the /graphql route. In the future, this can
-// implement per-field rate limiting using Redis.
+// RateLimit implements the @rateLimit directive with per-field sliding window
+// rate limiting using Redis. Falls back to allowing the request if Redis is unavailable,
+// since route-level rate limiting is still active as defense-in-depth.
 func RateLimit(ctx context.Context, obj interface{}, next graphql.Resolver, max int, window string) (interface{}, error) {
-	// TODO: Implement per-field rate limiting for auth mutations
-	// For now, rely on route-level rate limiting
+	gc, err := GinContextFromContext(ctx)
+	if err != nil {
+		return next(ctx) // can't rate-limit without gin context
+	}
+
+	// Get Redis client from gin context (set in routes.go)
+	redisVal, exists := gc.Get("redis")
+	if !exists {
+		return next(ctx) // no Redis available, fall through
+	}
+	rdb, ok := redisVal.(RedisClient)
+	if !ok {
+		return next(ctx)
+	}
+
+	// Parse window duration
+	dur, err := time.ParseDuration(window)
+	if err != nil {
+		return next(ctx) // invalid window, fall through
+	}
+
+	// Build rate limit key: gql_rl:{fieldName}:{clientIP}
+	fieldCtx := graphql.GetFieldContext(ctx)
+	fieldName := "unknown"
+	if fieldCtx != nil {
+		fieldName = fieldCtx.Field.Name
+	}
+	clientIP := gc.ClientIP()
+	key := fmt.Sprintf("gql_rl:%s:%s", fieldName, clientIP)
+
+	// Sliding window: increment and check
+	count, redisErr := rdb.Incr(ctx, key).Result()
+	if redisErr != nil {
+		return next(ctx) // Redis error, fail open
+	}
+
+	// Set TTL on first increment
+	if count == 1 {
+		rdb.Expire(ctx, key, dur)
+	}
+
+	if count > int64(max) {
+		return nil, fmt.Errorf("rate limit exceeded: try again later")
+	}
+
 	return next(ctx)
 }
 

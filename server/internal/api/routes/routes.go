@@ -131,6 +131,7 @@ func Setup(
 	emailSvcForGql := email.NewService(cfg.Email, cfg.Frontend.URL)
 	gqlResolver := &resolvers.Resolver{
 		UserSvc:         services.User,
+		PasswordResetSvc: user.NewPasswordResetService(services.DB),
 		Router:          services.Router,
 		Billing:         services.Billing,
 		BudgetService:   services.BudgetService,
@@ -165,6 +166,13 @@ func Setup(
 	graphqlGroup.Use(requestIDMiddleware.Handle())
 	graphqlGroup.Use(authMiddleware.OptionalJWT())
 	graphqlGroup.Use(dataloaders.Middleware(services.User))
+	// Inject Redis client for per-field @rateLimit directive
+	if services.RedisClient != nil {
+		graphqlGroup.Use(func(c *gin.Context) {
+			c.Set("redis", services.RedisClient)
+			c.Next()
+		})
+	}
 	graphqlGroup.POST("", graphqlHandler.ServeGraphQL())
 
 	if cfg.Server.Mode != "release" {

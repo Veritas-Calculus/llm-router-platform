@@ -33,6 +33,7 @@ import (
 // Resolver is the root resolver holding all service dependencies.
 type Resolver struct {
 	UserSvc       *user.Service
+	PasswordResetSvc *user.PasswordResetService
 	Router        *router.Router
 	Billing       *billing.Service
 	BudgetService *billing.BudgetService

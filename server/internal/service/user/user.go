@@ -14,6 +14,9 @@ import (
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/pkg/sanitize"
 
+	"fmt"
+	"unicode"
+
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -39,14 +42,74 @@ func NewService(
 	}
 }
 
+// bcryptCost is the unified bcrypt cost factor used for all password hashing.
+// Cost 12 provides strong brute-force resistance (~250ms per hash on modern hardware).
+const bcryptCost = 12
+
+// commonPasswords is a blocklist of frequently breached passwords (lowercase).
+// Only includes passwords ≥8 chars that could pass character-class checks.
+var commonPasswords = map[string]bool{
+	"password1":  true, "password12": true, "password123": true,
+	"qwerty123":  true, "qwertyui":  true, "qwerty1234": true,
+	"abc12345":   true, "abcd1234":  true, "abcdef12": true,
+	"welcome1":   true, "letmein1":  true, "trustno1": true,
+	"iloveyou1":  true, "sunshine1": true, "princess1": true,
+	"football1":  true, "baseball1": true, "dragon123": true,
+	"master123":  true, "monkey123": true, "shadow123": true,
+	"michael1":   true, "jennifer1": true, "charlie1": true,
+	"admin123":   true, "login123":  true, "welcome123": true,
+	"passw0rd1":  true, "p@ssword1": true, "p@ssw0rd1": true,
+	"changeme1":  true, "test1234":  true, "guest1234": true,
+	"12345678a":  true, "1234567890a": true, "123456789a": true,
+	"Superman1":  true, "Computer1": true, "starwars1": true,
+}
+
+// ValidatePassword enforces minimum password strength requirements.
+// Returns nil if valid, or a descriptive error.
+func ValidatePassword(password string) error {
+	if len(password) < 8 {
+		return fmt.Errorf("password must be at least 8 characters")
+	}
+	var hasUpper, hasLower, hasDigit bool
+	for _, ch := range password {
+		switch {
+		case unicode.IsUpper(ch):
+			hasUpper = true
+		case unicode.IsLower(ch):
+			hasLower = true
+		case unicode.IsDigit(ch):
+			hasDigit = true
+		}
+	}
+	if !hasUpper {
+		return fmt.Errorf("password must contain at least one uppercase letter")
+	}
+	if !hasLower {
+		return fmt.Errorf("password must contain at least one lowercase letter")
+	}
+	if !hasDigit {
+		return fmt.Errorf("password must contain at least one digit")
+	}
+	// Block top common passwords (case-insensitive)
+	lower := strings.ToLower(password)
+	if commonPasswords[lower] {
+		return fmt.Errorf("password is too common, please choose a stronger password")
+	}
+	return nil
+}
+
 // Register creates a new user account.
 func (s *Service) Register(ctx context.Context, email, password, name string) (*models.User, error) {
+	if err := ValidatePassword(password); err != nil {
+		return nil, err
+	}
+
 	existing, _ := s.userRepo.GetByEmail(ctx, email)
 	if existing != nil {
 		return nil, errors.New("registration failed") // generic to prevent user enumeration
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 12) // L1: cost=12 for stronger brute-force resistance
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	if err != nil {
 		return nil, err
 	}
@@ -96,12 +159,16 @@ func (s *Service) GetByID(ctx context.Context, id uuid.UUID) (*models.User, erro
 
 // ResetPassword resets a user's password using an ID (typically from a reset token).
 func (s *Service) ResetPassword(ctx context.Context, id uuid.UUID, newPass string) error {
+	if err := ValidatePassword(newPass); err != nil {
+		return err
+	}
+
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPass), bcryptCost)
 	if err != nil {
 		return err
 	}
@@ -221,6 +288,10 @@ func (s *Service) UpdateProfile(ctx context.Context, id uuid.UUID, name string) 
 
 // ChangePassword updates user password and invalidates all existing tokens.
 func (s *Service) ChangePassword(ctx context.Context, id uuid.UUID, oldPass, newPass string) error {
+	if err := ValidatePassword(newPass); err != nil {
+		return err
+	}
+
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
@@ -230,7 +301,7 @@ func (s *Service) ChangePassword(ctx context.Context, id uuid.UUID, oldPass, new
 		return errors.New("current password is incorrect")
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPass), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPass), bcryptCost)
 	if err != nil {
 		return err
 	}

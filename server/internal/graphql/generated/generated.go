@@ -5153,6 +5153,7 @@ input ProviderInput {
   timeout: Int
   useProxy: Boolean
   defaultProxyId: ID
+  requiresApiKey: Boolean
 }
 
 input ProviderApiKeyInput {
@@ -28774,7 +28775,7 @@ func (ec *executionContext) unmarshalInputProviderInput(ctx context.Context, obj
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"name", "baseUrl", "isActive", "priority", "weight", "maxRetries", "timeout", "useProxy", "defaultProxyId"}
+	fieldsInOrder := [...]string{"name", "baseUrl", "isActive", "priority", "weight", "maxRetries", "timeout", "useProxy", "defaultProxyId", "requiresApiKey"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -28844,6 +28845,13 @@ func (ec *executionContext) unmarshalInputProviderInput(ctx context.Context, obj
 				return it, err
 			}
 			it.DefaultProxyID = data
+		case "requiresApiKey":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("requiresApiKey"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RequiresAPIKey = data
 		}
 	}
 	return it, nil

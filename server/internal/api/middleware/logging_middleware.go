@@ -82,10 +82,15 @@ func (m *CORSMiddleware) Handle() gin.HandlerFunc {
 				c.Header("Access-Control-Allow-Origin", "*")
 			} else {
 				c.Header("Access-Control-Allow-Origin", origin)
+				c.Header("Access-Control-Allow-Credentials", "true")
+				// Vary: Origin prevents CDN/proxy cache poisoning when reflecting
+				// the request Origin header into Access-Control-Allow-Origin.
+				c.Header("Vary", "Origin")
 			}
 		}
 
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		// Only allow methods actually used: GraphQL (POST) and LLM API (GET, POST)
+		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-API-Key")
 		c.Header("Access-Control-Max-Age", "86400")
 

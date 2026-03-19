@@ -64,36 +64,41 @@ function LoginPage() {
         transition={{ duration: 0.4 }}
         className="w-full max-w-md"
       >
-        <div className="text-center mb-8">
+        {/* Brand */}
+        <div className="text-center mb-10">
+          <div className="w-16 h-16 bg-gradient-to-br from-apple-blue to-blue-600 rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-5">
+            <span className="text-white font-bold text-2xl">R</span>
+          </div>
           <h1 className="text-3xl font-semibold text-apple-gray-900 mb-2">LLM Router Platform</h1>
           <p className="text-apple-gray-500">Intelligent routing for LLM APIs</p>
         </div>
 
         <div className="card">
-          <div className="flex mb-6">
+          {/* Segmented Control */}
+          <div className="flex bg-apple-gray-100 rounded-xl p-1 mb-8 border border-apple-gray-200">
             <button
               onClick={() => setIsLogin(true)}
-              className={`flex-1 py-2 text-center font-medium transition-colors ${
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${
                 isLogin
-                  ? 'text-apple-blue border-b-2 border-apple-blue'
-                  : 'text-apple-gray-500 border-b border-apple-gray-200'
+                  ? 'bg-white text-apple-blue shadow-sm border border-apple-gray-200'
+                  : 'text-apple-gray-500 hover:text-apple-gray-700'
               }`}
             >
               Sign In
             </button>
             <button
               onClick={() => setIsLogin(false)}
-              className={`flex-1 py-2 text-center font-medium transition-colors ${
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${
                 !isLogin
-                  ? 'text-apple-blue border-b-2 border-apple-blue'
-                  : 'text-apple-gray-500 border-b border-apple-gray-200'
+                  ? 'bg-white text-apple-blue shadow-sm border border-apple-gray-200'
+                  : 'text-apple-gray-500 hover:text-apple-gray-700'
               }`}
             >
               Sign Up
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             {!isLogin && (
               <div>
                 <label htmlFor="name" className="label">
@@ -144,7 +149,7 @@ function LoginPage() {
                 minLength={6}
               />
               {isLogin && (
-                <div className="flex justify-end mt-1">
+                <div className="flex justify-end mt-1.5">
                   <Link
                     to="/forgot-password"
                     className="text-sm text-apple-blue hover:underline font-medium"
@@ -155,7 +160,7 @@ function LoginPage() {
               )}
             </div>
 
-            <button type="submit" className="btn-primary w-full py-3" disabled={loading}>
+            <button type="submit" className="btn-primary w-full py-3 rounded-xl text-base font-semibold mt-2" disabled={loading}>
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <svg

@@ -41,6 +41,7 @@ input ProviderInput {
   timeout: Int
   useProxy: Boolean
   defaultProxyId: ID
+  requiresApiKey: Boolean
 }
 
 input ProviderApiKeyInput {

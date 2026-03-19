@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { ChartBarIcon, TableCellsIcon } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
 import {
   LineChart,
@@ -135,41 +136,51 @@ function UsagePage() {
         className="card"
       >
         <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Daily Usage</h2>
-        <div className="h-64" style={{ minHeight: '256px' }}>
-          <ResponsiveContainer width="100%" height="100%" minHeight={256}>
-            <LineChart data={dailyStats}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
-              <XAxis
-                dataKey="date"
-                stroke="#8E8E93"
-                fontSize={12}
-                tickFormatter={(value) =>
-                  new Date(value).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                  })
-                }
-              />
-              <YAxis stroke="#8E8E93" fontSize={12} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#fff',
-                  border: '1px solid #E8E8ED',
-                  borderRadius: '12px',
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="requests"
-                stroke="#007AFF"
-                strokeWidth={2}
-                dot={false}
-                name="Requests"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {dailyStats.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mb-3">
+              <ChartBarIcon className="w-7 h-7 text-apple-blue" />
+            </div>
+            <p className="text-apple-gray-900 font-medium">No usage data yet</p>
+            <p className="text-apple-gray-500 text-sm mt-1">Usage will appear here once you start making API requests.</p>
+          </div>
+        ) : (
+          <div className="h-64" style={{ minHeight: '256px' }}>
+            <ResponsiveContainer width="100%" height="100%" minHeight={256}>
+              <LineChart data={dailyStats}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
+                <XAxis
+                  dataKey="date"
+                  stroke="#8E8E93"
+                  fontSize={12}
+                  tickFormatter={(value) =>
+                    new Date(value).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                    })
+                  }
+                />
+                <YAxis stroke="#8E8E93" fontSize={12} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#fff',
+                    border: '1px solid #E8E8ED',
+                    borderRadius: '12px',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="requests"
+                  stroke="#007AFF"
+                  strokeWidth={2}
+                  dot={false}
+                  name="Requests"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </motion.div>
 
       <motion.div
@@ -193,27 +204,41 @@ function UsagePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-apple-gray-100">
-              {records.map((record: any) => (
-                <tr key={record.id} className="hover:bg-apple-gray-50">
-                  <td className="table-cell font-medium">{record.model_name}</td>
-                  <td className="table-cell">{formatNumber(record.input_tokens)}</td>
-                  <td className="table-cell">{formatNumber(record.output_tokens)}</td>
-                  <td className="table-cell">{formatCurrency(record.cost)}</td>
-                  <td className="table-cell">{record.latency_ms}ms</td>
-                  <td className="table-cell">
-                    <span
-                      className={
-                        record.is_success ? 'badge-success' : 'badge-error'
-                      }
-                    >
-                      {record.is_success ? 'Success' : 'Failed'}
-                    </span>
-                  </td>
-                  <td className="table-cell text-apple-gray-500">
-                    {formatDate(record.created_at)}
+              {records.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-16 text-center">
+                    <div className="flex flex-col items-center">
+                      <div className="w-12 h-12 bg-apple-gray-50 rounded-2xl flex items-center justify-center mb-3">
+                        <TableCellsIcon className="w-6 h-6 text-apple-gray-400" />
+                      </div>
+                      <p className="text-apple-gray-500 font-medium">No requests recorded</p>
+                      <p className="text-apple-gray-400 text-sm mt-1">Recent API requests will show up here.</p>
+                    </div>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                records.map((record: any) => (
+                  <tr key={record.id} className="hover:bg-apple-gray-50">
+                    <td className="table-cell font-medium">{record.model_name}</td>
+                    <td className="table-cell">{formatNumber(record.input_tokens)}</td>
+                    <td className="table-cell">{formatNumber(record.output_tokens)}</td>
+                    <td className="table-cell">{formatCurrency(record.cost)}</td>
+                    <td className="table-cell">{record.latency_ms}ms</td>
+                    <td className="table-cell">
+                      <span
+                        className={
+                          record.is_success ? 'badge-success' : 'badge-error'
+                        }
+                      >
+                        {record.is_success ? 'Success' : 'Failed'}
+                      </span>
+                    </td>
+                    <td className="table-cell text-apple-gray-500">
+                      {formatDate(record.created_at)}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

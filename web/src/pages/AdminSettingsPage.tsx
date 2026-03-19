@@ -400,23 +400,23 @@ function AdminSettingsPage() {
       </div>
 
       <div className="card overflow-hidden">
-        {/* Tab bar */}
-        <div className="border-b border-apple-gray-200 px-4 flex gap-1 overflow-x-auto">
-          {settingsTabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={clsx(
-                'flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors',
-                activeTab === tab.key
-                  ? 'border-apple-blue text-apple-blue'
-                  : 'border-transparent text-apple-gray-500 hover:text-apple-gray-700 hover:border-apple-gray-300'
-              )}
-            >
-              <tab.icon className="w-4 h-4" />
-              {t(tab.labelKey)}
-            </button>
-          ))}
+        {/* Tab bar — Segmented Control */}
+        <div className="px-4 pt-4 pb-2">
+          <div className="segmented-control">
+            {settingsTabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={clsx(
+                  'segmented-control-item',
+                  activeTab === tab.key && 'segmented-control-item--active'
+                )}
+              >
+                <tab.icon className="w-4 h-4" />
+                {t(tab.labelKey)}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Tab content */}
@@ -435,13 +435,13 @@ function AdminSettingsPage() {
             <div className="max-w-2xl">
               {renderTabContent()}
 
-              {/* Save button */}
+              {/* Save button — full width, prominent */}
               <div className="mt-8 flex items-center gap-3">
                 <button
                   onClick={handleSave}
                   disabled={saving || !dirty}
                   className={clsx(
-                    'px-6 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200',
+                    'flex-1 py-3 rounded-xl text-sm font-semibold transition-all duration-200',
                     dirty
                       ? 'bg-apple-blue text-white hover:bg-blue-600 shadow-sm'
                       : 'bg-apple-gray-100 text-apple-gray-400 cursor-not-allowed'

@@ -47,8 +47,9 @@ func TestCORSMiddlewareAllowsMethods(t *testing.T) {
 	allowMethods := w.Header().Get("Access-Control-Allow-Methods")
 	assert.Contains(t, allowMethods, "GET")
 	assert.Contains(t, allowMethods, "POST")
-	assert.Contains(t, allowMethods, "PUT")
-	assert.Contains(t, allowMethods, "DELETE")
+	assert.Contains(t, allowMethods, "OPTIONS")
+	assert.NotContains(t, allowMethods, "PUT")
+	assert.NotContains(t, allowMethods, "DELETE")
 }
 
 func TestRateLimiterCreation(t *testing.T) {
@@ -167,6 +168,9 @@ func TestCORSWithSpecificOrigin(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
+	assert.Equal(t, "http://localhost:3000", w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "Origin", w.Header().Get("Vary"))
+	assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"))
 }
 
 func TestRateLimiterMiddleware(t *testing.T) {

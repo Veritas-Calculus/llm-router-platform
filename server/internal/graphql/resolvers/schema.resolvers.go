@@ -16,6 +16,7 @@ import (
 	"llm-router-platform/internal/graphql/generated"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/models"
+	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/pkg/sanitize"
 	"net/http"
 	"net/smtp"
@@ -28,10 +29,13 @@ import (
 
 // Login is the resolver for the login field.
 func (r *mutationResolver) Login(ctx context.Context, input model.LoginInput) (*model.AuthPayload, error) {
+	ip, ua := clientInfo(ctx)
 	u, err := r.UserSvc.Authenticate(ctx, input.Email, input.Password)
 	if err != nil {
+		r.AuditService.Log(ctx, audit.ActionLoginFailed, uuid.Nil, uuid.Nil, ip, ua, map[string]interface{}{"email": sanitize.LogValue(input.Email)})
 		return nil, fmt.Errorf("invalid credentials")
 	}
+	r.AuditService.Log(ctx, audit.ActionLogin, u.ID, u.ID, ip, ua, nil)
 	token, err := r.generateJWT(u)
 	if err != nil {
 		return nil, err
@@ -49,6 +53,8 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 	if err != nil {
 		return nil, err
 	}
+	ip, ua := clientInfo(ctx)
+	r.AuditService.Log(ctx, audit.ActionRegister, u.ID, u.ID, ip, ua, nil)
 	token, err := r.generateJWT(u)
 	if err != nil {
 		return nil, err
@@ -77,11 +83,12 @@ func (r *mutationResolver) RefreshToken(ctx context.Context) (*model.AuthPayload
 
 // RotateRefreshToken is the resolver for the rotateRefreshToken field.
 func (r *mutationResolver) RotateRefreshToken(ctx context.Context, refreshToken string) (*model.AuthPayload, error) {
-	uid, err := directives.UserIDFromContext(ctx)
+	// Validate the provided refresh token before issuing new ones
+	claims, err := r.validateRefreshJWT(refreshToken)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid refresh token")
 	}
-	id, _ := uuid.Parse(uid)
+	id, _ := uuid.Parse(claims.Subject)
 	u, err := r.UserSvc.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -99,6 +106,8 @@ func (r *mutationResolver) Logout(ctx context.Context) (bool, error) {
 	}
 	id, _ := uuid.Parse(uid)
 	_ = r.UserSvc.InvalidateTokens(ctx, id)
+	ip, ua := clientInfo(ctx)
+	r.AuditService.Log(ctx, audit.ActionLogout, id, id, ip, ua, nil)
 	return true, nil
 }
 
@@ -108,16 +117,28 @@ func (r *mutationResolver) ForgotPassword(ctx context.Context, email string) (bo
 	if err != nil {
 		return true, nil // don't reveal if email exists
 	}
-	buf := make([]byte, 32)
-	rand.Read(buf)
-	token := hex.EncodeToString(buf)
+	token, err := r.PasswordResetSvc.CreateResetToken(ctx, u.ID)
+	if err != nil {
+		// Log internally but don't reveal to user
+		r.Logger.Error("failed to create reset token", zap.Error(err))
+		return true, nil
+	}
 	_ = r.EmailService.SendResetPasswordEmail(u.Email, token)
 	return true, nil
 }
 
 // ResetPassword is the resolver for the resetPassword field.
 func (r *mutationResolver) ResetPassword(ctx context.Context, input model.ResetPasswordInput) (bool, error) {
-	return false, fmt.Errorf("not implemented: token-based reset")
+	userID, err := r.PasswordResetSvc.ValidateAndConsumeToken(ctx, input.Token)
+	if err != nil {
+		return false, fmt.Errorf("invalid or expired reset token")
+	}
+	if err := r.UserSvc.ResetPassword(ctx, userID, input.NewPassword); err != nil {
+		return false, err
+	}
+	ip, ua := clientInfo(ctx)
+	r.AuditService.Log(ctx, audit.ActionPasswordChange, userID, userID, ip, ua, map[string]interface{}{"method": "reset_token"})
+	return true, nil
 }
 
 // ChangePassword is the resolver for the changePassword field.
@@ -127,6 +148,8 @@ func (r *mutationResolver) ChangePassword(ctx context.Context, input model.Chang
 	if err := r.UserSvc.ChangePassword(ctx, id, input.OldPassword, input.NewPassword); err != nil {
 		return false, err
 	}
+	ip, ua := clientInfo(ctx)
+	r.AuditService.Log(ctx, audit.ActionPasswordChange, id, id, ip, ua, nil)
 	return true, nil
 }
 
@@ -153,6 +176,8 @@ func (r *mutationResolver) CreateAPIKey(ctx context.Context, name string) (*mode
 	if err != nil {
 		return nil, err
 	}
+	ip, ua := clientInfo(ctx)
+	r.AuditService.Log(ctx, audit.ActionAPIKeyCreate, id, key.ID, ip, ua, map[string]interface{}{"name": name})
 	return &model.APIKeyWithSecret{
 		ID: key.ID.String(), Name: key.Name, Key: secret,
 		KeyPrefix: key.KeyPrefix, IsActive: key.IsActive,
@@ -168,6 +193,8 @@ func (r *mutationResolver) RevokeAPIKey(ctx context.Context, id string) (*model.
 	if err := r.UserSvc.RevokeAPIKey(ctx, userID, keyID); err != nil {
 		return nil, err
 	}
+	ip, ua := clientInfo(ctx)
+	r.AuditService.Log(ctx, audit.ActionAPIKeyRevoke, userID, keyID, ip, ua, nil)
 	key, _ := r.UserSvc.GetAPIKeyByID(ctx, keyID)
 	return apiKeyToGQL(key), nil
 }
@@ -177,7 +204,12 @@ func (r *mutationResolver) DeleteAPIKey(ctx context.Context, id string) (bool, e
 	uid, _ := directives.UserIDFromContext(ctx)
 	userID, _ := uuid.Parse(uid)
 	keyID, _ := uuid.Parse(id)
-	return true, r.UserSvc.DeleteAPIKey(ctx, userID, keyID)
+	if err := r.UserSvc.DeleteAPIKey(ctx, userID, keyID); err != nil {
+		return false, err
+	}
+	ip, ua := clientInfo(ctx)
+	r.AuditService.Log(ctx, audit.ActionAPIKeyRevoke, userID, keyID, ip, ua, map[string]interface{}{"action": "delete"})
+	return true, nil
 }
 
 // SetBudget is the resolver for the setBudget field.
@@ -277,6 +309,10 @@ func (r *mutationResolver) ToggleUser(ctx context.Context, id string) (*model.Us
 	if err != nil {
 		return nil, err
 	}
+	actorID, _ := directives.UserIDFromContext(ctx)
+	aid, _ := uuid.Parse(actorID)
+	ip, ua := clientInfo(ctx)
+	r.AuditService.Log(ctx, audit.ActionUserToggle, aid, uid, ip, ua, map[string]interface{}{"is_active": u.IsActive})
 	return userToGQL(u), nil
 }
 
@@ -287,6 +323,10 @@ func (r *mutationResolver) UpdateUserRole(ctx context.Context, id string, role s
 	if err != nil {
 		return nil, err
 	}
+	actorID, _ := directives.UserIDFromContext(ctx)
+	aid, _ := uuid.Parse(actorID)
+	ip, ua := clientInfo(ctx)
+	r.AuditService.Log(ctx, audit.ActionRoleChange, aid, uid, ip, ua, map[string]interface{}{"new_role": role})
 	return userToGQL(u), nil
 }
 
@@ -316,6 +356,11 @@ func (r *mutationResolver) UpdateProvider(ctx context.Context, id string, input 
 		p.Name = *input.Name
 	}
 	if input.BaseURL != nil {
+		// SSRF protection: validate the URL is not pointing to internal/private IPs
+		// Allow HTTP since some local providers (Ollama, vLLM) use it
+		if err := sanitize.ValidateWebhookURL(*input.BaseURL, true); err != nil {
+			return nil, fmt.Errorf("invalid base URL: %w", err)
+		}
 		p.BaseURL = *input.BaseURL
 	}
 	if input.IsActive != nil {
@@ -343,6 +388,9 @@ func (r *mutationResolver) UpdateProvider(ctx context.Context, id string, input 
 			pid, _ := uuid.Parse(*input.DefaultProxyID)
 			p.DefaultProxyID = &pid
 		}
+	}
+	if input.RequiresAPIKey != nil {
+		p.RequiresAPIKey = *input.RequiresAPIKey
 	}
 	if err := r.Router.UpdateProvider(ctx, p); err != nil {
 		return nil, err
@@ -566,7 +614,11 @@ func (r *mutationResolver) SyncProviderModels(ctx context.Context, providerID st
 	}
 
 	// Call upstream /v1/models to discover available models
-	client := &http.Client{Timeout: 15 * time.Second}
+	// Use SafeTransport to prevent SSRF via admin-controlled BaseURL
+	client := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: sanitize.SafeTransport(),
+	}
 	reqURL := strings.TrimRight(prov.BaseURL, "/") + "/v1/models"
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {
@@ -2109,3 +2161,5 @@ func (r *Resolver) Query() generated.QueryResolver { return &queryResolver{r} }
 
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
+
+

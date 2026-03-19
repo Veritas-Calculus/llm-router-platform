@@ -122,13 +122,13 @@ export function useProviders() {
       const status = data?.checkProviderHealth;
       if (status) {
         const mapped: ProviderHealthStatus = {
-          id: status.providerId, name: status.providerName, base_url: selectedProvider.base_url,
-          is_active: selectedProvider.is_active, is_healthy: status.isHealthy, use_proxy: selectedProvider.use_proxy,
-          response_time: status.latency, last_check: new Date().toISOString(), success_rate: 0,
-          error_message: status.isHealthy ? '' : 'Connection failed',
+          id: status.id, name: status.name, base_url: status.baseUrl || selectedProvider.base_url,
+          is_active: status.isActive ?? selectedProvider.is_active, is_healthy: status.isHealthy, use_proxy: status.useProxy ?? selectedProvider.use_proxy,
+          response_time: status.responseTime, last_check: status.lastCheck || new Date().toISOString(), success_rate: status.successRate || 0,
+          error_message: status.isHealthy ? '' : (status.errorMessage || 'Connection failed'),
         };
         setHealthStatus(mapped);
-        if (status.isHealthy) toast.success(`Connection successful! Latency: ${status.latency}ms`);
+        if (status.isHealthy) toast.success(`Connection successful! Latency: ${status.responseTime}ms`);
         else toast.error('Connection failed');
       }
     } catch {

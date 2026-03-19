@@ -4,14 +4,14 @@ import { gql } from '@apollo/client';
 
 export const MY_API_KEYS = gql`
   query MyApiKeys {
-    myApiKeys { id name keyPreview isActive lastUsedAt createdAt expiresAt }
+    myApiKeys { id name keyPrefix isActive lastUsedAt createdAt expiresAt }
   }
 `;
 
 export const CREATE_API_KEY = gql`
   mutation CreateApiKey($name: String!) {
     createApiKey(name: $name) {
-      apiKey { id name keyPreview isActive createdAt expiresAt }
+      apiKey { id name keyPrefix isActive createdAt expiresAt }
       secretKey
     }
   }

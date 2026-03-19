@@ -75,6 +75,7 @@ func (d *Database) Migrate() error {
 		&models.Announcement{},
 		&models.Coupon{},
 		&models.Document{},
+		&models.PasswordResetToken{},
 	)
 }
 

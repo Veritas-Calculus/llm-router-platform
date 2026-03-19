@@ -9,6 +9,9 @@ COPY package*.json .npmrc ./
 # Install dependencies
 RUN npm ci
 
+ARG CACHEBUST=1
+
+
 # Copy source code
 COPY . .
 

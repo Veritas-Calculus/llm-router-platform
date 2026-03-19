@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { User } from '@/lib/types';
 
 interface AuthState {
@@ -45,6 +45,11 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
+      // Use sessionStorage instead of localStorage to limit XSS exposure:
+      // - Scoped to the current tab (not shared across tabs)
+      // - Cleared when the tab is closed
+      // - Not accessible from other browser windows
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         token: state.token,
         user: state.user,

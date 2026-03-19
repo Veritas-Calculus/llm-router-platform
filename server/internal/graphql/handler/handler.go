@@ -3,6 +3,7 @@ package gqlhandler
 
 import (
 	"context"
+	"strings"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -143,6 +144,11 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 		if opName == "" {
 			opName = "anonymous"
 		}
+		// Cap operation name length to prevent label cardinality explosion
+		// from arbitrary client-supplied names
+		if len(opName) > 64 {
+			opName = "unknown"
+		}
 
 		timer := prometheus.NewTimer(graphqlDurationSeconds.WithLabelValues(opName))
 		defer timer.ObserveDuration()
@@ -161,8 +167,9 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 		srv.SetErrorPresenter(func(ctx context.Context, err error) *gqlerror.Error {
 			// In production, don't leak internal error details
 			gqlErr := graphql.DefaultErrorPresenter(ctx, err)
-			// Keep user-facing errors readable
-			switch gqlErr.Message {
+			msg := gqlErr.Message
+			// Allow auth/access errors through (users need to know why access failed)
+			switch msg {
 			case "unauthorized: authentication required",
 				"forbidden: admin access required",
 				"invalid credentials",
@@ -170,15 +177,21 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 				"account is disabled",
 				"email already registered",
 				"invalid or expired token",
-				"invalid redeem code",
-				"redeem code already used",
+				"invalid or expired reset token",
 				"insufficient balance",
-				"plan not available",
-				"coupon expired or invalid",
-				"rate limit exceeded":
+				"rate limit exceeded",
+				"rate limit exceeded: try again later":
 				return gqlErr
 			}
-			// Mask everything else
+			// Allow password validation errors through
+			if strings.HasPrefix(msg, "password ") {
+				return gqlErr
+			}
+			// Mask everything else (prevents info leakage for:
+			// - plan existence probing ("plan not available")
+			// - coupon code enumeration ("coupon expired or invalid")
+			// - redeem code enumeration ("invalid redeem code", "redeem code already used")
+			// - internal DB/service errors)
 			gqlErr.Message = "internal error"
 			return gqlErr
 		})

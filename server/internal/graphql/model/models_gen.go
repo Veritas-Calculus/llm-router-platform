@@ -481,6 +481,7 @@ type ProviderInput struct {
 	Timeout        *int     `json:"timeout,omitempty"`
 	UseProxy       *bool    `json:"useProxy,omitempty"`
 	DefaultProxyID *string  `json:"defaultProxyId,omitempty"`
+	RequiresAPIKey *bool    `json:"requiresApiKey,omitempty"`
 }
 
 type ProviderStats struct {

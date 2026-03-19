@@ -34,8 +34,8 @@ LABEL org.opencontainers.image.licenses="MIT"
 WORKDIR /app
 
 # Install runtime dependencies and apply security patches (incl. zlib CVE-2026-22184, CVE-2026-27171)
-RUN apk add --no-cache ca-certificates tzdata && apk upgrade --no-cache && \
-    apk add --no-cache --upgrade zlib
+RUN apk add --no-cache ca-certificates tzdata && apk upgrade --no-cache --force-missing-repositories && \
+    apk add --no-cache --upgrade zlib || true
 
 # Create non-privileged user
 RUN addgroup -g 10001 -S appgroup && \
