@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   PlusIcon,
@@ -8,7 +8,11 @@ import {
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { apiKeysApi, ApiKey } from '@/lib/api';
+import { useQuery, useMutation } from '@apollo/client/react';
+import { MY_API_KEYS, CREATE_API_KEY, REVOKE_API_KEY, DELETE_API_KEY } from '@/lib/graphql/operations';
+import type { ApiKey } from '@/lib/types';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -71,13 +75,24 @@ function ConfirmModal({
   );
 }
 
+function mapApiKey(d: any): ApiKey {
+  return {
+    id: d.id, name: d.name, key: d.key || '', key_prefix: d.keyPrefix,
+    is_active: d.isActive, rate_limit: d.rateLimit, daily_limit: d.dailyLimit,
+    created_at: d.createdAt, last_used_at: d.lastUsedAt, expires_at: d.expiresAt,
+  };
+}
+
 function ApiKeysPage() {
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, refetch } = useQuery<any>(MY_API_KEYS);
+  const apiKeys: ApiKey[] = useMemo(() => (data?.myApiKeys || []).map(mapApiKey), [data]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [createdKey, setCreatedKey] = useState<ApiKey | null>(null);
   const [creating, setCreating] = useState(false);
+  const [createKeyMut] = useMutation(CREATE_API_KEY);
+  const [revokeKeyMut] = useMutation(REVOKE_API_KEY);
+  const [deleteKeyMut] = useMutation(DELETE_API_KEY);
 
   // Confirm modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -87,22 +102,6 @@ function ApiKeysPage() {
   }>({ isOpen: false, type: 'revoke', keyId: '' });
   const [processing, setProcessing] = useState(false);
 
-  useEffect(() => {
-    loadApiKeys();
-  }, []);
-
-  const loadApiKeys = async () => {
-    try {
-      const response = await apiKeysApi.list();
-      setApiKeys(response?.data || []);
-    } catch {
-      toast.error('Failed to load API keys');
-      setApiKeys([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleCreate = async () => {
     if (!newKeyName.trim()) {
       toast.error('Please enter a name for the API key');
@@ -111,9 +110,10 @@ function ApiKeysPage() {
 
     setCreating(true);
     try {
-      const key = await apiKeysApi.create(newKeyName.trim());
+      const { data: result } = await createKeyMut({ variables: { name: newKeyName.trim() } });
+      const key = mapApiKey((result as any)?.createApiKey);
       setCreatedKey(key);
-      setApiKeys((prev) => [key, ...prev]);
+      await refetch();
       setNewKeyName('');
       toast.success('API key created successfully');
     } catch {
@@ -141,16 +141,13 @@ function ApiKeysPage() {
 
     try {
       if (type === 'revoke') {
-        await apiKeysApi.revoke(keyId);
-        setApiKeys((prev) =>
-          prev.map((key) => (key.id === keyId ? { ...key, is_active: false } : key))
-        );
+        await revokeKeyMut({ variables: { id: keyId } });
         toast.success('API key revoked');
       } else {
-        await apiKeysApi.delete(keyId);
-        setApiKeys((prev) => prev.filter((key) => key.id !== keyId));
+        await deleteKeyMut({ variables: { id: keyId } });
         toast.success('API key deleted');
       }
+      await refetch();
       closeConfirmModal();
     } catch {
       toast.error(type === 'revoke' ? 'Failed to revoke API key' : 'Failed to delete API key');

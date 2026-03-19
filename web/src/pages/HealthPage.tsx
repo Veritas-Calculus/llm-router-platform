@@ -2,7 +2,7 @@ import { useState as useReactState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowPathIcon, CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon, ServerIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
 import { useHealth } from '@/hooks/useHealth';
-import type { AlertConfig } from '@/lib/api';
+import type { AlertConfig } from '@/lib/types';
 
 function getStatusIcon(status: string | boolean) {
   if (typeof status === 'boolean') {
@@ -96,7 +96,7 @@ function HealthPage() {
             <p className="text-center text-apple-gray-500 py-8">No active providers configured</p>
           ) : (
             <div className="space-y-4">
-              {providerHealth.map((provider) => (
+              {providerHealth.map((provider: any) => (
                 <div key={provider.id} className="flex items-center justify-between p-4 bg-apple-gray-50 rounded-apple">
                   <div className="flex items-center gap-4">
                     {getStatusIcon(provider.is_healthy)}
@@ -142,7 +142,7 @@ function HealthPage() {
             <p className="text-center text-apple-gray-500 py-8">No API keys configured</p>
           ) : (
             <div className="space-y-4">
-              {apiKeyHealth.map((key) => (
+              {apiKeyHealth.map((key: any) => (
                 <div key={key.id} className="flex items-center justify-between p-4 bg-apple-gray-50 rounded-apple">
                   <div className="flex items-center gap-4">
                     <ServerIcon className="w-5 h-5 text-apple-gray-400" />
@@ -181,7 +181,7 @@ function HealthPage() {
             <p className="text-center text-apple-gray-500 py-8">No proxies configured</p>
           ) : (
             <div className="space-y-4">
-              {proxyHealth.map((proxy) => (
+              {proxyHealth.map((proxy: any) => (
                 <div key={proxy.id} className="flex items-center justify-between p-4 bg-apple-gray-50 rounded-apple">
                   <div className="flex items-center gap-4">
                     {getStatusIcon(proxy.is_healthy)}
@@ -220,7 +220,7 @@ function HealthPage() {
             <p className="text-center text-apple-gray-500 py-8">No alerts</p>
           ) : (
             <div className="space-y-4">
-              {alerts.map((alert) => (
+              {alerts.map((alert: any) => (
                 <div
                   key={alert.id}
                   className={`p-4 rounded-apple border-l-4 ${
@@ -259,7 +259,7 @@ function HealthPage() {
           {providerHealth.length === 0 ? (
             <p className="text-center text-apple-gray-500 py-8">No providers to configure</p>
           ) : (
-            providerHealth.map((provider) => {
+            providerHealth.map((provider: any) => {
               const configKey = `provider:${provider.id}`;
               const config = alertConfigs.get(configKey);
               return (

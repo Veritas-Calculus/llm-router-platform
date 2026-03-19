@@ -1,0 +1,135 @@
+# ──────────────────────────────────────────────────
+# Dashboard, Usage, Stats types
+# ──────────────────────────────────────────────────
+
+type Dashboard {
+  totalRequests: Int!
+  successRate: Float!
+  totalTokens: Int!
+  totalCost: Float!
+  averageLatencyMs: Float!
+  activeUsers: Int!
+  activeProviders: Int!
+  activeProxies: Int!
+  requestsToday: Int!
+  costToday: Float!
+  tokensToday: Int!
+  errorCount: Int!
+  mcpCallCount: Int!
+  mcpErrorCount: Int!
+  apiKeys: ApiKeysSummary!
+  proxies: ProxiesSummary!
+}
+
+type ApiKeysSummary {
+  total: Int!
+  healthy: Int!
+}
+
+type ProxiesSummary {
+  total: Int!
+  healthy: Int!
+}
+
+type UsageChartPoint {
+  date: String!
+  requests: Int!
+  tokens: Int!
+  cost: Float!
+}
+
+type ProviderStats {
+  providerId: ID!
+  providerName: String!
+  requests: Int!
+  tokens: Int!
+  successRate: Float!
+  avgLatencyMs: Float!
+  totalCost: Float!
+}
+
+type ModelStats {
+  modelId: ID!
+  modelName: String!
+  requests: Int!
+  inputTokens: Int!
+  outputTokens: Int!
+  totalCost: Float!
+}
+
+type UsageSummary {
+  totalRequests: Int!
+  successRate: Float!
+  totalTokens: Int!
+  totalCost: Float!
+}
+
+type DailyStats {
+  date: String!
+  requests: Int!
+  totalTokens: Int!
+  totalCost: Float!
+}
+
+type ProviderUsage {
+  providerId: ID!
+  providerName: String!
+  requests: Int!
+  tokens: Int!
+  cost: Float!
+}
+
+type UsageConnection {
+  data: [UsageRecord!]!
+  total: Int!
+}
+
+type UsageRecord {
+  id: ID!
+  modelName: String!
+  inputTokens: Int!
+  outputTokens: Int!
+  cost: Float!
+  latencyMs: Int!
+  isSuccess: Boolean!
+  createdAt: DateTime!
+}
+
+type AnomalyResult {
+  hasAnomaly: Boolean!
+  message: String
+  details: String
+}
+
+type SystemSettings {
+  registrationMode: String!
+  defaultTokenLimit: Int
+  defaultBudgetUsd: Float
+  site: String          # JSON — site config (name, subtitle, logo, favicon)
+  security: String      # JSON — security settings (registration, 2fa, sso)
+  defaults: String      # JSON — default user settings (balance, concurrency, plan)
+  email: String         # JSON — email/SMTP configuration
+  backup: String        # JSON — backup & recovery settings
+  payment: String       # JSON — payment channel settings
+}
+
+input SystemSettingsInput {
+  category: String!     # "site"|"security"|"defaults"|"email"|"backup"|"payment"
+  data: String!         # JSON payload for the category
+}
+
+type InviteCode {
+  id: ID!
+  code: String!
+  createdBy: ID!
+  maxUses: Int!
+  useCount: Int!
+  expiresAt: DateTime
+  isActive: Boolean!
+  createdAt: DateTime!
+}
+
+input InviteCodeInput {
+  maxUses: Int
+  expiresAt: DateTime
+}

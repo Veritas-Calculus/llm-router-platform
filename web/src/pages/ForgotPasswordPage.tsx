@@ -2,23 +2,25 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { authApi, getApiErrorMessage } from '@/lib/api';
+import { useMutation } from '@apollo/client/react';
+import { FORGOT_PASSWORD } from '@/lib/graphql/operations';
 
 function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [forgotPwd] = useMutation(FORGOT_PASSWORD);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      await authApi.forgotPassword({ email });
+      await forgotPwd({ variables: { email } });
       setSubmitted(true);
       toast.success('Reset link sent if account exists');
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Failed to process request'));
+    } catch {
+      toast.error('Failed to process request');
     } finally {
       setLoading(false);
     }

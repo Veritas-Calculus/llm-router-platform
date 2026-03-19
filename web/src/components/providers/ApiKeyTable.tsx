@@ -5,7 +5,7 @@ import {
   CheckCircleIcon,
   XCircleIcon,
 } from '@heroicons/react/24/outline';
-import { ProviderApiKey } from '@/lib/api';
+import { ProviderApiKey } from '@/lib/types';
 import ConfirmModal from '@/components/ConfirmModal';
 
 interface ApiKeyTableProps {

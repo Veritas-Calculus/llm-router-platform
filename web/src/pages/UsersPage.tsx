@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -8,57 +8,52 @@ import {
     NoSymbolIcon,
     CheckCircleIcon,
 } from '@heroicons/react/24/outline';
-import { usersApi, UserListItem } from '@/lib/api';
+import { useQuery, useMutation } from '@apollo/client/react';
+import { USERS_QUERY, TOGGLE_USER, UPDATE_USER_ROLE } from '@/lib/graphql/operations';
+import type { UserListItem } from '@/lib/types';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 function UsersPage() {
     const navigate = useNavigate();
-    const [users, setUsers] = useState<UserListItem[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data, loading, refetch } = useQuery<any>(USERS_QUERY);
+    const [toggleUserMut] = useMutation(TOGGLE_USER);
+    const [updateRoleMut] = useMutation(UPDATE_USER_ROLE);
     const [searchQuery, setSearchQuery] = useState('');
-    const [total, setTotal] = useState(0);
 
-    const fetchUsers = useCallback(async (q?: string) => {
-        setLoading(true);
-        try {
-            const res = await usersApi.list(q);
-            setUsers(res.data || []);
-            setTotal(res.total || 0);
-        } catch {
-            toast.error('Failed to load users');
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        fetchUsers();
-    }, [fetchUsers]);
+    const users: UserListItem[] = useMemo(() =>
+        (data?.users?.data || []).map((u: any) => ({
+            id: u.id, name: u.name, email: u.email, role: u.role,
+            is_active: u.isActive, api_key_count: u.apiKeyCount, created_at: u.createdAt,
+        })),
+    [data]);
+    const total = data?.users?.total || 0;
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        fetchUsers(searchQuery || undefined);
+        refetch({ search: searchQuery || undefined });
     };
 
-    const handleToggle = async (id: string, name: string) => {
+    const handleToggle = useCallback(async (id: string, name: string) => {
         try {
-            const res = await usersApi.toggle(id);
-            toast.success(`${name} ${res.is_active ? 'enabled' : 'disabled'}`);
-            fetchUsers(searchQuery || undefined);
+            const { data: result } = await toggleUserMut({ variables: { id } });
+            toast.success(`${name} ${(result as any)?.toggleUser?.isActive ? 'enabled' : 'disabled'}`);
+            refetch();
         } catch {
             toast.error('Failed to toggle user');
         }
-    };
+    }, [toggleUserMut, refetch]);
 
-    const handleRoleChange = async (id: string, name: string, currentRole: string) => {
+    const handleRoleChange = useCallback(async (id: string, name: string, currentRole: string) => {
         const newRole = currentRole === 'admin' ? 'user' : 'admin';
         try {
-            await usersApi.updateRole(id, newRole);
+            await updateRoleMut({ variables: { id, role: newRole } });
             toast.success(`${name} role changed to ${newRole}`);
-            fetchUsers(searchQuery || undefined);
+            refetch();
         } catch {
             toast.error('Failed to update role');
         }
-    };
+    }, [updateRoleMut, refetch]);
 
     const formatDate = (dateStr: string) => {
         if (!dateStr || dateStr === '0001-01-01T00:00:00Z') return 'Never';

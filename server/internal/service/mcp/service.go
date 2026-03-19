@@ -8,6 +8,7 @@ import (
 
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -214,7 +215,7 @@ func (s *Service) ReadResource(ctx context.Context, serverName, uri string) (int
 }
 
 func (s *Service) connectServer(ctx context.Context, server models.MCPServer) {
-	s.logger.Info("connecting to MCP server", zap.String("name", server.Name), zap.String("type", server.Type))
+	s.logger.Info("connecting to MCP server", zap.String("name", sanitize.LogValue(server.Name)), zap.String("type", sanitize.LogValue(server.Type)))
 	
 	var client Client
 	var err error
@@ -225,7 +226,7 @@ func (s *Service) connectServer(ctx context.Context, server models.MCPServer) {
 	case "sse":
 		client, err = NewSSEClient(server, s.logger)
 	default:
-		s.logger.Error("unsupported MCP transport type", zap.String("type", server.Type))
+		s.logger.Error("unsupported MCP transport type", zap.String("type", sanitize.LogValue(server.Type)))
 		return
 	}
 
@@ -246,10 +247,10 @@ func (s *Service) connectServer(ctx context.Context, server models.MCPServer) {
 	// Sync tools
 	tools, err := client.ListTools(ctx)
 	if err != nil {
-		s.logger.Error("failed to list tools for MCP server", zap.String("name", server.Name), zap.Error(err))
+		s.logger.Error("failed to list tools for MCP server", zap.String("name", sanitize.LogValue(server.Name)), zap.Error(err))
 	} else {
 		if err := s.repo.SyncTools(ctx, server.ID, tools); err != nil {
-			s.logger.Error("failed to sync tools for MCP server", zap.String("name", server.Name), zap.Error(err))
+			s.logger.Error("failed to sync tools for MCP server", zap.String("name", sanitize.LogValue(server.Name)), zap.Error(err))
 		}
 	}
 

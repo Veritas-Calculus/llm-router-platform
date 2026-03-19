@@ -1,0 +1,54 @@
+# ──────────────────────────────────────────────────
+# Redeem Code types
+# ──────────────────────────────────────────────────
+
+type RedeemCode {
+  id: ID!
+  code: String!
+  type: String!
+  creditAmount: Float!
+  planId: ID
+  planDays: Int!
+  usedBy: ID
+  usedAt: DateTime
+  expiresAt: DateTime
+  isActive: Boolean!
+  batchId: String!
+  note: String
+  createdAt: DateTime!
+}
+
+type RedeemCodeConnection {
+  nodes: [RedeemCode!]!
+  total: Int!
+}
+
+type RedeemResult {
+  success: Boolean!
+  message: String!
+  creditAmount: Float
+  planName: String
+}
+
+type RedeemRecord {
+  id: ID!
+  code: String!
+  creditAmount: Float!
+  planName: String
+  redeemedAt: DateTime!
+}
+
+type GenerateRedeemCodesResult {
+  codes: [String!]!
+  count: Int!
+}
+
+input GenerateRedeemCodesInput {
+  type: String!
+  creditAmount: Float
+  planId: ID
+  planDays: Int
+  count: Int!
+  expiresAt: DateTime
+  note: String
+}

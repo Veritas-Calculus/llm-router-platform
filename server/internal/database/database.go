@@ -71,6 +71,10 @@ func (d *Database) Migrate() error {
 		&models.Order{},
 		&models.Transaction{},
 		&models.SystemConfig{},
+		&models.RedeemCode{},
+		&models.Announcement{},
+		&models.Coupon{},
+		&models.Document{},
 	)
 }
 
@@ -227,7 +231,23 @@ func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
 	var existing models.User
 	result := d.DB.Where("email = ?", cfg.Email).First(&existing)
 	if result.Error == nil {
-		d.logger.Info("admin user already exists, skipping seed", zap.String("email", cfg.Email))
+		// Admin exists — verify password matches env config and sync if needed
+		if err := bcrypt.CompareHashAndPassword([]byte(existing.PasswordHash), []byte(cfg.Password)); err != nil {
+			newHash, hashErr := bcrypt.GenerateFromPassword([]byte(cfg.Password), bcrypt.DefaultCost)
+			if hashErr != nil {
+				return hashErr
+			}
+			existing.PasswordHash = string(newHash)
+			existing.Role = "admin"
+			existing.IsActive = true
+			if updateErr := d.DB.Save(&existing).Error; updateErr != nil {
+				d.logger.Error("failed to sync admin password", zap.Error(updateErr))
+				return updateErr
+			}
+			d.logger.Info("admin password synced with env config", zap.String("email", cfg.Email))
+		} else {
+			d.logger.Info("admin user already exists, password matches", zap.String("email", cfg.Email))
+		}
 		return nil
 	}
 

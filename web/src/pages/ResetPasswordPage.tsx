@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { authApi, getApiErrorMessage } from '@/lib/api';
+import { useMutation } from '@apollo/client/react';
+import { RESET_PASSWORD } from '@/lib/graphql/operations';
 
 function ResetPasswordPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
+  const [resetPwd] = useMutation(RESET_PASSWORD);
 
   const [formData, setFormData] = useState({
     password: '',
@@ -38,14 +40,13 @@ function ResetPasswordPage() {
     setLoading(true);
 
     try {
-      await authApi.resetPassword({
-        token: token!,
-        new_password: formData.password,
+      await resetPwd({
+        variables: { input: { token: token!, newPassword: formData.password } },
       });
       toast.success('Password successfully reset! You can now log in.');
       navigate('/login');
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Failed to reset password. Link may have expired.'));
+    } catch {
+      toast.error('Failed to reset password. Link may have expired.');
     } finally {
       setLoading(false);
     }

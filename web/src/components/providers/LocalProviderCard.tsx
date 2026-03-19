@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CheckCircleIcon } from '@heroicons/react/24/outline';
-import { Provider } from '@/lib/api';
+import { Provider } from '@/lib/types';
 
 interface LocalProviderCardProps {
   provider: Provider;

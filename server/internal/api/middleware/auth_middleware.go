@@ -124,6 +124,73 @@ func (m *AuthMiddleware) JWT() gin.HandlerFunc {
 	}
 }
 
+// OptionalJWT attempts JWT parsing but does NOT abort if missing/invalid.
+// Used for the GraphQL endpoint where public mutations (login, register)
+// coexist with authenticated queries on the same POST /graphql.
+func (m *AuthMiddleware) OptionalJWT() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.Next()
+			return
+		}
+
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			c.Next()
+			return
+		}
+
+		token, err := jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			return m.jwtSecret, nil
+		})
+
+		if err != nil || !token.Valid {
+			c.Next()
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.Next()
+			return
+		}
+
+		userIDStr, _ := claims["sub"].(string)
+		userID, err := uuid.Parse(userIDStr)
+		if err != nil {
+			c.Next()
+			return
+		}
+
+		userObj, err := m.userService.GetByID(c.Request.Context(), userID)
+		if err != nil || !userObj.IsActive {
+			c.Next()
+			return
+		}
+
+		// Check token revocation
+		if !userObj.TokensInvalidatedAt.IsZero() {
+			iat, _ := claims.GetIssuedAt()
+			if iat != nil && iat.Before(userObj.TokensInvalidatedAt) {
+				c.Next()
+				return
+			}
+		}
+
+		c.Set("user_id", userIDStr)
+		c.Set("email", userObj.Email)
+		c.Set("role", userObj.Role)
+		c.Set("user_monthly_token_limit", userObj.MonthlyTokenLimit)
+		c.Set("user_monthly_budget_usd", userObj.MonthlyBudgetUSD)
+		c.Set("user_rate_limit", userObj.RateLimitPerMinute)
+		c.Next()
+	}
+}
+
 // APIKey validates API key in header.
 func (m *AuthMiddleware) APIKey() gin.HandlerFunc {
 	return func(c *gin.Context) {

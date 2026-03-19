@@ -1,0 +1,84 @@
+# ──────────────────────────────────────────────────
+# User types
+# ──────────────────────────────────────────────────
+
+type User {
+  id: ID!
+  email: String!
+  name: String!
+  role: String!
+  isActive: Boolean!
+  requirePasswordChange: Boolean!
+  monthlyTokenLimit: Int
+  monthlyBudgetUsd: Float
+  balance: Float
+  createdAt: DateTime!
+  lastLoginAt: DateTime
+}
+
+type ApiKey {
+  id: ID!
+  name: String!
+  keyPrefix: String!
+  isActive: Boolean!
+  rateLimit: Int!
+  dailyLimit: Int!
+  expiresAt: DateTime
+  lastUsedAt: DateTime
+  createdAt: DateTime!
+}
+
+type ApiKeyWithSecret {
+  id: ID!
+  name: String!
+  key: String!
+  keyPrefix: String!
+  isActive: Boolean!
+  rateLimit: Int!
+  dailyLimit: Int!
+  expiresAt: DateTime
+  createdAt: DateTime!
+}
+
+type UserConnection {
+  data: [UserListItem!]!
+  total: Int!
+}
+
+type UserListItem {
+  id: ID!
+  email: String!
+  name: String!
+  role: String!
+  isActive: Boolean!
+  lastLoginAt: DateTime
+  createdAt: DateTime!
+  apiKeyCount: Int!
+}
+
+type UserDetail {
+  id: ID!
+  email: String!
+  name: String!
+  role: String!
+  isActive: Boolean!
+  createdAt: DateTime!
+  apiKeys: Int!
+  monthlyTokenLimit: Int
+  monthlyBudgetUsd: Float
+  usageMonth: UserMonthlyUsage
+}
+
+type UserMonthlyUsage {
+  totalRequests: Int!
+  totalTokens: Int!
+  totalCost: Float!
+  avgLatency: Float!
+  successRate: Float!
+  errorCount: Int!
+}
+
+input QuotaInput {
+  monthlyTokenLimit: Int
+  monthlyBudgetUsd: Float
+}

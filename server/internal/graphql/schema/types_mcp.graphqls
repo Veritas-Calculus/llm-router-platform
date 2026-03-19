@@ -1,0 +1,51 @@
+# ──────────────────────────────────────────────────
+# MCP types
+# ──────────────────────────────────────────────────
+
+type McpServer {
+  id: ID!
+  name: String!
+  type: String!
+  command: String
+  args: [String!]
+  url: String
+  isActive: Boolean!
+  status: String!
+  lastError: String
+  lastCheckedAt: DateTime
+  tools: [McpTool!]
+  createdAt: DateTime!
+}
+
+type McpTool {
+  id: ID!
+  serverId: ID!
+  name: String!
+  description: String!
+  inputSchema: String
+  isActive: Boolean!
+}
+
+type McpResource {
+  id: ID!
+  serverId: ID!
+  name: String!
+  uri: String!
+  description: String
+  mimeType: String
+}
+
+input McpServerInput {
+  name: String!
+  type: String!
+  command: String
+  args: [String!]
+  url: String
+  isActive: Boolean
+  env: [McpEnvInput!]
+}
+
+input McpEnvInput {
+  key: String!
+  value: String!
+}

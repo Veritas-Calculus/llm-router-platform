@@ -1,0 +1,24 @@
+# ──────────────────────────────────────────────────
+# Document types
+# ──────────────────────────────────────────────────
+
+type Document {
+  id: ID!
+  title: String!
+  slug: String!
+  content: String!
+  category: String!
+  sortOrder: Int!
+  isPublished: Boolean!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+input DocumentInput {
+  title: String!
+  slug: String!
+  content: String!
+  category: String
+  sortOrder: Int
+  isPublished: Boolean
+}

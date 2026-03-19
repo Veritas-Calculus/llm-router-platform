@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { userApi, getApiErrorMessage } from '@/lib/api';
+import { useMutation } from '@apollo/client/react';
+import { CHANGE_PASSWORD } from '@/lib/graphql/operations';
 import { useAuthStore } from '@/stores/authStore';
 
 function ForcePasswordChangePage() {
     const navigate = useNavigate();
     const { user, updateUser, logout } = useAuthStore();
+    const [changePwd] = useMutation(CHANGE_PASSWORD);
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
         currentPassword: '',
@@ -35,9 +37,8 @@ function ForcePasswordChangePage() {
 
         setLoading(true);
         try {
-            await userApi.changePassword({
-                old_password: formData.currentPassword,
-                new_password: formData.newPassword,
+            await changePwd({
+                variables: { input: { oldPassword: formData.currentPassword, newPassword: formData.newPassword } },
             });
 
             // Update local state to reflect password change
@@ -47,8 +48,8 @@ function ForcePasswordChangePage() {
 
             toast.success('Password changed successfully');
             navigate('/dashboard');
-        } catch (error: unknown) {
-            toast.error(getApiErrorMessage(error, 'Failed to change password'));
+        } catch {
+            toast.error('Failed to change password');
         } finally {
             setLoading(false);
         }

@@ -30,15 +30,19 @@ import (
 	"llm-router-platform/internal/database"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/internal/service/announcement"
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/billing"
 	configService "llm-router-platform/internal/service/config"
+	"llm-router-platform/internal/service/coupon"
+	"llm-router-platform/internal/service/document"
 	"llm-router-platform/internal/service/health"
 	"llm-router-platform/internal/service/mcp"
 	"llm-router-platform/internal/service/memory"
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/proxy"
+	"llm-router-platform/internal/service/redeem"
 	"llm-router-platform/internal/service/router"
 	"llm-router-platform/internal/service/task"
 	"llm-router-platform/internal/service/user"
@@ -334,6 +338,10 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	)
 
 	taskService := task.NewService(repos.Task, logger)
+	redeemService := redeem.NewService(gormDB, logger)
+	announcementService := announcement.NewService(gormDB, logger)
+	couponService := coupon.NewService(gormDB, logger)
+	documentService := document.NewService(gormDB, logger)
 
 	return &routes.Services{
 		User:          userService,
@@ -351,6 +359,10 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		Provider:      providerRegistry,
 		TaskService:   taskService,
 		AuditService:  auditService,
+		RedeemSvc:     redeemService,
+		AnnouncementSvc: announcementService,
+		CouponSvc:     couponService,
+		DocumentSvc:   documentService,
 		MCP:           mcpService,
 		RedisClient:   redisClient,
 		DB:            gormDB, // For health checks (operational handler)

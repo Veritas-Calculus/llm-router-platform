@@ -1,0 +1,42 @@
+# gqlgen configuration
+# https://gqlgen.com/config/
+
+schema:
+  - internal/graphql/schema/*.graphqls
+
+exec:
+  filename: internal/graphql/generated/generated.go
+  package: generated
+
+model:
+  filename: internal/graphql/model/models_gen.go
+  package: model
+
+resolver:
+  layout: follow-schema
+  dir: internal/graphql/resolvers
+  package: resolvers
+
+# Bind to existing Go models where possible
+autobind:
+  - llm-router-platform/internal/graphql/model
+
+# Custom model mappings
+models:
+  ID:
+    model:
+      - github.com/99designs/gqlgen/graphql.ID
+      - github.com/99designs/gqlgen/graphql.Int
+      - github.com/99designs/gqlgen/graphql.Int64
+      - github.com/99designs/gqlgen/graphql.Int32
+  Int:
+    model:
+      - github.com/99designs/gqlgen/graphql.Int
+      - github.com/99designs/gqlgen/graphql.Int64
+      - github.com/99designs/gqlgen/graphql.Int32
+  Float:
+    model:
+      - github.com/99designs/gqlgen/graphql.Float
+  DateTime:
+    model:
+      - github.com/99designs/gqlgen/graphql.Time

@@ -2,12 +2,15 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { authApi } from '@/lib/api';
+import { useMutation } from '@apollo/client/react';
+import { LOGIN, REGISTER } from '@/lib/graphql/operations';
 import { useAuthStore } from '@/stores/authStore';
 
 function LoginPage() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
+  const [loginMut] = useMutation(LOGIN);
+  const [registerMut] = useMutation(REGISTER);
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -22,19 +25,18 @@ function LoginPage() {
 
     try {
       if (isLogin) {
-        const response = await authApi.login({
-          email: formData.email,
-          password: formData.password,
+        const { data } = await loginMut({
+          variables: { input: { email: formData.email, password: formData.password } },
         });
-        setAuth(response.token, response.user);
+        const resp = (data as any)?.login;
+        setAuth(resp.token, resp.user);
         toast.success('Welcome back!');
       } else {
-        const response = await authApi.register({
-          email: formData.email,
-          password: formData.password,
-          name: formData.name,
+        const { data } = await registerMut({
+          variables: { input: { email: formData.email, password: formData.password, name: formData.name } },
         });
-        setAuth(response.token, response.user);
+        const resp = (data as any)?.register;
+        setAuth(resp.token, resp.user);
         toast.success('Account created successfully!');
       }
       // Read from store (just set above) to determine where to navigate

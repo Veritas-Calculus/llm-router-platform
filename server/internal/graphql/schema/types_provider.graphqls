@@ -1,0 +1,58 @@
+# ──────────────────────────────────────────────────
+# Provider types
+# ──────────────────────────────────────────────────
+
+type Provider {
+  id: ID!
+  name: String!
+  baseUrl: String!
+  isActive: Boolean!
+  priority: Int!
+  weight: Float!
+  maxRetries: Int!
+  timeout: Int!
+  useProxy: Boolean!
+  defaultProxyId: ID
+  requiresApiKey: Boolean!
+  createdAt: DateTime!
+}
+
+type ProviderApiKey {
+  id: ID!
+  providerId: ID!
+  alias: String!
+  keyPrefix: String!
+  isActive: Boolean!
+  priority: Int!
+  weight: Float!
+  rateLimit: Int!
+  usageCount: Int!
+  lastUsedAt: DateTime
+  createdAt: DateTime!
+}
+
+input ProviderInput {
+  name: String
+  baseUrl: String
+  isActive: Boolean
+  priority: Int
+  weight: Float
+  maxRetries: Int
+  timeout: Int
+  useProxy: Boolean
+  defaultProxyId: ID
+}
+
+input ProviderApiKeyInput {
+  apiKey: String!
+  alias: String!
+  priority: Int
+  weight: Float
+  rateLimit: Int
+}
+
+input UpdateProviderApiKeyInput {
+  priority: Int
+  weight: Float
+  rateLimit: Int
+}

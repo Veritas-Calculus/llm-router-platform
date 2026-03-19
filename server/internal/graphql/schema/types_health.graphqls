@@ -1,0 +1,85 @@
+# ──────────────────────────────────────────────────
+# Health, Alert types
+# ──────────────────────────────────────────────────
+
+type ApiKeyHealth {
+  id: ID!
+  providerId: ID!
+  providerName: String!
+  keyPrefix: String!
+  isActive: Boolean!
+  isHealthy: Boolean!
+  lastCheck: DateTime
+  responseTime: Float!
+  successRate: Float!
+}
+
+type ProxyHealth {
+  id: ID!
+  url: String!
+  type: String!
+  region: String!
+  isActive: Boolean!
+  isHealthy: Boolean!
+  responseTime: Float!
+  lastCheck: DateTime
+  successRate: Float!
+}
+
+type ProviderHealth {
+  id: ID!
+  name: String!
+  baseUrl: String!
+  isActive: Boolean!
+  isHealthy: Boolean!
+  useProxy: Boolean!
+  responseTime: Float!
+  lastCheck: DateTime
+  successRate: Float!
+  errorMessage: String
+}
+
+type HealthEvent {
+  id: ID!
+  targetType: String!
+  targetId: ID!
+  status: String!
+  message: String
+  createdAt: DateTime!
+}
+
+type Alert {
+  id: ID!
+  targetType: String!
+  targetId: ID!
+  alertType: String!
+  message: String!
+  status: String!
+  resolvedAt: DateTime
+  acknowledgedAt: DateTime
+  createdAt: DateTime!
+}
+
+type AlertConnection {
+  data: [Alert!]!
+  total: Int!
+}
+
+type AlertConfig {
+  id: ID
+  targetType: String!
+  targetId: ID!
+  isEnabled: Boolean!
+  failureThreshold: Int!
+  webhookUrl: String
+  email: String
+}
+
+input AlertConfigInput {
+  targetType: String!
+  targetId: ID!
+  isEnabled: Boolean!
+  failureThreshold: Int!
+  webhookUrl: String
+  email: String
+}

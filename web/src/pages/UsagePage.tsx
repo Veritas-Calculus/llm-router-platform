@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   LineChart,
@@ -9,42 +9,37 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { usageApi, DailyStats, UsageRecord, MonthlyUsage } from '@/lib/api';
+import { useQuery } from '@apollo/client/react';
+import { MY_USAGE_SUMMARY, MY_DAILY_USAGE, MY_RECENT_USAGE } from '@/lib/graphql/operations';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 function UsagePage() {
-  const [dailyStats, setDailyStats] = useState<DailyStats[]>([]);
-  const [records, setRecords] = useState<UsageRecord[]>([]);
-  const [monthlyUsage, setMonthlyUsage] = useState<MonthlyUsage | null>(null);
   const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
   const pageSize = 20;
 
-  const loadUsageData = useCallback(async () => {
-    try {
-      const [dailyRes, recordsRes, monthlyRes] = await Promise.all([
-        usageApi.getDailyStats(30),
-        usageApi.getRecords(page, pageSize),
-        usageApi.getMonthlyUsage(),
-      ]);
-      setDailyStats(dailyRes?.data || []);
-      setRecords(recordsRes?.data || []);
-      setTotal(recordsRes?.total || 0);
-      setMonthlyUsage(monthlyRes);
-    } catch (error) {
-      console.error('Failed to load usage data:', error);
-      // Set default empty values on error
-      setDailyStats([]);
-      setRecords([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
-    }
-  }, [page]);
+  const { data: summaryData, loading: sumLoading } = useQuery<any>(MY_USAGE_SUMMARY);
+  const { data: dailyData, loading: dailyLoading } = useQuery<any>(MY_DAILY_USAGE, { variables: { days: 30 } });
+  const { data: recentData, loading: recentLoading } = useQuery<any>(MY_RECENT_USAGE, { variables: { page, pageSize } });
+  const loading = sumLoading || dailyLoading || recentLoading;
 
-  useEffect(() => {
-    loadUsageData();
-  }, [loadUsageData]);
+  const monthlyUsage = useMemo(() => {
+    const s = summaryData?.myUsageSummary;
+    if (!s) return null;
+    return { total_requests: s.totalRequests, total_tokens: s.totalTokens, total_cost: s.totalCost, success_rate: s.successRate };
+  }, [summaryData]);
+
+  const dailyStats = useMemo(() =>
+    (dailyData?.myDailyUsage || []).map((d: any) => ({ date: d.date, requests: d.requests, tokens: d.tokens, cost: d.cost })),
+  [dailyData]);
+
+  const records = useMemo(() =>
+    (recentData?.myRecentUsage?.data || []).map((r: any) => ({
+      id: r.id, model_name: r.modelName, input_tokens: r.inputTokens, output_tokens: r.outputTokens,
+      cost: r.cost, latency_ms: r.latencyMs, is_success: r.isSuccess, created_at: r.createdAt,
+    })),
+  [recentData]);
+  const total = recentData?.myRecentUsage?.total || 0;
 
   const formatCurrency = (value: number): string => {
     return new Intl.NumberFormat('en-US', {
@@ -198,7 +193,7 @@ function UsagePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-apple-gray-100">
-              {records.map((record) => (
+              {records.map((record: any) => (
                 <tr key={record.id} className="hover:bg-apple-gray-50">
                   <td className="table-cell font-medium">{record.model_name}</td>
                   <td className="table-cell">{formatNumber(record.input_tokens)}</td>

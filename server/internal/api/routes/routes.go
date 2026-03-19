@@ -8,9 +8,15 @@ import (
 	"llm-router-platform/internal/api/handlers"
 	"llm-router-platform/internal/api/middleware"
 	"llm-router-platform/internal/config"
+	"llm-router-platform/internal/graphql/dataloaders"
+	gqlhandler "llm-router-platform/internal/graphql/handler"
+	"llm-router-platform/internal/graphql/resolvers"
+	announcementSvc "llm-router-platform/internal/service/announcement"
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/billing"
 	configService "llm-router-platform/internal/service/config"
+	couponSvc "llm-router-platform/internal/service/coupon"
+	documentSvc "llm-router-platform/internal/service/document"
 	"llm-router-platform/internal/service/email"
 	"llm-router-platform/internal/service/health"
 	"llm-router-platform/internal/service/mcp"
@@ -18,6 +24,7 @@ import (
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/proxy"
+	"llm-router-platform/internal/service/redeem"
 	"llm-router-platform/internal/service/router"
 	"llm-router-platform/internal/service/task"
 	"llm-router-platform/internal/service/user"
@@ -58,6 +65,10 @@ type Services struct {
 	Provider      *provider.Registry
 	TaskService   *task.Service
 	AuditService  *audit.Service
+	RedeemSvc     *redeem.Service
+	AnnouncementSvc *announcementSvc.Service
+	CouponSvc     *couponSvc.Service
+	DocumentSvc   *documentSvc.Service
 	RedisClient   *redis.Client // For rate limiting
 	DB            *gorm.DB      // For operational health checks only
 }
@@ -116,13 +127,56 @@ func Setup(
 		logger.Info("swagger docs enabled at /swagger/ (non-release mode)")
 	}
 
+	// ─── GraphQL Endpoint ────────────────────────────────────────────
+	emailSvcForGql := email.NewService(cfg.Email, cfg.Frontend.URL)
+	gqlResolver := &resolvers.Resolver{
+		UserSvc:         services.User,
+		Router:          services.Router,
+		Billing:         services.Billing,
+		BudgetService:   services.BudgetService,
+		SubscriptionSvc: services.Subscription,
+		Payment:         services.Payment,
+		Balance:         services.Balance,
+		SystemConfig:    services.SystemConfig,
+		Health:          services.Health,
+		Memory:          services.Memory,
+		MCP:             services.MCP,
+		Observability:   services.Observability,
+		Proxy:           services.Proxy,
+		Provider:        services.Provider,
+		TaskService:     services.TaskService,
+		AuditService:    services.AuditService,
+		EmailService:    emailSvcForGql,
+		RedeemSvc:       services.RedeemSvc,
+		AnnouncementSvc: services.AnnouncementSvc,
+		CouponSvc:       services.CouponSvc,
+		DocumentSvc:     services.DocumentSvc,
+		RedisClient:     services.RedisClient,
+		DB:              services.DB,
+		Config:          cfg,
+		Logger:          logger,
+	}
+	graphqlHandler := gqlhandler.NewHandler(gqlResolver, cfg, logger)
+
+	// JWT-optional: the @auth directive handles per-field authentication.
+	// We apply JWT middleware but do NOT abort on missing token, because
+	// some mutations (login, register) are public.
+	graphqlGroup := engine.Group("/graphql")
+	graphqlGroup.Use(requestIDMiddleware.Handle())
+	graphqlGroup.Use(authMiddleware.OptionalJWT())
+	graphqlGroup.Use(dataloaders.Middleware(services.User))
+	graphqlGroup.POST("", graphqlHandler.ServeGraphQL())
+
+	if cfg.Server.Mode != "release" {
+		graphqlGroup.GET("", gqlhandler.ServePlayground())
+		logger.Info("graphql playground enabled at /graphql (non-release mode)")
+	}
+
 	// ─── Rate Limiter middleware ──────────────────────────────────────
 	rateLimiter := middleware.NewRateLimiter(cfg.RateLimit.RequestsPerMinute, services.RedisClient, logger)
-	authorLimiter := middleware.NewAuthRateLimiter(services.RedisClient, 5, logger)
 
-	// Per-key and per-user rate limiters
+	// Per-key rate limiter (used by LLM endpoints)
 	perKeyLimiter := middleware.NewPerKeyRateLimiter(services.RedisClient, logger)
-	perUserLimiter := middleware.NewPerUserRateLimiter(services.RedisClient, cfg.RateLimit.RequestsPerMinute, logger)
 	quotaChecker := middleware.NewQuotaChecker(services.RedisClient, logger)
 
 	// ─── Backpressure middleware ──────────────────────────────────────
@@ -153,30 +207,13 @@ func Setup(
 	}
 
 	// ─── API Routes ────────────────────────────────────────────────────
-	emailService := email.NewService(cfg.Email, cfg.Frontend.URL)
+	// NOTE: Management REST API has been deprecated.
+	// All management operations are now served via /graphql (Apollo Client).
+	// Only LLM proxy endpoints and payment webhooks remain under /api/v1.
 
-	authHandler := handlers.NewAuthHandler(services.User, services.AuditService, emailService, &cfg.JWT, cfg.Registration.Mode, cfg.Registration.InviteCode, services.RedisClient, services.DB, logger)
-	apiKeyHandler := handlers.NewAPIKeyHandler(services.User, logger)
 	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Subscription, services.Balance, services.Observability, logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)
-	usageHandler := handlers.NewUsageHandler(services.Billing, logger)
-	healthHandler := handlers.NewHealthHandler(services.Health, logger)
-	alertHandler := handlers.NewAlertHandler(services.Health, logger)
-	dashboardHandler := handlers.NewDashboardHandler(services.Billing, services.Health, services.Router, services.User, logger)
-	proxyHandler := handlers.NewProxyHandler(services.Proxy, logger)
-	providerHandler := handlers.NewProviderHandler(services.Router, services.Health, logger)
-	finopsHandler := handlers.NewFinOpsHandler(services.Billing, services.BudgetService, logger)
-	userHandler := handlers.NewUserHandler(services.User, services.Billing, services.RedisClient, logger)
-	mcpHandler := handlers.NewMCPHandler(services.MCP, logger)
-	planHandler := handlers.NewPlanHandler(services.Subscription, logger)
 	paymentHandler := handlers.NewPaymentHandler(services.Payment, logger)
-	configHandler := handlers.NewConfigHandler(services.SystemConfig, logger)
-
-	// Task handler (optional: only created if task service is wired)
-	var taskHandler *handlers.TaskHandler
-	if services.TaskService != nil {
-		taskHandler = handlers.NewTaskHandler(services.TaskService, logger)
-	}
 
 	// Shared middleware chain for all LLM API endpoints.
 	applyLLMMiddleware := func(g *gin.RouterGroup) {
@@ -191,209 +228,8 @@ func Setup(
 	{
 		v1 := api.Group("/v1")
 		{
-			auth := v1.Group("/auth")
-			auth.Use(authorLimiter.Limit())
-			{
-				auth.POST("/register", authHandler.Register)
-				auth.POST("/login", authHandler.Login)
-				auth.POST("/token/rotate", authHandler.RotateRefreshToken) // Refresh token rotation (validates refresh token from body)
-				auth.POST("/forgot-password", authHandler.ForgotPassword)
-				auth.POST("/reset-password", authHandler.ResetPassword)
-			}
-
-			// ── All authenticated users ─────────────────────────
-			protected := v1.Group("")
-			protected.Use(authMiddleware.JWT())
-			protected.Use(perUserLimiter.Limit())
-			{
-				// Token refresh (requires valid JWT — H4 security fix)
-				protected.POST("/auth/refresh", authHandler.RefreshToken)
-
-				// M4: Logout — invalidates all tokens for the current user
-				protected.POST("/auth/logout", authHandler.Logout)
-
-				// Personal profile
-				user := protected.Group("/user")
-				{
-					user.GET("/profile", authHandler.GetProfile)
-					user.PUT("/profile", authHandler.UpdateProfile)
-					user.PUT("/password", authHandler.ChangePassword)
-				}
-
-				// Personal API keys (scoped to user_id)
-				keys := protected.Group("/api-keys")
-				{
-					keys.GET("", apiKeyHandler.List)
-					keys.POST("", apiKeyHandler.Create)
-					keys.POST("/:id/revoke", apiKeyHandler.Revoke)
-					keys.DELETE("/:id", apiKeyHandler.Delete)
-				}
-
-				// Personal usage (scoped to user_id)
-				usage := protected.Group("/usage")
-				{
-					usage.GET("/summary", usageHandler.GetSummary)
-					usage.GET("/daily", usageHandler.GetDaily)
-					usage.GET("/by-provider", usageHandler.GetByProvider)
-					usage.GET("/recent", usageHandler.GetRecent)
-					usage.GET("/export/csv", finopsHandler.ExportUsage)
-				}
-
-				// Personal budget & anomaly detection
-				finops := protected.Group("/finops")
-				{
-					finops.PUT("/budget", finopsHandler.SetBudget)
-					finops.GET("/budget", finopsHandler.GetBudget)
-					finops.DELETE("/budget", finopsHandler.DeleteBudget)
-					finops.GET("/budget/status", finopsHandler.GetBudgetStatus)
-					finops.GET("/anomaly", finopsHandler.DetectAnomaly)
-				}
-
-				// Async task management
-				if taskHandler != nil {
-					tasks := protected.Group("/tasks")
-					{
-						tasks.POST("", taskHandler.CreateTask)
-						tasks.GET("", taskHandler.ListTasks)
-						tasks.GET("/:id", taskHandler.GetTask)
-						tasks.POST("/:id/cancel", taskHandler.CancelTask)
-					}
-				}
-
-				// Dashboard stats (returns per-user or system data depending on role)
-				dashboard := protected.Group("/dashboard")
-				{
-					dashboard.GET("/stats", dashboardHandler.GetStats)
-					dashboard.GET("/overview", dashboardHandler.GetOverview)
-					dashboard.GET("/usage-chart", dashboardHandler.GetUsageChart)
-					dashboard.GET("/provider-stats", dashboardHandler.GetProviderStats)
-					dashboard.GET("/model-stats", dashboardHandler.GetModelStats)
-				}
-
-				// Plans & Subscriptions
-				plans := protected.Group("/plans")
-				{
-					plans.GET("", planHandler.ListPlans)
-					plans.GET("/my", planHandler.GetMySubscription)
-					plans.POST("/checkout", paymentHandler.CreateCheckoutSession)
-					plans.POST("/recharge", paymentHandler.CreateRechargeSession)
-					plans.GET("/orders", paymentHandler.GetMyOrders)
-				}
-			}
-
 			// ── Public / Webhooks ──────────────────────────────
 			v1.POST("/payments/webhook/stripe", paymentHandler.StripeWebhook)
-
-			// ── Admin only ──────────────────────────────────────
-			admin := v1.Group("")
-			admin.Use(authMiddleware.JWT())
-			admin.Use(middleware.AdminOnly())
-			{
-				// User management
-				users := admin.Group("/users")
-				{
-					users.GET("", userHandler.List)
-					users.GET("/:id", userHandler.GetUser)
-					users.GET("/:id/usage", userHandler.GetUserUsage)
-					users.GET("/:id/api-keys", userHandler.GetUserAPIKeys)
-					users.POST("/:id/toggle", userHandler.ToggleUser)
-					users.PUT("/:id/role", userHandler.UpdateRole)
-					users.PUT("/:id/quota", userHandler.UpdateQuota)
-				}
-
-				// System health monitoring (admin only)
-				healthGroup := admin.Group("/health")
-				{
-					healthGroup.GET("/api-keys", healthHandler.GetAPIKeysHealth)
-					healthGroup.POST("/api-keys/:id/check", healthHandler.CheckAPIKey)
-					healthGroup.GET("/proxies", healthHandler.GetProxiesHealth)
-					healthGroup.POST("/proxies/:id/check", healthHandler.CheckProxy)
-					healthGroup.GET("/providers", healthHandler.GetProvidersHealth)
-					healthGroup.POST("/providers/:id/check", healthHandler.CheckProvider)
-					healthGroup.POST("/providers/check-all", healthHandler.CheckAllProviders)
-					healthGroup.GET("/history", healthHandler.GetHealthHistory)
-				}
-
-				// Alert management (admin only)
-				alerts := admin.Group("/alerts")
-				{
-					alerts.GET("", alertHandler.List)
-					alerts.POST("/:id/acknowledge", alertHandler.Acknowledge)
-					alerts.POST("/:id/resolve", alertHandler.Resolve)
-					alerts.GET("/config/:target_type/:target_id", alertHandler.GetConfig)
-					alerts.PUT("/config", alertHandler.UpdateConfig)
-				}
-
-				// Invite code management (admin only)
-				invites := admin.Group("/invite-codes")
-				{
-					invites.POST("", authHandler.CreateInviteCode)
-					invites.GET("", authHandler.ListInviteCodes)
-				}
-
-				// Proxy management (admin only)
-				proxies := admin.Group("/proxies")
-				{
-					proxies.GET("", proxyHandler.List)
-					proxies.POST("", proxyHandler.Create)
-					proxies.POST("/batch", proxyHandler.BatchCreate)
-					proxies.POST("/test-all", proxyHandler.TestAllProxies)
-					proxies.PUT("/:id", proxyHandler.Update)
-					proxies.DELETE("/:id", proxyHandler.Delete)
-					proxies.POST("/:id/toggle", proxyHandler.Toggle)
-					proxies.POST("/:id/test", proxyHandler.TestProxy)
-				}
-
-				// Provider management (admin only)
-				providers := admin.Group("/providers")
-				{
-					providers.GET("", providerHandler.List)
-					providers.PUT("/:id", providerHandler.Update)
-					providers.POST("/:id/toggle", providerHandler.Toggle)
-					providers.POST("/:id/toggle-proxy", providerHandler.ToggleProxy)
-					providers.GET("/:id/health", providerHandler.CheckHealth)
-					providers.GET("/:id/api-keys", providerHandler.GetAPIKeys)
-					providers.POST("/:id/api-keys", providerHandler.CreateAPIKey)
-					providers.POST("/:id/api-keys/:key_id/toggle", providerHandler.ToggleAPIKey)
-					providers.DELETE("/:id/api-keys/:key_id", providerHandler.DeleteAPIKey)
-					providers.PUT("/:id/api-keys/:key_id", providerHandler.UpdateAPIKey)
-				}
-
-				// MCP management (admin only)
-				mcp := admin.Group("/mcp")
-				{
-					mcp.GET("/servers", mcpHandler.ListServers)
-					mcp.POST("/servers", mcpHandler.CreateServer)
-					mcp.GET("/servers/:id", mcpHandler.GetServer)
-					mcp.PUT("/servers/:id", mcpHandler.UpdateServer)
-					mcp.DELETE("/servers/:id", mcpHandler.DeleteServer)
-					mcp.POST("/servers/:id/refresh", mcpHandler.RefreshTools)
-					mcp.GET("/tools", mcpHandler.ListTools)
-					mcp.GET("/resources", mcpHandler.ListResources)
-					mcp.GET("/resources/read", mcpHandler.ReadResource)
-				}
-
-				// Plan management (admin only)
-				adminPlans := admin.Group("/plans")
-				{
-					adminPlans.POST("", planHandler.CreatePlan)
-					adminPlans.PUT("/:id", planHandler.UpdatePlan)
-				}
-
-				// System settings (admin only)
-				settings := admin.Group("/settings")
-				{
-					settings.GET("", configHandler.GetSettings)
-					settings.POST("", configHandler.UpdateSettings)
-				}
-
-				// System-wide FinOps (admin only)
-				adminFinops := admin.Group("/finops")
-				{
-					adminFinops.GET("/anomaly/system", finopsHandler.DetectSystemAnomaly)
-					adminFinops.GET("/export/system-csv", finopsHandler.ExportSystemUsage)
-				}
-			}
 
 			// ─── LLM API Endpoints ──────────────────────────────
 			// Registered under /api/v1 (management API namespace).

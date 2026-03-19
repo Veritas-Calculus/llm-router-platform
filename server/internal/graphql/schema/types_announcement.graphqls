@@ -1,0 +1,26 @@
+# ──────────────────────────────────────────────────
+# Announcement types
+# ──────────────────────────────────────────────────
+
+type Announcement {
+  id: ID!
+  title: String!
+  content: String!
+  type: String!
+  priority: Int!
+  isActive: Boolean!
+  startsAt: DateTime
+  endsAt: DateTime
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+input AnnouncementInput {
+  title: String!
+  content: String!
+  type: String
+  priority: Int
+  isActive: Boolean
+  startsAt: DateTime
+  endsAt: DateTime
+}

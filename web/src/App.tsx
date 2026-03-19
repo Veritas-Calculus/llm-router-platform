@@ -4,21 +4,32 @@ import Layout from '@/components/Layout';
 import LoginPage from '@/pages/LoginPage';
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/ResetPasswordPage';
-import DashboardPage from '@/pages/DashboardPage';
-import UsagePage from '@/pages/UsagePage';
+import ForcePasswordChangePage from '@/pages/ForcePasswordChangePage';
+
+// User pages
 import ApiKeysPage from '@/pages/ApiKeysPage';
-import HealthPage from '@/pages/HealthPage';
-import ProvidersPage from '@/pages/ProvidersPage';
-import McpPage from '@/pages/McpPage';
+import UsagePage from '@/pages/UsagePage';
+import SubscriptionPage from '@/pages/SubscriptionPage';
+import RedeemPage from '@/pages/RedeemPage';
+import DocsPage from '@/pages/DocsPage';
+import SettingsPage from '@/pages/SettingsPage';
 import PlansPage from '@/pages/PlansPage';
 import BillingPage from '@/pages/BillingPage';
-import ProxiesPage from '@/pages/ProxiesPage';
-import SettingsPage from '@/pages/SettingsPage';
-import AdminSettingsPage from '@/pages/AdminSettingsPage';
-import DocsPage from '@/pages/DocsPage';
+
+// Admin pages
+import DashboardPage from '@/pages/DashboardPage';
 import UsersPage from '@/pages/UsersPage';
 import UserDetailPage from '@/pages/UserDetailPage';
-import ForcePasswordChangePage from '@/pages/ForcePasswordChangePage';
+import AnnouncementsPage from '@/pages/AnnouncementsPage';
+import AdminPlansPage from '@/pages/AdminPlansPage';
+import RedeemCodesPage from '@/pages/RedeemCodesPage';
+import CouponsPage from '@/pages/CouponsPage';
+import ProxiesPage from '@/pages/ProxiesPage';
+import McpPage from '@/pages/McpPage';
+import AdminDocsPage from '@/pages/AdminDocsPage';
+import AdminSettingsPage from '@/pages/AdminSettingsPage';
+import HealthPage from '@/pages/HealthPage';
+import ProvidersPage from '@/pages/ProvidersPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, user } = useAuthStore((state) => state);
@@ -46,7 +57,7 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAdmin) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/api-keys" replace />;
   }
 
   return <>{children}</>;
@@ -79,20 +90,40 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        {/* All users */}
-        <Route path="dashboard" element={<DashboardPage />} />
-        <Route path="usage" element={<UsagePage />} />
+        <Route index element={<Navigate to="/api-keys" replace />} />
+
+        {/* ── User pages ── */}
         <Route path="api-keys" element={<ApiKeysPage />} />
-        <Route path="plans" element={<ProtectedRoute><PlansPage /></ProtectedRoute>} />
-        <Route path="billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
-        <Route path="profile" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+        <Route path="usage" element={<UsagePage />} />
+        <Route path="subscription" element={<SubscriptionPage />} />
+        <Route path="redeem" element={<RedeemPage />} />
         <Route path="docs" element={<DocsPage />} />
-        {/* Admin only */}
-        <Route path="users" element={<AdminRoute><UsersPage /></AdminRoute>} />
-        <Route path="users/:id" element={<AdminRoute><UserDetailPage /></AdminRoute>} />
+        <Route path="profile" element={<SettingsPage />} />
+        {/* Legacy routes — keep for backward compat */}
+        <Route path="plans" element={<PlansPage />} />
+        <Route path="billing" element={<BillingPage />} />
+        <Route path="dashboard" element={<DashboardPage />} />
+
+        {/* ── Admin pages ── */}
+        <Route path="admin/dashboard" element={<AdminRoute><DashboardPage /></AdminRoute>} />
+        <Route path="admin/usage" element={<AdminRoute><UsagePage /></AdminRoute>} />
+        <Route path="admin/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
+        <Route path="admin/users/:id" element={<AdminRoute><UserDetailPage /></AdminRoute>} />
+        <Route path="admin/announcements" element={<AdminRoute><AnnouncementsPage /></AdminRoute>} />
+        <Route path="admin/plans" element={<AdminRoute><AdminPlansPage /></AdminRoute>} />
+        <Route path="admin/redeem-codes" element={<AdminRoute><RedeemCodesPage /></AdminRoute>} />
+        <Route path="admin/coupons" element={<AdminRoute><CouponsPage /></AdminRoute>} />
+        <Route path="admin/proxies" element={<AdminRoute><ProxiesPage /></AdminRoute>} />
+        <Route path="admin/mcp" element={<AdminRoute><McpPage /></AdminRoute>} />
+        <Route path="admin/docs" element={<AdminRoute><AdminDocsPage /></AdminRoute>} />
+        <Route path="admin/settings" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
+        <Route path="admin/providers" element={<AdminRoute><ProvidersPage /></AdminRoute>} />
+        <Route path="admin/health" element={<AdminRoute><HealthPage /></AdminRoute>} />
+        {/* Legacy admin routes */}
         <Route path="health" element={<AdminRoute><HealthPage /></AdminRoute>} />
         <Route path="providers" element={<AdminRoute><ProvidersPage /></AdminRoute>} />
+        <Route path="users" element={<AdminRoute><UsersPage /></AdminRoute>} />
+        <Route path="users/:id" element={<AdminRoute><UserDetailPage /></AdminRoute>} />
         <Route path="mcp" element={<AdminRoute><McpPage /></AdminRoute>} />
         <Route path="proxies" element={<AdminRoute><ProxiesPage /></AdminRoute>} />
         <Route path="settings" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />

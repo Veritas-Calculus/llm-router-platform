@@ -9,7 +9,7 @@ import {
   LockClosedIcon,
   LinkIcon,
 } from '@heroicons/react/24/outline';
-import { Proxy } from '@/lib/api';
+import { Proxy } from '@/lib/types';
 
 interface TestResult {
   id: string;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { 
   CheckIcon, 
@@ -7,44 +7,42 @@ import {
   RocketLaunchIcon,
   BuildingOffice2Icon
 } from '@heroicons/react/24/outline';
-import { plansApi, Plan, Subscription, getApiErrorMessage, api } from '@/lib/api';
+import { useQuery, useMutation } from '@apollo/client/react';
+import { PLANS_QUERY, MY_BILLING_QUERY, CREATE_CHECKOUT_SESSION, CREATE_RECHARGE_SESSION } from '@/lib/graphql/operations';
+import type { Plan } from '@/lib/types';
 import toast from 'react-hot-toast';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 function PlansPage() {
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: plansData, loading: plansLoading } = useQuery<any>(PLANS_QUERY);
+  const { data: billingData, loading: billingLoading } = useQuery<any>(MY_BILLING_QUERY);
+  const [checkoutMut] = useMutation(CREATE_CHECKOUT_SESSION);
+  const [rechargeMut] = useMutation(CREATE_RECHARGE_SESSION);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const loading = plansLoading || billingLoading;
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [plansRes, subRes] = await Promise.all([
-        plansApi.list(),
-        plansApi.getMySubscription()
-      ]);
-      setPlans(plansRes.data);
-      setSubscription(subRes);
-    } catch {
-      // toast.error(getApiErrorMessage(error, 'Failed to fetch billing data'));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const plans: Plan[] = useMemo(() =>
+    (plansData?.plans || []).map((p: any) => ({
+      id: p.id, name: p.name, description: p.description,
+      price_month: p.price, features: (p.features || []).join(', '),
+      token_limit: 0, rate_limit: 0, is_active: p.isActive,
+    })),
+  [plansData]);
+  const subscription = useMemo(() => {
+    const s = billingData?.mySubscription;
+    if (!s) return null;
+    return { id: s.id, plan_id: s.planId, plan_name: s.planName, status: s.status, current_period_start: s.currentPeriodStart, current_period_end: s.currentPeriodEnd } as any;
+  }, [billingData]);
 
   const handleSubscribe = async (planId: string) => {
     try {
       setProcessingId(planId);
-      const response = await plansApi.checkout(planId);
-      if (response.url) {
-        window.location.href = response.url;
-      }
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Failed to initiate checkout'));
+      const { data } = await checkoutMut({ variables: { planId } });
+      const url = (data as any)?.createCheckoutSession?.url;
+      if (url) window.location.href = url;
+    } catch {
+      toast.error('Failed to initiate checkout');
     } finally {
       setProcessingId(null);
     }
@@ -53,12 +51,11 @@ function PlansPage() {
   const handleRecharge = async (amount: number) => {
     try {
       setProcessingId(`recharge-${amount}`);
-      const response = await api.post<{ url: string }>('/api/v1/plans/recharge', { amount });
-      if (response.url) {
-        window.location.href = response.url;
-      }
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Failed to initiate recharge'));
+      const { data } = await rechargeMut({ variables: { amount } });
+      const url = (data as any)?.createRechargeSession?.url;
+      if (url) window.location.href = url;
+    } catch {
+      toast.error('Failed to initiate recharge');
     } finally {
       setProcessingId(null);
     }

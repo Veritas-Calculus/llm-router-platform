@@ -74,7 +74,8 @@ const tooltipStyle = {
 };
 
 function DashboardPage() {
-  const { user } = useAuthStore();
+  const { user, adminView, isAdmin } = useAuthStore();
+  const showAdminDashboard = isAdmin && adminView;
   const {
     stats,
     chartData,
@@ -173,7 +174,8 @@ function DashboardPage() {
         />
       </div>
 
-      {/* System Health Row */}
+      {/* System Health Row — Admin view only */}
+      {showAdminDashboard && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card">
           <div className="flex items-center justify-between">
@@ -232,6 +234,7 @@ function DashboardPage() {
           </div>
         </motion.div>
       </div>
+      )}
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -266,6 +269,8 @@ function DashboardPage() {
         </motion.div>
       </div>
 
+      {/* Provider & Model Stats — Admin view only */}
+      {showAdminDashboard && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="card">
           <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Provider Usage</h2>
@@ -275,7 +280,7 @@ function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {providerStats.slice(0, 5).map((provider, index) => (
+              {providerStats.slice(0, 5).map((provider: any, index: number) => (
                 <div key={provider.provider_id} className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
@@ -304,7 +309,7 @@ function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {modelStats.slice(0, 5).map((model, index) => (
+              {modelStats.slice(0, 5).map((model: any, index: number) => (
                 <div key={model.model_id} className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="w-6 h-6 bg-apple-gray-100 rounded-full flex items-center justify-center text-sm font-medium text-apple-gray-600">{index + 1}</span>
@@ -323,6 +328,7 @@ function DashboardPage() {
           )}
         </motion.div>
       </div>
+      )}
 
       {/* Token Usage Chart */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="card">

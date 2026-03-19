@@ -1,0 +1,194 @@
+# ──────────────────────────────────────────────────
+# Core Query & Mutation definitions
+# ──────────────────────────────────────────────────
+
+scalar DateTime
+
+directive @auth(role: Role = USER) on FIELD_DEFINITION | OBJECT
+directive @rateLimit(max: Int!, window: String!) on FIELD_DEFINITION
+
+enum Role {
+  USER
+  ADMIN
+}
+
+type Query {
+  # ── 个人数据 ──
+  me: User! @auth
+  myApiKeys: [ApiKey!]! @auth
+  myUsageSummary: UsageSummary! @auth
+  myDailyUsage(days: Int = 30): [DailyStats!]! @auth
+  myUsageByProvider: [ProviderUsage!]! @auth
+  myRecentUsage(page: Int = 1, pageSize: Int = 20): UsageConnection! @auth
+  myBudget: Budget @auth
+  myBudgetStatus: BudgetStatus @auth
+  mySubscription: UserSubscription @auth
+  myOrders: [Order!]! @auth
+  myTasks(page: Int = 1, pageSize: Int = 20): TaskConnection! @auth
+  myAnomalyDetection: AnomalyResult! @auth
+  myRedeemHistory: [RedeemRecord!]! @auth
+
+  # ── Dashboard ──
+  dashboard: Dashboard! @auth
+  usageChart(days: Int = 30): [UsageChartPoint!]! @auth
+  providerStats: [ProviderStats!]! @auth
+  modelStats: [ModelStats!]! @auth
+
+  # ── Plans（需要登录）──
+  plans: [Plan!]! @auth
+
+  # ── 管理端 ──
+  users(q: String, page: Int, pageSize: Int): UserConnection! @auth(role: ADMIN)
+  user(id: ID!): UserDetail! @auth(role: ADMIN)
+  userUsage(id: ID!, days: Int = 30): [DailyStats!]! @auth(role: ADMIN)
+  userApiKeys(id: ID!): [ApiKey!]! @auth(role: ADMIN)
+  providers: [Provider!]! @auth(role: ADMIN)
+  providerApiKeys(providerId: ID!): [ProviderApiKey!]! @auth(role: ADMIN)
+  models(providerId: ID!): [Model!]! @auth(role: ADMIN)
+  providerHealth(providerId: ID!): ProviderHealth! @auth(role: ADMIN)
+  proxies: [Proxy!]! @auth(role: ADMIN)
+  alerts(status: String): AlertConnection! @auth(role: ADMIN)
+  alertConfig(targetType: String!, targetId: ID!): AlertConfig @auth(role: ADMIN)
+  healthApiKeys: [ApiKeyHealth!]! @auth(role: ADMIN)
+  healthProxies: [ProxyHealth!]! @auth(role: ADMIN)
+  healthProviders: [ProviderHealth!]! @auth(role: ADMIN)
+  healthHistory: [HealthEvent!]! @auth(role: ADMIN)
+  mcpServers: [McpServer!]! @auth(role: ADMIN)
+  mcpServer(id: ID!): McpServer! @auth(role: ADMIN)
+  mcpTools: [McpTool!]! @auth(role: ADMIN)
+  mcpResources: [McpResource!]! @auth(role: ADMIN)
+  systemSettings: SystemSettings! @auth(role: ADMIN)
+  inviteCodes: [InviteCode!]! @auth(role: ADMIN)
+  systemAnomalyDetection: AnomalyResult! @auth(role: ADMIN)
+  redeemCodes(page: Int, pageSize: Int): RedeemCodeConnection! @auth(role: ADMIN)
+
+  # ── 公告 ──
+  activeAnnouncements: [Announcement!]! @auth
+  announcements: [Announcement!]! @auth(role: ADMIN)
+
+  # ── 优惠码 ──
+  coupons: [Coupon!]! @auth(role: ADMIN)
+  coupon(id: ID!): Coupon! @auth(role: ADMIN)
+
+  # ── 文档管理 ──
+  documents: [Document!]! @auth(role: ADMIN)
+  publishedDocuments: [Document!]! @auth
+  document(id: ID!): Document! @auth(role: ADMIN)
+}
+
+type Mutation {
+  # ── 认证 ──
+  login(input: LoginInput!): AuthPayload! @rateLimit(max: 5, window: "1m")
+  register(input: RegisterInput!): AuthPayload! @rateLimit(max: 5, window: "1m")
+  refreshToken: AuthPayload! @auth
+  rotateRefreshToken(refreshToken: String!): AuthPayload!
+  logout: Boolean! @auth
+  forgotPassword(email: String!): Boolean! @rateLimit(max: 3, window: "1m")
+  resetPassword(input: ResetPasswordInput!): Boolean!
+  changePassword(input: ChangePasswordInput!): Boolean! @auth
+  updateProfile(input: UpdateProfileInput!): User! @auth
+
+  # ── API Keys ──
+  createApiKey(name: String!): ApiKeyWithSecret! @auth
+  revokeApiKey(id: ID!): ApiKey! @auth
+  deleteApiKey(id: ID!): Boolean! @auth
+
+  # ── Budget ──
+  setBudget(input: BudgetInput!): Budget! @auth
+  deleteBudget: Boolean! @auth
+
+  # ── Usage export ──
+  exportUsageCsv: String! @auth
+
+  # ── Tasks ──
+  createTask(input: CreateTaskInput!): Task! @auth
+  cancelTask(id: ID!): Task! @auth
+
+  # ── Plans & Payments ──
+  createCheckoutSession(planId: ID!): CheckoutSession! @auth
+  createRechargeSession(amount: Float!): CheckoutSession! @auth
+
+  # ── Redeem Codes ──
+  redeemCode(code: String!): RedeemResult! @auth
+
+  # ── Admin: Users ──
+  toggleUser(id: ID!): User! @auth(role: ADMIN)
+  updateUserRole(id: ID!, role: String!): User! @auth(role: ADMIN)
+  updateUserQuota(id: ID!, input: QuotaInput!): User! @auth(role: ADMIN)
+
+  # ── Admin: Providers ──
+  updateProvider(id: ID!, input: ProviderInput!): Provider! @auth(role: ADMIN)
+  toggleProvider(id: ID!): Provider! @auth(role: ADMIN)
+  toggleProviderProxy(id: ID!): Provider! @auth(role: ADMIN)
+  createProviderApiKey(providerId: ID!, input: ProviderApiKeyInput!): ProviderApiKey! @auth(role: ADMIN)
+  updateProviderApiKey(providerId: ID!, keyId: ID!, input: UpdateProviderApiKeyInput!): ProviderApiKey! @auth(role: ADMIN)
+  toggleProviderApiKey(providerId: ID!, keyId: ID!): ProviderApiKey! @auth(role: ADMIN)
+  deleteProviderApiKey(providerId: ID!, keyId: ID!): Boolean! @auth(role: ADMIN)
+
+  # ── Admin: Models ──
+  createModel(providerId: ID!, input: ModelInput!): Model! @auth(role: ADMIN)
+  updateModel(id: ID!, input: ModelInput!): Model! @auth(role: ADMIN)
+  deleteModel(id: ID!): Boolean! @auth(role: ADMIN)
+  toggleModel(id: ID!): Model! @auth(role: ADMIN)
+  syncProviderModels(providerId: ID!): [Model!]! @auth(role: ADMIN)
+
+  # ── Admin: Proxies ──
+  createProxy(input: ProxyInput!): Proxy! @auth(role: ADMIN)
+  batchCreateProxies(input: BatchProxyInput!): BatchProxyResult! @auth(role: ADMIN)
+  updateProxy(id: ID!, input: ProxyInput!): Proxy! @auth(role: ADMIN)
+  deleteProxy(id: ID!): Boolean! @auth(role: ADMIN)
+  toggleProxyStatus(id: ID!): Proxy! @auth(role: ADMIN)
+  testProxy(id: ID!): ProxyTestResult! @auth(role: ADMIN)
+  testAllProxies: [ProxyTestResult!]! @auth(role: ADMIN)
+
+  # ── Admin: Health ──
+  checkApiKeyHealth(id: ID!): ApiKeyHealth! @auth(role: ADMIN)
+  checkProxyHealth(id: ID!): ProxyHealth! @auth(role: ADMIN)
+  checkProviderHealth(id: ID!): ProviderHealth! @auth(role: ADMIN)
+  checkAllProviderHealth: [ProviderHealth!]! @auth(role: ADMIN)
+
+  # ── Admin: Alerts ──
+  acknowledgeAlert(id: ID!): Alert! @auth(role: ADMIN)
+  resolveAlert(id: ID!): Alert! @auth(role: ADMIN)
+  updateAlertConfig(input: AlertConfigInput!): AlertConfig! @auth(role: ADMIN)
+
+  # ── Admin: MCP ──
+  createMcpServer(input: McpServerInput!): McpServer! @auth(role: ADMIN)
+  updateMcpServer(id: ID!, input: McpServerInput!): McpServer! @auth(role: ADMIN)
+  deleteMcpServer(id: ID!): Boolean! @auth(role: ADMIN)
+  refreshMcpTools(id: ID!): McpServer! @auth(role: ADMIN)
+
+  # ── Admin: Plans ──
+  createPlan(input: PlanInput!): Plan! @auth(role: ADMIN)
+  updatePlan(id: ID!, input: PlanInput!): Plan! @auth(role: ADMIN)
+
+  # ── Admin: Settings ──
+  updateSystemSettings(input: SystemSettingsInput!): SystemSettings! @auth(role: ADMIN)
+  sendTestEmail(to: String!): Boolean! @auth(role: ADMIN)
+  triggerBackup: Boolean! @auth(role: ADMIN)
+
+  # ── Admin: Invites ──
+  createInviteCode(input: InviteCodeInput!): InviteCode! @auth(role: ADMIN)
+
+  # ── Admin: FinOps ──
+  exportSystemUsageCsv: String! @auth(role: ADMIN)
+
+  # ── Admin: Redeem Codes ──
+  generateRedeemCodes(input: GenerateRedeemCodesInput!): GenerateRedeemCodesResult! @auth(role: ADMIN)
+  revokeRedeemCode(id: ID!): Boolean! @auth(role: ADMIN)
+
+  # ── Admin: Announcements ──
+  createAnnouncement(input: AnnouncementInput!): Announcement! @auth(role: ADMIN)
+  updateAnnouncement(id: ID!, input: AnnouncementInput!): Announcement! @auth(role: ADMIN)
+  deleteAnnouncement(id: ID!): Boolean! @auth(role: ADMIN)
+
+  # ── Admin: Coupons ──
+  createCoupon(input: CouponInput!): Coupon! @auth(role: ADMIN)
+  updateCoupon(id: ID!, input: CouponInput!): Coupon! @auth(role: ADMIN)
+  deleteCoupon(id: ID!): Boolean! @auth(role: ADMIN)
+
+  # ── Admin: Documents ──
+  createDocument(input: DocumentInput!): Document! @auth(role: ADMIN)
+  updateDocument(id: ID!, input: DocumentInput!): Document! @auth(role: ADMIN)
+  deleteDocument(id: ID!): Boolean! @auth(role: ADMIN)
+}

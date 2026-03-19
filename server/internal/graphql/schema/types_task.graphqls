@@ -1,0 +1,29 @@
+# ──────────────────────────────────────────────────
+# Task types
+# ──────────────────────────────────────────────────
+
+type Task {
+  id: ID!
+  userId: ID!
+  type: String!
+  status: String!
+  input: String!
+  result: String
+  error: String
+  progress: Int!
+  webhookUrl: String
+  createdAt: DateTime!
+  startedAt: DateTime
+  completedAt: DateTime
+}
+
+type TaskConnection {
+  data: [Task!]!
+  total: Int!
+}
+
+input CreateTaskInput {
+  type: String!
+  input: String!
+  webhookUrl: String
+}

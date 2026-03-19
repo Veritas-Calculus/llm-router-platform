@@ -1,0 +1,53 @@
+# ──────────────────────────────────────────────────
+# Proxy types
+# ──────────────────────────────────────────────────
+
+type Proxy {
+  id: ID!
+  url: String!
+  type: String!
+  region: String!
+  isActive: Boolean!
+  weight: Float!
+  successCount: Int!
+  failureCount: Int!
+  avgLatency: Float!
+  lastChecked: DateTime
+  createdAt: DateTime!
+  hasAuth: Boolean!
+  upstreamProxyId: ID
+}
+
+type ProxyTestResult {
+  id: ID!
+  url: String!
+  isHealthy: Boolean!
+  latencyMs: Float!
+  error: String
+}
+
+type BatchProxyResult {
+  success: Int!
+  failed: Int!
+  proxies: [Proxy!]!
+  errors: [String!]
+}
+
+input ProxyInput {
+  url: String!
+  type: String!
+  region: String
+  username: String
+  password: String
+  upstreamProxyId: ID
+}
+
+input BatchProxyInput {
+  proxies: [BatchProxyItem!]!
+}
+
+input BatchProxyItem {
+  url: String!
+  type: String
+  region: String
+}

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Proxy } from '@/lib/api';
+import { Proxy } from '@/lib/types';
 
 interface ProxyFormData {
   url: string;

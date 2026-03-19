@@ -4,6 +4,7 @@ package email
 import (
 	"fmt"
 	"net/smtp"
+	"strings"
 
 	"llm-router-platform/internal/config"
 )
@@ -58,8 +59,25 @@ func (s *Service) SendWelcomeEmail(to, name string) error {
 	return s.send(to, subject, body)
 }
 
+// validateEmailHeader rejects strings containing CR or LF to prevent
+// email header injection (CWE-93 / SMTP header injection).
+func validateEmailHeader(s string) error {
+	if strings.ContainsAny(s, "\r\n") {
+		return fmt.Errorf("email header injection attempt detected")
+	}
+	return nil
+}
+
 // send is a helper to perform the actual SMTP delivery.
 func (s *Service) send(to, subject, body string) error {
+	// Guard against email header injection
+	if err := validateEmailHeader(to); err != nil {
+		return err
+	}
+	if err := validateEmailHeader(subject); err != nil {
+		return err
+	}
+
 	fromAddr := s.config.From
 	if s.config.FromName != "" {
 		fromAddr = fmt.Sprintf("%s <%s>", s.config.FromName, s.config.From)
@@ -81,3 +99,4 @@ func (s *Service) send(to, subject, body string) error {
 
 	return smtp.SendMail(addr, auth, s.config.From, []string{to}, []byte(msg))
 }
+

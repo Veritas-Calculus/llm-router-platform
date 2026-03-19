@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
-import { userApi, getApiErrorMessage } from '@/lib/api';
+import { useMutation } from '@apollo/client/react';
+import { CHANGE_PASSWORD } from '@/lib/graphql/operations';
 
 function SettingsPage() {
   const { user } = useAuthStore();
+  const [changePwd] = useMutation(CHANGE_PASSWORD);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     name: user?.name || '',
@@ -45,9 +47,8 @@ function SettingsPage() {
 
     setSaving(true);
     try {
-      await userApi.changePassword({
-        old_password: formData.currentPassword,
-        new_password: formData.newPassword,
+      await changePwd({
+        variables: { input: { oldPassword: formData.currentPassword, newPassword: formData.newPassword } },
       });
       setFormData((prev) => ({
         ...prev,
@@ -56,8 +57,8 @@ function SettingsPage() {
         confirmPassword: '',
       }));
       toast.success('Password changed');
-    } catch (error: unknown) {
-      toast.error(getApiErrorMessage(error, 'Failed to change password'));
+    } catch {
+      toast.error('Failed to change password');
     } finally {
       setSaving(false);
     }

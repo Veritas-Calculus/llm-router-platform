@@ -1,0 +1,30 @@
+# ──────────────────────────────────────────────────
+# Model types
+# ──────────────────────────────────────────────────
+
+type Model {
+  id: ID!
+  providerId: ID!
+  name: String!
+  displayName: String!
+  inputPricePer1k: Float!
+  outputPricePer1k: Float!
+  pricePerSecond: Float
+  pricePerImage: Float
+  pricePerMinute: Float
+  maxTokens: Int!
+  isActive: Boolean!
+  createdAt: DateTime!
+}
+
+input ModelInput {
+  name: String!
+  displayName: String
+  inputPricePer1k: Float
+  outputPricePer1k: Float
+  pricePerSecond: Float
+  pricePerImage: Float
+  pricePerMinute: Float
+  maxTokens: Int
+  isActive: Boolean
+}

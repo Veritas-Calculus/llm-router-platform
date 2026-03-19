@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BellIcon,
@@ -8,7 +8,11 @@ import {
   XMarkIcon,
   EyeIcon,
 } from '@heroicons/react/24/outline';
-import { alertsApi, Alert } from '@/lib/api';
+import { useQuery, useMutation } from '@apollo/client/react';
+import { ALERTS_QUERY, ACKNOWLEDGE_ALERT, RESOLVE_ALERT } from '@/lib/graphql/operations';
+import type { Alert } from '@/lib/types';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 interface NotificationCenterProps {
   /** Poll interval in ms (default: 60000 = 1 minute) */
@@ -17,31 +21,25 @@ interface NotificationCenterProps {
 
 export default function NotificationCenter({ pollInterval = 60000 }: NotificationCenterProps) {
   const [open, setOpen] = useState(false);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [filter, setFilter] = useState<'active' | 'all'>('active');
-  const [loading, setLoading] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
+  const { data, loading, refetch } = useQuery<any>(ALERTS_QUERY, {
+    variables: { status: filter === 'active' ? 'active' : undefined },
+    pollInterval,
+  });
+  const alerts: Alert[] = useMemo(() =>
+    (data?.alerts?.data || []).map((a: any) => ({
+      id: a.id, target_type: a.targetType, target_id: a.targetId,
+      alert_type: a.alertType, message: a.message, status: a.status,
+      resolved_at: a.resolvedAt, acknowledged_at: a.acknowledgedAt, created_at: a.createdAt,
+    })),
+  [data]);
+
+  const [acknowledgeMut] = useMutation(ACKNOWLEDGE_ALERT);
+  const [resolveMut] = useMutation(RESOLVE_ALERT);
+
   const activeCount = alerts.filter((a) => a.status === 'active').length;
-
-  const loadAlerts = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await alertsApi.list(filter === 'active' ? 'active' : undefined);
-      setAlerts(res?.data || []);
-    } catch {
-      // silent — health page is the primary view
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
-
-  // Initial load + polling
-  useEffect(() => {
-    loadAlerts();
-    const timer = setInterval(loadAlerts, pollInterval);
-    return () => clearInterval(timer);
-  }, [loadAlerts, pollInterval]);
 
   // Close on click outside
   useEffect(() => {
@@ -56,12 +54,8 @@ export default function NotificationCenter({ pollInterval = 60000 }: Notificatio
 
   const handleAcknowledge = async (id: string) => {
     try {
-      await alertsApi.acknowledge(id);
-      setAlerts((prev) =>
-        prev.map((a) =>
-          a.id === id ? { ...a, status: 'acknowledged', acknowledged_at: new Date().toISOString() } : a
-        )
-      );
+      await acknowledgeMut({ variables: { id } });
+      refetch();
     } catch {
       // silent
     }
@@ -69,12 +63,8 @@ export default function NotificationCenter({ pollInterval = 60000 }: Notificatio
 
   const handleResolve = async (id: string) => {
     try {
-      await alertsApi.resolve(id);
-      setAlerts((prev) =>
-        prev.map((a) =>
-          a.id === id ? { ...a, status: 'resolved', resolved_at: new Date().toISOString() } : a
-        )
-      );
+      await resolveMut({ variables: { id } });
+      refetch();
     } catch {
       // silent
     }

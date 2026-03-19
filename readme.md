@@ -95,11 +95,12 @@
 |------|------|
 | Go 1.24+ | 主开发语言 |
 | Gin | Web 框架 |
+| **gqlgen** | **GraphQL 服务端 (schema-first)** |
 | GORM | ORM (PostgreSQL) |
 | go-redis | Redis 客户端 |
 | Zap | 结构化日志 |
 | Viper | 配置管理 |
-| Swaggo | OpenAPI 3.0 文档 |
+| Swaggo | OpenAPI 3.0 文档 (LLM 端点) |
 | jwt-go | JWT 认证 |
 | Prometheus | 指标收集 |
 
@@ -113,7 +114,7 @@
 | TailwindCSS v4 | 样式框架 |
 | Framer Motion | 动画效果 |
 | Recharts | 图表可视化 |
-| Axios | HTTP 客户端 |
+| **Apollo Client** | **GraphQL 客户端** |
 | Zustand | 状态管理 |
 | i18next | 国际化 (中/英) |
 
@@ -244,57 +245,43 @@ VITE_APP_TITLE=LLM Router Platform
 | `/v1/models` | GET | 可用模型列表 | API Key |
 | `/v1/models/providers` | GET | Provider 模型列表 | API Key |
 
-### 管理 API (`/api/v1/`)
+### 管理 API — GraphQL (`/graphql`)
 
-#### 认证
+所有管理操作（认证、用户管理、Provider/Proxy 管理、计费、健康检查等）均通过 **GraphQL** 提供。前端使用 Apollo Client 与之交互。
 
-| 端点 | 方法 | 描述 |
-|------|------|------|
-| `/api/v1/auth/register` | POST | 用户注册 |
-| `/api/v1/auth/login` | POST | 登录 (返回 JWT) |
-| `/api/v1/auth/refresh` | POST | 刷新 Access Token |
-| `/api/v1/auth/token/rotate` | POST | Refresh Token 轮换 |
+```bash
+# GraphQL 端点
+POST /graphql
 
-#### 用户功能 (JWT 认证)
+# 开发模式下可通过浏览器访问 GraphQL Playground
+GET  /graphql  (仅 debug 模式)
+```
 
-| 端点 | 方法 | 描述 |
-|------|------|------|
-| `/api/v1/user/profile` | GET/PUT | 个人资料 |
-| `/api/v1/user/password` | PUT | 修改密码 |
-| `/api/v1/api-keys` | GET/POST | API Key 管理 |
-| `/api/v1/api-keys/:id/revoke` | POST | 撤销 Key |
-| `/api/v1/usage/summary` | GET | 用量概览 |
-| `/api/v1/usage/daily` | GET | 每日用量 |
-| `/api/v1/usage/by-provider` | GET | 按 Provider 用量 |
-| `/api/v1/usage/export/csv` | GET | 导出 CSV |
-| `/api/v1/finops/budget` | GET/PUT/DELETE | 预算管理 |
-| `/api/v1/finops/anomaly` | GET | 异常检测 |
-| `/api/v1/tasks` | GET/POST | 异步任务管理 |
-| `/api/v1/tasks/:id` | GET | 任务详情 |
-| `/api/v1/tasks/:id/cancel` | POST | 取消任务 |
-| `/api/v1/dashboard/*` | GET | Dashboard 数据 |
+#### 安全机制
 
-#### 管理员功能 (Admin Only)
+| 机制 | 说明 |
+|------|------|
+| `@auth` 指令 | 字段级 JWT 验证 + 角色检查 |
+| `@rateLimit` 指令 | 字段级限流 (如 login 5次/分钟) |
+| 查询深度限制 | 最大 7 层嵌套 |
+| 查询复杂度限制 | 最大 200 复杂度 |
+| Introspection | 生产环境自动关闭 |
+| 错误脱敏 | 生产环境返回通用错误 |
 
-| 端点 | 方法 | 描述 |
-|------|------|------|
-| `/api/v1/users` | GET | 用户列表 |
-| `/api/v1/users/:id` | GET | 用户详情 |
-| `/api/v1/users/:id/toggle` | POST | 启用/禁用用户 |
-| `/api/v1/users/:id/role` | PUT | 修改角色 |
-| `/api/v1/users/:id/quota` | PUT | 设置配额 |
-| `/api/v1/providers` | GET | Provider 列表 |
-| `/api/v1/providers/:id` | PUT | 更新 Provider |
-| `/api/v1/providers/:id/api-keys` | GET/POST | Provider API Key 管理 |
-| `/api/v1/proxies` | GET/POST | 代理节点管理 |
-| `/api/v1/proxies/batch` | POST | 批量导入代理 |
-| `/api/v1/health/api-keys` | GET | API Key 健康状态 |
-| `/api/v1/health/providers` | GET | Provider 健康状态 |
-| `/api/v1/health/proxies` | GET | 代理健康状态 |
-| `/api/v1/alerts` | GET | 告警列表 |
-| `/api/v1/alerts/config` | GET/PUT | 告警配置 |
-| `/api/v1/invite-codes` | POST | 创建邀请码 |
-| `/api/v1/invite-codes` | GET | 邀请码列表 |
+#### 示例 Query/Mutation
+
+```bash
+# 登录
+curl -X POST http://localhost:8080/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"mutation { login(input: {email: \"admin@example.com\", password: \"Admin123!\"}) { token user { id email role } } }"}'
+
+# 查询 Dashboard (需带 JWT)
+curl -X POST http://localhost:8080/graphql \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ dashboard { totalRequests successRate totalTokens totalCost activeProviders } }"}'
+```
 
 ### 运维端点
 
@@ -346,73 +333,53 @@ llm-router-platform/
 │   │   └── migrate/                 # 数据库迁移工具
 │   ├── internal/
 │   │   ├── api/
-│   │   │   ├── handlers/            # 请求处理器 (19 个 handler 文件)
+│   │   │   ├── handlers/            # LLM 代理 Handler (仅保留 LLM 相关)
 │   │   │   │   ├── chat_handler.go          # Chat Completions
 │   │   │   │   ├── streaming_handler.go     # SSE 流式响应
 │   │   │   │   ├── tts_handler.go           # TTS 语音合成
 │   │   │   │   ├── audio_handler.go         # 音频转写
 │   │   │   │   ├── images_handler.go        # 图像生成
 │   │   │   │   ├── embeddings_handler.go    # 文本向量化
-│   │   │   │   ├── task_handler.go          # 异步任务管理
-│   │   │   │   ├── auth_handler.go          # 认证 & 注册
-│   │   │   │   ├── provider_handler.go      # Provider 管理
-│   │   │   │   ├── dashboard_handler.go     # Dashboard 数据
-│   │   │   │   ├── finops_handler.go        # 预算 & 异常检测
-│   │   │   │   └── ...
+│   │   │   │   ├── model_handler.go         # 模型发现
+│   │   │   │   ├── payment_handler.go       # Stripe Webhook
+│   │   │   │   └── operational_handler.go   # 健康探针
 │   │   │   ├── middleware/          # 中间件 (CORS, 限流, JWT, 安全头, Backpressure)
-│   │   │   └── routes/             # 路由注册
+│   │   │   └── routes/             # 路由注册 (LLM + GraphQL + 运维)
+│   │   ├── graphql/                 # ★ GraphQL 管理 API (gqlgen)
+│   │   │   ├── schema/              # Schema 定义 (.graphqls 白名单)
+│   │   │   ├── resolvers/           # 业务逻辑 Resolver
+│   │   │   ├── directives/          # @auth + @rateLimit 指令
+│   │   │   ├── dataloaders/         # N+1 优化 (Dataloader)
+│   │   │   ├── handler/             # GraphQL HTTP Handler
+│   │   │   ├── generated/           # gqlgen 自动生成
+│   │   │   └── model/               # GraphQL 模型
 │   │   ├── config/                  # Viper 配置管理
 │   │   ├── crypto/                  # AES-GCM 加密
 │   │   ├── database/                # GORM AutoMigrate + 数据清理
-│   │   ├── models/                  # 数据模型 (User, Provider, Model, UsageLog, AsyncTask, ...)
+│   │   ├── models/                  # 数据模型
 │   │   ├── repository/              # 数据访问层
 │   │   └── service/                 # 业务逻辑层 (11 个子模块)
-│   │       ├── provider/            # LLM Provider 适配 (7 个 Provider)
-│   │       ├── router/              # 路由策略引擎
-│   │       ├── billing/             # 计费 & FinOps & Budget
-│   │       ├── task/                # 异步任务 & Webhook
-│   │       ├── health/              # 健康检查 & 告警调度
-│   │       ├── memory/              # 会话记忆 & 压缩
-│   │       ├── audit/               # 审计日志
-│   │       ├── notification/        # 多渠道通知
-│   │       ├── observability/       # Langfuse + Prometheus
-│   │       ├── proxy/               # 代理池管理
-│   │       └── user/                # 用户服务
-│   ├── pkg/
-│   │   ├── apierror/                # 统一错误响应
-│   │   └── sanitize/                # 输入清洗 + SSRF 校验
+│   ├── pkg/                         # 公共工具包
 │   ├── docs/                        # Swagger 文档
 │   └── go.mod
 │
 ├── web/                             # React 前端
 │   ├── src/
 │   │   ├── pages/                   # 页面 (12 个页面)
-│   │   │   ├── DashboardPage.tsx
-│   │   │   ├── UsagePage.tsx
-│   │   │   ├── ProvidersPage.tsx
-│   │   │   ├── ProxiesPage.tsx
-│   │   │   ├── UsersPage.tsx
-│   │   │   ├── UserDetailPage.tsx
-│   │   │   ├── ApiKeysPage.tsx
-│   │   │   ├── HealthPage.tsx
-│   │   │   ├── SettingsPage.tsx
-│   │   │   ├── DocsPage.tsx
-│   │   │   ├── LoginPage.tsx
-│   │   │   └── ForcePasswordChangePage.tsx
 │   │   ├── components/              # 通用组件
 │   │   ├── stores/                  # Zustand 状态管理
-│   │   ├── hooks/                   # 自定义 Hooks
-│   │   ├── lib/                     # 工具库 (API client, i18n)
+│   │   ├── hooks/                   # 自定义 Hooks (Apollo useQuery/useMutation)
+│   │   ├── lib/
+│   │   │   ├── graphql/             # ★ Apollo Client + GraphQL 操作
+│   │   │   │   ├── client.ts        # Apollo Client 初始化
+│   │   │   │   └── operations/      # 按域拆分的 GraphQL 操作
+│   │   │   └── types.ts             # 前端类型定义
 │   │   ├── locales/                 # 国际化资源 (zh/en)
 │   │   └── test/                    # 测试
-│   ├── package.json
-│   └── vite.config.ts
+│   ├── nginx.conf                   # Nginx 反代 (含 /graphql 代理)
+│   └── package.json
 │
-├── deploy/                          # 部署配置
-├── helm/                            # Helm Chart
-├── examples/                        # Python 客户端示例
 ├── docker-compose.yml               # 生产编排
-├── docker-compose.dev.yml           # 开发编排
 ├── Makefile                         # 开发任务
 └── CONTRIBUTING.md                  # 贡献指南
 ```
@@ -439,6 +406,7 @@ llm-router-platform/
 - [x] 多维度计费 (按秒/按张/按分钟)
 - [x] 国际化 (i18n: 中/英)
 - [x] 安全加固 (Fail-closed 限流, 账户锁定, SSRF 防护, JTI 一次性轮换, DB 邀请码, HSTS, 错误信息脱敏)
+- [x] **GraphQL 管理 API** (gqlgen + Apollo Client, 替代 REST 管理端点)
 - [ ] Kubernetes 生产部署 (Helm Chart)
 - [ ] 移动端适配
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { 
   ServerIcon, 
@@ -13,13 +13,29 @@ import {
   ChevronDownIcon,
   ChevronUpIcon
 } from '@heroicons/react/24/outline';
-import { mcpApi, McpServer, getApiErrorMessage } from '@/lib/api';
+import { useQuery, useMutation } from '@apollo/client/react';
+import { MCP_SERVERS_QUERY, CREATE_MCP_SERVER, UPDATE_MCP_SERVER, DELETE_MCP_SERVER, REFRESH_MCP_TOOLS } from '@/lib/graphql/operations';
+import type { McpServer } from '@/lib/types';
 import toast from 'react-hot-toast';
 import ConfirmModal from '@/components/ConfirmModal';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 function McpPage() {
-  const [servers, setServers] = useState<McpServer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, refetch } = useQuery<any>(MCP_SERVERS_QUERY);
+  const servers: McpServer[] = useMemo(() =>
+    (data?.mcpServers || []).map((s: any) => ({
+      id: s.id, name: s.name, type: s.type, command: s.command, args: s.args,
+      env: s.env, url: s.url, is_active: s.isActive, status: s.status,
+      last_error: s.lastError,
+      tools: (s.tools || []).map((t: any) => ({ id: t.id, name: t.name, description: t.description, is_active: t.isActive })),
+    })),
+  [data]);
+  const [createMut] = useMutation(CREATE_MCP_SERVER);
+  const [updateMut] = useMutation(UPDATE_MCP_SERVER);
+  const [deleteMut] = useMutation(DELETE_MCP_SERVER);
+  const [refreshMut] = useMutation(REFRESH_MCP_TOOLS);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsModalDeleteOpen] = useState(false);
   const [selectedServer, setSelectedServer] = useState<McpServer | null>(null);
@@ -34,22 +50,6 @@ function McpPage() {
     url: '',
     is_active: true
   });
-
-  useEffect(() => {
-    fetchServers();
-  }, []);
-
-  const fetchServers = async () => {
-    try {
-      setLoading(true);
-      const response = await mcpApi.listServers();
-      setServers(response.data);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Failed to fetch MCP servers'));
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleOpenModal = (server?: McpServer) => {
     if (server) {
@@ -81,42 +81,43 @@ function McpPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const input = {
+        name: formData.name, type: formData.type, command: formData.command,
+        args: formData.args, url: formData.url, isActive: formData.is_active,
+      };
       if (selectedServer) {
-        await mcpApi.updateServer(selectedServer.id, formData);
+        await updateMut({ variables: { id: selectedServer.id, input } });
         toast.success('MCP server updated');
       } else {
-        await mcpApi.createServer(formData);
+        await createMut({ variables: { input } });
         toast.success('MCP server created');
       }
       setIsModalOpen(false);
-      fetchServers();
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Failed to save MCP server'));
+      refetch();
+    } catch {
+      toast.error('Failed to save MCP server');
     }
   };
 
   const handleDelete = async () => {
     if (!selectedServer) return;
     try {
-      await mcpApi.deleteServer(selectedServer.id);
+      await deleteMut({ variables: { id: selectedServer.id } });
       toast.success('MCP server deleted');
       setIsModalDeleteOpen(false);
-      fetchServers();
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Failed to delete MCP server'));
+      refetch();
+    } catch {
+      toast.error('Failed to delete MCP server');
     }
   };
 
   const handleRefreshTools = async (id: string) => {
     try {
-      toast.promise(mcpApi.refreshTools(id), {
-        loading: 'Refreshing tools...',
-        success: 'Tools refreshed',
-        error: (err) => getApiErrorMessage(err, 'Failed to refresh tools')
-      });
-      fetchServers();
+      await refreshMut({ variables: { id } });
+      toast.success('Tools refreshed');
+      refetch();
     } catch {
-      // Handled by toast.promise
+      toast.error('Failed to refresh tools');
     }
   };
 

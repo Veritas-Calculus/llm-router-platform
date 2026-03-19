@@ -1,63 +1,135 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import {
-  HomeIcon,
-  ChartBarIcon,
   KeyIcon,
-  CommandLineIcon,
-  HeartIcon,
+  ChartBarIcon,
   CreditCardIcon,
+  GiftIcon,
+  DocumentTextIcon,
+  UserIcon,
+  HomeIcon,
+  UsersIcon,
+  MegaphoneIcon,
   SparklesIcon,
-  ServerStackIcon,
+  TicketIcon,
+  TagIcon,
   GlobeAltIcon,
+  CommandLineIcon,
+  DocumentDuplicateIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
-  DocumentTextIcon,
   Bars3Icon,
-  UsersIcon,
-  UserIcon,
+  ShieldCheckIcon,
+  LanguageIcon,
+  CpuChipIcon,
+  HeartIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/stores/authStore';
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from '@/lib/i18n';
 import NotificationCenter from '@/components/NotificationCenter';
 
-const navigation = [
-  { key: 'nav.dashboard', href: '/dashboard', icon: HomeIcon },
-  { key: 'nav.usage', href: '/usage', icon: ChartBarIcon },
+/* ── Navigation definitions ── */
+
+const userNavItems = [
   { key: 'nav.api_keys', href: '/api-keys', icon: KeyIcon },
-  { key: 'nav.plans', href: '/plans', icon: SparklesIcon },
-  { key: 'nav.billing', href: '/billing', icon: CreditCardIcon },
-  { key: 'nav.profile', href: '/profile', icon: UserIcon },
+  { key: 'nav.usage', href: '/usage', icon: ChartBarIcon },
+  { key: 'nav.subscription', href: '/subscription', icon: CreditCardIcon },
+  { key: 'nav.redeem', href: '/redeem', icon: GiftIcon },
   { key: 'nav.docs', href: '/docs', icon: DocumentTextIcon },
+  { key: 'nav.profile', href: '/profile', icon: UserIcon },
 ];
 
-const adminNavItems = [
-  { key: 'nav.dashboard', href: '/dashboard', icon: HomeIcon },
-  { key: 'nav.usage', href: '/usage', icon: ChartBarIcon },
-  { key: 'nav.api_keys', href: '/api-keys', icon: KeyIcon },
-  { key: 'nav.plans', href: '/plans', icon: SparklesIcon },
-  { key: 'nav.billing', href: '/billing', icon: CreditCardIcon },
-  { key: 'nav.profile', href: '/profile', icon: UserIcon },
-  // Admin-only sections
-  { key: 'nav.users', href: '/users', icon: UsersIcon },
-  { key: 'nav.health', href: '/health', icon: HeartIcon },
-  { key: 'nav.providers', href: '/providers', icon: ServerStackIcon },
-  { key: 'nav.mcp', href: '/mcp', icon: CommandLineIcon },
-  { key: 'nav.proxies', href: '/proxies', icon: GlobeAltIcon },
-  { key: 'nav.settings', href: '/settings', icon: Cog6ToothIcon },
-  { key: 'nav.docs', href: '/docs', icon: DocumentTextIcon },
+const adminNavGroups = [
+  {
+    labelKey: 'nav.group_overview',
+    items: [
+      { key: 'nav.dashboard', href: '/admin/dashboard', icon: HomeIcon },
+      { key: 'nav.admin_usage', href: '/admin/usage', icon: ChartBarIcon },
+    ],
+  },
+  {
+    labelKey: 'nav.group_users',
+    items: [
+      { key: 'nav.users', href: '/admin/users', icon: UsersIcon },
+      { key: 'nav.announcements', href: '/admin/announcements', icon: MegaphoneIcon },
+    ],
+  },
+  {
+    labelKey: 'nav.group_commerce',
+    items: [
+      { key: 'nav.admin_plans', href: '/admin/plans', icon: SparklesIcon },
+      { key: 'nav.redeem_codes', href: '/admin/redeem-codes', icon: TicketIcon },
+      { key: 'nav.coupons', href: '/admin/coupons', icon: TagIcon },
+    ],
+  },
+  {
+    labelKey: 'nav.group_infra',
+    items: [
+      { key: 'nav.providers', href: '/admin/providers', icon: CpuChipIcon },
+      { key: 'nav.proxies', href: '/admin/proxies', icon: GlobeAltIcon },
+      { key: 'nav.mcp', href: '/admin/mcp', icon: CommandLineIcon },
+      { key: 'nav.health', href: '/admin/health', icon: HeartIcon },
+    ],
+  },
+  {
+    labelKey: 'nav.group_content',
+    items: [
+      { key: 'nav.admin_docs', href: '/admin/docs', icon: DocumentDuplicateIcon },
+    ],
+  },
+  {
+    labelKey: 'nav.group_system',
+    items: [
+      { key: 'nav.admin_settings', href: '/admin/settings', icon: Cog6ToothIcon },
+    ],
+  },
 ];
+
+/* ── Shared NavItem renderer ── */
+
+function NavItem({ item, t }: { item: { key: string; href: string; icon: any }; t: (key: string) => string }) {
+  return (
+    <NavLink
+      to={item.href}
+      className={({ isActive }) =>
+        clsx(
+          'group flex items-center px-4 py-2.5 text-sm font-medium rounded-xl transition-all duration-200',
+          isActive
+            ? 'bg-apple-blue/5 text-apple-blue shadow-sm'
+            : 'text-apple-gray-600 hover:bg-apple-gray-50 hover:text-apple-gray-900'
+        )
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <item.icon
+            className={clsx(
+              isActive ? 'text-apple-blue' : 'text-apple-gray-400 group-hover:text-apple-gray-500',
+              'mr-3 h-5 w-5 shrink-0 transition-colors'
+            )}
+            aria-hidden="true"
+          />
+          <span className="flex-1">{t(item.key)}</span>
+        </>
+      )}
+    </NavLink>
+  );
+}
+
+/* ── Layout ── */
 
 function Layout() {
-  const { user, logout, isAdmin } = useAuthStore();
-  const { t, i18n } = useTranslation();
+  const { user, logout, isAdmin, adminView, toggleAdminView } = useAuthStore();
+  const { t, locale, setLocale } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const navItems = isAdmin ? adminNavItems : navigation;
+  const showAdminNav = isAdmin && adminView;
 
   const handleLogout = () => {
     logout();
@@ -65,14 +137,31 @@ function Layout() {
   };
 
   const toggleLanguage = () => {
-    const newLang = i18n.language === 'en' ? 'zh-CN' : 'en';
-    i18n.changeLanguage(newLang);
+    setLocale(locale === 'en' ? 'zh-CN' : 'en');
   };
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
     setIsSidebarOpen(false);
   }, [location.pathname]);
+
+  // If admin switches to user view while on an admin-only page, redirect
+  useEffect(() => {
+    if (isAdmin && !adminView && location.pathname.startsWith('/admin')) {
+      navigate('/api-keys', { replace: true });
+    }
+  }, [adminView, isAdmin, location.pathname, navigate]);
+
+  // Close user menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   return (
     <div className="min-h-screen bg-apple-gray-50 flex">
@@ -92,109 +181,154 @@ function Layout() {
       {/* Sidebar */}
       <aside
         className={clsx(
-          'fixed inset-y-0 left-0 z-50 w-72 bg-white/80 backdrop-blur-xl border-r border-apple-gray-200 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 w-64 bg-white/80 backdrop-blur-xl border-r border-apple-gray-200 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0',
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         <div className="flex flex-col h-full">
-          <div className="p-8 flex items-center gap-3">
-            <div className="w-10 h-10 bg-apple-blue rounded-xl flex items-center justify-center shadow-apple-blue">
-              <span className="text-white font-bold text-xl">R</span>
+          <div className="p-6 pb-3 flex items-center gap-3">
+            <div className="w-9 h-9 bg-apple-blue rounded-xl flex items-center justify-center shadow-apple-blue">
+              <span className="text-white font-bold text-lg">R</span>
             </div>
-            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-apple-gray-900 to-apple-gray-600">
+            <span className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-apple-gray-900 to-apple-gray-600">
               Router
             </span>
           </div>
 
-          <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.key}
-                to={item.href}
-                className={({ isActive }) =>
-                  clsx(
-                    'group flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200',
-                    isActive
-                      ? 'bg-apple-blue/5 text-apple-blue shadow-sm'
-                      : 'text-apple-gray-600 hover:bg-apple-gray-50 hover:text-apple-gray-900'
-                  )
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    <item.icon
-                      className={clsx(
-                        isActive ? 'text-apple-blue' : 'text-apple-gray-400 group-hover:text-apple-gray-500',
-                        'mr-3 h-6 w-6 shrink-0 transition-colors'
-                      )}
-                      aria-hidden="true"
-                    />
-                    <span className="flex-1">{t(item.key)}</span>
-                    {item.key === 'nav.plans' && user?.balance !== undefined && (
-                      <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-apple-blue border border-blue-100">
-                        ${user.balance.toFixed(2)}
-                      </span>
-                    )}
-                  </>
-                )}
-              </NavLink>
-            ))}
+          {/* Admin / User View Toggle */}
+          {isAdmin && (
+            <div className="px-4 pb-3">
+              <div className="flex bg-apple-gray-100 rounded-xl p-1 border border-apple-gray-200">
+                <button
+                  onClick={() => { if (adminView) toggleAdminView(); }}
+                  className={clsx(
+                    'flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200',
+                    !adminView
+                      ? 'bg-white text-apple-blue shadow-sm border border-apple-gray-200'
+                      : 'text-apple-gray-500 hover:text-apple-gray-700'
+                  )}
+                >
+                  <UserIcon className="w-3.5 h-3.5" />
+                  {t('nav.user_view')}
+                </button>
+                <button
+                  onClick={() => { if (!adminView) toggleAdminView(); }}
+                  className={clsx(
+                    'flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200',
+                    adminView
+                      ? 'bg-white text-apple-blue shadow-sm border border-apple-gray-200'
+                      : 'text-apple-gray-500 hover:text-apple-gray-700'
+                  )}
+                >
+                  <ShieldCheckIcon className="w-3.5 h-3.5" />
+                  {t('nav.admin_view')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <nav className="flex-1 px-3 space-y-1 overflow-y-auto pb-4">
+            {!showAdminNav ? (
+              /* User view nav */
+              userNavItems.map((item) => (
+                <NavItem key={item.key} item={item} t={t} />
+              ))
+            ) : (
+              /* Admin view nav — grouped */
+              adminNavGroups.map((group) => (
+                <div key={group.labelKey}>
+                  <div className="pt-4 pb-1.5 px-4 first:pt-0">
+                    <p className="text-[11px] font-semibold text-apple-gray-400 uppercase tracking-wider">
+                      {t(group.labelKey)}
+                    </p>
+                  </div>
+                  {group.items.map((item) => (
+                    <NavItem key={item.key} item={item} t={t} />
+                  ))}
+                </div>
+              ))
+            )}
           </nav>
-
-          <div className="p-4 border-t border-apple-gray-100 space-y-4">
-            <div className="flex items-center gap-3 px-4 py-2">
-              <div className="w-8 h-8 bg-apple-gray-100 rounded-full flex items-center justify-center text-apple-gray-600 font-bold border border-apple-gray-200">
-                {user?.name?.charAt(0).toUpperCase() || 'U'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-apple-gray-900 truncate">
-                  {user?.name || 'User'}
-                </p>
-                <p className="text-xs text-apple-gray-500 truncate">{user?.email}</p>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={toggleLanguage}
-                className="flex-1 px-3 py-2 text-xs font-medium text-apple-gray-600 bg-apple-gray-50 rounded-lg hover:bg-apple-gray-100 transition-colors border border-apple-gray-200"
-              >
-                {i18n.language === 'en' ? '中文' : 'EN'}
-              </button>
-              <button
-                onClick={handleLogout}
-                className="px-3 py-2 text-xs font-medium text-apple-red bg-red-50 rounded-lg hover:bg-red-100 transition-colors border border-red-100 flex items-center gap-2"
-              >
-                <ArrowRightOnRectangleIcon className="w-4 h-4" />
-                {t('auth.logout')}
-              </button>
-            </div>
-          </div>
         </div>
       </aside>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Header (Mobile Only) */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-apple-gray-200 h-16 flex items-center justify-between px-4 lg:hidden sticky top-0 z-30">
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="p-2 -ml-2 text-apple-gray-600"
-          >
-            <Bars3Icon className="w-6 h-6" />
-          </button>
-          <span className="font-bold text-lg">Router</span>
-          <div className="w-10" /> {/* Spacer */}
-        </header>
+        {/* Top Header */}
+        <header className="bg-white/80 backdrop-blur-md border-b border-apple-gray-200 h-14 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 -ml-2 text-apple-gray-600 lg:hidden"
+            >
+              <Bars3Icon className="w-5 h-5" />
+            </button>
+          </div>
 
-        {/* Global Notifications */}
-        <div className="sticky top-0 z-20 pointer-events-none">
-          <div className="max-w-7xl mx-auto px-4 py-2 flex justify-end">
-            <div className="pointer-events-auto">
-              <NotificationCenter />
+          <div className="flex items-center gap-2">
+            <NotificationCenter />
+            <button
+              onClick={toggleLanguage}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-apple-gray-600 hover:text-apple-gray-900 hover:bg-apple-gray-50 rounded-lg transition-colors"
+              title={locale === 'en' ? '切换为中文' : 'Switch to English'}
+            >
+              <LanguageIcon className="w-4 h-4" />
+              {locale === 'en' ? '中文' : 'EN'}
+            </button>
+
+            <div className="relative" ref={userMenuRef}>
+              <button
+                onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                className="flex items-center gap-2.5 pl-3 pr-2 py-1.5 rounded-xl hover:bg-apple-gray-50 transition-colors"
+              >
+                <div className="hidden sm:block text-right">
+                  <p className="text-sm font-medium text-apple-gray-900 leading-tight">
+                    {user?.name || 'User'}
+                  </p>
+                  <p className="text-[11px] text-apple-gray-500 leading-tight">
+                    {isAdmin ? 'Admin' : 'User'}
+                  </p>
+                </div>
+                <div className="w-8 h-8 bg-gradient-to-br from-apple-blue to-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-sm">
+                  {user?.name?.charAt(0).toUpperCase() || 'U'}
+                </div>
+              </button>
+
+              <AnimatePresence>
+                {isUserMenuOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-lg border border-apple-gray-200 py-2 z-50"
+                  >
+                    <div className="px-4 py-2 border-b border-apple-gray-100">
+                      <p className="text-sm font-semibold text-apple-gray-900 truncate">{user?.name || 'User'}</p>
+                      <p className="text-xs text-apple-gray-500 truncate">{user?.email}</p>
+                    </div>
+                    <button
+                      onClick={() => { navigate('/profile'); setIsUserMenuOpen(false); }}
+                      className="w-full text-left px-4 py-2.5 text-sm text-apple-gray-700 hover:bg-apple-gray-50 flex items-center gap-2.5 transition-colors"
+                    >
+                      <UserIcon className="w-4 h-4 text-apple-gray-400" />
+                      {t('nav.profile')}
+                    </button>
+                    <div className="border-t border-apple-gray-100 mt-1 pt-1">
+                      <button
+                        onClick={() => { handleLogout(); setIsUserMenuOpen(false); }}
+                        className="w-full text-left px-4 py-2.5 text-sm text-apple-red hover:bg-red-50 flex items-center gap-2.5 transition-colors"
+                      >
+                        <ArrowRightOnRectangleIcon className="w-4 h-4" />
+                        {t('auth.logout')}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
-        </div>
+        </header>
 
         <motion.div
           key={location.pathname}

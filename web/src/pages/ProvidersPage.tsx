@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import ProviderList from '@/components/providers/ProviderList';
 import ProviderInfoCard from '@/components/providers/ProviderInfoCard';
 import ApiKeyTable from '@/components/providers/ApiKeyTable';
+import ModelTable from '@/components/providers/ModelTable';
 import LocalProviderCard from '@/components/providers/LocalProviderCard';
 import { useProviders } from '@/hooks/useProviders';
 
@@ -69,6 +70,14 @@ function ProvidersPage() {
                 onProxyChange={handleProxyChange}
               />
 
+              {['ollama', 'lmstudio', 'vllm'].includes(selectedProvider.name) && (
+                <LocalProviderCard
+                  provider={selectedProvider}
+                  onToggleRequiresApiKey={handleToggleRequiresApiKey}
+                  onSaveEndpoint={handleSaveEndpoint}
+                />
+              )}
+
               {selectedProvider.requires_api_key && (
                 <ApiKeyTable
                   providerName={selectedProvider.name}
@@ -80,13 +89,10 @@ function ProvidersPage() {
                 />
               )}
 
-              {['ollama', 'lmstudio', 'vllm'].includes(selectedProvider.name) && (
-                <LocalProviderCard
-                  provider={selectedProvider}
-                  onToggleRequiresApiKey={handleToggleRequiresApiKey}
-                  onSaveEndpoint={handleSaveEndpoint}
-                />
-              )}
+              <ModelTable
+                providerId={selectedProvider.id}
+                providerName={selectedProvider.name}
+              />
             </div>
           )}
         </motion.div>

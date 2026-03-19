@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -12,49 +12,59 @@ import {
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { usersApi, UserDetail, DailyStats, ApiKey } from '@/lib/api';
+import { useQuery, useMutation } from '@apollo/client/react';
+import { USER_DETAIL_QUERY, TOGGLE_USER, UPDATE_USER_ROLE, UPDATE_USER_QUOTA } from '@/lib/graphql/operations';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 function UserDetailPage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const [user, setUser] = useState<UserDetail | null>(null);
-    const [usage, setUsage] = useState<DailyStats[]>([]);
-    const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data, loading, refetch } = useQuery<any>(USER_DETAIL_QUERY, { variables: { id }, skip: !id });
+    const [toggleUserMut] = useMutation(TOGGLE_USER);
+    const [updateRoleMut] = useMutation(UPDATE_USER_ROLE);
+    const [updateQuotaMut] = useMutation(UPDATE_USER_QUOTA);
+
+    const user = useMemo(() => {
+        const u = data?.user;
+        if (!u) return null;
+        return {
+            ...u, name: u.name, email: u.email, role: u.role, is_active: u.isActive,
+            created_at: u.createdAt, api_keys: u.apiKeyCount,
+            monthly_token_limit: u.monthlyTokenLimit || 0, monthly_budget_usd: u.monthlyBudgetUsd || 0,
+            usage_month: u.usageMonth ? {
+                total_requests: u.usageMonth.totalRequests, total_tokens: u.usageMonth.totalTokens,
+                total_cost: u.usageMonth.totalCost, success_rate: u.usageMonth.successRate,
+            } : null,
+        };
+    }, [data]);
+    const usage = useMemo(() =>
+        (data?.userDailyUsage || []).map((d: any) => ({ date: d.date, requests: d.requests, tokens: d.tokens, cost: d.cost })),
+    [data]);
+    const apiKeys = useMemo(() =>
+        (data?.userApiKeys || []).map((k: any) => ({
+            id: k.id, name: k.name, key: '', key_prefix: k.keyPrefix,
+            is_active: k.isActive, created_at: k.createdAt, last_used_at: k.lastUsedAt,
+        })),
+    [data]);
+
     const [tokenLimit, setTokenLimit] = useState('');
     const [budgetLimit, setBudgetLimit] = useState('');
 
-    const fetchData = useCallback(async () => {
-        if (!id) return;
-        setLoading(true);
-        try {
-            const [userData, usageData, keysData] = await Promise.all([
-                usersApi.getById(id),
-                usersApi.getUsage(id, 30),
-                usersApi.getApiKeys(id),
-            ]);
-            setUser(userData);
-            setUsage(usageData.data || []);
-            setApiKeys(keysData.data || []);
-            setTokenLimit(String(userData.monthly_token_limit || 0));
-            setBudgetLimit(String(userData.monthly_budget_usd || 0));
-        } catch {
-            toast.error('Failed to load user details');
-        } finally {
-            setLoading(false);
+    // Set limits from user data on first load  
+    useMemo(() => {
+        if (user) {
+            setTokenLimit(String(user.monthly_token_limit || 0));
+            setBudgetLimit(String(user.monthly_budget_usd || 0));
         }
-    }, [id]);
-
-    useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+    }, [user]);
 
     const handleToggle = async () => {
         if (!id || !user) return;
         try {
-            const res = await usersApi.toggle(id);
-            toast.success(`${user.name} ${res.is_active ? 'enabled' : 'disabled'}`);
-            fetchData();
+            const { data: result } = await toggleUserMut({ variables: { id } });
+            toast.success(`${user.name} ${(result as any)?.toggleUser?.isActive ? 'enabled' : 'disabled'}`);
+            refetch();
         } catch {
             toast.error('Failed to toggle user');
         }
@@ -64,9 +74,9 @@ function UserDetailPage() {
         if (!id || !user) return;
         const newRole = user.role === 'admin' ? 'user' : 'admin';
         try {
-            await usersApi.updateRole(id, newRole);
+            await updateRoleMut({ variables: { id, role: newRole } });
             toast.success(`Role changed to ${newRole}`);
-            fetchData();
+            refetch();
         } catch {
             toast.error('Failed to change role');
         }
@@ -75,12 +85,11 @@ function UserDetailPage() {
     const handleSaveQuota = async () => {
         if (!id) return;
         try {
-            await usersApi.updateQuota(id, {
-                monthly_token_limit: parseInt(tokenLimit) || 0,
-                monthly_budget_usd: parseFloat(budgetLimit) || 0,
+            await updateQuotaMut({
+                variables: { id, input: { monthlyTokenLimit: parseInt(tokenLimit) || 0, monthlyBudgetUsd: parseFloat(budgetLimit) || 0 } },
             });
             toast.success('Quota updated');
-            fetchData();
+            refetch();
         } catch {
             toast.error('Failed to update quota');
         }
@@ -318,7 +327,7 @@ function UserDetailPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {apiKeys.map((key) => (
+                            {apiKeys.map((key: any) => (
                                 <tr key={key.id} className="border-b border-apple-gray-100">
                                     <td className="py-2 px-3 text-sm text-apple-gray-900 font-medium">{key.name}</td>
                                     <td className="py-2 px-3 text-sm text-apple-gray-500 font-mono">{key.key_prefix}...</td>

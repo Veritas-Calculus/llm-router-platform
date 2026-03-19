@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { 
   CreditCardIcon, 
   ArrowPathIcon,
@@ -7,28 +7,22 @@ import {
   ClockIcon,
   DocumentDuplicateIcon
 } from '@heroicons/react/24/outline';
-import { plansApi, Order, getApiErrorMessage } from '@/lib/api';
+import { useQuery } from '@apollo/client/react';
+import { MY_BILLING_QUERY } from '@/lib/graphql/operations';
+import type { Order } from '@/lib/types';
 import toast from 'react-hot-toast';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 function BillingPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchOrders();
-  }, []);
-
-  const fetchOrders = async () => {
-    try {
-      setLoading(true);
-      const response = await plansApi.getOrders();
-      setOrders(response.data);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, 'Failed to fetch billing history'));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data, loading } = useQuery<any>(MY_BILLING_QUERY);
+  const orders: Order[] = useMemo(() =>
+    (data?.myOrders || []).map((o: any) => ({
+      id: o.id, order_no: o.id, plan_id: o.planId || '',
+      amount: o.amount, status: o.status, payment_method: o.description || 'N/A',
+      created_at: o.createdAt, paid_at: o.createdAt,
+    })),
+  [data]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {

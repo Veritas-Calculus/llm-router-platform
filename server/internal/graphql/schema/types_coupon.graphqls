@@ -1,0 +1,30 @@
+# ──────────────────────────────────────────────────
+# Coupon types
+# ──────────────────────────────────────────────────
+
+type Coupon {
+  id: ID!
+  code: String!
+  name: String!
+  type: String!
+  discountValue: Float!
+  minAmount: Float!
+  maxUses: Int!
+  useCount: Int!
+  maxUsesPerUser: Int!
+  isActive: Boolean!
+  expiresAt: DateTime
+  createdAt: DateTime!
+}
+
+input CouponInput {
+  code: String!
+  name: String!
+  type: String!
+  discountValue: Float!
+  minAmount: Float
+  maxUses: Int
+  maxUsesPerUser: Int
+  isActive: Boolean
+  expiresAt: DateTime
+}

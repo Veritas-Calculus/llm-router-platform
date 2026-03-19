@@ -1,0 +1,79 @@
+# ──────────────────────────────────────────────────
+# Billing types: Plans, Subscriptions, Orders, Budgets
+# ──────────────────────────────────────────────────
+
+type Plan {
+  id: ID!
+  name: String!
+  description: String!
+  priceMonth: Float!
+  tokenLimit: Int!
+  rateLimit: Int!
+  supportLevel: String!
+  isActive: Boolean!
+  features: String
+}
+
+type UserSubscription {
+  id: ID!
+  userId: ID!
+  planId: ID!
+  status: String!
+  currentPeriodStart: DateTime!
+  currentPeriodEnd: DateTime!
+  cancelAtPeriodEnd: Boolean!
+  plan: Plan!
+}
+
+type Order {
+  id: ID!
+  orderNo: String!
+  amount: Float!
+  currency: String!
+  status: String!
+  paymentMethod: String!
+  createdAt: DateTime!
+  plan: Plan
+}
+
+type Budget {
+  id: ID!
+  userId: ID!
+  monthlyLimitUsd: Float!
+  alertThreshold: Float!
+  enforceHardLimit: Boolean!
+  isActive: Boolean!
+  webhookUrl: String
+  email: String
+}
+
+type BudgetStatus {
+  budget: Budget
+  currentSpend: Float!
+  remainingBudget: Float!
+  percentUsed: Float!
+  isOverBudget: Boolean!
+}
+
+type CheckoutSession {
+  url: String!
+}
+
+input BudgetInput {
+  monthlyLimitUsd: Float!
+  alertThreshold: Float
+  enforceHardLimit: Boolean
+  webhookUrl: String
+  email: String
+}
+
+input PlanInput {
+  name: String!
+  description: String
+  priceMonth: Float!
+  tokenLimit: Int!
+  rateLimit: Int!
+  supportLevel: String
+  isActive: Boolean
+  features: String
+}

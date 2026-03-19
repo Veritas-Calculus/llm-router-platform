@@ -5,8 +5,8 @@ This file provides architectural context and development guidelines for the LLM 
 ## Project Overview
 
 - **Purpose:** A centralized routing and management platform for LLM services (OpenAI, Claude, Gemini, etc.), providing an OpenAI-compatible interface with added features like proxy pooling, billing, and health monitoring.
-- **Backend:** Go 1.24 with Gin (Web Framework), GORM (ORM), Zap (Logging), and Viper (Config).
-- **Frontend:** React 19 (TypeScript), Vite, TailwindCSS v4, Zustand (State Management), and Recharts (Visualization).
+- **Backend:** Go 1.24 with Gin (Web Framework), **gqlgen (GraphQL)**, GORM (ORM), Zap (Logging), and Viper (Config).
+- **Frontend:** React 19 (TypeScript), Vite, TailwindCSS v4, **Apollo Client (GraphQL)**, Zustand (State Management), and Recharts (Visualization).
 - **Infrastructure:** PostgreSQL 16 (Relational Data), Redis 7 (Caching/Rate Limiting), Docker Compose (Orchestration).
 - **Design Philosophy:** "Apple-style" clean UI with high-performance Go backend.
 
@@ -15,13 +15,15 @@ This file provides architectural context and development guidelines for the LLM 
 - **Monorepo Structure:**
   - `server/`: Go backend source code.
     - `cmd/`: Application entry points (`server`, `migrate`).
-    - `internal/`: Private library code (API handlers, services, models, repositories).
+    - `internal/api/handlers/`: LLM proxy handlers only (chat, streaming, embeddings, images, audio, tts, model, payment webhook).
+    - `internal/graphql/`: **GraphQL management API** (schema, resolvers, directives, dataloaders).
+    - `internal/service/`: Business logic layer (provider, router, billing, health, etc.).
     - `pkg/`: Public/reusable utility packages.
   - `web/`: React frontend source code.
     - `src/components/`: UI components (including Apple-style design elements).
     - `src/pages/`: Main application views.
+    - `src/lib/graphql/`: Apollo Client setup and GraphQL operations.
     - `src/stores/`: Zustand state definitions.
-  - `examples/`: Python client examples.
   - `docker-compose.yml`: Orchestration for local development and production.
 
 ## Building and Running
@@ -61,15 +63,22 @@ From the project root:
 ## Development Conventions
 
 ### Backend (Go)
-- **Layered Architecture:** Follow the `Handler -> Service -> Repository -> Model` pattern.
+- **Layered Architecture:** LLM proxy follows `Handler -> Service -> Repository -> Model`. Management API follows `GraphQL Resolver -> Service -> Repository -> Model`.
 - **Error Handling:** Use wrapped errors and structured logging via `zap`.
-- **API Versioning:** Main LLM API is under `/v1/`, management API is under `/api/v1/`.
+- **API Layout:** LLM API is under `/v1/` (REST, OpenAI-compatible). Management API is under `/graphql` (GraphQL, schema-first via gqlgen). REST management routes under `/api/v1/` have been deprecated.
 - **Security:** API keys for providers are stored encrypted in PostgreSQL using the `ENCRYPTION_KEY`.
+
+### GraphQL (gqlgen)
+- **Schema-First:** All types and operations defined in `.graphqls` files under `server/internal/graphql/schema/`.
+- **Directives:** `@auth(requires: ROLE)` for field-level authorization, `@rateLimit(max: N, window: "duration")` for field-level rate limiting.
+- **Resolvers:** Business logic in `server/internal/graphql/resolvers/`, calling service layer directly.
+- **Dataloaders:** N+1 query optimization via `server/internal/graphql/dataloaders/`.
+- **Security:** Query depth limit (7), complexity limit (200), introspection disabled in production, error sanitization in release mode.
 
 ### Frontend (React)
 - **Styling:** Strict adherence to "Apple Design Style" (neutral colors #F5F5F7, large border-radius 12px+, soft shadows).
 - **State:** Use Zustand for global state (Auth, UI preferences).
-- **Data Fetching:** Standardize on Axios with base URL configuration from `VITE_API_BASE_URL`.
+- **Data Fetching:** Standardize on **Apollo Client** (`useQuery`/`useMutation`) for all management operations. GraphQL operations are organized by domain in `web/src/lib/graphql/operations/`.
 
 ### Database
 - **Migrations:** Managed via GORM AutoMigrate in `server/internal/database/database.go` for non-release modes. Production/Release mode requires explicit SQL migrations.
@@ -93,9 +102,14 @@ From the project root:
 
 ## Key Files
 - `server/cmd/server/main.go`: Backend entry point and service initialization.
-- `server/internal/api/routes/routes.go`: API endpoint definitions and middleware wiring.
+- `server/internal/api/routes/routes.go`: Route registration (LLM, GraphQL, operational endpoints).
+- `server/internal/graphql/schema/*.graphqls`: GraphQL schema definitions.
+- `server/internal/graphql/resolvers/`: GraphQL resolver implementations.
+- `server/internal/graphql/directives/auth.go`: `@auth` directive implementation.
 - `server/internal/models/models.go`: Core data structures and GORM models.
 - `web/src/App.tsx`: Frontend routing and layout structure.
+- `web/src/lib/graphql/client.ts`: Apollo Client initialization.
+- `web/src/lib/graphql/operations/`: GraphQL query/mutation definitions.
 - `docker-compose.yml`: Local infrastructure setup.
 - `Makefile`: Common development tasks.
 
@@ -103,3 +117,4 @@ From the project root:
 - **API Base:** The server runs on port `8080` by default.
 - **Admin Default:** `admin@example.com` / `admin123` (configurable via env).
 - **LLM Compatibility:** Supports OpenAI, Claude, and Gemini providers out of the box.
+- **GraphQL Playground:** Available at `/graphql` in non-release mode.

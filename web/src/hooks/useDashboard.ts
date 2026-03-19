@@ -1,65 +1,78 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
-import {
-  dashboardApi,
-  OverviewStats,
-  UsageChartData,
-  ProviderStats,
-  ModelStats,
-} from '@/lib/api';
+import { useMemo } from 'react';
+import { useQuery } from '@apollo/client/react';
+import { DASHBOARD_QUERY } from '@/lib/graphql/operations';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
- * Custom hook encapsulating Dashboard data fetching, state, and formatting utilities.
+ * Custom hook encapsulating Dashboard data fetching via GraphQL.
+ * Returns the same interface as before so DashboardPage needs minimal changes.
  */
 export function useDashboard() {
-  const [stats, setStats] = useState<OverviewStats | null>(null);
-  const [chartData, setChartData] = useState<UsageChartData[]>([]);
-  const [providerStats, setProviderStats] = useState<ProviderStats[]>([]);
-  const [modelStats, setModelStats] = useState<ModelStats[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading } = useQuery<any>(DASHBOARD_QUERY, { variables: { days: 30 } });
 
-  const loadDashboardData = useCallback(async () => {
-    try {
-      const [overviewRes, chartRes, providerRes, modelRes] = await Promise.all([
-        dashboardApi.getOverview(),
-        dashboardApi.getUsageChart(),
-        dashboardApi.getProviderStats(),
-        dashboardApi.getModelStats(),
-      ]);
-      setStats(overviewRes);
-      setChartData(chartRes?.data || []);
-      setProviderStats(providerRes?.data || []);
-      setModelStats(modelRes?.data || []);
-    } catch (error) {
-      console.error('Failed to load dashboard data:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Map GraphQL camelCase → REST-compatible shape for backward compat
+  const stats = useMemo(() => {
+    if (!data?.dashboard) return null;
+    const d = data.dashboard;
+    return {
+      total_requests: d.totalRequests,
+      total_tokens: d.totalTokens,
+      total_cost: d.totalCost,
+      success_rate: d.successRate,
+      active_users: d.activeUsers,
+      active_providers: d.activeProviders,
+      active_proxies: d.activeProxies,
+      requests_today: d.requestsToday,
+      cost_today: d.costToday,
+      tokens_today: d.tokensToday,
+      error_count: d.errorCount,
+      mcp_call_count: d.mcpCallCount,
+      mcp_error_count: d.mcpErrorCount,
+      api_keys: d.apiKeys ? { total: d.apiKeys.total, healthy: d.apiKeys.healthy } : { total: 0, healthy: 0 },
+      proxies: d.proxies ? { total: d.proxies.total, healthy: d.proxies.healthy } : { total: 0, healthy: 0 },
+    };
+  }, [data]);
 
-  useEffect(() => { loadDashboardData(); }, [loadDashboardData]);
+  const chartData = useMemo(() => data?.usageChart || [], [data]);
+  const providerStats = useMemo(() =>
+    (data?.providerStats || []).map((p: any) => ({
+      provider_id: p.providerId,
+      provider_name: p.providerName,
+      requests: p.requests,
+      tokens: p.tokens,
+      success_rate: p.successRate,
+      avg_latency_ms: p.avgLatencyMs,
+      total_cost: p.totalCost,
+    })),
+  [data]);
+  const modelStats = useMemo(() =>
+    (data?.modelStats || []).map((m: any) => ({
+      model_id: m.modelId,
+      model_name: m.modelName,
+      requests: m.requests,
+      input_tokens: m.inputTokens,
+      output_tokens: m.outputTokens,
+      total_cost: m.totalCost,
+    })),
+  [data]);
 
-  // ─── Formatting utilities ──────────────────────────────────────
+  const formatCurrency = (value: number): string =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
 
-  const formatCurrency = useCallback((value: number): string => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(value);
-  }, []);
-
-  const formatNumber = useCallback((value: number): string => {
+  const formatNumber = (value: number): string => {
     if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
     if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
     return new Intl.NumberFormat('en-US').format(value);
-  }, []);
+  };
 
-  const formatTokens = useCallback((value: number): string => {
+  const formatTokens = (value: number): string => {
     if (value >= 1000000) return (value / 1000000).toFixed(2) + 'M';
     if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
     return new Intl.NumberFormat('en-US').format(value);
-  }, []);
+  };
 
-  const COLORS = useMemo(() => ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF3B30', '#5AC8FA'], []);
+  const COLORS = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF3B30', '#5AC8FA'];
 
   return {
     stats,
@@ -71,6 +84,5 @@ export function useDashboard() {
     formatNumber,
     formatTokens,
     COLORS,
-    refresh: loadDashboardData,
   };
 }

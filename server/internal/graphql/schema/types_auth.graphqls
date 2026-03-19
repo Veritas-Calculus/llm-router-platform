@@ -1,0 +1,36 @@
+# ──────────────────────────────────────────────────
+# Auth types
+# ──────────────────────────────────────────────────
+
+input LoginInput {
+  email: String!
+  password: String!
+}
+
+input RegisterInput {
+  email: String!
+  password: String!
+  name: String!
+  inviteCode: String
+}
+
+input ResetPasswordInput {
+  token: String!
+  newPassword: String!
+}
+
+input ChangePasswordInput {
+  oldPassword: String!
+  newPassword: String!
+}
+
+input UpdateProfileInput {
+  name: String
+  email: String
+}
+
+type AuthPayload {
+  token: String!
+  refreshToken: String
+  user: User!
+}

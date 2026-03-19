@@ -4,7 +4,7 @@ import {
   XCircleIcon,
   ArrowPathIcon,
 } from '@heroicons/react/24/outline';
-import { Provider, ProviderHealthStatus, Proxy } from '@/lib/api';
+import { Provider, ProviderHealthStatus, Proxy } from '@/lib/types';
 
 interface ProviderInfoCardProps {
   provider: Provider;
