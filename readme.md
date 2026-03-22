@@ -1,450 +1,195 @@
 # VC LLM Router Platform
 
-一个统一的大语言模型 (LLM) 多模态网关平台，支持多 Provider 接入（公网 API + 本地自建服务）、API Key 池化与故障切换、代理池管理、计费统计、异步任务与 Webhook 回调、会话记忆和可观测性。
+一个统一的大语言模型 (LLM) 多模态网关平台，支持多 Provider 接入（公网 API + 本地自建服务）、API Key 池化与故障切换、代理池管理、计费统计、异步任务与 Webhook 回调、**组织级多租户**、**语义缓存 (Semantic Cache)**、**数据防泄漏 (DLP)**、以及 **MCP (Model Context Protocol)** 扩展。
 
 ## 功能特性
 
-### 核心路由
+### 核心路由与扩展
 
-- **统一 API 接口**: OpenAI-Compatible API，一套 SDK 对接所有 LLM 平台
+- **统一 API 接口**: 完全兼容 OpenAI，一套 SDK 对接所有主流 LLM 平台
 - **多 Provider 支持**: OpenAI、Anthropic Claude、Google Gemini、DeepSeek、Mistral、Ollama、LM Studio、vLLM
-- **智能路由**: 轮询、加权、最低延迟、成本优化、前缀启发式匹配
-- **API Key 池化**: 多 Key 轮转、失败自动切换、配额/限流 error 自动跳过
+- **智能路由**: 轮询、加权、最低延迟、成本优化、前缀及组织级启发式匹配
+- **API Key 池化**: 多 Key 轮转、失败自动健康剔除并秒级切换、配额自动隔离
 - **代理池管理**: HTTP/SOCKS5 代理负载均衡与故障转移
+- **语义缓存 (Semantic Cache)**: 基于 Redis 和轻量级嵌入向量，实现请求复用，命中后延迟至毫秒级并免除 LLM 成本
+- **MCP (Model Context Protocol)**: 原生集成 stdio 和 SSE 客户端，无缝桥接任何标准化本地数据源和外部工具
 
 ### 多模态能力
 
 | 能力 | 端点 | Provider |
 |------|------|----------|
-| Chat Completions | `/v1/chat/completions` | OpenAI, Claude, Gemini, DeepSeek, Mistral, Ollama, LM Studio, vLLM |
-| Streaming (SSE) | `/v1/chat/completions` (stream=true) | 全部 Provider |
-| Embeddings | `/v1/embeddings` | OpenAI, Gemini, Mistral |
+| Chat Completions | `/v1/chat/completions` | 当前支持的所有供应商及本地部署 |
+| Streaming (SSE) | `/v1/chat/completions` (stream) | 全部 Provider 支持 |
+| Embeddings | `/v1/embeddings` | OpenAI, Gemini, Mistral 及自部署 |
 | Image Generation | `/v1/images/generations` | OpenAI (DALL-E), Google (Imagen) |
-| Audio Transcription (STT) | `/v1/audio/transcriptions` | OpenAI (Whisper) |
-| **Text-to-Speech (TTS)** | `/v1/audio/speech` | OpenAI TTS (本地: CosyVoice, Fish-Speech, ChatTTS, Bark) |
-| **Video Understanding** | `/v1/chat/completions` (multimodal) | Gemini 2.x, GPT-4o (video_url 透传) |
-| Model Discovery | `/v1/models` | 聚合所有 Provider + 上游实时查询 |
+| Audio (STT) | `/v1/audio/transcriptions` | OpenAI (Whisper) |
+| **TTS** | `/v1/audio/speech` | OpenAI TTS (本地兼容: CosyVoice, ChatTTS 等) |
+| **多模态解析** | `/v1/chat/completions` | 多路透传支持 (Image/Video_url 等) |
+| Model Discovery | `/v1/models` | 动态路由聚合及模型信息上游实时同步 |
+
+### 组织与多租户 (Workspaces)
+
+- **多租户隔离**: 支持单实例虚拟成多个平行的组织空间 (Organization) 和工作区，不同租户数据硬隔离
+- **RBAC 人员管理**: 支持细粒度成员角色（Admin, Member），在组织内共享计费与基础资源
+- **配置隔离**: 针对每个组织配置专属 API Key、路由优先级、缓存容忍度以及模型准入黑名单
+- **SSO 企业联邦认证**: 原生融合 Google、GitHub，基于 OIDC 和 JWT 支持跨域单点登录
 
 ### 计费 & FinOps
 
-- **Token 计费**: 按 input/output token 分别计价
-- **多维度计费**: 支持按秒 (TTS)、按张 (Image)、按分钟 (Video) 计费
-- **预算控制**: 月度预算限额 + 阈值告警 (PostgreSQL 持久化)
-- **异常检测**: 自动识别用量异常波动
-- **用量导出**: CSV 导出，按用户/系统维度
-- **多用户隔离**: 每用户独立配额与限流
+- **实时 Token 计费**: 精确记录 Prompt 和 Completion 消耗并折算成本
+- **多维度计费**: 支持按时间(秒)、按内容尺寸(图片)、按量计算
+- **预算控制**: 以租户组织为中心划分财务边界，可单独设施日/月度用量限额 (PostgreSQL 锁账)
+- **异动检测**: 针对极速拉升的 Token 消耗速率进行多阶梯度风控拦截
 
-### 异步任务 & Webhook
+### 会话与任务
 
-- **异步任务管理**: 支持 batch TTS、批量图像生成、视频分析等长耗时任务
-- **状态追踪**: pending → running → completed/failed/cancelled 全生命周期
-- **进度报告**: 0-100% 实时进度
-- **Webhook 回调**: 任务完成/失败时自动 POST 通知到指定 URL
+- **对话记忆**: 保存历史上下文状态追踪并在服务端做智能长文本压缩，降低消耗
+- **异步批处理**: 针对大规模并行生成（如图片跑批、TTS、多视频理解等长耗时作业）管理任务池生命周期
+- **Webhook 回调**: 异步执行完成后（或失败时），向下游回调并支持验签重试
 
-### 会话记忆
+### 安全与合规 (Security & DLP)
 
-- 保存历史对话上下文
-- 支持会话恢复和续写
-- **会话压缩**: 自动将长对话历史压缩为摘要，降低 Token 消耗
+- **DLP (数据防泄漏)**: 企业级双向内容安检，根据策略实时拦截敏感词汇 (Block) 或进行就地数据脱敏打码 (Mask/Redact)
+- **身份保护**: 强制 JWT (Access + Refresh 双重验证)，提供强制一次性令牌与失效重认证功能
+- **加密落盘**: Provider 鉴权凭证强制 AES-256-GCM 高度算法库软加密回源
+- **安全防线**: 自动跳变限流桶、全局背压(Backpressure)防雪崩、SSRF（服务器端请求伪造）严格防护 (针对 Webhook 和多模态链接）
+- **日志审计**: Webhook、人员登录操作与 Token 重置关键流程被安全审计中心长时持久化保存
 
-### 健康检查 & 告警
+### 健康监控 & 可观测性
 
-- **Provider 健康检测**: 定时验证各 Provider API Key 可用性
-- **代理池监测**: 检测 Proxy 节点连通性和响应延迟
-- **自动故障转移**: API Key 失效或代理不可用时自动切换
-- **多渠道告警**: Webhook、SMTP 邮件、钉钉 (HMAC 签名)、飞书 (Interactive Card)
-- **Prometheus 指标**: `/metrics` 端点，预置 Grafana Dashboard 模板
-
-### 安全
-
-- **JWT 双 Token**: Access Token (1h, 可配置) + Refresh Token (7d, 可配置) 轮换机制
-- **AES-256-GCM 加密**: Provider API Key 加密存储，fail-hard (无明文降级)
-- **审计日志**: 登录、Key 管理、用户变更等关键操作全量记录
-- **多级限流 (Fail-Closed)**: Global / Per-User / Per-Key / Auth / Backpressure，Redis 不可用时自动降级至内存限流
-- **账户锁定**: 10 次失败登录 → 30 分钟锁定 (按账户)
-- **安全响应头**: HSTS、X-Frame-Options (DENY)、CSP (无 unsafe-inline script)、Permissions-Policy
-- **SSRF 防护**: Webhook URL 自动校验，拦截内网 IP 及保留地址
-- **注册模式**: open / invite (DB 邀请码, 一次性/限次/可设过期) / closed (默认)
-- **JTI 一次性令牌**: Refresh Token 单次轮换，Redis 不可用时拒绝轮换 (fail-closed)
-- **启动安全检查**: ENCRYPTION_KEY 必填、JWT_SECRET ≥ 32 字符、管理员密码复杂度校验、CORS 通配符告警
-
-### 可观测性
-
-- **Langfuse 集成**: 分布式 Trace + Generation 追踪
-- **Prometheus Metrics**: 请求率、错误率、延迟 P95/P99、Token 用量
-- **pprof**: 按需启用 (`PPROF_ENABLED=true`)，仅 Admin 可访问
-- **结构化日志**: Zap JSON 格式，X-Request-ID 关联
+- **实时健康探针**: 全局异步探测 Provider API Endpoint 连通性，异常时驱逐下线，复效时重新汇聚
+- **多通道告警推送**: 支持 SMTP 邮件、企业微信、钉钉通知 (按规则带 HMAC 签名校验)，在链路预警时发出
+- **Prometheus + Langfuse 集成**: 对系统全线做 X-Request-ID 染色链路跟踪。按需提供 CPU/MEM `/pprof` 全栈压测
 
 ### 管理后台 (Apple Design Style)
 
-- **Dashboard**: 实时数据概览、Provider 状态、模型用量分布
-- **Usage 统计**: Token 消耗趋势、调用次数、响应时间分析
-- **Provider 管理**: Provider CRUD、API Key 管理、代理切换
-- **Proxy 管理**: 代理节点 CRUD、批量导入、连通性测试
-- **用户管理**: 角色分配、配额设置、API Key 查看、用量明细
-- **Health 监控**: API Key/Provider/Proxy 健康状态、历史记录
-- **Settings**: 个人资料、密码修改、主题切换
-- **深色模式**: 浅色 / 深色 / 跟随系统
-- **API 文档**: 内置交互式文档页 + Swagger UI
+- **极简拟物视效**: 以“平滑与简洁”为主基调，浅色/深色/自适应全态环境的高端质感交互 UI
+- **动静结合的路由配置**: 支持通过可视化网格进行高阶 `Routing Engine` 规则的拖拽化与权重调整
+- **管理分界**:
+  - **User Dashboard** (普通用户/组织管理员): 管理自己租户内的 API Key、Prompt 广场、账单开销与缓存命中率
+  - **Admin Control Panel** (平台总超管): 审阅全局基建(Provider池/Proxy代理池)，干预整体 DLP 和 SSO 配置以及资源水位监控
 
-## 技术栈
+## 技术架构
 
 ### 后端 (Go)
-
-| 技术 | 用途 |
-|------|------|
-| Go 1.24+ | 主开发语言 |
-| Gin | Web 框架 |
-| **gqlgen** | **GraphQL 服务端 (schema-first)** |
-| GORM | ORM (PostgreSQL) |
-| go-redis | Redis 客户端 |
-| Zap | 结构化日志 |
-| Viper | 配置管理 |
-| Swaggo | OpenAPI 3.0 文档 (LLM 端点) |
-| jwt-go | JWT 认证 |
-| Prometheus | 指标收集 |
+| Core | Use |
+|------|-----|
+| Go 1.24+ | 后端核心引擎 |
+| **gqlgen** | API 交付主层级（Schema First 的 GraphQL 端点） |
+| Gin | REST 降级及原生 `/v1` 的 LLM 接口实现 |
+| GORM | 强类型数据存储对接层 (PostgreSQL 16) |
+| go-redis | RateLimiting / TokenBucket / SemanticCache 层数据桥接 |
+| Zap | Async JSON 结构化高性能日志 |
 
 ### 前端 (React)
+| Stack | Use |
+|-------|-----|
+| React 19 + TypeScript | 前级界面 |
+| Vite | 秒级打包构建引擎 |
+| TailwindCSS v4 | 标准化原子化 CSS (配合 `lucide`/`heroicons` 剔除表情符号) |
+| **Apollo Client** | GQL 同步请求框架与全局本地 Cache 联表 |
+| Zustand | 用户登录状态与其他轻量化 UI 全局环境 |
 
-| 技术 | 用途 |
-|------|------|
-| React 19 | UI 框架 |
-| TypeScript | 类型安全 |
-| Vite | 构建工具 |
-| TailwindCSS v4 | 样式框架 |
-| Framer Motion | 动画效果 |
-| Recharts | 图表可视化 |
-| **Apollo Client** | **GraphQL 客户端** |
-| Zustand | 状态管理 |
-| i18next | 国际化 (中/英) |
+## 项目结构 (Core)
 
-### 基础设施
+```
+llm-router-platform/
+├── server/                          # Go Backend
+│   ├── cmd/server/                  # 主程序入口 
+│   ├── internal/
+│   │   ├── api/
+│   │   │   ├── handlers/            # LLM Proxy REST Handler (OpenAI 兼容转发)
+│   │   │   ├── middleware/          # Security (CORS, Backpressure, JWT, RateLimit, Sentinal)
+│   │   │   └── routes/             
+│   │   ├── graphql/                 # ★ 运营后台入口 (schema / resolvers / dataloaders)
+│   │   ├── models/                  # E-R 引擎关系实体
+│   │   ├── repository/              # Repository 数据层模式
+│   │   └── service/                 # 15个微型逻辑子模块集合
+│   │       ├── audit/               # 审计模块
+│   │       ├── billing/             # 支付与额度
+│   │       ├── cache/               # 重构后的语义缓存 (向量+Redis)
+│   │       ├── dlp/                 # 核心数据防泄漏管道
+│   │       ├── health/              # 服务监控存活探针
+│   │       ├── mcp/                 # Model Context Protocol 子客户端
+│   │       ├── org/                 # 多租户管理组织形态
+│   │       ├── router/              # 重型策略和权重负载均衡机制
+│   │       ├── sso/                 # OIDC 企业联邦身份入口
+│   │       └── ...
+│   ├── pkg/
+│   └── docs/                        # Swagger/OpenAPI
+│
+├── web/                             # React Frontend
+│   ├── src/
+│   │   ├── pages/                   # User / Admin Console 拆分的多页面 (SSO, Routing, Org 等20+业务面板)
+│   │   ├── components/              
+│   │   ├── lib/graphql/             # Apollo Client GQL 操作语句集中管理
+│   │   └── stores/                  # Zustand
+│   └── package.json
+└── docker-compose.yml               # 本地/发布容器化编排环境
+```
 
-| 技术 | 用途 |
-|------|------|
-| PostgreSQL 16 | 关系数据库 |
-| Redis 7 | 缓存 / 限流 / 配额 |
-| Docker Compose | 本地编排 |
-| Nginx | 前端反代 |
-| Helm | Kubernetes 部署 |
+## 开发计划
 
-## 快速开始
+- [x] 多 LLM Provider 支持 (OpenAI, Claude, Gemini, DeepSeek 等等)
+- [x] 流式响应 (SSE) + Tool Call 桥接
+- [x] 管理后台 Apple Design 高端流体设计翻新
+- [x] API Key 池化 + 自动故障切换探测
+- [x] **语义层缓存 (Semantic Cache) + Embeddings 复用**
+- [x] **企业级安全网关 DLP (敏感打码/拦截)**
+- [x] **用户多中心联邦身份 (OIDC/SAML, Google/GitHub SSO)**
+- [x] **MCP (Model Context Protocol)** 官方子协议接入和 Std/SSE 工具调用联动
+- [x] **多租户数据中心级别组织 (Orgs & Workspaces)**
+- [x] GraphQL 强类型声明式管理全端重构
+- [x] 安全加固 (SSRF 抑制，后端资源竞态修复，SQLI，Gosec/Lint 安全性验证)
+- [ ] Kubernetes 针对企业内网的大规模发布 (Helm Chart & Rolling Update)
+- [ ] iOS/Android 原生多形态客户端扩展
 
-### 环境要求
+## 快速指南
 
-- Go >= 1.24
-- Node.js >= 18.x
-- PostgreSQL >= 16
-- Redis >= 7.0
-
-### Docker 一键部署 (推荐)
+### 推荐：直接拉起 Docker Compose
 
 ```bash
 git clone https://github.com/Veritas-Calculus/llm-router-platform.git
 cd llm-router-platform
 
-# 配置环境变量
+# 配置后端安全密钥
 cp server/.env.example server/.env
-# 编辑 server/.env 设置 ENCRYPTION_KEY, JWT_SECRET 等
+# 修改 ENCRYPTION_KEY, JWT_SECRET, 配置相关 Redis 等连接串
 
-# 启动所有服务
+# 拉起包含 Postgres, Redis 在内的一整套生态
 docker-compose up -d
 ```
+控制台可以通过 `http://localhost` 访问，网关代理的 API 地址在 `http://localhost:8080` (端口映射一致)。
 
-访问 `http://localhost` 即可使用管理后台，API 端点默认在 `http://localhost:8080`。
-
-### Kubernetes Helm 部署 (生产推荐)
-
-提供官方 Helm Chart 用于在 Kubernetes 集群中部署无状态网关节点。
+### 手动构建 (研发阶段)
 
 ```bash
-cd deploy/helm/llm-router
-
-# 检查配置
-helm template llm-router .
-
-# 安装/更新 Chart
-helm upgrade --install llm-router . -n llm-router --create-namespace \
-  --set secret.encryptionKey="your-32-byte-encryption-key" \
-  --set secret.jwtSecret="your-jwt-secret" \
-  --set secret.adminPassword="Admin123!" \
-  --set ingress.enabled=true \
-  --set ingress.hosts[0].host="llm-gateway.local"
-```
-
-**数据库迁移说明**: 生产（`release`）模式下，程序会自动跳过 `AutoMigrate`。发布前请确保执行 SQL 迁移：
-```bash
-go run cmd/migrate/main.go up
-```
-
-### 本地开发
-
-```bash
-# 启动基础设施
-docker-compose up -d postgres redis
-
-# 后端
+# Backend (提供 API Endpoint 和 GQL 管理接口)
 cd server
-cp .env.example .env
 go mod download
 go run cmd/server/main.go
-
-# 前端 (新终端)
+# Frontend (Web UI)
 cd web
 npm install
 npm run dev
 ```
 
-或使用 Makefile:
+### 数据库迁移
 
+如果通过 `release` 模式或生产级别打包，会自动锁定 GORM 隐式建表：
 ```bash
-make dev          # 启动后端 + 前端开发服务器
-make test         # 运行全量测试 (Go + ESLint)
-make lint         # golangci-lint + eslint
-make build        # 生产构建
+# 手动控制迁移 (确保生产的 Schema 不被程序污染)
+go run cmd/migrate/main.go up
 ```
 
-### 配置说明
+## 测试与质量
 
-后端配置 `server/.env`:
-
-```env
-# 必须配置
-ENCRYPTION_KEY=your-32-byte-encryption-key    # AES-256 加密密钥 (必填)
-JWT_SECRET=your-jwt-secret-at-least-32-chars  # JWT 签名密钥 (≥ 32 字符)
-
-# 数据库
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=your_password
-DB_NAME=llm_router
-DB_SSL_MODE=require                            # 默认 require; 开发环境可设 disable
-
-# Redis
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-# 默认管理员 (首次启动自动创建)
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=Admin123!                       # 需满足: ≥ 8 字符, 大小写 + 数字
-
-# 注册模式: open / invite / closed (默认 closed)
-REGISTRATION_MODE=closed
-
-# Token 过期 (可选)
-JWT_EXPIRES_IN=1h                              # Access Token 有效期
-JWT_REFRESH_EXPIRES_IN=168h                    # Refresh Token 有效期 (7 天)
-
-# 可观测性 (可选)
-LANGFUSE_ENABLED=false
-LANGFUSE_PUBLIC_KEY=pk-lf-...
-LANGFUSE_SECRET_KEY=sk-lf-...
-LANGFUSE_HOST=https://cloud.langfuse.com
-
-# pprof 调试 (可选)
-PPROF_ENABLED=false
-```
-
-前端配置 `web/.env`:
-
-```env
-VITE_API_BASE_URL=http://localhost:8080
-VITE_APP_TITLE=LLM Router Platform
-```
-
-## API 参考
-
-### OpenAI-Compatible LLM 端点
-
-这些端点支持三种 URL 前缀以兼容不同 SDK 配置：`/api/v1/`、`/v1/`、`/`
-
-| 端点 | 方法 | 描述 | 认证 |
-|------|------|------|------|
-| `/v1/chat/completions` | POST | 对话补全 (支持 streaming) | API Key |
-| `/v1/embeddings` | POST | 文本向量化 | API Key |
-| `/v1/images/generations` | POST | 图像生成 | API Key |
-| `/v1/audio/transcriptions` | POST | 语音转文字 (Whisper) | API Key |
-| `/v1/audio/speech` | POST | 文字转语音 (TTS) | API Key |
-| `/v1/models` | GET | 可用模型列表 | API Key |
-| `/v1/models/providers` | GET | Provider 模型列表 | API Key |
-
-### 管理 API — GraphQL (`/graphql`)
-
-所有管理操作（认证、用户管理、Provider/Proxy 管理、计费、健康检查等）均通过 **GraphQL** 提供。前端使用 Apollo Client 与之交互。
-
-```bash
-# GraphQL 端点
-POST /graphql
-
-# 开发模式下可通过浏览器访问 GraphQL Playground
-GET  /graphql  (仅 debug 模式)
-```
-
-#### 安全机制
-
-| 机制 | 说明 |
-|------|------|
-| `@auth` 指令 | 字段级 JWT 验证 + 角色检查 |
-| `@rateLimit` 指令 | 字段级限流 (如 login 5次/分钟) |
-| 查询深度限制 | 最大 7 层嵌套 |
-| 查询复杂度限制 | 最大 200 复杂度 |
-| Introspection | 生产环境自动关闭 |
-| 错误脱敏 | 生产环境返回通用错误 |
-
-#### 示例 Query/Mutation
-
-```bash
-# 登录
-curl -X POST http://localhost:8080/graphql \
-  -H "Content-Type: application/json" \
-  -d '{"query":"mutation { login(input: {email: \"admin@example.com\", password: \"Admin123!\"}) { token user { id email role } } }"}'
-
-# 查询 Dashboard (需带 JWT)
-curl -X POST http://localhost:8080/graphql \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"{ dashboard { totalRequests successRate totalTokens totalCost activeProviders } }"}'
-```
-
-### 运维端点
-
-| 端点 | 描述 |
-|------|------|
-| `/health` | Liveness 探针 |
-| `/healthz` | Readiness 探针 (PG + Redis) |
-| `/readyz` | Ready 探针 |
-| `/version` | 版本信息 |
-| `/metrics` | Prometheus 指标 (需 Admin JWT 认证) |
-| `/swagger/*` | OpenAPI 文档 (仅 debug 模式) |
-
-### 使用示例
-
-```bash
-# Chat Completion
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Authorization: Bearer sk-your-api-key" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4","messages":[{"role":"user","content":"Hello!"}]}'
-
-# TTS 语音合成
-curl -X POST http://localhost:8080/v1/audio/speech \
-  -H "Authorization: Bearer sk-your-api-key" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"tts-1","input":"Hello from LLM Router","voice":"alloy"}' \
-  --output speech.mp3
-
-# 创建异步任务
-curl -X POST http://localhost:8080/api/v1/tasks \
-  -H "Authorization: Bearer jwt-token" \
-  -H "Content-Type: application/json" \
-  -d '{"type":"batch_tts","input":"[{\"text\":\"hello\"}]","webhook_url":"https://example.com/callback"}'
-
-# 视频理解 (multimodal)
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Authorization: Bearer sk-your-api-key" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gemini-2.0-flash","messages":[{"role":"user","content":[{"type":"text","text":"描述这个视频"},{"type":"video_url","video_url":{"url":"https://example.com/video.mp4"}}]}]}'
-```
-
-## 项目结构
-
-```
-llm-router-platform/
-├── server/                          # Go 后端
-│   ├── cmd/
-│   │   ├── server/                  # 主程序入口
-│   │   └── migrate/                 # 数据库迁移工具
-│   ├── internal/
-│   │   ├── api/
-│   │   │   ├── handlers/            # LLM 代理 Handler (仅保留 LLM 相关)
-│   │   │   │   ├── chat_handler.go          # Chat Completions
-│   │   │   │   ├── streaming_handler.go     # SSE 流式响应
-│   │   │   │   ├── tts_handler.go           # TTS 语音合成
-│   │   │   │   ├── audio_handler.go         # 音频转写
-│   │   │   │   ├── images_handler.go        # 图像生成
-│   │   │   │   ├── embeddings_handler.go    # 文本向量化
-│   │   │   │   ├── model_handler.go         # 模型发现
-│   │   │   │   ├── payment_handler.go       # Stripe Webhook
-│   │   │   │   └── operational_handler.go   # 健康探针
-│   │   │   ├── middleware/          # 中间件 (CORS, 限流, JWT, 安全头, Backpressure)
-│   │   │   └── routes/             # 路由注册 (LLM + GraphQL + 运维)
-│   │   ├── graphql/                 # ★ GraphQL 管理 API (gqlgen)
-│   │   │   ├── schema/              # Schema 定义 (.graphqls 白名单)
-│   │   │   ├── resolvers/           # 业务逻辑 Resolver
-│   │   │   ├── directives/          # @auth + @rateLimit 指令
-│   │   │   ├── dataloaders/         # N+1 优化 (Dataloader)
-│   │   │   ├── handler/             # GraphQL HTTP Handler
-│   │   │   ├── generated/           # gqlgen 自动生成
-│   │   │   └── model/               # GraphQL 模型
-│   │   ├── config/                  # Viper 配置管理
-│   │   ├── crypto/                  # AES-GCM 加密
-│   │   ├── database/                # GORM AutoMigrate + 数据清理
-│   │   ├── models/                  # 数据模型
-│   │   ├── repository/              # 数据访问层
-│   │   └── service/                 # 业务逻辑层 (11 个子模块)
-│   ├── pkg/                         # 公共工具包
-│   ├── docs/                        # Swagger 文档
-│   └── go.mod
-│
-├── web/                             # React 前端
-│   ├── src/
-│   │   ├── pages/                   # 页面 (12 个页面)
-│   │   ├── components/              # 通用组件
-│   │   ├── stores/                  # Zustand 状态管理
-│   │   ├── hooks/                   # 自定义 Hooks (Apollo useQuery/useMutation)
-│   │   ├── lib/
-│   │   │   ├── graphql/             # ★ Apollo Client + GraphQL 操作
-│   │   │   │   ├── client.ts        # Apollo Client 初始化
-│   │   │   │   └── operations/      # 按域拆分的 GraphQL 操作
-│   │   │   └── types.ts             # 前端类型定义
-│   │   ├── locales/                 # 国际化资源 (zh/en)
-│   │   └── test/                    # 测试
-│   ├── nginx.conf                   # Nginx 反代 (含 /graphql 代理)
-│   └── package.json
-│
-├── docker-compose.yml               # 生产编排
-├── Makefile                         # 开发任务
-└── CONTRIBUTING.md                  # 贡献指南
-```
-
-## 开发计划
-
-- [x] 多 LLM Provider 支持 (OpenAI, Claude, Gemini, DeepSeek, Mistral, Ollama, LM Studio, vLLM)
-- [x] 流式响应 (SSE) + Tool Call 支持
-- [x] 管理后台 Dashboard (Apple Design)
-- [x] API Key 池化 + 自动故障切换
-- [x] 代理池管理 + 健康检查
-- [x] 计费 & 用量统计 & FinOps
-- [x] JWT 双 Token + Refresh 轮换
-- [x] AES-256 加密存储 + 审计日志
-- [x] 多级速率限制 (Global/Per-User/Per-Key/Backpressure)
-- [x] 多渠道告警 (Webhook/Email/钉钉/飞书)
-- [x] 会话记忆压缩
-- [x] 预算持久化 + 异常检测
-- [x] Prometheus + Grafana + Langfuse 可观测性
-- [x] OpenAPI 3.0 文档 (Swagger UI)
-- [x] TTS 多 Provider 接入 (OpenAI TTS + 本地 CosyVoice/Fish-Speech)
-- [x] Video Understanding (Multimodal 透传)
-- [x] 异步任务 + Webhook 回调系统
-- [x] 多维度计费 (按秒/按张/按分钟)
-- [x] 国际化 (i18n: 中/英)
-- [x] 安全加固 (Fail-closed 限流, 账户锁定, SSRF 防护, JTI 一次性轮换, DB 邀请码, HSTS, 错误信息脱敏)
-- [x] **GraphQL 管理 API** (gqlgen + Apollo Client, 替代 REST 管理端点)
-- [ ] Kubernetes 生产部署 (Helm Chart)
-- [ ] 移动端适配
-
-## 贡献指南
-
-欢迎提交 Issue 和 Pull Request。请确保：
-
-1. 后端代码通过 `golangci-lint` 检查
-2. 前端代码通过 `ESLint` 检查
-3. 所有测试通过 (`cd server && go test ./...`)
-4. 更新相关文档
+- 所有的开发合并受到严格自动化 CI 管控：
+- Go 后端需要通过完整的 `golangci-lint` 及 `gosec` (Go安全静态审计)。
+- Frontend React 前端需保持 0 ERROR / 0 WARNING 强约束的 `eslint (npm run lint)` 规则扫描。
 
 详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 许可证
 
-MIT License
+本项目由 MIT License 授权。
