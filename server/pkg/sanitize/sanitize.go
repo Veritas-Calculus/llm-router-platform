@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -110,10 +111,13 @@ func ValidateWebhookURL(rawURL string, allowHTTP bool) error {
 		return fmt.Errorf("cannot resolve webhook URL hostname %q: %w", host, err)
 	}
 
-	// Check that ALL resolved IPs are public (not private/reserved)
-	for _, ip := range ips {
-		if IsPrivateIP(ip) {
-			return fmt.Errorf("webhook URL resolves to private/reserved IP address (blocked for security)")
+	allowLocal := os.Getenv("ALLOW_LOCAL_PROVIDERS") == "true"
+	if !allowLocal {
+		// Check that ALL resolved IPs are public (not private/reserved)
+		for _, ip := range ips {
+			if IsPrivateIP(ip) {
+				return fmt.Errorf("URL resolves to private/reserved IP address. Set ALLOW_LOCAL_PROVIDERS=true to allow")
+			}
 		}
 	}
 
@@ -149,10 +153,13 @@ func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error
 		return nil, fmt.Errorf("cannot resolve %q: %w", host, err)
 	}
 
-	// Validate ALL resolved IPs are public
-	for _, ipAddr := range ips {
-		if IsPrivateIP(ipAddr.IP) {
-			return nil, fmt.Errorf("connection to %q blocked: resolves to private/reserved IP (DNS rebinding protection)", host)
+	allowLocal := os.Getenv("ALLOW_LOCAL_PROVIDERS") == "true"
+	if !allowLocal {
+		// Validate ALL resolved IPs are public
+		for _, ipAddr := range ips {
+			if IsPrivateIP(ipAddr.IP) {
+				return nil, fmt.Errorf("connection to %q blocked: resolves to private/reserved IP. Set ALLOW_LOCAL_PROVIDERS=true to allow", host)
+			}
 		}
 	}
 
