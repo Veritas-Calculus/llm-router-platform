@@ -64,6 +64,7 @@ func (ic *InviteCode) IsValid() bool {
 // APIKey represents an API key for authentication.
 type APIKey struct {
 	BaseModel
+	UserID     uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
 	ProjectID  uuid.UUID `gorm:"type:uuid;not null;index" json:"project_id"`
 	Channel    string    `gorm:"type:varchar(128);default:'default'" json:"channel"`
 	KeyHash    string    `gorm:"not null;uniqueIndex" json:"-"`

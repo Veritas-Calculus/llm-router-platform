@@ -86,6 +86,7 @@ func (h *ChatHandler) SynthesizeSpeech(c *gin.Context) {
 		gen.EndWithError(err)
 		latency := time.Since(start)
 		usageLog := &models.UsageLog{
+			UserID:     userAPIKey.UserID,
 			ProjectID:   projectObj.ID,
 			APIKeyID:   userAPIKey.ID,
 			ProviderID: selectedProvider.ID,
@@ -115,6 +116,7 @@ func (h *ChatHandler) SynthesizeSpeech(c *gin.Context) {
 
 	latency := time.Since(start)
 	usageLog := &models.UsageLog{
+		UserID:     userAPIKey.UserID,
 		ProjectID:   projectObj.ID,
 		APIKeyID:   userAPIKey.ID,
 		ProviderID: selectedProvider.ID,

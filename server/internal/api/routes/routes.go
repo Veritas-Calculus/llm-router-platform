@@ -127,6 +127,12 @@ func Setup(
 	metricsGroup.Use(middleware.AdminOnly())
 	metricsGroup.GET("", middleware.MetricsHandler())
 
+	// Internal metrics endpoint — no auth, for Prometheus scraping within Docker network
+	if cfg.Server.MetricsAllowUnauthenticated {
+		engine.GET("/internal/metrics", middleware.MetricsHandler())
+		logger.Info("unauthenticated metrics endpoint enabled at /internal/metrics")
+	}
+
 	// Swagger API Docs — disabled in release/production mode
 	if cfg.Server.Mode != "release" {
 		engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

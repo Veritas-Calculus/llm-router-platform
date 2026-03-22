@@ -91,11 +91,14 @@ services:
       - RATE_LIMIT_ENABLED=true
       - RATE_LIMIT_REQUESTS_PER_MINUTE=${RATE_LIMIT_RPM:-60}
       - REGISTRATION_MODE=${REGISTRATION_MODE:-open}
+      - ALLOW_LOCAL_PROVIDERS=${ALLOW_LOCAL_PROVIDERS:-true}
       # ── Langfuse Observability ──
       - LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-false}
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
       - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse-server:3000}
+      # ── Prometheus Metrics ──
+      - METRICS_ALLOW_UNAUTHENTICATED=${METRICS_ALLOW_UNAUTHENTICATED:-true}
       # ── Sentry Error Tracking ──
       - SENTRY_ENABLED=${SENTRY_ENABLED:-false}
       - SENTRY_DSN=${SENTRY_DSN:-}
@@ -170,13 +173,100 @@ services:
         max-file: "3"
 
   # ════════════════════════════════════════════════════════════════════════
+  #  Monitoring -- Prometheus + Grafana
+  #
+  #  Start with:  docker compose --profile monitoring up -d
+  #  Prometheus:  http://localhost:9090
+  #  Grafana:     http://localhost:3001  (admin / admin)
+  # ════════════════════════════════════════════════════════════════════════
+
+  # -- Prometheus ------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: llm-router-prometheus
+    profiles: ["monitoring"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - backend_net
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    restart: unless-stopped
+
+  # -- Grafana ------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: llm-router-grafana
+    profiles: ["monitoring"]
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SERVER_ROOT_URL: http://localhost:3001
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - backend_net
+      - frontend_net
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    restart: unless-stopped
+
+  # ════════════════════════════════════════════════════════════════════════
   #  Langfuse v3 — Self-Hosted Observability
   #
   #  Start with:  docker compose --profile langfuse up -d
   #
-  #  After boot, open http://localhost:3000, create an org + project,
-  #  generate API keys, then set LANGFUSE_ENABLED=true and the
-  #  LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY env vars on the server.
+  #  After boot, open http://localhost:3000, sign up with your email,
+  #  create an org + project, then go to Settings -> API Keys and create
+  #  a key pair. Copy the Public Key and Secret Key into .env:
+  #
+  #    LANGFUSE_ENABLED=true
+  #    LANGFUSE_PUBLIC_KEY=pk-lf-...
+  #    LANGFUSE_SECRET_KEY=sk-lf-...
+  #    LANGFUSE_HOST=http://langfuse-server:3000
+  #
+  #  Then restart the server:  docker compose --profile langfuse up -d server
   # ════════════════════════════════════════════════════════════════════════
 
   # ── Langfuse Postgres (separate from app Postgres) ──────────────────
@@ -215,17 +305,20 @@ services:
     container_name: langfuse-clickhouse
     profiles: ["langfuse"]
     environment:
+      CLICKHOUSE_DB: default
       CLICKHOUSE_USER: langfuse
       CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse_secret}
     volumes:
       - langfuse_clickhouse_data:/var/lib/clickhouse
+      - ./docker/clickhouse/keeper.xml:/etc/clickhouse-server/config.d/keeper.xml:ro
     networks:
       - backend_net
     healthcheck:
-      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      test: ["CMD-SHELL", "clickhouse-client --user langfuse --password ${CLICKHOUSE_PASSWORD:-clickhouse_secret} --query 'SELECT 1' || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -238,7 +331,127 @@ services:
         max-file: "3"
     restart: unless-stopped
 
-  # ── Langfuse Server (web + worker in single container) ──────────────
+  # ── Redis for Langfuse (separate from app Redis) ────────────────────
+  langfuse-redis:
+    image: redis:7-alpine
+    container_name: langfuse-redis
+    profiles: ["langfuse"]
+    command: >
+      redis-server --requirepass ${LANGFUSE_REDIS_AUTH:-langfuse_redis_secret} --maxmemory 128mb --maxmemory-policy noeviction
+    volumes:
+      - langfuse_redis_data:/data
+    networks:
+      - backend_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  # ── MinIO (S3-compatible storage for Langfuse events/media) ─────────
+  langfuse-minio:
+    image: minio/minio
+    container_name: langfuse-minio
+    profiles: ["langfuse"]
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: ${LANGFUSE_MINIO_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_PASSWORD:-miniosecret}
+    volumes:
+      - langfuse_minio_data:/data
+    networks:
+      - backend_net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    restart: unless-stopped
+
+  # ── Langfuse Worker (background job processing) ─────────────────────
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: langfuse-worker
+    profiles: ["langfuse"]
+    environment: &langfuse-env
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse_secret}@langfuse-postgres:5432/langfuse
+      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+      CLICKHOUSE_USER: langfuse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse_secret}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      NEXTAUTH_URL: ${LANGFUSE_URL:-http://localhost:3000}
+      SALT: ${LANGFUSE_SALT:-changeme-salt-value}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      # Redis
+      REDIS_HOST: langfuse-redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: ${LANGFUSE_REDIS_AUTH:-langfuse_redis_secret}
+      # S3 / MinIO — event storage
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_MINIO_USER:-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-miniosecret}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      # S3 / MinIO — media storage
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_MINIO_USER:-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-miniosecret}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+    networks:
+      - backend_net
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    restart: unless-stopped
+
+  # ── Langfuse Server (web UI) ────────────────────────────────────────
   langfuse-server:
     image: langfuse/langfuse:3
     container_name: langfuse-server
@@ -246,17 +459,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse_secret}@langfuse-postgres:5432/langfuse
-      CLICKHOUSE_URL: http://langfuse-clickhouse:8123
-      CLICKHOUSE_USER: langfuse
-      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse_secret}
-      NEXTAUTH_URL: ${LANGFUSE_URL:-http://localhost:3000}
+      <<: *langfuse-env
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme-nextauth-secret}
-      SALT: ${LANGFUSE_SALT:-changeme-salt-value}
-      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
-      TELEMETRY_ENABLED: "false"
-      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      HOSTNAME: "0.0.0.0"
     networks:
       - backend_net
       - frontend_net
@@ -265,12 +470,16 @@ services:
         condition: service_healthy
       langfuse-clickhouse:
         condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/public/health"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -291,6 +500,9 @@ networks:
 volumes:
   postgres_data:
   redis_data:
+  prometheus_data:
+  grafana_data:
   langfuse_postgres_data:
   langfuse_clickhouse_data:
-
+  langfuse_redis_data:
+  langfuse_minio_data:

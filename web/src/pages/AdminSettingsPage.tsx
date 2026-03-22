@@ -14,10 +14,13 @@ import {
   XCircleIcon,
   CloudIcon,
   KeyIcon,
+  SignalIcon,
+  EyeIcon,
+  EyeSlashIcon,
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { SYSTEM_SETTINGS_QUERY, UPDATE_SYSTEM_SETTINGS, SEND_TEST_EMAIL, TRIGGER_BACKUP } from '@/lib/graphql/operations/settings';
-import { GET_INTEGRATIONS, UPDATE_INTEGRATION } from '@/lib/graphql/operations/integrations';
+import { GET_INTEGRATIONS, UPDATE_INTEGRATION, TEST_LANGFUSE_CONNECTION } from '@/lib/graphql/operations/integrations';
 import { useTranslation } from '@/lib/i18n';
 import toast from 'react-hot-toast';
 
@@ -422,6 +425,7 @@ function SsoSettingsTab({ data, onChange }: { data: any; onChange: (d: any) => v
 function IntegrationsSettingsTab() {
   const { data, loading, refetch } = useQuery<any>(GET_INTEGRATIONS, { fetchPolicy: 'cache-and-network' });
   const [updateIntegration] = useMutation(UPDATE_INTEGRATION);
+  const [testLangfuse] = useMutation(TEST_LANGFUSE_CONNECTION);
 
   const integrations = (data?.integrations || []) as any[];
 
@@ -436,20 +440,26 @@ function IntegrationsSettingsTab() {
     }
   };
 
-  if (loading) return <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-apple-blue" /></div>;
-
-  const getTemplate = (name: string) => {
-    if (name === 'sentry') return '{\n  "dsn": "https://example@sentry.io/123"\n}';
-    if (name === 'loki') return '{\n  "endpoint": "http://loki:3100/loki/api/v1/push"\n}';
-    if (name === 'langfuse') return '{\n  "publicKey": "",\n  "secretKey": "",\n  "baseUrl": ""\n}';
-    return '{\n  \n}';
+  const handleTestLangfuse = async (publicKey: string, secretKey: string, host: string) => {
+    try {
+      const result: any = await testLangfuse({ variables: { publicKey, secretKey, host } });
+      return result?.data?.testLangfuseConnection === true;
+    } catch {
+      return false;
+    }
   };
+
+  if (loading) return <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-apple-blue" /></div>;
 
   return (
     <div className="space-y-6">
       <p className="text-sm text-apple-gray-500">Configure external logging, tracing, and metrics platforms.</p>
       {integrations.map((ig: any) => (
-        <IntegrationInlineCard key={ig.id} integration={ig} getTemplate={getTemplate} onSave={handleSave} />
+        ig.name === 'langfuse' ? (
+          <LangfuseInlineCard key={ig.id} integration={ig} onSave={handleSave} onTestConnection={handleTestLangfuse} />
+        ) : (
+          <IntegrationInlineCard key={ig.id} integration={ig} onSave={handleSave} />
+        )
       ))}
       {integrations.length === 0 && (
         <p className="text-sm text-apple-gray-400 text-center py-8">No integrations configured yet.</p>
@@ -458,12 +468,153 @@ function IntegrationsSettingsTab() {
   );
 }
 
-function IntegrationInlineCard({ integration, getTemplate, onSave }: {
+function LangfuseInlineCard({ integration, onSave, onTestConnection }: {
   integration: any;
-  getTemplate: (name: string) => string;
+  onSave: (name: string, enabled: boolean, config: string) => void;
+  onTestConnection: (publicKey: string, secretKey: string, host: string) => Promise<boolean>;
+}) {
+  const [enabled, setEnabled] = useState(integration.enabled);
+  const [publicKey, setPublicKey] = useState('');
+  const [secretKey, setSecretKey] = useState('');
+  const [baseUrl, setBaseUrl] = useState('https://cloud.langfuse.com');
+  const [showSecret, setShowSecret] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<'idle' | 'success' | 'failed'>('idle');
+
+  useEffect(() => {
+    try {
+      const cfg = JSON.parse(integration.config);
+      if (cfg.publicKey) setPublicKey(cfg.publicKey);
+      if (cfg.secretKey) setSecretKey(cfg.secretKey);
+      if (cfg.baseUrl) setBaseUrl(cfg.baseUrl);
+    } catch { /* ignore */ }
+  }, [integration.config]);
+
+  const handleSave = () => {
+    const config = JSON.stringify({ publicKey, secretKey, baseUrl });
+    onSave('langfuse', enabled, config);
+  };
+
+  const handleTest = async () => {
+    if (!publicKey || !secretKey || !baseUrl) {
+      toast.error('Please fill in all Langfuse fields before testing');
+      return;
+    }
+    setTesting(true);
+    setTestResult('idle');
+    const ok = await onTestConnection(publicKey, secretKey, baseUrl);
+    setTestResult(ok ? 'success' : 'failed');
+    if (ok) {
+      toast.success('Langfuse connection successful');
+    } else {
+      toast.error('Langfuse connection failed. Check your credentials and host.');
+    }
+    setTesting(false);
+  };
+
+  return (
+    <div className="border border-apple-gray-200 rounded-xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <SignalIcon className="w-5 h-5 text-orange-500" />
+          <h4 className="text-sm font-semibold text-apple-gray-900">Langfuse</h4>
+          {enabled ? (
+            <span className="flex items-center text-xs font-medium text-emerald-600"><CheckCircleIcon className="w-3.5 h-3.5 mr-0.5" /> Active</span>
+          ) : (
+            <span className="flex items-center text-xs font-medium text-apple-gray-400"><XCircleIcon className="w-3.5 h-3.5 mr-0.5" /> Off</span>
+          )}
+        </div>
+        <Toggle checked={enabled} onChange={setEnabled} label="" />
+      </div>
+
+      <p className="text-xs text-apple-gray-500">
+        LLM observability and analytics. Traces, generations, and token usage are automatically reported.
+      </p>
+
+      <div className="space-y-3">
+        <FormField label="Public Key">
+          <TextInput value={publicKey} onChange={setPublicKey} placeholder="pk-lf-..." />
+        </FormField>
+
+        <div className="space-y-1.5">
+          <label className="block text-sm font-medium text-apple-gray-700">Secret Key</label>
+          <div className="relative">
+            <input
+              type={showSecret ? 'text' : 'password'}
+              value={secretKey}
+              onChange={(e) => setSecretKey(e.target.value)}
+              placeholder="sk-lf-..."
+              className="w-full px-3.5 py-2.5 pr-10 bg-apple-gray-50 border border-apple-gray-200 rounded-xl text-sm font-mono text-apple-gray-900 placeholder:text-apple-gray-400 focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue transition-all"
+            />
+            <button
+              type="button"
+              onClick={() => setShowSecret(!showSecret)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-apple-gray-400 hover:text-apple-gray-600"
+            >
+              {showSecret ? <EyeSlashIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        <FormField label="Base URL">
+          <TextInput value={baseUrl} onChange={setBaseUrl} placeholder="https://cloud.langfuse.com" />
+        </FormField>
+      </div>
+
+      {/* Test Connection Button */}
+      <button
+        onClick={handleTest}
+        disabled={testing}
+        className={clsx(
+          'w-full py-2.5 rounded-xl text-sm font-medium transition-all',
+          testResult === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            : testResult === 'failed' ? 'bg-red-50 text-red-700 border border-red-200'
+            : 'bg-apple-gray-50 text-apple-gray-700 border border-apple-gray-200 hover:bg-apple-gray-100',
+          testing && 'opacity-60 cursor-wait'
+        )}
+      >
+        {testing ? (
+          <span className="flex items-center justify-center">
+            <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2" />
+            Testing...
+          </span>
+        ) : testResult === 'success' ? (
+          <span className="flex items-center justify-center">
+            <CheckCircleIcon className="w-4 h-4 mr-1.5" /> Connection Successful
+          </span>
+        ) : testResult === 'failed' ? (
+          <span className="flex items-center justify-center">
+            <XCircleIcon className="w-4 h-4 mr-1.5" /> Connection Failed — Retry
+          </span>
+        ) : (
+          'Test Connection'
+        )}
+      </button>
+
+      <div className="flex justify-end">
+        <button
+          onClick={handleSave}
+          className="px-4 py-2 bg-apple-blue text-white rounded-xl text-sm font-semibold hover:bg-blue-600 transition-all"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function IntegrationInlineCard({ integration, onSave }: {
+  integration: any;
   onSave: (name: string, enabled: boolean, config: string) => void;
 }) {
   const [enabled, setEnabled] = useState(integration.enabled);
+
+  const getTemplate = (name: string) => {
+    if (name === 'sentry') return '{\n  "dsn": "https://example@sentry.io/123"\n}';
+    if (name === 'loki') return '{\n  "endpoint": "http://loki:3100/loki/api/v1/push"\n}';
+    return '{\n  \n}';
+  };
+
   const [configStr, setConfigStr] = useState(
     integration.config === '{}' ? getTemplate(integration.name) : JSON.stringify(JSON.parse(integration.config), null, 2)
   );

@@ -61,6 +61,7 @@ func (d *Database) Migrate() error {
 		&models.Organization{},
 		&models.OrganizationMember{},
 		&models.Project{},
+		&models.DlpConfig{},
 		&models.APIKey{},
 		&models.Provider{},
 		&models.Model{},

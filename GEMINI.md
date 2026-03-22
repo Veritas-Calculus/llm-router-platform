@@ -114,7 +114,8 @@ From the project root:
 - `Makefile`: Common development tasks.
 
 ## User-Specific Context
+- **Local Test URL:** `http://127.0.0.1` (Vite dev server proxies to backend on port 8080)
 - **API Base:** The server runs on port `8080` by default.
-- **Admin Default:** `admin@example.com` / `admin@example.com` (configurable via env).
+- **Admin Credentials:** `admin@example.com` / `DevAdmin123!` (configured via `ADMIN_EMAIL` and `ADMIN_PASSWORD` env vars).
 - **LLM Compatibility:** Supports OpenAI, Claude, and Gemini providers out of the box.
 - **GraphQL Playground:** Available at `/graphql` in non-release mode.

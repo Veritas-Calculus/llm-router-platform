@@ -190,6 +190,7 @@ type Mutation {
 
   # ── Admin: Integrations ──
   updateIntegration(name: String!, input: UpdateIntegrationInput!): IntegrationConfig! @auth(role: ADMIN)
+  testLangfuseConnection(publicKey: String!, secretKey: String!, host: String!): Boolean! @auth(role: ADMIN)
 
   # ── Admin: Alerts ──
   acknowledgeAlert(id: ID!): Alert! @auth(role: ADMIN)

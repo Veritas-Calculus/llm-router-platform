@@ -51,10 +51,11 @@ type OAuth2ProviderConfig struct {
 
 // ServerConfig holds server-related configuration.
 type ServerConfig struct {
-	Port         string
-	Mode         string
-	CORSOrigins  []string // Allowed CORS origins; empty or ["*"] = allow all
-	PprofEnabled bool     // Opt-in pprof endpoints; default false
+	Port                        string
+	Mode                        string
+	CORSOrigins                 []string // Allowed CORS origins; empty or ["*"] = allow all
+	PprofEnabled                bool     // Opt-in pprof endpoints; default false
+	MetricsAllowUnauthenticated bool     // Expose /internal/metrics without auth for Prometheus scraping
 }
 
 // DatabaseConfig holds database connection configuration.
@@ -216,7 +217,8 @@ func Load() (*Config, error) {
 			Port:         viper.GetString("SERVER_PORT"),
 			Mode:         viper.GetString("GIN_MODE"),
 			CORSOrigins:  corsOrigins,
-			PprofEnabled: viper.GetBool("PPROF_ENABLED"),
+			PprofEnabled:                viper.GetBool("PPROF_ENABLED"),
+			MetricsAllowUnauthenticated: viper.GetBool("METRICS_ALLOW_UNAUTHENTICATED"),
 		},
 		Database: DatabaseConfig{
 			Host:     viper.GetString("DB_HOST"),

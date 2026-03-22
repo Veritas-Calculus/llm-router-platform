@@ -40,7 +40,7 @@ func NewService(
 
 // UpdateUsageTokens updates an existing usage log with final token counts and status.
 // Used for streaming requests to ensure usage is recorded even if the stream is interrupted.
-func (s *Service) UpdateUsageTokens(ctx context.Context, logID uuid.UUID, requestTokens, responseTokens int, statusCode int, errorMessage string) error {
+func (s *Service) UpdateUsageTokens(ctx context.Context, logID uuid.UUID, requestTokens, responseTokens int, statusCode int, latencyMs int64, errorMessage string) error {
 	log, err := s.usageRepo.GetByID(ctx, logID)
 	if err != nil {
 		return err
@@ -52,6 +52,7 @@ func (s *Service) UpdateUsageTokens(ctx context.Context, logID uuid.UUID, reques
 	log.StatusCode = statusCode
 	log.ErrorMessage = errorMessage
 	log.IsSuccess = statusCode >= 200 && statusCode < 300
+	log.Latency = latencyMs
 
 	if log.ModelID != uuid.Nil {
 		model, err := s.modelRepo.GetByID(ctx, log.ModelID)
@@ -147,11 +148,13 @@ func (s *Service) GetUsageSummary(ctx context.Context, orgID uuid.UUID, projectI
 			reqs, _ := strconv.ParseInt(res["total_requests"], 10, 64)
 			tokens, _ := strconv.ParseInt(res["total_tokens"], 10, 64)
 			cost, _ := strconv.ParseFloat(res["total_cost"], 64)
+			successRate, _ := strconv.ParseFloat(res["success_rate"], 64)
 
 			return &UsageSummary{
 				TotalRequests: reqs,
 				TotalTokens:   tokens,
 				TotalCost:     cost,
+				SuccessRate:   successRate,
 			}, nil
 		}
 	}
@@ -181,6 +184,7 @@ func (s *Service) GetUsageSummary(ctx context.Context, orgID uuid.UUID, projectI
 		pipe.HSet(ctx, key, "total_requests", summary.TotalRequests)
 		pipe.HSet(ctx, key, "total_tokens", summary.TotalTokens)
 		pipe.HSet(ctx, key, "total_cost", summary.TotalCost)
+		pipe.HSet(ctx, key, "success_rate", summary.SuccessRate)
 		pipe.Expire(ctx, key, 32*24*time.Hour)
 		_, _ = pipe.Exec(ctx)
 	}

@@ -182,14 +182,15 @@ function ApiKeysPage() {
       });
       const key = mapApiKey((result as any)?.createApiKey);
       setCreatedKey(key);
+      setShowCreateModal(false);
       await refetch();
       setNewKeyName('');
       setSelectedScopes(['all']);
       setNewKeyRateLimit('');
       setNewKeyTokenLimit('');
       toast.success('API key created successfully');
-    } catch {
-      toast.error('Failed to create API key');
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to create API key');
     } finally {
       setCreating(false);
     }

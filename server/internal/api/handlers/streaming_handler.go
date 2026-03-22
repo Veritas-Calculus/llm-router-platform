@@ -79,6 +79,15 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 	})
 
 	// Record usage after streaming completes (success or partial failure)
+	// If provider didn't return usage in stream chunks, estimate tokens from text
+	if promptTokens == 0 && completionTokens == 0 && fullText != "" {
+		// Estimate output tokens from accumulated text (~4 chars per token)
+		completionTokens = estimateTokenCount(fullText)
+		// Estimate input tokens from request messages
+		for _, m := range req.Messages {
+			promptTokens += estimateTokenCount(m.Content.Text)
+		}
+	}
 	gen.End(fullText, promptTokens, completionTokens)
 
 	statusCode := http.StatusOK
@@ -88,7 +97,7 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 		errStr = streamErr.Error()
 	}
 
-	_ = h.billing.UpdateUsageTokens(context.Background(), logID, promptTokens, completionTokens, statusCode, errStr)
+	_ = h.billing.UpdateUsageTokens(context.Background(), logID, promptTokens, completionTokens, statusCode, time.Since(start).Milliseconds(), errStr)
 
 	if conversationID != "" && h.memory != nil {
 		for _, m := range originalMessages {
@@ -122,4 +131,21 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 			_ = h.cache.StoreCache(context.Background(), hash, emb, cachedResp, pid, m, nil)
 		}(promptHash, promptEmbedding, fullText, selectedProvider.Name, req.Model)
 	}
+}
+
+// estimateTokenCount estimates token count from text.
+// Uses a heuristic of ~4 characters per token for English (GPT-family tokenizers).
+// For CJK text, each character is roughly 1-2 tokens, so we use a conservative
+// estimate that works reasonably for mixed-language content.
+func estimateTokenCount(text string) int {
+	if text == "" {
+		return 0
+	}
+	charCount := len(text)
+	// ~4 bytes per token is a reasonable average for mixed content
+	tokens := (charCount + 3) / 4
+	if tokens < 1 {
+		tokens = 1
+	}
+	return tokens
 }

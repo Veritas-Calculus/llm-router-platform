@@ -63,6 +63,7 @@ type Transaction struct {
 // UsageLog represents a single API usage record.
 type UsageLog struct {
 	BaseModel
+	UserID         uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
 	ProjectID      uuid.UUID `gorm:"type:uuid;not null;index" json:"project_id"`
 	Channel        string    `gorm:"index" json:"channel"`
 	APIKeyID       uuid.UUID `gorm:"type:uuid;not null;index" json:"api_key_id"`

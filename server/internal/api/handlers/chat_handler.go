@@ -197,6 +197,7 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 	// Record usage
 	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 	usageLog := &models.UsageLog{
+		UserID:         userAPIKey.UserID,
 		ProjectID:      projectObj.ID,
 		Channel:        userAPIKey.Channel,
 		APIKeyID:       userAPIKey.ID,
@@ -409,6 +410,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			h.obsInfo.StartGeneration(c.Request.Context(), trace, "Cache: ExactMatch", req.Model, nil, req.Messages).End(cachedResp.Choices[0].Message.Content.Text, 0, 0)
 			
 			usageLog := &models.UsageLog{
+				UserID:         userAPIKey.UserID,
 				ProjectID:      projectObj.ID,
 		Channel:        userAPIKey.Channel,
 				APIKeyID:       userAPIKey.ID,
@@ -458,6 +460,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 	if req.Stream {
 		// Record initial usage log (pending) to ensure request is tracked even if stream fails early
 		usageLog := &models.UsageLog{
+			UserID:     userAPIKey.UserID,
 			ProjectID:   projectObj.ID,
 			APIKeyID:   userAPIKey.ID,
 			ProviderID: selectedProvider.ID,
@@ -474,7 +477,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			h.logger.Error("failed to establish stream", zap.Error(err))
 			usageLog.StatusCode = http.StatusBadGateway
 			usageLog.ErrorMessage = err.Error()
-			_ = h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, err.Error())
+			_ = h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), err.Error())
 
 			c.JSON(http.StatusBadGateway, router_errs.NewRouterError(
 				router_errs.ErrCodeInternalSystemError, http.StatusBadGateway, "server_error", "upstream provider error: stream failed to initialize", err,
@@ -500,6 +503,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		gen.EndWithError(err)
 		latency := time.Since(start)
 		usageLog := &models.UsageLog{
+			UserID:       userAPIKey.UserID,
 			ProjectID:   projectObj.ID,
 			APIKeyID:     userAPIKey.ID,
 			ProviderID:   selectedProvider.ID,
@@ -547,6 +551,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	latency := time.Since(start)
 	usageLog := &models.UsageLog{
+		UserID:         userAPIKey.UserID,
 		ProjectID:      projectObj.ID,
 		Channel:        userAPIKey.Channel,
 		APIKeyID:       userAPIKey.ID,

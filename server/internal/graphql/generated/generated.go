@@ -522,6 +522,7 @@ type ComplexityRoot struct {
 		SetBudget                    func(childComplexity int, input model.BudgetInput) int
 		SyncProviderModels           func(childComplexity int, providerID string) int
 		TestAllProxies               func(childComplexity int) int
+		TestLangfuseConnection       func(childComplexity int, publicKey string, secretKey string, host string) int
 		TestNotificationChannel      func(childComplexity int, id string) int
 		TestProxy                    func(childComplexity int, id string) int
 		TestWebhookEndpoint          func(childComplexity int, id string) int
@@ -1167,6 +1168,7 @@ type MutationResolver interface {
 	CheckProviderHealth(ctx context.Context, id string) (*model.ProviderHealth, error)
 	CheckAllProviderHealth(ctx context.Context) ([]*model.ProviderHealth, error)
 	UpdateIntegration(ctx context.Context, name string, input model.UpdateIntegrationInput) (*model.IntegrationConfig, error)
+	TestLangfuseConnection(ctx context.Context, publicKey string, secretKey string, host string) (bool, error)
 	AcknowledgeAlert(ctx context.Context, id string) (*model.Alert, error)
 	ResolveAlert(ctx context.Context, id string) (*model.Alert, error)
 	UpdateAlertConfig(ctx context.Context, input model.AlertConfigInput) (*model.AlertConfig, error)
@@ -3793,6 +3795,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.TestAllProxies(childComplexity), true
+	case "Mutation.testLangfuseConnection":
+		if e.ComplexityRoot.Mutation.TestLangfuseConnection == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_testLangfuseConnection_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.TestLangfuseConnection(childComplexity, args["publicKey"].(string), args["secretKey"].(string), args["host"].(string)), true
 	case "Mutation.testNotificationChannel":
 		if e.ComplexityRoot.Mutation.TestNotificationChannel == nil {
 			break
@@ -7148,6 +7161,7 @@ type Mutation {
 
   # ── Admin: Integrations ──
   updateIntegration(name: String!, input: UpdateIntegrationInput!): IntegrationConfig! @auth(role: ADMIN)
+  testLangfuseConnection(publicKey: String!, secretKey: String!, host: String!): Boolean! @auth(role: ADMIN)
 
   # ── Admin: Alerts ──
   acknowledgeAlert(id: ID!): Alert! @auth(role: ADMIN)
@@ -9291,6 +9305,27 @@ func (ec *executionContext) field_Mutation_syncProviderModels_args(ctx context.C
 		return nil, err
 	}
 	args["providerId"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_testLangfuseConnection_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "publicKey", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["publicKey"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "secretKey", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["secretKey"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "host", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["host"] = arg2
 	return args, nil
 }
 
@@ -23400,6 +23435,65 @@ func (ec *executionContext) fieldContext_Mutation_updateIntegration(ctx context.
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_updateIntegration_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_testLangfuseConnection(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_testLangfuseConnection,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().TestLangfuseConnection(ctx, fc.Args["publicKey"].(string), fc.Args["secretKey"].(string), fc.Args["host"].(string))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "ADMIN")
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal bool
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_testLangfuseConnection(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_testLangfuseConnection_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -48573,6 +48667,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "updateIntegration":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_updateIntegration(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "testLangfuseConnection":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_testLangfuseConnection(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++

@@ -325,7 +325,7 @@ func (s *Service) ChangePassword(ctx context.Context, id uuid.UUID, oldPass, new
 const MaxAPIKeysPerUser = 20
 
 // CreateAPIKey generates a new API key for a project.
-func (s *Service) CreateAPIKey(ctx context.Context, projectID uuid.UUID, name string, scopes string, rateLimit *int, tokenLimit *int) (*models.APIKey, string, error) {
+func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, projectID uuid.UUID, name string, scopes string, rateLimit *int, tokenLimit *int) (*models.APIKey, string, error) {
 	// Enforce max API key limit
 	existing, err := s.apiKeyRepo.GetByProjectID(ctx, projectID)
 	if err != nil {
@@ -348,6 +348,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, projectID uuid.UUID, name st
 	}
 
 	apiKey := &models.APIKey{
+		UserID:     userID,
 		ProjectID:  projectID,
 		KeyHash:    hashedKey,
 		KeyPrefix:  rawKey[:8],

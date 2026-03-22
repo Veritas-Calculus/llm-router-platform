@@ -12,7 +12,7 @@ export const MY_USAGE_SUMMARY = gql`
 
 export const MY_DAILY_USAGE = gql`
   query MyDailyUsage($days: Int, $projectId: ID, $channel: String) {
-    myDailyUsage(days: $days, projectId: $projectId, channel: $channel) { date requests tokens cost }
+    myDailyUsage(days: $days, projectId: $projectId, channel: $channel) { date requests totalTokens totalCost }
   }
 `;
 
@@ -26,8 +26,8 @@ export const MY_RECENT_USAGE = gql`
   query MyRecentUsage($page: Int, $pageSize: Int) {
     myRecentUsage(page: $page, pageSize: $pageSize) {
       data {
-        id model provider promptTokens completionTokens totalTokens cost
-        statusCode latency createdAt
+        id modelName inputTokens outputTokens cost
+        latencyMs isSuccess createdAt
       }
       total
     }

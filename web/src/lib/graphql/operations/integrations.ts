@@ -23,3 +23,9 @@ export const UPDATE_INTEGRATION = gql`
     }
   }
 `;
+
+export const TEST_LANGFUSE_CONNECTION = gql`
+  mutation TestLangfuseConnection($publicKey: String!, $secretKey: String!, $host: String!) {
+    testLangfuseConnection(publicKey: $publicKey, secretKey: $secretKey, host: $host)
+  }
+`;

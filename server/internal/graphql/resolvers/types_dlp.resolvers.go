@@ -8,6 +8,7 @@ package resolvers
 import (
 	"context"
 	"fmt"
+	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/graphql/model"
 	gdbModels "llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/dlp"
@@ -19,13 +20,16 @@ import (
 
 // UpdateDlpConfig is the resolver for the updateDlpConfig field.
 func (r *mutationResolver) UpdateDlpConfig(ctx context.Context, input model.UpdateDlpConfigInput) (*model.DlpConfig, error) {
-	userID := ctx.Value("user_id").(string)
-	if err := r.RequireProjectRole(ctx, userID, input.ProjectID, "OWNER", "ADMIN"); err != nil {
+	userID, err := directives.UserIDFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unauthorized")
+	}
+	if err = r.RequireProjectRole(ctx, userID, input.ProjectID, "OWNER", "ADMIN"); err != nil {
 		return nil, err
 	}
 
 	var dlpConfig gdbModels.DlpConfig
-	err := r.DB.Where("project_id = ?", input.ProjectID).First(&dlpConfig).Error
+	err = r.DB.Where("project_id = ?", input.ProjectID).First(&dlpConfig).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Create a new one
@@ -80,13 +84,16 @@ func (r *mutationResolver) UpdateDlpConfig(ctx context.Context, input model.Upda
 
 // GetDlpConfig is the resolver for the getDlpConfig field.
 func (r *queryResolver) GetDlpConfig(ctx context.Context, projectID string) (*model.DlpConfig, error) {
-	userID := ctx.Value("user_id").(string)
-	if err := r.RequireProjectRole(ctx, userID, projectID, "OWNER", "ADMIN", "MEMBER"); err != nil {
+	userID, err := directives.UserIDFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unauthorized")
+	}
+	if err = r.RequireProjectRole(ctx, userID, projectID, "OWNER", "ADMIN", "MEMBER"); err != nil {
 		return nil, err
 	}
 
 	var dlpConfig gdbModels.DlpConfig
-	err := r.DB.Where("project_id = ?", projectID).First(&dlpConfig).Error
+	err = r.DB.Where("project_id = ?", projectID).First(&dlpConfig).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Return a default config mapping, without saving to DB yet to save space

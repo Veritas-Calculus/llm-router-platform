@@ -267,12 +267,20 @@ func (r *mutationResolver) DisableMfa(ctx context.Context, code string) (bool, e
 func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, name string, scopes *string, rateLimit *int, tokenLimit *int) (*model.APIKeyWithSecret, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
 	if err := r.RequireProjectRole(ctx, uid, projectID, "admin", "member"); err != nil {
+		r.Logger.Error("RequireProjectRole failed in CreateAPIKey", zap.Error(err), zap.String("uid", uid), zap.String("projectID", projectID))
 		return nil, err
 	}
 
 	id, err := uuid.Parse(projectID)
 	if err != nil {
+		r.Logger.Error("UUID parse failed in CreateAPIKey", zap.Error(err), zap.String("projectID", projectID))
 		return nil, fmt.Errorf("invalid project ID")
+	}
+
+	userID, err := uuid.Parse(uid)
+	if err != nil {
+		r.Logger.Error("User UUID parse failed in CreateAPIKey", zap.Error(err), zap.String("uid", uid))
+		return nil, fmt.Errorf("invalid user ID")
 	}
 
 	scopeStr := "all"
@@ -280,10 +288,13 @@ func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, n
 		scopeStr = *scopes
 	}
 
-	key, secret, err := r.UserSvc.CreateAPIKey(ctx, id, name, scopeStr, rateLimit, tokenLimit)
+	key, secret, err := r.UserSvc.CreateAPIKey(ctx, userID, id, name, scopeStr, rateLimit, tokenLimit)
 	if err != nil {
+		r.Logger.Error("Failed to create API key in resolver", zap.Error(err), zap.String("projectID", projectID))
 		return nil, err
 	}
+
+	r.Logger.Info("Successfully created API Key in DB", zap.String("keyID", key.ID.String()))
 
 	ip, ua := clientInfo(ctx)
 	r.AuditService.Log(ctx, audit.ActionAPIKeyCreate, id, key.ID, ip, ua, map[string]interface{}{"name": name})
@@ -363,17 +374,6 @@ func (r *mutationResolver) DeleteAPIKey(ctx context.Context, projectID string, i
 	ip, ua := clientInfo(ctx)
 	r.AuditService.Log(ctx, audit.ActionAPIKeyRevoke, userID, keyID, ip, ua, map[string]interface{}{"action": "delete"})
 	return true, nil
-}
-
-// safeGQLInt safely casts int64 to a 32-bit int bound for GraphQL Int scalar
-func safeGQLInt(v int64) int {
-	if v > 2147483647 {
-		return 2147483647
-	}
-	if v < -2147483648 {
-		return -2147483648
-	}
-	return int(v)
 }
 
 // UpdateProject is the resolver for the updateProject field.
@@ -1360,6 +1360,29 @@ func (r *mutationResolver) UpdateIntegration(ctx context.Context, name string, i
 	}, nil
 }
 
+// TestLangfuseConnection is the resolver for the testLangfuseConnection field.
+func (r *mutationResolver) TestLangfuseConnection(ctx context.Context, publicKey string, secretKey string, host string) (bool, error) {
+	// Langfuse exposes GET /api/public/health with Basic Auth
+	url := strings.TrimRight(host, "/") + "/api/public/health"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false, fmt.Errorf("invalid host URL: %w", err)
+	}
+	req.SetBasicAuth(publicKey, secretKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("connection failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusOK {
+		return true, nil
+	}
+	return false, fmt.Errorf("langfuse returned HTTP %d", resp.StatusCode)
+}
+
 // AcknowledgeAlert is the resolver for the acknowledgeAlert field.
 func (r *mutationResolver) AcknowledgeAlert(ctx context.Context, id string) (*model.Alert, error) {
 	aid, _ := uuid.Parse(id)
@@ -2253,8 +2276,15 @@ func (r *queryResolver) MyProjects(ctx context.Context, orgID string) ([]*model.
 // MyAPIKeys is the resolver for the myApiKeys field.
 func (r *queryResolver) MyAPIKeys(ctx context.Context, projectID string) ([]*model.APIKey, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	id, _ := uuid.Parse(uid)
-	keys, err := r.UserSvc.GetAPIKeys(ctx, id)
+	if err := r.RequireProjectRole(ctx, uid, projectID, "admin", "member"); err != nil {
+		return nil, err
+	}
+
+	pId, err := uuid.Parse(projectID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid project ID")
+	}
+	keys, err := r.UserSvc.GetAPIKeys(ctx, pId)
 	if err != nil {
 		return nil, err
 	}

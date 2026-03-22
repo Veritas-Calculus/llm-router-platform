@@ -45,7 +45,7 @@ function UsagePage() {
   }, [summaryData]);
 
   const dailyStats = useMemo(() =>
-    (dailyData?.myDailyUsage || []).map((d: any) => ({ date: d.date, requests: d.requests, tokens: d.tokens, cost: d.cost })),
+    (dailyData?.myDailyUsage || []).map((d: any) => ({ date: d.date, requests: d.requests, tokens: d.totalTokens, cost: d.totalCost })),
   [dailyData]);
 
   const records = useMemo(() =>
