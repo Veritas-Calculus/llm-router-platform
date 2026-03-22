@@ -199,7 +199,7 @@ function ChatPane({ messages, isStreaming, stats, model, compact }: ChatPaneProp
 /* ── Main Playground ─────────────────────────────────────────── */
 
 export default function PlaygroundPage() {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('playground_api_key') || '');
+  const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('playground_api_key') || '');
   const [models, setModels] = useState<ModelRef[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [compareModel, setCompareModel] = useState('');
@@ -229,10 +229,10 @@ export default function PlaygroundPage() {
 
   useEffect(() => {
     if (apiKey) {
-      localStorage.setItem('playground_api_key', apiKey);
+      sessionStorage.setItem('playground_api_key', apiKey);
       fetchModels(apiKey);
     } else {
-      localStorage.removeItem('playground_api_key');
+      sessionStorage.removeItem('playground_api_key');
       setModels([]);
       setSelectedModel('');
     }

@@ -72,7 +72,7 @@ func (h *OAuth2Handler) Redirect(c *gin.Context) {
 
 	// Generate state parameter (CSRF protection)
 	state := uuid.New().String()
-	c.SetCookie("oauth2_state", state, 300, "/", "", false, true) // 5 min, httpOnly
+	c.SetCookie("oauth2_state", state, 300, "/", "", true, true) // 5 min, secure, httpOnly
 
 	redirectURL := h.callbackURL(c, provider)
 

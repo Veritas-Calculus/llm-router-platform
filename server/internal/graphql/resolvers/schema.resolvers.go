@@ -365,6 +365,17 @@ func (r *mutationResolver) DeleteAPIKey(ctx context.Context, projectID string, i
 	return true, nil
 }
 
+// safeGQLInt safely casts int64 to a 32-bit int bound for GraphQL Int scalar
+func safeGQLInt(v int64) int {
+	if v > 2147483647 {
+		return 2147483647
+	}
+	if v < -2147483648 {
+		return -2147483648
+	}
+	return int(v)
+}
+
 // UpdateProject is the resolver for the updateProject field.
 func (r *mutationResolver) UpdateProject(ctx context.Context, id string, input model.UpdateProjectInput) (*model.Project, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
@@ -1721,8 +1732,14 @@ func (r *mutationResolver) SendTestEmail(ctx context.Context, to string) (bool, 
 	}
 	subject := "Test Email from LLM Router Platform"
 	body := "This is a test email to verify your SMTP configuration is working correctly."
+
+	safeFromName := strings.ReplaceAll(strings.ReplaceAll(emailCfg.FromName, "\n", ""), "\r", "")
+	safeFrom := strings.ReplaceAll(strings.ReplaceAll(from, "\n", ""), "\r", "")
+	safeTo := strings.ReplaceAll(strings.ReplaceAll(to, "\n", ""), "\r", "")
+	safeSubject := strings.ReplaceAll(strings.ReplaceAll(subject, "\n", ""), "\r", "")
+
 	msg := fmt.Sprintf("From: %s <%s>\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s",
-		emailCfg.FromName, from, to, subject, body)
+		safeFromName, safeFrom, safeTo, safeSubject, body)
 
 	var auth smtp.Auth
 	if emailCfg.Username != "" {
@@ -2260,8 +2277,8 @@ func (r *queryResolver) MyUsageSummary(ctx context.Context, orgID *string, proje
 		return &model.UsageSummary{}, nil
 	}
 	return &model.UsageSummary{
-		TotalRequests: int(s.TotalRequests), SuccessRate: s.SuccessRate,
-		TotalTokens: int(s.TotalTokens), TotalCost: s.TotalCost,
+		TotalRequests: safeGQLInt(s.TotalRequests), SuccessRate: s.SuccessRate,
+		TotalTokens: safeGQLInt(s.TotalTokens), TotalCost: s.TotalCost,
 	}, nil
 }
 
@@ -2583,8 +2600,8 @@ func (r *queryResolver) User(ctx context.Context, id string) (*model.UserDetail,
 	summary, _ := r.Billing.GetUsageSummary(ctx, uid, nil, nil, monthStart(), time.Now())
 	if summary != nil {
 		ud.UsageMonth = &model.UserMonthlyUsage{
-			TotalRequests: int(summary.TotalRequests),
-			TotalTokens:   int(summary.TotalTokens),
+			TotalRequests: safeGQLInt(summary.TotalRequests),
+			TotalTokens:   safeGQLInt(summary.TotalTokens),
 			TotalCost:     summary.TotalCost,
 		}
 	}

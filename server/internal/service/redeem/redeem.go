@@ -36,7 +36,7 @@ type RedeemResult struct {
 
 // Redeem consumes a code for the given user.
 func (s *Service) Redeem(userID uuid.UUID, code string) (*RedeemResult, error) {
-	code = strings.TrimSpace(strings.ToUpper(code))
+	code = strings.TrimSpace(strings.ToUpper(strings.ReplaceAll(strings.ReplaceAll(code, "\n", ""), "\r", "")))
 	if code == "" {
 		return &RedeemResult{Success: false, Message: "Code is required"}, nil
 	}
@@ -157,6 +157,7 @@ func (s *Service) GenerateCodes(
 	expiresAt *time.Time,
 	note string,
 ) ([]string, error) {
+	codeType = strings.ReplaceAll(strings.ReplaceAll(codeType, "\n", ""), "\r", "")
 	if count < 1 || count > 1000 {
 		return nil, fmt.Errorf("count must be between 1 and 1000")
 	}

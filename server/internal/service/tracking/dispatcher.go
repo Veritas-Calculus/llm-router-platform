@@ -3,7 +3,7 @@ package tracking
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"strings"
 	"llm-router-platform/internal/models"
 
 	"go.uber.org/zap"
@@ -67,7 +67,9 @@ func (d *Dispatcher) pushToSentry(log *models.ErrorLog, cfg models.IntegrationCo
 	}
 
 	// Simulate pushing rich context directly to Sentry (for demo and log visibility)
-	d.logger.Info(fmt.Sprintf("pushing to sentry (Trajectory: %s) -> DSN: %s", log.TrajectoryID, dsn),
+	d.logger.Info("pushing to sentry",
+		zap.String("trajectory", strings.ReplaceAll(strings.ReplaceAll(log.TrajectoryID, "\n", ""), "\r", "")),
+		zap.String("dsn", strings.ReplaceAll(strings.ReplaceAll(dsn, "\n", ""), "\r", "")),
 		zap.String("trace_id", log.TraceID),
 		zap.String("provider", log.Provider),
 		zap.Int("status_code", log.StatusCode),
@@ -88,13 +90,14 @@ func (d *Dispatcher) pushToLoki(log *models.ErrorLog, cfg models.IntegrationConf
 	}
 
 	// Simulate pushing JSON formatted context strings to Loki analytical endpoints
-	d.logger.Info(fmt.Sprintf("pushing to loki: %s", endpoint),
-		zap.String("trajectory_id", log.TrajectoryID),
+	d.logger.Info("pushing to loki",
+		zap.String("endpoint", strings.ReplaceAll(strings.ReplaceAll(endpoint, "\n", ""), "\r", "")),
+		zap.String("trajectory_id", strings.ReplaceAll(strings.ReplaceAll(log.TrajectoryID, "\n", ""), "\r", "")),
 		zap.String("trace_id", log.TraceID),
 		zap.String("model", log.Model),
 	)
 }
 
 func (d *Dispatcher) pushToLangfuse(log *models.ErrorLog, cfg models.IntegrationConfig) {
-	d.logger.Info("pushing to langfuse", zap.String("trajectory_id", log.TrajectoryID))
+	d.logger.Info("pushing to langfuse", zap.String("trajectory_id", strings.ReplaceAll(strings.ReplaceAll(log.TrajectoryID, "\n", ""), "\r", "")))
 }
