@@ -4,6 +4,7 @@ import {
   PaperAirplaneIcon,
   TrashIcon,
   PlayIcon,
+  StopIcon,
   InformationCircleIcon,
   KeyIcon,
   ClockIcon,
@@ -13,6 +14,8 @@ import {
   PhotoIcon,
   XMarkIcon,
   EyeIcon,
+  MicrophoneIcon,
+  SpeakerWaveIcon,
 } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
@@ -324,6 +327,17 @@ export default function PlaygroundPage() {
   const [statsB, setStatsB] = useState<UsageStats | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
+  // ── STT (Speech-to-Text) state ──
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  // ── TTS (Text-to-Speech) state ──
+  const [playingTTSIdx, setPlayingTTSIdx] = useState<number | null>(null);
+  const [loadingTTSIdx, setLoadingTTSIdx] = useState<number | null>(null);
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+
   const abortControllerRef = useRef<AbortController | null>(null);
   const abortControllerBRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -422,6 +436,107 @@ export default function PlaygroundPage() {
       addImageFiles(Array.from(e.dataTransfer.files));
     }
   }, [addImageFiles]);
+
+  /* ── STT: Microphone recording ────────────────────────────────── */
+
+  const startRecording = useCallback(async () => {
+    if (!apiKey) { setErrorMsg('Configure an API Key first.'); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4' });
+      audioChunksRef.current = [];
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType });
+        if (blob.size < 100) { setErrorMsg('Recording is too short.'); return; }
+        await transcribeAudio(blob);
+      };
+      mediaRecorder.start();
+      mediaRecorderRef.current = mediaRecorder;
+      setIsRecording(true);
+    } catch (err) {
+      setErrorMsg('Microphone access denied. Please allow microphone access in browser settings.');
+      console.error('Microphone access error:', err);
+    }
+  }, [apiKey]);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+  }, []);
+
+  const transcribeAudio = async (blob: Blob) => {
+    setIsTranscribing(true);
+    try {
+      const formData = new FormData();
+      const ext = blob.type.includes('webm') ? 'webm' : blob.type.includes('mp4') ? 'm4a' : 'wav';
+      formData.append('file', blob, `recording.${ext}`);
+      formData.append('model', 'whisper-1');
+      formData.append('response_format', 'json');
+      const res = await fetch('/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: formData,
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`Transcription failed (${res.status}): ${errBody}`);
+      }
+      const data = await res.json();
+      if (data.text) {
+        setInput(prev => prev ? prev + ' ' + data.text : data.text);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Transcription failed';
+      setErrorMsg(msg);
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  /* ── TTS: Text-to-Speech playback ─────────────────────────────── */
+
+  const playTTS = useCallback(async (text: string, msgIdx: number) => {
+    if (!apiKey || !text.trim()) return;
+    // Stop existing playback
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current = null;
+    }
+    if (playingTTSIdx === msgIdx) {
+      setPlayingTTSIdx(null);
+      return;
+    }
+    setLoadingTTSIdx(msgIdx);
+    try {
+      const res = await fetch('/v1/audio/speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model: 'tts-1', input: text.slice(0, 4096), voice: 'alloy' }),
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`TTS failed (${res.status}): ${errBody}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => { setPlayingTTSIdx(null); URL.revokeObjectURL(url); ttsAudioRef.current = null; };
+      audio.onerror = () => { setPlayingTTSIdx(null); URL.revokeObjectURL(url); ttsAudioRef.current = null; };
+      ttsAudioRef.current = audio;
+      setPlayingTTSIdx(msgIdx);
+      await audio.play();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'TTS failed';
+      setErrorMsg(msg);
+      setPlayingTTSIdx(null);
+    } finally {
+      setLoadingTTSIdx(null);
+    }
+  }, [apiKey, playingTTSIdx]);
 
   /* ── Send message ─────────────────────────────────────────────── */
 
@@ -756,6 +871,22 @@ export default function PlaygroundPage() {
                         ) : (
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
                         )}
+                        {msg.role === 'assistant' && text && (
+                          <button
+                            onClick={() => playTTS(text, i)}
+                            disabled={loadingTTSIdx === i}
+                            className="mt-2 flex items-center gap-1.5 text-[11px] text-apple-gray-400 dark:text-gray-500 hover:text-apple-blue dark:hover:text-blue-400 transition-colors not-prose"
+                            title={playingTTSIdx === i ? 'Stop playback' : 'Read aloud'}
+                          >
+                            {loadingTTSIdx === i ? (
+                              <><span className="w-3.5 h-3.5 border-2 border-apple-gray-300 border-t-transparent rounded-full animate-spin" /> Loading...</>
+                            ) : playingTTSIdx === i ? (
+                              <><StopIcon className="w-3.5 h-3.5" /> Stop</>
+                            ) : (
+                              <><SpeakerWaveIcon className="w-3.5 h-3.5" /> Read aloud</>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -786,8 +917,8 @@ export default function PlaygroundPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              placeholder={modelSupportsVision ? "Type a message or paste/drop an image..." : "Type a message..."}
-              className="w-full py-3.5 pl-12 pr-24 bg-white dark:bg-[#1C1C1E] border border-apple-gray-200 dark:border-white/10 rounded-2xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 resize-none shadow-sm"
+              placeholder={isRecording ? 'Recording... click mic to stop' : isTranscribing ? 'Transcribing audio...' : modelSupportsVision ? 'Type a message or paste/drop an image...' : 'Type a message...'}
+              className="w-full py-3.5 pl-[4.5rem] pr-24 bg-white dark:bg-[#1C1C1E] border border-apple-gray-200 dark:border-white/10 rounded-2xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 resize-none shadow-sm"
               style={{ minHeight: '52px' }}
             />
             {/* Attach image button */}
@@ -799,10 +930,32 @@ export default function PlaygroundPage() {
                 "absolute left-3 bottom-3 p-1.5 rounded-lg transition-colors",
                 modelSupportsVision
                   ? "text-apple-gray-400 hover:text-apple-blue hover:bg-apple-blue/10"
-                  : "text-apple-gray-200 cursor-not-allowed"
+                  : "text-apple-gray-200 dark:text-gray-600 cursor-not-allowed"
               )}
             >
               <PhotoIcon className="w-5 h-5" />
+            </button>
+            {/* Microphone / STT button */}
+            <button
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={isTranscribing}
+              title={isRecording ? 'Stop recording' : isTranscribing ? 'Transcribing...' : 'Voice input (Speech-to-Text)'}
+              className={clsx(
+                "absolute left-10 bottom-3 p-1.5 rounded-lg transition-colors",
+                isRecording
+                  ? "text-red-500 bg-red-50 dark:bg-red-500/20 animate-pulse"
+                  : isTranscribing
+                    ? "text-amber-500"
+                    : "text-apple-gray-400 hover:text-apple-blue hover:bg-apple-blue/10"
+              )}
+            >
+              {isTranscribing ? (
+                <span className="w-5 h-5 flex items-center justify-center">
+                  <span className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                </span>
+              ) : (
+                <MicrophoneIcon className="w-5 h-5" />
+              )}
             </button>
             <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
               <span className="text-[10px] text-apple-gray-400 font-mono mr-1">~{estimateTokens(input)} tok</span>
