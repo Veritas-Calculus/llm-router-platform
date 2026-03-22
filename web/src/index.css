@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @theme {
   --color-apple-blue: #007AFF;
@@ -64,7 +65,6 @@
   color-scheme: dark;
 
   /* ── Invert apple-gray scale for dark mode ──────────────── */
-  /* Swap light↔dark ends so text/bg utilities adapt automatically */
   --color-apple-gray-50: #1C1C1E;
   --color-apple-gray-100: #2C2C2E;
   --color-apple-gray-200: #3A3A3C;
@@ -76,18 +76,52 @@
   --color-apple-gray-800: #E5E5EA;
   --color-apple-gray-900: #F5F5F7;
 
-  /* ── Override built-in Tailwind colors for dark mode ────── */
+  /* ── Override built-in Tailwind gray/slate/zinc scales ──── */
+  /* Covers bg-gray-*, text-gray-*, border-gray-* utilities     */
+  --color-gray-50: #1C1C1E;
+  --color-gray-100: #2C2C2E;
+  --color-gray-200: #3A3A3C;
+  --color-gray-300: #48484A;
+  --color-gray-400: #8E8E93;
+  --color-gray-500: #AEAEB2;
+  --color-gray-600: #C7C7CC;
+  --color-gray-700: #D1D1D6;
+  --color-gray-800: #E5E5EA;
+  --color-gray-900: #F5F5F7;
+  --color-gray-950: #FFFFFF;
 
-  /* Semantic status backgrounds (green-50/100, red-50/100, etc.) */
+  --color-slate-50: #1C1C1E;
+  --color-slate-100: #2C2C2E;
+  --color-slate-200: #3A3A3C;
+  --color-slate-300: #48484A;
+  --color-slate-400: #8E8E93;
+  --color-slate-500: #AEAEB2;
+  --color-slate-600: #C7C7CC;
+  --color-slate-700: #D1D1D6;
+  --color-slate-800: #E5E5EA;
+  --color-slate-900: #F5F5F7;
+
+  /* ── Semantic status backgrounds ────────────────────────── */
   --color-green-50: rgba(52, 199, 89, 0.1);
   --color-green-100: rgba(52, 199, 89, 0.18);
   --color-green-200: rgba(52, 199, 89, 0.25);
   --color-green-600: #34C759;
+  --color-green-700: #30D158;
   --color-red-50: rgba(255, 59, 48, 0.1);
   --color-red-100: rgba(255, 59, 48, 0.18);
+  --color-red-600: #FF453A;
+  --color-red-700: #FF6961;
+  --color-orange-50: rgba(255, 149, 0, 0.1);
   --color-orange-100: rgba(255, 149, 0, 0.18);
-  --color-gray-100: #2C2C2E;
-  --color-gray-200: #3A3A3C;
+  --color-yellow-50: rgba(255, 204, 0, 0.1);
+  --color-yellow-100: rgba(255, 204, 0, 0.18);
+  --color-blue-50: rgba(0, 122, 255, 0.1);
+  --color-blue-100: rgba(0, 122, 255, 0.18);
+  --color-blue-200: rgba(0, 122, 255, 0.25);
+  --color-indigo-500: #5E5CE6;
+  --color-indigo-600: #5E5CE6;
+  --color-purple-50: rgba(175, 82, 222, 0.1);
+  --color-purple-100: rgba(175, 82, 222, 0.18);
 }
 
 @layer base {
@@ -110,12 +144,34 @@
 }
 
 @layer components {
+  /* ── Layout shell backgrounds ────────────────────────────── */
+  .sidebar-bg {
+    background-color: rgba(255, 255, 255, 0.8);
+  }
+  .dark .sidebar-bg {
+    background-color: rgba(28, 28, 30, 0.95);
+  }
+  .header-bg {
+    background-color: rgba(255, 255, 255, 0.8);
+  }
+  .dark .header-bg {
+    background-color: rgba(28, 28, 30, 0.9);
+  }
+
   .card {
     background-color: var(--theme-bg-card);
     border-radius: var(--radius-apple-lg);
     box-shadow: var(--theme-shadow);
     padding: 1.5rem;
     transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .quick-start-bg {
+    background-image: linear-gradient(to bottom right, rgba(147, 197, 253, 0.4), #ffffff, rgba(216, 180, 254, 0.3));
+  }
+
+  .dark .quick-start-bg {
+    background-image: none !important;
   }
 
   .label {
@@ -327,3 +383,41 @@
   }
 }
 
+/* ── Dark-mode overrides for hardcoded bg-white ──────────── */
+/* Scoped to dark class so text-white, shadow-white etc. are NOT affected */
+.dark {
+  /* bg-white → card bg (excludes toggle knobs which need to stay white) */
+  & .bg-white:not(.rounded-full[class*="shadow"]):not([class*="pointer-events-none"]) {
+    background-color: var(--theme-bg-card) !important;
+  }
+
+  /* bg-white on toggle knobs — keep them white */
+  & .pointer-events-none.rounded-full {
+    background-color: #FFFFFF !important;
+  }
+
+  /* bg-white/N transparency variants */
+  & [class*="bg-white\\/"] {
+    --tw-bg-opacity: 1;
+    background-color: rgba(28, 28, 30, var(--tw-bg-opacity)) !important;
+  }
+
+  /* Shadows need to be stronger in dark mode */
+  & .shadow-sm {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+  }
+  & .shadow-xl {
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
+  }
+  & .shadow-2xl {
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6) !important;
+  }
+  & .shadow-lg {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+  }
+
+  /* divide-y/x border colors */
+  & .divide-apple-gray-200 > :not(:first-child) {
+    border-color: var(--color-apple-gray-200) !important;
+  }
+}

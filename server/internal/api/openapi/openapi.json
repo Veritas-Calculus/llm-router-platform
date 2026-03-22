@@ -1,0 +1,223 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "LLM Router Platform API",
+    "description": "OpenAI-compatible API for managing and proxying LLM requests across multiple providers.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.llmr.com/v1",
+      "description": "Production API"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/models": {
+      "get": {
+        "summary": "List available models",
+        "description": "Lists the currently available models, and provides basic information about each one such as the owner and id.",
+        "tags": ["Models"],
+        "responses": {
+          "200": {
+            "description": "Array of model objects."
+          }
+        }
+      }
+    },
+    "/chat/completions": {
+      "post": {
+        "summary": "Create chat completion",
+        "description": "Creates a model response for the given chat conversation.",
+        "tags": ["Chat"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "description": "ID of the model to use."
+                  },
+                  "messages": {
+                    "type": "array",
+                    "description": "A list of messages comprising the conversation so far.",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "temperature": {
+                    "type": "number",
+                    "description": "What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.",
+                    "default": 1
+                  },
+                  "stream": {
+                    "type": "boolean",
+                    "description": "If set, partial message deltas will be sent, like in ChatGPT.",
+                    "default": false
+                  }
+                },
+                "required": ["model", "messages"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Chat completion response or stream of Server-Sent Events."
+          }
+        }
+      }
+    },
+    "/embeddings": {
+      "post": {
+        "summary": "Create embeddings",
+        "description": "Creates an embedding vector representing the input text.",
+        "tags": ["Embeddings"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "input": {
+                    "type": "string"
+                  }
+                },
+                "required": ["model", "input"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Embeddings response."
+          }
+        }
+      }
+    },
+    "/images/generations": {
+      "post": {
+        "summary": "Create image",
+        "description": "Creates an image given a prompt.",
+        "tags": ["Images"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "n": {
+                    "type": "integer",
+                    "default": 1
+                  },
+                  "size": {
+                    "type": "string",
+                    "default": "1024x1024"
+                  }
+                },
+                "required": ["prompt"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Image response."
+          }
+        }
+      }
+    },
+    "/audio/transcriptions": {
+      "post": {
+        "summary": "Create transcription",
+        "description": "Transcribes audio into the input language.",
+        "tags": ["Audio"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": ["file", "model"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transcription response."
+          }
+        }
+      }
+    },
+    "/audio/speech": {
+      "post": {
+        "summary": "Create speech",
+        "description": "Generates audio from the input text.",
+        "tags": ["Audio"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "input": {
+                    "type": "string"
+                  },
+                  "voice": {
+                    "type": "string"
+                  }
+                },
+                "required": ["model", "input", "voice"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Audio file."
+          }
+        }
+      }
+    }
+  }
+}

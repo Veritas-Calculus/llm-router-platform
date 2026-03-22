@@ -13,7 +13,7 @@ import {
   DocumentDuplicateIcon,
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation } from '@apollo/client/react';
-import { PLANS_QUERY, MY_BILLING_QUERY, CREATE_CHECKOUT_SESSION, CREATE_RECHARGE_SESSION } from '@/lib/graphql/operations';
+import { PLANS_QUERY, MY_BILLING_QUERY, CREATE_CHECKOUT_SESSION, CREATE_RECHARGE_SESSION, CREATE_PORTAL_SESSION } from '@/lib/graphql/operations';
 import { useTranslation } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
@@ -26,6 +26,7 @@ function SubscriptionPage() {
   const { data: plansData, loading: plansLoading } = useQuery<any>(PLANS_QUERY);
   const { data: billingData, loading: billingLoading } = useQuery<any>(MY_BILLING_QUERY);
   const [checkoutMut] = useMutation(CREATE_CHECKOUT_SESSION);
+  const [portalMut] = useMutation(CREATE_PORTAL_SESSION);
   const [rechargeMut] = useMutation(CREATE_RECHARGE_SESSION);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'plans' | 'orders'>('plans');
@@ -38,6 +39,14 @@ function SubscriptionPage() {
   const handleSubscribe = async (planId: string) => {
     try {
       setProcessingId(planId);
+      if (subscription?.status === 'active' && subscription?.plan?.priceMonth !== 0) {
+        // They already have a paid subscription, send them to the portal to upgrade/downgrade
+        const { data } = await portalMut();
+        const url = (data as any)?.createPortalSession?.url;
+        if (url) window.location.href = url;
+        return;
+      }
+      // Otherwise, create a new checkout session
       const { data } = await checkoutMut({ variables: { planId } });
       const url = (data as any)?.createCheckoutSession?.url;
       if (url) window.location.href = url;
@@ -142,6 +151,19 @@ function SubscriptionPage() {
                   : '—'}
               </p>
             </div>
+            {subscription?.status === 'active' && subscription?.plan?.priceMonth !== 0 && (
+              <button
+                onClick={() => handleSubscribe('portal')}
+                disabled={!!processingId}
+                className="ml-auto text-xs font-semibold text-apple-blue hover:text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg active:scale-95 transition-all flex items-center gap-1"
+              >
+                {processingId === 'portal' ? (
+                  <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  t('subscription.manage') || 'Manage'
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -222,6 +244,8 @@ function SubscriptionPage() {
                         <ArrowPathIcon className="w-5 h-5 animate-spin" />
                       ) : isCurrent ? (
                         t('subscription.subscribed')
+                      ) : (subscription?.status === 'active' && subscription?.plan?.priceMonth !== 0) ? (
+                        t('subscription.manage') || 'Manage Subscription'
                       ) : plan.price === 0 ? (
                         t('subscription.free_tier')
                       ) : (

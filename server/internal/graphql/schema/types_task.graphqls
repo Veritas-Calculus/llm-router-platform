@@ -4,7 +4,7 @@
 
 type Task {
   id: ID!
-  userId: ID!
+  projectId: ID!
   type: String!
   status: String!
   input: String!

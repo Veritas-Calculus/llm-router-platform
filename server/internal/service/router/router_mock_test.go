@@ -138,6 +138,29 @@ func (m *mockModelRepo) GetByProvider(_ context.Context, providerID uuid.UUID) (
 	return m.models[providerID], nil
 }
 
+type mockRoutingRuleRepo struct {
+	rules []models.RoutingRule
+}
+
+func (m *mockRoutingRuleRepo) Create(_ context.Context, _ *models.RoutingRule) error { return nil }
+func (m *mockRoutingRuleRepo) GetByID(_ context.Context, _ uuid.UUID) (*models.RoutingRule, error) {
+	return nil, errors.New("not found")
+}
+func (m *mockRoutingRuleRepo) GetAll(_ context.Context) ([]models.RoutingRule, error) {
+	return m.rules, nil
+}
+func (m *mockRoutingRuleRepo) GetActive(_ context.Context) ([]models.RoutingRule, error) {
+	var active []models.RoutingRule
+	for _, r := range m.rules {
+		if r.IsEnabled {
+			active = append(active, r)
+		}
+	}
+	return active, nil
+}
+func (m *mockRoutingRuleRepo) Update(_ context.Context, _ *models.RoutingRule) error { return nil }
+func (m *mockRoutingRuleRepo) Delete(_ context.Context, _ uuid.UUID) error           { return nil }
+
 // --- Helper to create a test router ---
 
 func newTestRouter(providerRepo *mockProviderRepo, keyRepo *mockProviderAPIKeyRepo) *Router {
@@ -150,6 +173,7 @@ func newTestRouter(providerRepo *mockProviderRepo, keyRepo *mockProviderAPIKeyRe
 		keyRepo,
 		&mockProxyRepo{},
 		&mockModelRepo{models: make(map[uuid.UUID][]models.Model)},
+		&mockRoutingRuleRepo{rules: []models.RoutingRule{}},
 		provider.NewRegistry(logger),
 		nil, // mcpService
 		logger,

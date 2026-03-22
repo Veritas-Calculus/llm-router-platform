@@ -153,6 +153,30 @@ docker-compose up -d
 
 访问 `http://localhost` 即可使用管理后台，API 端点默认在 `http://localhost:8080`。
 
+### Kubernetes Helm 部署 (生产推荐)
+
+提供官方 Helm Chart 用于在 Kubernetes 集群中部署无状态网关节点。
+
+```bash
+cd deploy/helm/llm-router
+
+# 检查配置
+helm template llm-router .
+
+# 安装/更新 Chart
+helm upgrade --install llm-router . -n llm-router --create-namespace \
+  --set secret.encryptionKey="your-32-byte-encryption-key" \
+  --set secret.jwtSecret="your-jwt-secret" \
+  --set secret.adminPassword="Admin123!" \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host="llm-gateway.local"
+```
+
+**数据库迁移说明**: 生产（`release`）模式下，程序会自动跳过 `AutoMigrate`。发布前请确保执行 SQL 迁移：
+```bash
+go run cmd/migrate/main.go up
+```
+
 ### 本地开发
 
 ```bash

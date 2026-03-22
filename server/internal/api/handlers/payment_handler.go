@@ -25,7 +25,7 @@ func NewPaymentHandler(s *billing.PaymentService, logger *zap.Logger) *PaymentHa
 }
 
 func (h *PaymentHandler) CreateCheckoutSession(c *gin.Context) {
-	user := c.MustGet("user").(*models.User)
+	user := c.MustGet("project").(*models.Project)
 	
 	var req struct {
 		PlanID uuid.UUID `json:"plan_id" binding:"required"`
@@ -45,7 +45,7 @@ func (h *PaymentHandler) CreateCheckoutSession(c *gin.Context) {
 }
 
 func (h *PaymentHandler) CreateRechargeSession(c *gin.Context) {
-	user := c.MustGet("user").(*models.User)
+	user := c.MustGet("project").(*models.Project)
 
 	var req struct {
 		Amount float64 `json:"amount" binding:"required,gt=0"`
@@ -65,7 +65,7 @@ func (h *PaymentHandler) CreateRechargeSession(c *gin.Context) {
 }
 
 func (h *PaymentHandler) GetMyOrders(c *gin.Context) {
-	user := c.MustGet("user").(*models.User)
+	user := c.MustGet("project").(*models.Project)
 	orders, err := h.paymentService.GetUserOrders(c.Request.Context(), user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -75,7 +75,7 @@ func (h *PaymentHandler) GetMyOrders(c *gin.Context) {
 }
 
 func (h *PaymentHandler) GetMyTransactions(c *gin.Context) {
-	user := c.MustGet("user").(*models.User)
+	user := c.MustGet("project").(*models.Project)
 	txs, err := h.paymentService.GetUserTransactions(c.Request.Context(), user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

@@ -4,7 +4,6 @@ import {
   PlayIcon,
   ArrowPathIcon,
   DocumentArrowUpIcon,
-  ArrowUpTrayIcon,
   GlobeAltIcon,
 } from '@heroicons/react/24/outline';
 import ProxyTable from '@/components/proxies/ProxyTable';
@@ -70,19 +69,18 @@ function ProxiesPage() {
               Test All
             </button>
           )}
-          <button onClick={() => fileInputRef.current?.click()} className="btn btn-secondary" title="Upload proxy list file">
-            <ArrowUpTrayIcon className="w-5 h-5 mr-2" /> Upload File
-          </button>
-          <button onClick={openBatchModal} className="btn btn-secondary">
-            <DocumentArrowUpIcon className="w-5 h-5 mr-2" /> Batch Import
-          </button>
+          <div className="relative group">
+            <button onClick={openBatchModal} className="btn btn-secondary">
+              <DocumentArrowUpIcon className="w-5 h-5 mr-2" /> Import
+            </button>
+          </div>
           <button onClick={openCreateModal} className="btn btn-primary">
             <PlusIcon className="w-5 h-5 mr-2" /> Add Proxy
           </button>
         </div>
       </div>
 
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card">
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card overflow-x-auto">
         {proxies.length === 0 ? (
           <div className="text-center py-16">
             <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">

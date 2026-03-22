@@ -1,0 +1,35 @@
+# ── Notification Channel Management ──────────────────────────
+
+type NotificationChannel {
+  id: ID!
+  name: String!
+  type: String!   # webhook | email | dingtalk | feishu
+  isEnabled: Boolean!
+  config: String! # JSON config
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+input NotificationChannelInput {
+  name: String!
+  type: String!
+  isEnabled: Boolean
+  config: String!
+}
+
+input UpdateNotificationChannelInput {
+  name: String
+  isEnabled: Boolean
+  config: String
+}
+
+extend type Query {
+  notificationChannels: [NotificationChannel!]! @auth(role: ADMIN)
+}
+
+extend type Mutation {
+  createNotificationChannel(input: NotificationChannelInput!): NotificationChannel! @auth(role: ADMIN)
+  updateNotificationChannel(id: ID!, input: UpdateNotificationChannelInput!): NotificationChannel! @auth(role: ADMIN)
+  deleteNotificationChannel(id: ID!): Boolean! @auth(role: ADMIN)
+  testNotificationChannel(id: ID!): Boolean! @auth(role: ADMIN)
+}

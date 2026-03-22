@@ -31,13 +31,19 @@ export const DELETE_BUDGET = gql`
 
 export const CREATE_CHECKOUT_SESSION = gql`
   mutation CreateCheckoutSession($planId: ID!) {
-    createCheckoutSession(planId: $planId) { sessionId url }
+    createCheckoutSession(planId: $planId) { url }
+  }
+`;
+
+export const CREATE_PORTAL_SESSION = gql`
+  mutation CreatePortalSession {
+    createPortalSession { url }
   }
 `;
 
 export const CREATE_RECHARGE_SESSION = gql`
   mutation CreateRechargeSession($amount: Float!) {
-    createRechargeSession(amount: $amount) { sessionId url }
+    createRechargeSession(amount: $amount) { url }
   }
 `;
 

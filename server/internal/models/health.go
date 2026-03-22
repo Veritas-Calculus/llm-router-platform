@@ -32,10 +32,14 @@ type Alert struct {
 // AlertConfig stores alert configuration per target.
 type AlertConfig struct {
 	BaseModel
-	TargetType       string    `gorm:"not null;index" json:"target_type"`
-	TargetID         uuid.UUID `gorm:"type:uuid;not null;index" json:"target_id"`
-	IsEnabled        bool      `gorm:"default:true" json:"is_enabled"`
-	FailureThreshold int       `gorm:"default:3" json:"failure_threshold"`
-	WebhookURL       string    `json:"webhook_url,omitempty"`
-	Email            string    `json:"email,omitempty"`
+	TargetType         string    `gorm:"not null;index" json:"target_type"`
+	TargetID           uuid.UUID `gorm:"type:uuid;not null;index" json:"target_id"`
+	IsEnabled          bool      `gorm:"default:true" json:"is_enabled"`
+	FailureThreshold   int       `gorm:"default:3" json:"failure_threshold"`
+	ErrorRateThreshold float64   `gorm:"default:0" json:"error_rate_threshold"`   // e.g. 0.05 = 5%
+	LatencyThresholdMs int       `gorm:"default:0" json:"latency_threshold_ms"`   // P95 ms, 0 = disabled
+	BudgetThreshold    float64   `gorm:"default:0" json:"budget_threshold"`       // e.g. 0.9 = 90%
+	CooldownMinutes    int       `gorm:"default:5" json:"cooldown_minutes"`       // alert cooldown
+	WebhookURL         string    `json:"webhook_url,omitempty"`
+	Email              string    `json:"email,omitempty"`
 }

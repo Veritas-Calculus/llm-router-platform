@@ -61,7 +61,7 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 		Temperature:    temperature,
 	}
 
-	userObj := c.MustGet("user").(*models.User)
+	projectObj := c.MustGet("project").(*models.Project)
 	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 
 	// Observability: Start Trace
@@ -69,7 +69,7 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 	if reqID == "" {
 		reqID = uuid.New().String()
 	}
-	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "transcribe_audio", userObj.ID.String(), "", map[string]interface{}{
+	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "transcribe_audio", projectObj.ID.String(), "", map[string]interface{}{
 		"model":           model,
 		"language":        providerReq.Language,
 		"response_format": providerReq.ResponseFormat,
@@ -79,7 +79,7 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
-	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
+	if quotaErr := h.checkProjectQuota(c, projectObj); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error": gin.H{
 				"message": *quotaErr,
@@ -102,7 +102,7 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 		gen.EndWithError(err)
 		latency := time.Since(start)
 		usageLog := &models.UsageLog{
-			UserID:     userObj.ID,
+			ProjectID:   projectObj.ID,
 			APIKeyID:   userAPIKey.ID,
 			ProviderID: selectedProvider.ID,
 			ModelName:  model,
@@ -132,7 +132,7 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 
 	latency := time.Since(start)
 	usageLog := &models.UsageLog{
-		UserID:     userObj.ID,
+		ProjectID:   projectObj.ID,
 		APIKeyID:   userAPIKey.ID,
 		ProviderID: selectedProvider.ID,
 		ModelName:  model,

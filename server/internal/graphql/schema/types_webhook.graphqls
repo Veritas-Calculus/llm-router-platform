@@ -1,0 +1,65 @@
+type WebhookEndpoint {
+    id: ID!
+    projectId: ID!
+    url: String!
+    # Secret is partially obfuscated or not returned normally, 
+    # but returned once on create, or when explicitly requested (if we allow it).
+    # Since it's a security risk, we only return the secret at creation and in a specific generated hook.
+    secret: String
+    events: [String!]!
+    isActive: Boolean!
+    description: String
+    createdAt: DateTime!
+    updatedAt: DateTime!
+}
+
+type WebhookDelivery {
+    id: ID!
+    endpointId: ID!
+    eventType: String!
+    payload: String! # JSON string
+    status: String!
+    statusCode: Int!
+    responseBody: String
+    errorMessage: String
+    retryCount: Int!
+    createdAt: DateTime!
+    updatedAt: DateTime!
+}
+
+input CreateWebhookEndpointInput {
+    projectId: ID!
+    url: String!
+    events: [String!]!
+    description: String
+}
+
+input UpdateWebhookEndpointInput {
+    url: String
+    events: [String!]
+    isActive: Boolean
+    description: String
+}
+
+extend type Query {
+    """
+    List webhooks for a specific project.
+    """
+    webhooks(projectId: ID!): [WebhookEndpoint!]! @auth
+    
+    """
+    Get delivery history for a specific webhook endpoint.
+    """
+    webhookDeliveries(endpointId: ID!, limit: Int = 50): [WebhookDelivery!]! @auth
+}
+
+extend type Mutation {
+    createWebhookEndpoint(input: CreateWebhookEndpointInput!): WebhookEndpoint! @auth
+    updateWebhookEndpoint(id: ID!, input: UpdateWebhookEndpointInput!): WebhookEndpoint! @auth
+    deleteWebhookEndpoint(id: ID!): Boolean! @auth
+    
+    """
+    Triggers a test 'ping' event to the webhook.
+    """
+    testWebhookEndpoint(id: ID!): Boolean! @auth
+}

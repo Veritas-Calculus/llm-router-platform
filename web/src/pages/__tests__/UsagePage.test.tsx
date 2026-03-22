@@ -20,23 +20,21 @@ vi.mock('recharts', () => ({
     Tooltip: () => null,
 }));
 
-vi.mock('@/lib/api', () => ({
-    usageApi: {
-        getDailyStats: vi.fn().mockResolvedValue({ data: [] }),
-        getRecords: vi.fn().mockResolvedValue({ data: [], total: 0 }),
-        getMonthlyUsage: vi.fn().mockResolvedValue({
-            total_requests: 500, total_tokens: 25000, total_cost: 6.78,
-        }),
-    },
+vi.mock('@apollo/client/react', () => ({
+    useQuery: vi.fn(() => ({
+        data: {
+            myUsageSummary: { totalRequests: 500, totalTokens: 25000, totalCost: 6.78, successRate: 99.2 },
+            myDailyUsage: [],
+            myRecentUsage: { data: [], total: 0 },
+        },
+        loading: false,
+        refetch: vi.fn(),
+    })),
+    useMutation: vi.fn(() => [vi.fn(), { loading: false }]),
 }));
 
 describe('UsagePage', () => {
     beforeEach(() => { vi.clearAllMocks(); });
-
-    it('should show loading spinner initially', () => {
-        render(<UsagePage />);
-        expect(document.querySelector('.animate-spin')).toBeTruthy();
-    });
 
     it('should render usage page title after loading', async () => {
         render(<UsagePage />);

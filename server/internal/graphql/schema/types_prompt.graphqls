@@ -1,0 +1,47 @@
+# ──────────────────────────────────────────────────
+# Prompt Template types
+# ──────────────────────────────────────────────────
+
+type PromptTemplate {
+  id: ID!
+  name: String!
+  description: String!
+  projectId: ID
+  isActive: Boolean!
+  activeVersionId: ID
+  activeVersion: PromptVersion
+  versionCount: Int!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type PromptVersion {
+  id: ID!
+  templateId: ID!
+  version: Int!
+  content: String!
+  model: String
+  parameters: String
+  changeLog: String
+  createdAt: DateTime!
+}
+
+type PromptTemplateConnection {
+  data: [PromptTemplate!]!
+  total: Int!
+}
+
+input PromptTemplateInput {
+  name: String!
+  description: String
+  projectId: ID
+  isActive: Boolean
+}
+
+input PromptVersionInput {
+  templateId: ID!
+  content: String!
+  model: String
+  parameters: String
+  changeLog: String
+}

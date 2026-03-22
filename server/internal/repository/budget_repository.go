@@ -23,7 +23,7 @@ func NewBudgetRepository(db *gorm.DB) *BudgetRepository {
 // Upsert creates or updates a budget for a user (one budget per user).
 func (r *BudgetRepository) Upsert(ctx context.Context, budget *models.Budget) error {
 	var existing models.Budget
-	err := r.db.WithContext(ctx).Where("user_id = ?", budget.UserID).First(&existing).Error
+	err := r.db.WithContext(ctx).Where("org_id = ?", budget.OrgID).First(&existing).Error
 	if err != nil {
 		// Not found — create
 		return r.db.WithContext(ctx).Create(budget).Error
@@ -41,7 +41,7 @@ func (r *BudgetRepository) Upsert(ctx context.Context, budget *models.Budget) er
 // GetByUserID retrieves the budget for a user.
 func (r *BudgetRepository) GetByUserID(ctx context.Context, userID uuid.UUID) (*models.Budget, error) {
 	var budget models.Budget
-	if err := r.db.WithContext(ctx).Where("user_id = ?", userID).First(&budget).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("org_id = ?", userID).First(&budget).Error; err != nil {
 		return nil, err
 	}
 	return &budget, nil
@@ -49,5 +49,5 @@ func (r *BudgetRepository) GetByUserID(ctx context.Context, userID uuid.UUID) (*
 
 // DeleteByUserID removes the budget for a user.
 func (r *BudgetRepository) DeleteByUserID(ctx context.Context, userID uuid.UUID) error {
-	return r.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.Budget{}).Error
+	return r.db.WithContext(ctx).Where("org_id = ?", userID).Delete(&models.Budget{}).Error
 }

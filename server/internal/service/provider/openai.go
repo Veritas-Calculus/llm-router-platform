@@ -65,7 +65,12 @@ func (c *OpenAIClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, errors.New(string(respBody))
+		return nil, &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       respBody,
+			Message:    "OpenAI API error",
+		}
 	}
 
 	var chatResp ChatResponse
@@ -99,7 +104,12 @@ func (c *OpenAIClient) Embeddings(ctx context.Context, req *EmbeddingRequest) (*
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, errors.New(string(respBody))
+		return nil, &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       respBody,
+			Message:    "OpenAI API error",
+		}
 	}
 
 	var embResp EmbeddingResponse
@@ -139,7 +149,12 @@ func (c *OpenAIClient) StreamChat(ctx context.Context, req *ChatRequest) (<-chan
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		return nil, errors.New(string(respBody))
+		return nil, &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       respBody,
+			Message:    "OpenAI API error",
+		}
 	}
 
 	chunks := make(chan StreamChunk)
@@ -258,7 +273,12 @@ func (c *OpenAIClient) GenerateImage(ctx context.Context, req *ImageGenerationRe
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, errors.New(string(respBody))
+		return nil, &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       respBody,
+			Message:    "OpenAI API error",
+		}
 	}
 
 	var imgResp ImageGenerationResponse
@@ -319,7 +339,12 @@ func (c *OpenAIClient) TranscribeAudio(ctx context.Context, req *AudioTranscript
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, errors.New(string(respBody))
+		return nil, &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       respBody,
+			Message:    "OpenAI API error",
+		}
 	}
 
 	// For specific response formats, OpenAI returns raw text or JSON
@@ -360,7 +385,12 @@ func (c *OpenAIClient) SynthesizeSpeech(ctx context.Context, req *SpeechRequest)
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, errors.New(string(respBody))
+		return nil, &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       respBody,
+			Message:    "OpenAI API error",
+		}
 	}
 
 	audioData, err := io.ReadAll(resp.Body)

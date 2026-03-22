@@ -57,6 +57,9 @@ func main() {
 		fmt.Println("Rollback completed.")
 
 	case "auto":
+		if cfg.Server.Mode == "release" {
+			logger.Warn("Running AutoMigrate in release mode is NOT recommended. Please use explicit SQL migrations ('up').")
+		}
 		fmt.Println("Running GORM AutoMigrate (development mode)...")
 		if err := db.Migrate(); err != nil {
 			log.Fatalf("auto migration failed: %v", err)

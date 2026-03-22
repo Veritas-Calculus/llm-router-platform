@@ -24,10 +24,29 @@ type Config struct {
 	RateLimit     RateLimitConfig
 	Log           LogConfig
 	Admin         AdminConfig
+	Security      SecurityConfig
 	Registration  RegistrationConfig
 	Observability ObservabilityConfig
 	Frontend      FrontendConfig
 	Stripe        StripeConfig
+	OAuth2        OAuth2Config
+}
+
+// SecurityConfig holds API and Gateway security environment settings.
+type SecurityConfig struct {
+	AdminIPWhitelist string `mapstructure:"admin_ip_whitelist"` // Comma-separated CIDRs/IPs allowed to access admin APIs
+}
+
+// OAuth2Config holds OAuth2 social login provider configuration.
+type OAuth2Config struct {
+	GitHub OAuth2ProviderConfig
+	Google OAuth2ProviderConfig
+}
+
+// OAuth2ProviderConfig holds a single OAuth2 provider's credentials.
+type OAuth2ProviderConfig struct {
+	ClientID     string // #nosec G101
+	ClientSecret string // #nosec G101
 }
 
 // ServerConfig holds server-related configuration.
@@ -162,6 +181,9 @@ type ObservabilityConfig struct {
 	SentryDSN         string
 	SentryEnvironment string
 	SentrySampleRate  float64
+	OTelEnabled       bool
+	OTelEndpoint      string // e.g. "localhost:4318" or URL
+	OTelServiceName   string // default: "llm-router-platform"
 }
 
 // Load reads configuration from environment variables and .env file.
@@ -270,6 +292,9 @@ func Load() (*Config, error) {
 			SentryDSN:         viper.GetString("SENTRY_DSN"),
 			SentryEnvironment: viper.GetString("SENTRY_ENVIRONMENT"),
 			SentrySampleRate:  viper.GetFloat64("SENTRY_SAMPLE_RATE"),
+			OTelEnabled:       viper.GetBool("OTEL_ENABLED"),
+			OTelEndpoint:      viper.GetString("OTEL_ENDPOINT"),
+			OTelServiceName:   viper.GetString("OTEL_SERVICE_NAME"),
 		},
 		Frontend: FrontendConfig{
 			URL: viper.GetString("FRONTEND_URL"),
@@ -279,6 +304,16 @@ func Load() (*Config, error) {
 			SecretKey:      viper.GetString("STRIPE_SECRET_KEY"),
 			PublishableKey: viper.GetString("STRIPE_PUBLISHABLE_KEY"),
 			WebhookSecret:  viper.GetString("STRIPE_WEBHOOK_SECRET"),
+		},
+		OAuth2: OAuth2Config{
+			GitHub: OAuth2ProviderConfig{
+				ClientID:     viper.GetString("GITHUB_CLIENT_ID"),
+				ClientSecret: viper.GetString("GITHUB_CLIENT_SECRET"),
+			},
+			Google: OAuth2ProviderConfig{
+				ClientID:     viper.GetString("GOOGLE_CLIENT_ID"),
+				ClientSecret: viper.GetString("GOOGLE_CLIENT_SECRET"),
+			},
 		},
 	}
 
@@ -395,6 +430,7 @@ func setDefaults() {
 	viper.SetDefault("LOG_LEVEL", "info")
 	viper.SetDefault("LOG_FORMAT", "json")
 	viper.SetDefault("ADMIN_NAME", "Administrator")
+	viper.SetDefault("ADMIN_IP_WHITELIST", "")      // Empty = deny by default in strict mode, or open if explicitly handled
 	viper.SetDefault("REGISTRATION_MODE", "closed") // closed by default; set to "open" or "invite" as needed
 	viper.SetDefault("INVITE_CODE", "")            // required when mode=invite
 	viper.SetDefault("LANGFUSE_ENABLED", false)
@@ -403,6 +439,9 @@ func setDefaults() {
 	viper.SetDefault("SENTRY_ENVIRONMENT", "production")
 	viper.SetDefault("SENTRY_SAMPLE_RATE", 1.0)
 	viper.SetDefault("STRIPE_ENABLED", false)
+	viper.SetDefault("OTEL_ENABLED", false)
+	viper.SetDefault("OTEL_ENDPOINT", "")
+	viper.SetDefault("OTEL_SERVICE_NAME", "llm-router-platform")
 }
 
 // GetDSN returns the database connection string with proper escaping.

@@ -11,6 +11,20 @@ export const HEALTH_OVERVIEW_QUERY = gql`
   }
 `;
 
+export const SYSTEM_SLA_QUERY = gql`
+  query SystemSla($hours: Int) {
+    systemSla(hours: $hours) {
+      totalRequests
+      failureRate
+      avgLatencyMs
+      p95LatencyMs
+      p99LatencyMs
+      activeProviders
+      healthyProviders
+    }
+  }
+`;
+
 export const ALERTS_QUERY = gql`
   query Alerts($status: String) {
     alerts(status: $status) {
@@ -23,7 +37,9 @@ export const ALERTS_QUERY = gql`
 export const ALERT_CONFIG_QUERY = gql`
   query AlertConfig($targetType: String!, $targetId: ID!) {
     alertConfig(targetType: $targetType, targetId: $targetId) {
-      id targetType targetId enabled threshold cooldownMinutes
+      id targetType targetId isEnabled failureThreshold
+      errorRateThreshold latencyThresholdMs budgetThreshold cooldownMinutes
+      webhookUrl email
     }
   }
 `;
@@ -66,6 +82,71 @@ export const RESOLVE_ALERT = gql`
 
 export const UPDATE_ALERT_CONFIG = gql`
   mutation UpdateAlertConfig($input: AlertConfigInput!) {
-    updateAlertConfig(input: $input) { id enabled threshold cooldownMinutes }
+    updateAlertConfig(input: $input) {
+      id targetType targetId isEnabled failureThreshold
+      errorRateThreshold latencyThresholdMs budgetThreshold cooldownMinutes
+      webhookUrl email
+    }
+  }
+`;
+
+export const SYSTEM_STATUS_QUERY = gql`
+  query SystemStatus {
+    systemStatus {
+      overallStatus
+      service {
+        version
+        gitCommit
+        buildTime
+        uptime
+        configMode
+      }
+      runtime {
+        goroutines
+        heapAllocMB
+        heapSysMB
+        gcPauseMs
+        numGC
+        cpuCores
+      }
+      dependencies {
+        name
+        status
+        latencyMs
+        version
+        details
+      }
+    }
+  }
+`;
+
+export const SYSTEM_LOAD_QUERY = gql`
+  query SystemLoad {
+    systemLoad {
+      service {
+        requestsInFlight
+        requestsPerSecond
+        avgLatencyMs
+        p95LatencyMs
+        errorRate
+      }
+      database {
+        activeConnections
+        maxConnections
+        poolIdle
+        poolInUse
+        transactionsPerSecond
+        cacheHitRate
+        deadlocks
+      }
+      redis {
+        connectedClients
+        usedMemoryMB
+        maxMemoryMB
+        opsPerSecond
+        hitRate
+        keyCount
+      }
+    }
   }
 `;

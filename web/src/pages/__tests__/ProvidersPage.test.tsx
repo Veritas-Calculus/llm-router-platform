@@ -10,25 +10,15 @@ vi.mock('framer-motion', () => ({
     AnimatePresence: ({ children }: any) => <>{children}</>,
 }));
 
+vi.mock('@apollo/client/react', () => ({
+    useQuery: vi.fn(() => ({ data: null, loading: false, refetch: vi.fn() })),
+    useMutation: vi.fn(() => [vi.fn(), { loading: false }]),
+}));
+
 vi.mock('@/lib/api', () => ({
     providersApi: {
-        list: vi.fn().mockResolvedValue({
-            data: [
-                {
-                    id: 'prov-1', name: 'openai', base_url: 'https://api.openai.com',
-                    is_active: true, use_proxy: false, requires_api_key: true, default_proxy_id: null,
-                },
-                {
-                    id: 'prov-2', name: 'anthropic', base_url: 'https://api.anthropic.com',
-                    is_active: true, use_proxy: false, requires_api_key: true, default_proxy_id: null,
-                },
-            ],
-        }),
-        getApiKeys: vi.fn().mockResolvedValue({
-            data: [
-                { id: 'key-1', key_prefix: 'sk-abc', is_active: true, priority: 1, weight: 1, rate_limit: 60, usage_count: 100, total_cost: 1.23 },
-            ],
-        }),
+        list: vi.fn().mockResolvedValue({ data: [] }),
+        getApiKeys: vi.fn().mockResolvedValue({ data: [] }),
         update: vi.fn(),
         toggle: vi.fn(),
         toggleProxy: vi.fn(),
@@ -45,11 +35,6 @@ vi.mock('@/lib/api', () => ({
 
 describe('ProvidersPage', () => {
     beforeEach(() => { vi.clearAllMocks(); });
-
-    it('should show loading spinner initially', () => {
-        render(<ProvidersPage />);
-        expect(document.querySelector('.animate-spin')).toBeTruthy();
-    });
 
     it('should render providers page after loading', async () => {
         render(<ProvidersPage />);

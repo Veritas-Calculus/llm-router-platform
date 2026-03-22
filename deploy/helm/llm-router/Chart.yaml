@@ -1,14 +1,6 @@
 apiVersion: v2
 name: llm-router
-description: A Helm chart for the LLM Router Platform — unified API gateway for multiple LLM providers
+description: A Helm chart for the LLM Router Platform Gateway Server
 type: application
 version: 0.1.0
 appVersion: "1.0.0"
-keywords:
-  - llm
-  - api-gateway
-  - openai
-  - claude
-  - gemini
-maintainers:
-  - name: LLM Router Team

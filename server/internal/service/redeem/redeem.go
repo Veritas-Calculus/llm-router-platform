@@ -88,7 +88,7 @@ func (s *Service) Redeem(userID uuid.UUID, code string) (*RedeemResult, error) {
 				}
 				// Create or extend subscription
 				sub := models.Subscription{
-					UserID:             userID,
+					OrgID:              userID, // Using user ID as org ID temporarily for backward compat
 					PlanID:             *rc.PlanID,
 					Status:             "active",
 					CurrentPeriodStart: now,

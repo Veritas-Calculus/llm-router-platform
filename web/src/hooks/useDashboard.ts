@@ -4,12 +4,25 @@ import { DASHBOARD_QUERY } from '@/lib/graphql/operations';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+interface UseDashboardProps {
+  days?: number;
+  projectId?: string;
+  channel?: string;
+}
+
 /**
  * Custom hook encapsulating Dashboard data fetching via GraphQL.
  * Returns the same interface as before so DashboardPage needs minimal changes.
  */
-export function useDashboard() {
-  const { data, loading } = useQuery<any>(DASHBOARD_QUERY, { variables: { days: 30 } });
+export function useDashboard(props?: UseDashboardProps) {
+  const { days = 30, projectId, channel } = props || {};
+  const { data, loading } = useQuery<any>(DASHBOARD_QUERY, { 
+    variables: { 
+      days, 
+      ...(projectId ? { projectId } : {}),
+      ...(channel ? { channel } : {})
+    } 
+  });
 
   // Map GraphQL camelCase → REST-compatible shape for backward compat
   const stats = useMemo(() => {

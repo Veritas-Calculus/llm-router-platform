@@ -23,22 +23,30 @@ type Alert struct {
 }
 
 type AlertConfig struct {
-	ID               *string `json:"id,omitempty"`
-	TargetType       string  `json:"targetType"`
-	TargetID         string  `json:"targetId"`
-	IsEnabled        bool    `json:"isEnabled"`
-	FailureThreshold int     `json:"failureThreshold"`
-	WebhookURL       *string `json:"webhookUrl,omitempty"`
-	Email            *string `json:"email,omitempty"`
+	ID                 *string `json:"id,omitempty"`
+	TargetType         string  `json:"targetType"`
+	TargetID           string  `json:"targetId"`
+	IsEnabled          bool    `json:"isEnabled"`
+	FailureThreshold   int     `json:"failureThreshold"`
+	ErrorRateThreshold float64 `json:"errorRateThreshold"`
+	LatencyThresholdMs int     `json:"latencyThresholdMs"`
+	BudgetThreshold    float64 `json:"budgetThreshold"`
+	CooldownMinutes    int     `json:"cooldownMinutes"`
+	WebhookURL         *string `json:"webhookUrl,omitempty"`
+	Email              *string `json:"email,omitempty"`
 }
 
 type AlertConfigInput struct {
-	TargetType       string  `json:"targetType"`
-	TargetID         string  `json:"targetId"`
-	IsEnabled        bool    `json:"isEnabled"`
-	FailureThreshold int     `json:"failureThreshold"`
-	WebhookURL       *string `json:"webhookUrl,omitempty"`
-	Email            *string `json:"email,omitempty"`
+	TargetType         string   `json:"targetType"`
+	TargetID           string   `json:"targetId"`
+	IsEnabled          bool     `json:"isEnabled"`
+	FailureThreshold   int      `json:"failureThreshold"`
+	ErrorRateThreshold *float64 `json:"errorRateThreshold,omitempty"`
+	LatencyThresholdMs *int     `json:"latencyThresholdMs,omitempty"`
+	BudgetThreshold    *float64 `json:"budgetThreshold,omitempty"`
+	CooldownMinutes    *int     `json:"cooldownMinutes,omitempty"`
+	WebhookURL         *string  `json:"webhookUrl,omitempty"`
+	Email              *string  `json:"email,omitempty"`
 }
 
 type AlertConnection struct {
@@ -77,10 +85,14 @@ type AnomalyResult struct {
 
 type APIKey struct {
 	ID         string     `json:"id"`
+	ProjectID  string     `json:"projectId"`
+	Channel    string     `json:"channel"`
 	Name       string     `json:"name"`
 	KeyPrefix  string     `json:"keyPrefix"`
 	IsActive   bool       `json:"isActive"`
+	Scopes     string     `json:"scopes"`
 	RateLimit  int        `json:"rateLimit"`
+	TokenLimit int        `json:"tokenLimit"`
 	DailyLimit int        `json:"dailyLimit"`
 	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
 	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
@@ -101,11 +113,15 @@ type APIKeyHealth struct {
 
 type APIKeyWithSecret struct {
 	ID         string     `json:"id"`
+	ProjectID  string     `json:"projectId"`
+	Channel    string     `json:"channel"`
 	Name       string     `json:"name"`
 	Key        string     `json:"key"`
 	KeyPrefix  string     `json:"keyPrefix"`
 	IsActive   bool       `json:"isActive"`
+	Scopes     string     `json:"scopes"`
 	RateLimit  int        `json:"rateLimit"`
+	TokenLimit int        `json:"tokenLimit"`
 	DailyLimit int        `json:"dailyLimit"`
 	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
 	CreatedAt  time.Time  `json:"createdAt"`
@@ -116,10 +132,48 @@ type APIKeysSummary struct {
 	Healthy int `json:"healthy"`
 }
 
+type AuditLog struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
+	Action    string    `json:"action"`
+	ActorID   string    `json:"actorId"`
+	TargetID  string    `json:"targetId"`
+	IP        string    `json:"ip"`
+	UserAgent string    `json:"userAgent"`
+	Detail    string    `json:"detail"`
+}
+
+type AuditLogConnection struct {
+	Data     []*AuditLog `json:"data"`
+	Total    int         `json:"total"`
+	Page     int         `json:"page"`
+	PageSize int         `json:"pageSize"`
+}
+
 type AuthPayload struct {
 	Token        string  `json:"token"`
 	RefreshToken *string `json:"refreshToken,omitempty"`
 	User         *User   `json:"user"`
+}
+
+type BackupRecord struct {
+	ID           string     `json:"id"`
+	Type         string     `json:"type"`
+	Status       string     `json:"status"`
+	SizeBytes    int        `json:"sizeBytes"`
+	DurationMs   int        `json:"durationMs"`
+	Destination  string     `json:"destination"`
+	ErrorMessage *string    `json:"errorMessage,omitempty"`
+	StartedAt    time.Time  `json:"startedAt"`
+	CompletedAt  *time.Time `json:"completedAt,omitempty"`
+}
+
+type BackupStatus struct {
+	LastBackup      *BackupRecord   `json:"lastBackup,omitempty"`
+	Records         []*BackupRecord `json:"records"`
+	IsConfigured    bool            `json:"isConfigured"`
+	ScheduleEnabled bool            `json:"scheduleEnabled"`
+	NextScheduled   *time.Time      `json:"nextScheduled,omitempty"`
 }
 
 type BatchProxyInput struct {
@@ -141,7 +195,7 @@ type BatchProxyResult struct {
 
 type Budget struct {
 	ID               string  `json:"id"`
-	UserID           string  `json:"userId"`
+	OrgID            string  `json:"orgId"`
 	MonthlyLimitUsd  float64 `json:"monthlyLimitUsd"`
 	AlertThreshold   float64 `json:"alertThreshold"`
 	EnforceHardLimit bool    `json:"enforceHardLimit"`
@@ -164,6 +218,28 @@ type BudgetStatus struct {
 	RemainingBudget float64 `json:"remainingBudget"`
 	PercentUsed     float64 `json:"percentUsed"`
 	IsOverBudget    bool    `json:"isOverBudget"`
+}
+
+type CacheConfig struct {
+	ID                  string  `json:"id"`
+	IsEnabled           bool    `json:"isEnabled"`
+	SimilarityThreshold float64 `json:"similarityThreshold"`
+	DefaultTTLMinutes   int     `json:"defaultTtlMinutes"`
+	EmbeddingModel      string  `json:"embeddingModel"`
+	MaxCacheSize        int     `json:"maxCacheSize"`
+}
+
+type CacheConfigInput struct {
+	IsEnabled           bool    `json:"isEnabled"`
+	SimilarityThreshold float64 `json:"similarityThreshold"`
+	DefaultTTLMinutes   int     `json:"defaultTtlMinutes"`
+	EmbeddingModel      string  `json:"embeddingModel"`
+	MaxCacheSize        int     `json:"maxCacheSize"`
+}
+
+type CacheStats struct {
+	TotalCaches int `json:"totalCaches"`
+	TotalHits   int `json:"totalHits"`
 }
 
 type ChangePasswordInput struct {
@@ -202,10 +278,43 @@ type CouponInput struct {
 	ExpiresAt      *time.Time `json:"expiresAt,omitempty"`
 }
 
+type CreateIdentityProviderInput struct {
+	OrgID            string  `json:"orgId"`
+	Type             string  `json:"type"`
+	Name             string  `json:"name"`
+	Domains          string  `json:"domains"`
+	OidcClientID     *string `json:"oidcClientId,omitempty"`
+	OidcClientSecret *string `json:"oidcClientSecret,omitempty"`
+	OidcIssuerURL    *string `json:"oidcIssuerUrl,omitempty"`
+	SamlEntityID     *string `json:"samlEntityId,omitempty"`
+	SamlSsoURL       *string `json:"samlSsoUrl,omitempty"`
+	SamlIdpCert      *string `json:"samlIdpCert,omitempty"`
+	EnableJit        *bool   `json:"enableJit,omitempty"`
+	DefaultRole      *string `json:"defaultRole,omitempty"`
+	GroupRoleMapping *string `json:"groupRoleMapping,omitempty"`
+}
+
+type CreateRoutingRuleInput struct {
+	Name               string  `json:"name"`
+	Description        *string `json:"description,omitempty"`
+	ModelPattern       string  `json:"modelPattern"`
+	TargetProviderID   string  `json:"targetProviderId"`
+	FallbackProviderID *string `json:"fallbackProviderId,omitempty"`
+	Priority           int     `json:"priority"`
+	IsEnabled          bool    `json:"isEnabled"`
+}
+
 type CreateTaskInput struct {
 	Type       string  `json:"type"`
 	Input      string  `json:"input"`
 	WebhookURL *string `json:"webhookUrl,omitempty"`
+}
+
+type CreateWebhookEndpointInput struct {
+	ProjectID   string   `json:"projectId"`
+	URL         string   `json:"url"`
+	Events      []string `json:"events"`
+	Description *string  `json:"description,omitempty"`
 }
 
 type DailyStats struct {
@@ -234,6 +343,46 @@ type Dashboard struct {
 	Proxies          *ProxiesSummary `json:"proxies"`
 }
 
+type DatabaseLoad struct {
+	ActiveConnections     int     `json:"activeConnections"`
+	MaxConnections        int     `json:"maxConnections"`
+	PoolIdle              int     `json:"poolIdle"`
+	PoolInUse             int     `json:"poolInUse"`
+	TransactionsPerSecond float64 `json:"transactionsPerSecond"`
+	CacheHitRate          float64 `json:"cacheHitRate"`
+	Deadlocks             int     `json:"deadlocks"`
+}
+
+type DependencyStatus struct {
+	Name      string  `json:"name"`
+	Status    string  `json:"status"`
+	LatencyMs float64 `json:"latencyMs"`
+	Version   *string `json:"version,omitempty"`
+	Details   *string `json:"details,omitempty"`
+}
+
+type DlpConfig struct {
+	ID              string      `json:"id"`
+	ProjectID       string      `json:"projectId"`
+	IsEnabled       bool        `json:"isEnabled"`
+	Strategy        DlpStrategy `json:"strategy"`
+	MaskEmails      bool        `json:"maskEmails"`
+	MaskPhones      bool        `json:"maskPhones"`
+	MaskCreditCards bool        `json:"maskCreditCards"`
+	MaskSsn         bool        `json:"maskSsn"`
+	MaskAPIKeys     bool        `json:"maskApiKeys"`
+	CustomRegex     []string    `json:"customRegex"`
+	CreatedAt       time.Time   `json:"createdAt"`
+	UpdatedAt       time.Time   `json:"updatedAt"`
+}
+
+type DlpTestResult struct {
+	OriginalText string `json:"originalText"`
+	ScrubbedText string `json:"scrubbedText"`
+	HasPii       bool   `json:"hasPii"`
+	Blocked      bool   `json:"blocked"`
+}
+
 type Document struct {
 	ID          string    `json:"id"`
 	Title       string    `json:"title"`
@@ -253,6 +402,25 @@ type DocumentInput struct {
 	Category    *string `json:"category,omitempty"`
 	SortOrder   *int    `json:"sortOrder,omitempty"`
 	IsPublished *bool   `json:"isPublished,omitempty"`
+}
+
+type ErrorLog struct {
+	ID           string    `json:"id"`
+	TrajectoryID string    `json:"trajectoryId"`
+	TraceID      string    `json:"traceId"`
+	Provider     string    `json:"provider"`
+	Model        string    `json:"model"`
+	StatusCode   int       `json:"statusCode"`
+	Headers      string    `json:"headers"`
+	ResponseBody string    `json:"responseBody"`
+	CreatedAt    time.Time `json:"createdAt"`
+}
+
+type ErrorLogConnection struct {
+	Data     []*ErrorLog `json:"data"`
+	Total    int         `json:"total"`
+	Page     int         `json:"page"`
+	PageSize int         `json:"pageSize"`
 }
 
 type GenerateRedeemCodesInput struct {
@@ -277,6 +445,34 @@ type HealthEvent struct {
 	Status     string    `json:"status"`
 	Message    *string   `json:"message,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
+}
+
+type IdentityProvider struct {
+	ID               string        `json:"id"`
+	OrgID            string        `json:"orgId"`
+	Organization     *Organization `json:"organization"`
+	Type             string        `json:"type"`
+	Name             string        `json:"name"`
+	IsActive         bool          `json:"isActive"`
+	Domains          string        `json:"domains"`
+	OidcClientID     *string       `json:"oidcClientId,omitempty"`
+	OidcIssuerURL    *string       `json:"oidcIssuerUrl,omitempty"`
+	SamlEntityID     *string       `json:"samlEntityId,omitempty"`
+	SamlSsoURL       *string       `json:"samlSsoUrl,omitempty"`
+	SamlIdpCert      *string       `json:"samlIdpCert,omitempty"`
+	EnableJit        bool          `json:"enableJit"`
+	DefaultRole      string        `json:"defaultRole"`
+	GroupRoleMapping string        `json:"groupRoleMapping"`
+	CreatedAt        time.Time     `json:"createdAt"`
+	UpdatedAt        time.Time     `json:"updatedAt"`
+}
+
+type IntegrationConfig struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Enabled   bool      `json:"enabled"`
+	Config    string    `json:"config"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type InviteCode struct {
@@ -348,6 +544,12 @@ type McpTool struct {
 	IsActive    bool    `json:"isActive"`
 }
 
+type MfaSecretInfo struct {
+	Secret      string   `json:"secret"`
+	QRCodeURL   string   `json:"qrCodeUrl"`
+	BackupCodes []string `json:"backupCodes"`
+}
+
 type Model struct {
 	ID               string    `json:"id"`
 	ProviderID       string    `json:"providerId"`
@@ -387,6 +589,23 @@ type ModelStats struct {
 type Mutation struct {
 }
 
+type NotificationChannel struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Type      string    `json:"type"`
+	IsEnabled bool      `json:"isEnabled"`
+	Config    string    `json:"config"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type NotificationChannelInput struct {
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	IsEnabled *bool  `json:"isEnabled,omitempty"`
+	Config    string `json:"config"`
+}
+
 type Order struct {
 	ID            string    `json:"id"`
 	OrderNo       string    `json:"orderNo"`
@@ -396,6 +615,21 @@ type Order struct {
 	PaymentMethod string    `json:"paymentMethod"`
 	CreatedAt     time.Time `json:"createdAt"`
 	Plan          *Plan     `json:"plan,omitempty"`
+}
+
+type Organization struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	BillingLimit float64   `json:"billingLimit"`
+	CreatedAt    time.Time `json:"createdAt"`
+}
+
+type OrganizationMember struct {
+	UserID    string        `json:"userId"`
+	OrgID     string        `json:"orgId"`
+	Role      string        `json:"role"`
+	User      *UserListItem `json:"user"`
+	CreatedAt time.Time     `json:"createdAt"`
 }
 
 type Plan struct {
@@ -419,6 +653,60 @@ type PlanInput struct {
 	SupportLevel *string `json:"supportLevel,omitempty"`
 	IsActive     *bool   `json:"isActive,omitempty"`
 	Features     *string `json:"features,omitempty"`
+}
+
+type Project struct {
+	ID             string    `json:"id"`
+	OrgID          string    `json:"orgId"`
+	Name           string    `json:"name"`
+	Description    *string   `json:"description,omitempty"`
+	QuotaLimit     float64   `json:"quotaLimit"`
+	WhiteListedIps *string   `json:"whiteListedIps,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
+}
+
+type PromptTemplate struct {
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	Description     string         `json:"description"`
+	ProjectID       *string        `json:"projectId,omitempty"`
+	IsActive        bool           `json:"isActive"`
+	ActiveVersionID *string        `json:"activeVersionId,omitempty"`
+	ActiveVersion   *PromptVersion `json:"activeVersion,omitempty"`
+	VersionCount    int            `json:"versionCount"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
+}
+
+type PromptTemplateConnection struct {
+	Data  []*PromptTemplate `json:"data"`
+	Total int               `json:"total"`
+}
+
+type PromptTemplateInput struct {
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	ProjectID   *string `json:"projectId,omitempty"`
+	IsActive    *bool   `json:"isActive,omitempty"`
+}
+
+type PromptVersion struct {
+	ID         string    `json:"id"`
+	TemplateID string    `json:"templateId"`
+	Version    int       `json:"version"`
+	Content    string    `json:"content"`
+	Model      *string   `json:"model,omitempty"`
+	Parameters *string   `json:"parameters,omitempty"`
+	ChangeLog  *string   `json:"changeLog,omitempty"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+type PromptVersionInput struct {
+	TemplateID string  `json:"templateId"`
+	Content    string  `json:"content"`
+	Model      *string `json:"model,omitempty"`
+	Parameters *string `json:"parameters,omitempty"`
+	ChangeLog  *string `json:"changeLog,omitempty"`
 }
 
 type Provider struct {
@@ -596,6 +884,15 @@ type RedeemResult struct {
 	PlanName     *string  `json:"planName,omitempty"`
 }
 
+type RedisLoad struct {
+	ConnectedClients int     `json:"connectedClients"`
+	UsedMemoryMb     float64 `json:"usedMemoryMB"`
+	MaxMemoryMb      float64 `json:"maxMemoryMB"`
+	OpsPerSecond     float64 `json:"opsPerSecond"`
+	HitRate          float64 `json:"hitRate"`
+	KeyCount         int     `json:"keyCount"`
+}
+
 type RegisterInput struct {
 	Email      string  `json:"email"`
 	Password   string  `json:"password"`
@@ -603,9 +900,86 @@ type RegisterInput struct {
 	InviteCode *string `json:"inviteCode,omitempty"`
 }
 
+type RegistrationMode struct {
+	Mode               string `json:"mode"`
+	InviteCodeRequired bool   `json:"inviteCodeRequired"`
+}
+
 type ResetPasswordInput struct {
 	Token       string `json:"token"`
 	NewPassword string `json:"newPassword"`
+}
+
+type RoutingRule struct {
+	ID                 string    `json:"id"`
+	Name               string    `json:"name"`
+	Description        string    `json:"description"`
+	ModelPattern       string    `json:"modelPattern"`
+	TargetProviderID   string    `json:"targetProviderId"`
+	FallbackProviderID *string   `json:"fallbackProviderId,omitempty"`
+	Priority           int       `json:"priority"`
+	IsEnabled          bool      `json:"isEnabled"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
+	TargetProvider     *Provider `json:"targetProvider,omitempty"`
+	FallbackProvider   *Provider `json:"fallbackProvider,omitempty"`
+}
+
+type RoutingRuleList struct {
+	Data     []*RoutingRule `json:"data"`
+	Total    int            `json:"total"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"pageSize"`
+}
+
+type RuntimeInfo struct {
+	Goroutines  int     `json:"goroutines"`
+	HeapAllocMb float64 `json:"heapAllocMB"`
+	HeapSysMb   float64 `json:"heapSysMB"`
+	GcPauseMs   float64 `json:"gcPauseMs"`
+	NumGc       int     `json:"numGC"`
+	CPUCores    int     `json:"cpuCores"`
+}
+
+type SemanticCache struct {
+	ID        string    `json:"id"`
+	Hash      string    `json:"hash"`
+	Provider  string    `json:"provider"`
+	Model     string    `json:"model"`
+	HitCount  int       `json:"hitCount"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type ServiceInfo struct {
+	Version    string `json:"version"`
+	GitCommit  string `json:"gitCommit"`
+	BuildTime  string `json:"buildTime"`
+	Uptime     string `json:"uptime"`
+	ConfigMode string `json:"configMode"`
+}
+
+type ServiceLoad struct {
+	RequestsInFlight  int     `json:"requestsInFlight"`
+	RequestsPerSecond float64 `json:"requestsPerSecond"`
+	AvgLatencyMs      float64 `json:"avgLatencyMs"`
+	P95LatencyMs      float64 `json:"p95LatencyMs"`
+	ErrorRate         float64 `json:"errorRate"`
+}
+
+type SystemLoad struct {
+	Service  *ServiceLoad  `json:"service"`
+	Database *DatabaseLoad `json:"database"`
+	Redis    *RedisLoad    `json:"redis"`
+}
+
+type SystemSLA struct {
+	TotalRequests    int     `json:"totalRequests"`
+	FailureRate      float64 `json:"failureRate"`
+	AvgLatencyMs     float64 `json:"avgLatencyMs"`
+	P95LatencyMs     float64 `json:"p95LatencyMs"`
+	P99LatencyMs     float64 `json:"p99LatencyMs"`
+	ActiveProviders  int     `json:"activeProviders"`
+	HealthyProviders int     `json:"healthyProviders"`
 }
 
 type SystemSettings struct {
@@ -618,6 +992,7 @@ type SystemSettings struct {
 	Email             *string  `json:"email,omitempty"`
 	Backup            *string  `json:"backup,omitempty"`
 	Payment           *string  `json:"payment,omitempty"`
+	Oauth             *string  `json:"oauth,omitempty"`
 }
 
 type SystemSettingsInput struct {
@@ -625,9 +1000,16 @@ type SystemSettingsInput struct {
 	Data     string `json:"data"`
 }
 
+type SystemStatus struct {
+	Service       *ServiceInfo        `json:"service"`
+	Runtime       *RuntimeInfo        `json:"runtime"`
+	Dependencies  []*DependencyStatus `json:"dependencies"`
+	OverallStatus string              `json:"overallStatus"`
+}
+
 type Task struct {
 	ID          string     `json:"id"`
-	UserID      string     `json:"userId"`
+	ProjectID   string     `json:"projectId"`
 	Type        string     `json:"type"`
 	Status      string     `json:"status"`
 	Input       string     `json:"input"`
@@ -645,15 +1027,77 @@ type TaskConnection struct {
 	Total int     `json:"total"`
 }
 
+type UpdateDlpConfigInput struct {
+	ProjectID       string       `json:"projectId"`
+	IsEnabled       *bool        `json:"isEnabled,omitempty"`
+	Strategy        *DlpStrategy `json:"strategy,omitempty"`
+	MaskEmails      *bool        `json:"maskEmails,omitempty"`
+	MaskPhones      *bool        `json:"maskPhones,omitempty"`
+	MaskCreditCards *bool        `json:"maskCreditCards,omitempty"`
+	MaskSsn         *bool        `json:"maskSsn,omitempty"`
+	MaskAPIKeys     *bool        `json:"maskApiKeys,omitempty"`
+	CustomRegex     []string     `json:"customRegex,omitempty"`
+}
+
+type UpdateIdentityProviderInput struct {
+	Name             *string `json:"name,omitempty"`
+	IsActive         *bool   `json:"isActive,omitempty"`
+	Domains          *string `json:"domains,omitempty"`
+	OidcClientID     *string `json:"oidcClientId,omitempty"`
+	OidcClientSecret *string `json:"oidcClientSecret,omitempty"`
+	OidcIssuerURL    *string `json:"oidcIssuerUrl,omitempty"`
+	SamlEntityID     *string `json:"samlEntityId,omitempty"`
+	SamlSsoURL       *string `json:"samlSsoUrl,omitempty"`
+	SamlIdpCert      *string `json:"samlIdpCert,omitempty"`
+	EnableJit        *bool   `json:"enableJit,omitempty"`
+	DefaultRole      *string `json:"defaultRole,omitempty"`
+	GroupRoleMapping *string `json:"groupRoleMapping,omitempty"`
+}
+
+type UpdateIntegrationInput struct {
+	Enabled bool   `json:"enabled"`
+	Config  string `json:"config"`
+}
+
+type UpdateNotificationChannelInput struct {
+	Name      *string `json:"name,omitempty"`
+	IsEnabled *bool   `json:"isEnabled,omitempty"`
+	Config    *string `json:"config,omitempty"`
+}
+
 type UpdateProfileInput struct {
 	Name  *string `json:"name,omitempty"`
 	Email *string `json:"email,omitempty"`
+}
+
+type UpdateProjectInput struct {
+	Name           *string  `json:"name,omitempty"`
+	Description    *string  `json:"description,omitempty"`
+	QuotaLimit     *float64 `json:"quotaLimit,omitempty"`
+	WhiteListedIps *string  `json:"whiteListedIps,omitempty"`
 }
 
 type UpdateProviderAPIKeyInput struct {
 	Priority  *int     `json:"priority,omitempty"`
 	Weight    *float64 `json:"weight,omitempty"`
 	RateLimit *int     `json:"rateLimit,omitempty"`
+}
+
+type UpdateRoutingRuleInput struct {
+	Name               *string `json:"name,omitempty"`
+	Description        *string `json:"description,omitempty"`
+	ModelPattern       *string `json:"modelPattern,omitempty"`
+	TargetProviderID   *string `json:"targetProviderId,omitempty"`
+	FallbackProviderID *string `json:"fallbackProviderId,omitempty"`
+	Priority           *int    `json:"priority,omitempty"`
+	IsEnabled          *bool   `json:"isEnabled,omitempty"`
+}
+
+type UpdateWebhookEndpointInput struct {
+	URL         *string  `json:"url,omitempty"`
+	Events      []string `json:"events,omitempty"`
+	IsActive    *bool    `json:"isActive,omitempty"`
+	Description *string  `json:"description,omitempty"`
 }
 
 type UsageChartPoint struct {
@@ -698,6 +1142,7 @@ type User struct {
 	Balance               *float64   `json:"balance,omitempty"`
 	CreatedAt             time.Time  `json:"createdAt"`
 	LastLoginAt           *time.Time `json:"lastLoginAt,omitempty"`
+	MfaEnabled            bool       `json:"mfaEnabled"`
 }
 
 type UserConnection struct {
@@ -715,6 +1160,7 @@ type UserDetail struct {
 	APIKeys           int               `json:"apiKeys"`
 	MonthlyTokenLimit *int              `json:"monthlyTokenLimit,omitempty"`
 	MonthlyBudgetUsd  *float64          `json:"monthlyBudgetUsd,omitempty"`
+	MfaEnabled        bool              `json:"mfaEnabled"`
 	UsageMonth        *UserMonthlyUsage `json:"usageMonth,omitempty"`
 }
 
@@ -740,13 +1186,94 @@ type UserMonthlyUsage struct {
 
 type UserSubscription struct {
 	ID                 string    `json:"id"`
-	UserID             string    `json:"userId"`
+	OrgID              string    `json:"orgId"`
 	PlanID             string    `json:"planId"`
 	Status             string    `json:"status"`
 	CurrentPeriodStart time.Time `json:"currentPeriodStart"`
 	CurrentPeriodEnd   time.Time `json:"currentPeriodEnd"`
 	CancelAtPeriodEnd  bool      `json:"cancelAtPeriodEnd"`
 	Plan               *Plan     `json:"plan"`
+}
+
+type WebhookDelivery struct {
+	ID           string    `json:"id"`
+	EndpointID   string    `json:"endpointId"`
+	EventType    string    `json:"eventType"`
+	Payload      string    `json:"payload"`
+	Status       string    `json:"status"`
+	StatusCode   int       `json:"statusCode"`
+	ResponseBody *string   `json:"responseBody,omitempty"`
+	ErrorMessage *string   `json:"errorMessage,omitempty"`
+	RetryCount   int       `json:"retryCount"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+type WebhookEndpoint struct {
+	ID          string    `json:"id"`
+	ProjectID   string    `json:"projectId"`
+	URL         string    `json:"url"`
+	Secret      *string   `json:"secret,omitempty"`
+	Events      []string  `json:"events"`
+	IsActive    bool      `json:"isActive"`
+	Description *string   `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+type DlpStrategy string
+
+const (
+	DlpStrategyRedact DlpStrategy = "REDACT"
+	DlpStrategyBlock  DlpStrategy = "BLOCK"
+)
+
+var AllDlpStrategy = []DlpStrategy{
+	DlpStrategyRedact,
+	DlpStrategyBlock,
+}
+
+func (e DlpStrategy) IsValid() bool {
+	switch e {
+	case DlpStrategyRedact, DlpStrategyBlock:
+		return true
+	}
+	return false
+}
+
+func (e DlpStrategy) String() string {
+	return string(e)
+}
+
+func (e *DlpStrategy) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = DlpStrategy(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid DlpStrategy", str)
+	}
+	return nil
+}
+
+func (e DlpStrategy) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *DlpStrategy) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e DlpStrategy) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
 }
 
 type Role string

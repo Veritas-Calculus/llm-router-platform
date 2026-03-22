@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -69,6 +70,7 @@ type Router struct {
 	providerKeyRepo  repository.ProviderAPIKeyRepo
 	proxyRepo        repository.ProxyRepo
 	modelRepo        repository.ModelRepo
+	routingRuleRepo  repository.RoutingRuleRepo
 	registry         *provider.Registry
 	mcpService       *mcp.Service
 	strategy         Strategy
@@ -95,6 +97,7 @@ func NewRouter(
 	providerKeyRepo repository.ProviderAPIKeyRepo,
 	proxyRepo repository.ProxyRepo,
 	modelRepo repository.ModelRepo,
+	routingRuleRepo repository.RoutingRuleRepo,
 	registry *provider.Registry,
 	mcpService *mcp.Service,
 	logger *zap.Logger,
@@ -104,6 +107,7 @@ func NewRouter(
 		providerKeyRepo:  providerKeyRepo,
 		proxyRepo:        proxyRepo,
 		modelRepo:        modelRepo,
+		routingRuleRepo:  routingRuleRepo,
 		registry:         registry,
 		mcpService:       mcpService,
 		strategy:         StrategyWeighted,
@@ -266,10 +270,66 @@ func (r *Router) Route(ctx context.Context, modelName string) (*models.Provider,
 		return nil, nil, errors.New("no active providers available")
 	}
 
-	// Try to find provider based on model name patterns
-	selectedProvider := r.findProviderForModel(modelName, providers)
+	var selectedProvider *models.Provider
 
-	// If no specific provider found, use weighted selection
+	// 1. Evaluate explicit Routing Rules
+	rules, err := r.routingRuleRepo.GetActive(ctx)
+	if err == nil && len(rules) > 0 {
+		// Sort by Priority DESC, CreatedAt ASC
+		sort.Slice(rules, func(i, j int) bool {
+			if rules[i].Priority != rules[j].Priority {
+				return rules[i].Priority > rules[j].Priority
+			}
+			return rules[i].CreatedAt.Before(rules[j].CreatedAt)
+		})
+
+		for _, rule := range rules {
+			if matchesGlobPattern(modelName, rule.ModelPattern) {
+				// Matched a rule. Try to find the target provider.
+				for i := range providers {
+					if providers[i].ID == rule.TargetProviderID {
+						r.circuitMu.RLock()
+						_, melted := r.providerMelted[providers[i].ID]
+						r.circuitMu.RUnlock()
+
+						if !melted {
+							selectedProvider = &providers[i]
+						}
+						break
+					}
+				}
+
+				// If target melted/unavailable and we have a fallback, try fallback.
+				if selectedProvider == nil && rule.FallbackProviderID != nil {
+					for i := range providers {
+						if providers[i].ID == *rule.FallbackProviderID {
+							r.circuitMu.RLock()
+							_, melted := r.providerMelted[providers[i].ID]
+							r.circuitMu.RUnlock()
+
+							if !melted {
+								selectedProvider = &providers[i]
+							}
+							break
+						}
+					}
+				}
+
+				// If we matched a rule, we stick to its routing decision.
+				// Even if circuit breakers are open for both, we stop evaluating further heuristics.
+				if selectedProvider != nil || rule.FallbackProviderID != nil {
+					break // Exits the rule checking loop
+				}
+			}
+		}
+	}
+
+	// 2. Try to find provider based on model name patterns (Heuristics)
+	if selectedProvider == nil {
+		selectedProvider = r.findProviderForModel(modelName, providers)
+	}
+
+	// 3. If no specific provider found, use weighted selection
 	if selectedProvider == nil {
 		switch r.strategy {
 		case StrategyRoundRobin:

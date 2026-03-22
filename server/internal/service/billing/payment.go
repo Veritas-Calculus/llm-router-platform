@@ -12,7 +12,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v76"
-	"github.com/stripe/stripe-go/v76/checkout/session"
+	"github.com/stripe/stripe-go/v76/billingportal/session"
+	checkoutSession "github.com/stripe/stripe-go/v76/checkout/session"
 	"github.com/stripe/stripe-go/v76/webhook"
 	"go.uber.org/zap"
 )
@@ -93,14 +94,14 @@ func (s *PaymentService) CreateCheckoutSession(ctx context.Context, userID uuid.
 		ClientReferenceID: stripe.String(orderNo),
 	}
 
-	sess, err := session.New(params)
+	sess, err := checkoutSession.New(params)
 	if err != nil {
 		return "", err
 	}
 
 	// Create order record
 	order := &models.Order{
-		UserID:        userID,
+		OrgID:         userID,
 		PlanID:        planID,
 		OrderNo:       orderNo,
 		Amount:        plan.PriceMonth,
@@ -149,14 +150,14 @@ func (s *PaymentService) CreateRechargeSession(ctx context.Context, userID uuid.
 		},
 	}
 
-	sess, err := session.New(params)
+	sess, err := checkoutSession.New(params)
 	if err != nil {
 		return "", err
 	}
 
 	// Create order record
 	order := &models.Order{
-		UserID:        userID,
+		OrgID:         userID,
 		OrderNo:       orderNo,
 		Amount:        amount,
 		Status:        "pending",
@@ -177,11 +178,23 @@ func (s *PaymentService) HandleWebhook(payload []byte, sigHeader string) error {
 
 	switch event.Type {
 	case "checkout.session.completed":
-		var session stripe.CheckoutSession
-		if err := json.Unmarshal(event.Data.Raw, &session); err != nil {
+		var sess stripe.CheckoutSession
+		if err := json.Unmarshal(event.Data.Raw, &sess); err != nil {
 			return err
 		}
-		return s.fulfillOrder(&session)
+		return s.fulfillOrder(&sess)
+	case "customer.subscription.updated":
+		var sub stripe.Subscription
+		if err := json.Unmarshal(event.Data.Raw, &sub); err != nil {
+			return err
+		}
+		return s.handleSubscriptionUpdated(&sub)
+	case "customer.subscription.deleted":
+		var sub stripe.Subscription
+		if err := json.Unmarshal(event.Data.Raw, &sub); err != nil {
+			return err
+		}
+		return s.handleSubscriptionDeleted(&sub)
 	}
 
 	return nil
@@ -206,7 +219,7 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 	if orderType == "recharge" {
 		amountStr := sess.Metadata["amount"]
 		var amount float64
-		fmt.Sscanf(amountStr, "%f", &amount)
+		_, _ = fmt.Sscanf(amountStr, "%f", &amount)
 		return s.subRepo.UpdateUserBalance(ctx, userID, amount, "recharge", "Credit Top-up via Stripe", orderNo)
 	}
 
@@ -220,19 +233,95 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 	if err != nil {
 		// Create new subscription if not exists
 		sub = &models.Subscription{
-			UserID: userID,
+			OrgID: userID,
 		}
 	}
 
 	sub.PlanID = planID
 	sub.Status = "active"
-	// Set period dates (simplified)
+	// Set period dates from stripe object if available, simplified otherwise
 	sub.CurrentPeriodStart = time.Now()
 	sub.CurrentPeriodEnd = time.Now().AddDate(0, 1, 0)
+
+	if sess.Customer != nil {
+		sub.StripeCustomerID = sess.Customer.ID
+	}
+	if sess.Subscription != nil {
+		sub.StripeSubscriptionID = sess.Subscription.ID
+	}
 
 	if sub.ID == uuid.Nil {
 		return s.subRepo.Create(ctx, sub)
 	}
+	return s.subRepo.Update(ctx, sub)
+}
+
+// CreatePortalSession creates a Stripe billing portal session.
+func (s *PaymentService) CreatePortalSession(ctx context.Context, userID uuid.UUID) (string, error) {
+	if !s.cfg.Enabled {
+		return "", fmt.Errorf("payments are currently disabled")
+	}
+
+	sub, err := s.subRepo.GetByUserID(ctx, userID)
+	if err != nil || sub.StripeCustomerID == "" {
+		return "", fmt.Errorf("no active subscription associated with this account")
+	}
+
+	params := &stripe.BillingPortalSessionParams{
+		Customer:  stripe.String(sub.StripeCustomerID),
+		ReturnURL: stripe.String(s.frontendURL + "/billing"),
+	}
+
+	sess, err := session.New(params)
+	if err != nil {
+		return "", err
+	}
+
+	return sess.URL, nil
+}
+
+func (s *PaymentService) handleSubscriptionUpdated(stripeSub *stripe.Subscription) error {
+	ctx := context.Background()
+	sub, err := s.subRepo.GetByStripeCustomerID(ctx, stripeSub.Customer.ID)
+	if err != nil {
+		s.logger.Warn("webhook updated subscription but no local sub found", zap.String("customer_id", stripeSub.Customer.ID))
+		return nil // Not tracking this customer
+	}
+
+	// Update the period end
+	sub.CurrentPeriodStart = time.Unix(stripeSub.CurrentPeriodStart, 0)
+	sub.CurrentPeriodEnd = time.Unix(stripeSub.CurrentPeriodEnd, 0)
+	sub.Status = string(stripeSub.Status)
+	sub.CancelAtPeriodEnd = stripeSub.CancelAtPeriodEnd
+
+	// Map the Stripe price to a local PlanID
+	if len(stripeSub.Items.Data) > 0 {
+		priceAmount := float64(stripeSub.Items.Data[0].Price.UnitAmount) / 100.0
+		plans, err := s.planRepo.GetActive(ctx)
+		if err == nil {
+			for _, p := range plans {
+				if p.PriceMonth == priceAmount {
+					sub.PlanID = p.ID
+					s.logger.Info("mapped stripe subscription to local plan", zap.String("plan_name", p.Name))
+					break
+				}
+			}
+		}
+	}
+
+	s.logger.Info("updated subscription via webhook", zap.String("sub_id", sub.ID.String()), zap.String("status", sub.Status))
+	return s.subRepo.Update(ctx, sub)
+}
+
+func (s *PaymentService) handleSubscriptionDeleted(stripeSub *stripe.Subscription) error {
+	ctx := context.Background()
+	sub, err := s.subRepo.GetByStripeCustomerID(ctx, stripeSub.Customer.ID)
+	if err != nil {
+		return nil
+	}
+
+	sub.Status = "canceled"
+	s.logger.Info("canceled subscription via webhook", zap.String("sub_id", sub.ID.String()))
 	return s.subRepo.Update(ctx, sub)
 }
 

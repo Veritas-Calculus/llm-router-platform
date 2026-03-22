@@ -89,6 +89,7 @@ var ValidCategories = map[string]bool{
 	"email":    true,
 	"backup":   true,
 	"payment":  true,
+	"oauth":    true,
 }
 
 // GetAllSettings returns all settings grouped by category.
@@ -112,6 +113,7 @@ var sensitiveFields = map[string][]string{
 	"email":   {"password"},
 	"backup":  {"accessKey", "secretKey"},
 	"payment": {"stripeSecretKey", "stripeWebhookSecret"},
+	"oauth":   {"githubClientSecret", "googleClientSecret"},
 }
 
 // UpdateSettings writes settings JSON for a given category.
@@ -216,6 +218,52 @@ func (s *Service) GetPaymentStripeConfig(ctx context.Context, env config.StripeC
 	}
 	if v, ok := parsed["stripeWebhookSecret"].(string); ok && v != "" {
 		res.WebhookSecret = v
+	}
+	return res
+}
+
+// GetOAuth2Config returns the OAuth2 config from DB settings, falling back to env.
+func (s *Service) GetOAuth2Config(ctx context.Context, env config.OAuth2Config) config.OAuth2Config {
+	all, err := s.GetAllSettingsDecrypted(ctx)
+	if err != nil {
+		return env
+	}
+
+	oauthJSON, ok := all["oauth"]
+	if !ok {
+		return env
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(oauthJSON), &parsed); err != nil {
+		return env
+	}
+
+	res := env
+	// GitHub
+	if v, ok := parsed["githubEnabled"].(bool); ok && v {
+		if id, ok := parsed["githubClientId"].(string); ok && id != "" {
+			res.GitHub.ClientID = id
+		}
+		if secret, ok := parsed["githubClientSecret"].(string); ok && secret != "" {
+			res.GitHub.ClientSecret = secret
+		}
+	} else if v, ok := parsed["githubEnabled"].(bool); ok && !v {
+		// Explicitly disabled in DB → clear env fallback
+		res.GitHub.ClientID = ""
+		res.GitHub.ClientSecret = ""
+	}
+	// Google
+	if v, ok := parsed["googleEnabled"].(bool); ok && v {
+		if id, ok := parsed["googleClientId"].(string); ok && id != "" {
+			res.Google.ClientID = id
+		}
+		if secret, ok := parsed["googleClientSecret"].(string); ok && secret != "" {
+			res.Google.ClientSecret = secret
+		}
+	} else if v, ok := parsed["googleEnabled"].(bool); ok && !v {
+		res.Google.ClientID = ""
+		res.Google.ClientSecret = ""
 	}
 	return res
 }

@@ -62,7 +62,7 @@ func TestUserModel(t *testing.T) {
 func TestAPIKeyModel(t *testing.T) {
 	userID := uuid.New()
 	apiKey := models.APIKey{
-		UserID:     userID,
+		ProjectID:  userID,
 		KeyHash:    "hashedkey",
 		KeyPrefix:  "llm_abc",
 		Name:       "Test Key",
@@ -71,7 +71,7 @@ func TestAPIKeyModel(t *testing.T) {
 		DailyLimit: 10000,
 	}
 
-	assert.Equal(t, userID, apiKey.UserID)
+	assert.Equal(t, userID, apiKey.ProjectID)
 	assert.Equal(t, "llm_abc", apiKey.KeyPrefix)
 	assert.Equal(t, "Test Key", apiKey.Name)
 	assert.True(t, apiKey.IsActive)
@@ -149,9 +149,9 @@ func TestAPIKeyWithExpiration(t *testing.T) {
 func TestMultipleAPIKeys(t *testing.T) {
 	userID := uuid.New()
 	keys := []models.APIKey{
-		{UserID: userID, Name: "Key 1", IsActive: true},
-		{UserID: userID, Name: "Key 2", IsActive: true},
-		{UserID: userID, Name: "Key 3", IsActive: false},
+		{ProjectID: userID, Name: "Key 1", IsActive: true},
+		{ProjectID: userID, Name: "Key 2", IsActive: true},
+		{ProjectID: userID, Name: "Key 3", IsActive: false},
 	}
 
 	var activeCount int

@@ -1,17 +1,19 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "llm-router.fullname" . }}-config
+  name: {{ include "llm-router.fullname" . }}
   labels:
     {{- include "llm-router.labels" . | nindent 4 }}
 data:
-  SERVER_PORT: {{ .Values.server.port | quote }}
-  GIN_MODE: {{ .Values.server.env.GIN_MODE | default "release" | quote }}
-  LOG_LEVEL: {{ .Values.server.env.LOG_LEVEL | default "info" | quote }}
-  DATABASE_DSN: {{ include "llm-router.databaseDSN" . | quote }}
-  REDIS_URL: {{ include "llm-router.redisURL" . | quote }}
-  ADMIN_EMAIL: {{ .Values.server.env.ADMIN_EMAIL | default "admin@example.com" | quote }}
-  {{- if .Values.langfuse.enabled }}
-  LANGFUSE_PUBLIC_KEY: {{ .Values.langfuse.publicKey | quote }}
-  LANGFUSE_HOST: {{ .Values.langfuse.host | quote }}
-  {{- end }}
+  SERVER_PORT: "8080"
+  GIN_MODE: {{ .Values.config.ginMode | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  DOMAIN: {{ .Values.config.domain | quote }}
+  CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
+  DB_HOST: {{ .Values.config.dbHost | quote }}
+  DB_PORT: {{ .Values.config.dbPort | quote }}
+  DB_USER: {{ .Values.config.dbUser | quote }}
+  DB_NAME: {{ .Values.config.dbName | quote }}
+  DB_SSLMODE: {{ .Values.config.dbSslMode | quote }}
+  REDIS_ADDR: {{ .Values.config.redisAddr | quote }}
+  REDIS_DB: {{ .Values.config.redisDb | quote }}

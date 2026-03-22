@@ -24,12 +24,27 @@ type UserRepo interface {
 	Search(ctx context.Context, query string) ([]models.User, error)
 }
 
+// OrganizationRepo defines the interface for organization data access.
+type OrganizationRepo interface {
+	Create(ctx context.Context, org *models.Organization) error
+	GetByID(ctx context.Context, id uuid.UUID) (*models.Organization, error)
+	Update(ctx context.Context, org *models.Organization) error
+}
+
+// ProjectRepo defines the interface for project data access.
+type ProjectRepo interface {
+	Create(ctx context.Context, project *models.Project) error
+	GetByID(ctx context.Context, id uuid.UUID) (*models.Project, error)
+	GetByOrgID(ctx context.Context, orgID uuid.UUID) ([]models.Project, error)
+	Update(ctx context.Context, project *models.Project) error
+}
+
 // APIKeyRepo defines the interface for API key data access.
 type APIKeyRepo interface {
 	Create(ctx context.Context, key *models.APIKey) error
 	GetByID(ctx context.Context, id uuid.UUID) (*models.APIKey, error)
 	GetByKeyHash(ctx context.Context, hash string) (*models.APIKey, error)
-	GetByUserID(ctx context.Context, userID uuid.UUID) ([]models.APIKey, error)
+	GetByProjectID(ctx context.Context, projectID uuid.UUID) ([]models.APIKey, error)
 	GetAll(ctx context.Context) ([]models.APIKey, error)
 	GetActive(ctx context.Context) ([]models.APIKey, error)
 	Update(ctx context.Context, key *models.APIKey) error
@@ -79,16 +94,16 @@ type UsageLogRepo interface {
 	Create(ctx context.Context, log *models.UsageLog) error
 	GetByID(ctx context.Context, id uuid.UUID) (*models.UsageLog, error)
 	Update(ctx context.Context, log *models.UsageLog) error
-	GetByUserIDAndTimeRange(ctx context.Context, userID uuid.UUID, start, end time.Time) ([]models.UsageLog, error)
+	GetByOrgOrProjectTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, start, end time.Time) ([]models.UsageLog, error)
 	GetByTimeRange(ctx context.Context, start, end time.Time) ([]models.UsageLog, error)
-	GetByUserIDAndTimeRangePaginated(ctx context.Context, userID uuid.UUID, start, end time.Time, limit, offset int) ([]models.UsageLog, error)
+	GetByOrgOrProjectPaginated(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, start, end time.Time, limit, offset int) ([]models.UsageLog, error)
 	GetByTimeRangePaginated(ctx context.Context, start, end time.Time, limit, offset int) ([]models.UsageLog, error)
 
 	// SQL-level aggregation
-	AggregateByTimeRange(ctx context.Context, userID *uuid.UUID, start, end time.Time) (*UsageSummaryRow, error)
-	AggregateDailyByTimeRange(ctx context.Context, userID *uuid.UUID, start, end time.Time) ([]DailyUsageRow, error)
-	AggregateByProviderByTimeRange(ctx context.Context, userID *uuid.UUID, start, end time.Time) ([]ProviderUsageRow, error)
-	AggregateByModelByTimeRange(ctx context.Context, userID *uuid.UUID, start, end time.Time) ([]ModelUsageRow, error)
+	AggregateByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) (*UsageSummaryRow, error)
+	AggregateDailyByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) ([]DailyUsageRow, error)
+	AggregateByProviderByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) ([]ProviderUsageRow, error)
+	AggregateByModelByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) ([]ModelUsageRow, error)
 }
 
 // HealthHistoryRepo defines the interface for health history data access.
@@ -101,10 +116,10 @@ type HealthHistoryRepo interface {
 // ConversationMemoryRepo defines the interface for conversation memory data access.
 type ConversationMemoryRepo interface {
 	Create(ctx context.Context, memory *models.ConversationMemory) error
-	GetByConversation(ctx context.Context, userID uuid.UUID, conversationID string) ([]models.ConversationMemory, error)
-	DeleteByConversation(ctx context.Context, userID uuid.UUID, conversationID string) error
-	DeleteOldestByConversation(ctx context.Context, userID uuid.UUID, conversationID string, count int) error
-	ListConversationIDs(ctx context.Context, userID uuid.UUID) ([]string, error)
+	GetByConversation(ctx context.Context, projectID uuid.UUID, conversationID string) ([]models.ConversationMemory, error)
+	DeleteByConversation(ctx context.Context, projectID uuid.UUID, conversationID string) error
+	DeleteOldestByConversation(ctx context.Context, projectID uuid.UUID, conversationID string, count int) error
+	ListConversationIDs(ctx context.Context, projectID uuid.UUID) ([]string, error)
 }
 
 // AlertRepo interface
@@ -135,7 +150,7 @@ type BudgetRepo interface {
 type TaskRepo interface {
 	Create(ctx context.Context, task *models.AsyncTask) error
 	GetByID(ctx context.Context, id uuid.UUID) (*models.AsyncTask, error)
-	ListByUserID(ctx context.Context, userID uuid.UUID, status string, limit, offset int) ([]models.AsyncTask, int64, error)
+	ListByProjectID(ctx context.Context, projectID uuid.UUID, status string, limit, offset int) ([]models.AsyncTask, int64, error)
 	UpdateProgress(ctx context.Context, id uuid.UUID, progress int) error
 	UpdateStatus(ctx context.Context, id uuid.UUID, updates map[string]interface{}) error
 	CancelByID(ctx context.Context, id uuid.UUID, completedAt *time.Time) error
@@ -184,6 +199,7 @@ type PlanRepo interface {
 type SubscriptionRepo interface {
 	Create(ctx context.Context, sub *models.Subscription) error
 	GetByUserID(ctx context.Context, userID uuid.UUID) (*models.Subscription, error)
+	GetByStripeCustomerID(ctx context.Context, customerID string) (*models.Subscription, error)
 	Update(ctx context.Context, sub *models.Subscription) error
 	Delete(ctx context.Context, id uuid.UUID) error
 
@@ -209,6 +225,16 @@ type ConfigRepo interface {
 	Delete(ctx context.Context, key string) error
 }
 
+// RoutingRuleRepo defines the interface for visual routing rules data access.
+type RoutingRuleRepo interface {
+	Create(ctx context.Context, rule *models.RoutingRule) error
+	GetByID(ctx context.Context, id uuid.UUID) (*models.RoutingRule, error)
+	GetAll(ctx context.Context) ([]models.RoutingRule, error)
+	GetActive(ctx context.Context) ([]models.RoutingRule, error)
+	Update(ctx context.Context, rule *models.RoutingRule) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
 // Compile-time interface satisfaction checks.
 var (
 	_ UserRepo               = (*UserRepository)(nil)
@@ -230,4 +256,5 @@ var (
 	_ SubscriptionRepo       = (*SubscriptionRepository)(nil)
 	_ TransactionRepo        = (*TransactionRepository)(nil)
 	_ ConfigRepo             = (*ConfigRepository)(nil)
+	_ RoutingRuleRepo        = (*RoutingRuleRepository)(nil)
 )

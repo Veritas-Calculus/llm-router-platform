@@ -1,0 +1,12 @@
+type IntegrationConfig {
+  id: ID!
+  name: String!
+  enabled: Boolean!
+  config: String!
+  updatedAt: DateTime!
+}
+
+input UpdateIntegrationInput {
+  enabled: Boolean!
+  config: String!
+}

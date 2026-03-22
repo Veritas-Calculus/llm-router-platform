@@ -7,9 +7,14 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 
+	"time"
+
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+
+	"llm-router-platform/internal/service/email"
 )
 
 // BalanceService handles user credits and transactions.
@@ -17,6 +22,8 @@ type BalanceService struct {
 	db       *gorm.DB
 	userRepo repository.UserRepo
 	txRepo   repository.TransactionRepo
+	redis    *redis.Client
+	emailSvc *email.Service
 	logger   *zap.Logger
 }
 
@@ -24,12 +31,16 @@ func NewBalanceService(
 	db *gorm.DB,
 	userRepo repository.UserRepo,
 	txRepo repository.TransactionRepo,
+	redisClient *redis.Client,
+	emailSvc *email.Service,
 	logger *zap.Logger,
 ) *BalanceService {
 	return &BalanceService{
 		db:       db,
 		userRepo: userRepo,
 		txRepo:   txRepo,
+		redis:    redisClient,
+		emailSvc: emailSvc,
 		logger:   logger,
 	}
 }
@@ -52,7 +63,7 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 		}
 
 		transaction := &models.Transaction{
-			UserID:      userID,
+			OrgID:       userID,
 			Type:        "deduction",
 			Amount:      -amount,
 			Balance:     user.Balance,
@@ -60,7 +71,30 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 			ReferenceID: referenceID,
 		}
 
-		return tx.Create(transaction).Error
+		err := tx.Create(transaction).Error
+		if err != nil {
+			return err
+		}
+
+		// Check for low balance alert (threshold $1.00)
+		if s.redis != nil && s.emailSvc != nil && user.Balance < 1.0 {
+			cacheKey := fmt.Sprintf("quota_warn:balance:%s", userID.String())
+			if err := s.redis.Get(ctx, cacheKey).Err(); err == redis.Nil { // Not warned yet
+				s.logger.Info("sending low balance warning email", zap.String("userID", userID.String()), zap.Float64("balance", user.Balance))
+
+				// Send warning asynchronously
+				go func(to, name string, currentBalance float64) {
+					if err := s.emailSvc.SendQuotaWarningEmail(to, name, fmt.Sprintf("$%.2f", currentBalance), "$1.00"); err != nil {
+						s.logger.Error("failed to send quota warning email", zap.Error(err))
+					}
+				}(user.Email, user.Name, user.Balance)
+
+				// Cache the warning state for 24 hours to prevent spam
+				s.redis.Set(ctx, cacheKey, "1", 24*time.Hour)
+			}
+		}
+
+		return nil
 	})
 }
 
@@ -82,7 +116,7 @@ func (s *BalanceService) AddBalance(ctx context.Context, userID uuid.UUID, amoun
 		}
 
 		transaction := &models.Transaction{
-			UserID:      userID,
+			OrgID:       userID,
 			Type:        txType,
 			Amount:      amount,
 			Balance:     user.Balance,

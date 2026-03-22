@@ -75,12 +75,20 @@ func (r *SubscriptionRepository) Create(ctx context.Context, sub *models.Subscri
 	return r.db.WithContext(ctx).Create(sub).Error
 }
 
+// GetByUserID retrieves a user's active subscription.
 func (r *SubscriptionRepository) GetByUserID(ctx context.Context, userID uuid.UUID) (*models.Subscription, error) {
 	var sub models.Subscription
-	if err := r.db.WithContext(ctx).Preload("Plan").First(&sub, "user_id = ?", userID).Error; err != nil {
+	if err := r.db.WithContext(ctx).Preload("Plan").First(&sub, "org_id = ?", userID).Error; err != nil {
 		return nil, err
 	}
 	return &sub, nil
+}
+
+// GetByStripeCustomerID retrieves a subscription by its associated Stripe Customer ID.
+func (r *SubscriptionRepository) GetByStripeCustomerID(ctx context.Context, customerID string) (*models.Subscription, error) {
+	var sub models.Subscription
+	err := r.db.WithContext(ctx).Where("stripe_customer_id = ?", customerID).First(&sub).Error
+	return &sub, err
 }
 
 func (r *SubscriptionRepository) Update(ctx context.Context, sub *models.Subscription) error {
@@ -107,7 +115,7 @@ func (r *SubscriptionRepository) GetOrderByNo(ctx context.Context, orderNo strin
 
 func (r *SubscriptionRepository) GetOrdersByUserID(ctx context.Context, userID uuid.UUID) ([]models.Order, error) {
 	var orders []models.Order
-	if err := r.db.WithContext(ctx).Where("user_id = ?", userID).Order("created_at DESC").Find(&orders).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("org_id = ?", userID).Order("created_at DESC").Find(&orders).Error; err != nil {
 		return nil, err
 	}
 	return orders, nil
@@ -130,7 +138,7 @@ func (r *SubscriptionRepository) UpdateUserBalance(ctx context.Context, userID u
 		}
 
 		transaction := &models.Transaction{
-			UserID:      userID,
+			OrgID:       userID, // Using user ID as org ID temporarily
 			Type:        txType,
 			Amount:      amount,
 			Balance:     user.Balance,
@@ -159,7 +167,7 @@ func (r *TransactionRepository) GetByUserID(ctx context.Context, userID uuid.UUI
 	var txs []models.Transaction
 	var total int64
 
-	query := r.db.WithContext(ctx).Model(&models.Transaction{}).Where("user_id = ?", userID)
+	query := r.db.WithContext(ctx).Model(&models.Transaction{}).Where("org_id = ?", userID)
 	
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err

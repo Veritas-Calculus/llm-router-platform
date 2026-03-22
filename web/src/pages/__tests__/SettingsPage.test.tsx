@@ -12,6 +12,11 @@ vi.mock('framer-motion', () => ({
     AnimatePresence: ({ children }: any) => <>{children}</>,
 }));
 
+vi.mock('@apollo/client/react', () => ({
+    useQuery: vi.fn(() => ({ data: null, loading: false })),
+    useMutation: vi.fn(() => [vi.fn(), { loading: false }]),
+}));
+
 // Mock auth store with admin user
 vi.mock('@/stores/authStore', () => ({
     useAuthStore: vi.fn(() => ({

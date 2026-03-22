@@ -1,151 +1,91 @@
-# ── LLM Router Platform — Helm Values ───────────────────────────────────
-# Production-ready defaults. Override per-environment via -f values-prod.yaml
-
 replicaCount: 2
 
 image:
-  repository: ghcr.io/your-org/llm-router-platform
+  repository: ghcr.io/veritas-calculus/llm-router-platform/server
   pullPolicy: IfNotPresent
-  tag: ""  # Defaults to Chart.appVersion
+  tag: "latest"
 
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# ── Server Configuration ────────────────────────────────────────────────
-server:
-  port: 8080
-  # Environment variables passed to the container
-  env:
-    GIN_MODE: release
-    LOG_LEVEL: info
-    JWT_SECRET: ""               # Required: set via --set or sealed-secret
-    ENCRYPTION_KEY: ""           # Required: set via --set or sealed-secret
-    ADMIN_EMAIL: admin@example.com
-    ADMIN_PASSWORD: "CHANGEME_SECRET"           # Required on first deploy
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
 
-# ── PostgreSQL ──────────────────────────────────────────────────────────
-postgresql:
-  # Set to false if using an external database
-  enabled: true
-  auth:
-    database: llm_router
-    username: llm_router
-    password: "CHANGEME_SECRET"                 # Required: set via --set or sealed-secret
-  primary:
-    persistence:
-      size: 10Gi
-  # External database (used when postgresql.enabled=false)
-  external:
-    host: ""
-    port: 5432
-    database: llm_router
-    username: ""
-    password: "CHANGEME_SECRET"
-    sslMode: require
+podAnnotations: {}
 
-# ── Redis ───────────────────────────────────────────────────────────────
-redis:
-  # Set to false if using an external Redis
-  enabled: true
-  auth:
-    password: "CHANGEME_SECRET"
-  master:
-    persistence:
-      size: 2Gi
-  # External Redis (used when redis.enabled=false)
-  external:
-    host: ""
-    port: 6379
-    password: "CHANGEME_SECRET"
+podSecurityContext: {}
+  # fsGroup: 2000
 
-# ── Langfuse (Optional) ────────────────────────────────────────────────
-langfuse:
-  enabled: false
-  publicKey: ""
-  secretKey: ""
-  host: "https://cloud.langfuse.com"
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 10001
+  capabilities:
+    drop:
+    - ALL
 
-# ── Sentry (Optional) ──────────────────────────────────────────────────
-sentry:
-  enabled: false
-  dsn: ""
-  environment: production
-  sampleRate: 1.0
-
-# ── Service ─────────────────────────────────────────────────────────────
 service:
   type: ClusterIP
-  port: 80
-  targetPort: 8080
+  port: 8080
 
-# ── Ingress ─────────────────────────────────────────────────────────────
 ingress:
   enabled: false
-  className: nginx
+  className: ""
   annotations: {}
-    # cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
-    - host: llm-router.example.com
+    - host: llm-gateway.local
       paths:
         - path: /
-          pathType: Prefix
+          pathType: ImplementationSpecific
   tls: []
-    # - secretName: llm-router-tls
-    #   hosts:
-    #     - llm-router.example.com
 
-# ── Resources ──────────────────────────────────────────────────────────
 resources:
-  requests:
-    cpu: 250m
-    memory: 256Mi
   limits:
-    cpu: "1"
+    cpu: 1000m
     memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
 
-# ── Autoscaling ─────────────────────────────────────────────────────────
 autoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 10
-  targetCPUUtilizationPercentage: 70
-  targetMemoryUtilizationPercentage: 80
+  targetCPUUtilizationPercentage: 80
 
-# ── Health Probes ───────────────────────────────────────────────────────
-probes:
-  liveness:
-    path: /health
-    initialDelaySeconds: 15
-    periodSeconds: 20
-    timeoutSeconds: 5
-  readiness:
-    path: /readyz
-    initialDelaySeconds: 5
-    periodSeconds: 10
-    timeoutSeconds: 3
-
-# ── Prometheus ServiceMonitor ───────────────────────────────────────────
-serviceMonitor:
-  enabled: false
-  interval: 30s
-  path: /metrics
-  labels: {}
-
-# ── Pod Configuration ──────────────────────────────────────────────────
 nodeSelector: {}
+
 tolerations: []
+
 affinity: {}
 
-podAnnotations: {}
-podSecurityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  fsGroup: 1000
+config:
+  ginMode: release
+  logLevel: info
+  domain: localhost:8080
+  corsOrigins: "http://localhost:5173,http://localhost:8080"
+  dbHost: postgres
+  dbPort: 5432
+  dbUser: postgres
+  dbName: llm_router
+  dbSslMode: disable
+  redisAddr: redis:6379
+  redisDb: 0
 
-containerSecurityContext:
-  allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
-  capabilities:
-    drop:
-      - ALL
+# Securely inject secrets (These should be replaced or managed by external secrets in production)
+secret:
+  jwtSecret: ""
+  adminPassword: ""
+  encryptionKey: ""
+  dbPassword: ""
+  redisPassword: ""
+
+serviceMonitor:
+  enabled: false
+  path: /metrics
+  interval: 10s
+  labels: {}

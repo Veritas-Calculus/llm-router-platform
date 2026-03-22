@@ -8,10 +8,12 @@ interface AuthState {
   isAuthenticated: boolean;
   isAdmin: boolean;
   adminView: boolean;
+  selectedOrgId: string | null;
   setAuth: (token: string, user: User) => void;
   logout: () => void;
   updateUser: (user: User) => void;
   toggleAdminView: () => void;
+  setSelectedOrgId: (orgId: string) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -22,6 +24,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isAdmin: false,
       adminView: false,
+      selectedOrgId: null,
       setAuth: (token: string, user: User) =>
         set({
           token,
@@ -37,11 +40,14 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
           isAdmin: false,
           adminView: false,
+          selectedOrgId: null,
         }),
       updateUser: (user: User) =>
         set({ user, isAdmin: user.role === 'admin' }),
       toggleAdminView: () =>
         set({ adminView: !get().adminView }),
+      setSelectedOrgId: (orgId: string) =>
+        set({ selectedOrgId: orgId }),
     }),
     {
       name: 'auth-storage',
@@ -56,6 +62,7 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         isAdmin: state.isAdmin,
         adminView: state.adminView,
+        selectedOrgId: state.selectedOrgId,
       }),
     }
   )

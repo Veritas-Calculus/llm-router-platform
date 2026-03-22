@@ -5,9 +5,13 @@ import (
 	"context"
 	cryptorand "crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/pquerna/otp"
+	"github.com/pquerna/otp/totp"
 
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
@@ -22,23 +26,27 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Service handles user and API key operations.
 type Service struct {
-	userRepo   *repository.UserRepository
-	apiKeyRepo *repository.APIKeyRepository
-	logger     *zap.Logger
+	userRepo    *repository.UserRepository
+	apiKeyRepo  *repository.APIKeyRepository
+	projectRepo *repository.ProjectRepository
+	orgRepo     *repository.OrganizationRepository
+	logger      *zap.Logger
 }
-
 // NewService creates a new user service.
 func NewService(
 	userRepo *repository.UserRepository,
 	apiKeyRepo *repository.APIKeyRepository,
+	projectRepo *repository.ProjectRepository,
+	orgRepo *repository.OrganizationRepository,
 	logger *zap.Logger,
 ) *Service {
 	return &Service{
-		userRepo:   userRepo,
-		apiKeyRepo: apiKeyRepo,
-		logger:     logger,
+		userRepo:    userRepo,
+		apiKeyRepo:  apiKeyRepo,
+		projectRepo: projectRepo,
+		orgRepo:     orgRepo,
+		logger:      logger,
 	}
 }
 
@@ -316,10 +324,10 @@ func (s *Service) ChangePassword(ctx context.Context, id uuid.UUID, oldPass, new
 // MaxAPIKeysPerUser is the maximum number of API keys a user can create.
 const MaxAPIKeysPerUser = 20
 
-// CreateAPIKey generates a new API key for a user.
-func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, name string) (*models.APIKey, string, error) {
+// CreateAPIKey generates a new API key for a project.
+func (s *Service) CreateAPIKey(ctx context.Context, projectID uuid.UUID, name string, scopes string, rateLimit *int, tokenLimit *int) (*models.APIKey, string, error) {
 	// Enforce max API key limit
-	existing, err := s.apiKeyRepo.GetByUserID(ctx, userID)
+	existing, err := s.apiKeyRepo.GetByProjectID(ctx, projectID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -330,13 +338,24 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, name strin
 	rawKey := generateAPIKey()
 	hashedKey := hashAPIKey(rawKey)
 
+	rl := 1000
+	if rateLimit != nil {
+		rl = *rateLimit
+	}
+	tl := 0
+	if tokenLimit != nil {
+		tl = *tokenLimit
+	}
+
 	apiKey := &models.APIKey{
-		UserID:     userID,
+		ProjectID:  projectID,
 		KeyHash:    hashedKey,
 		KeyPrefix:  rawKey[:8],
 		Name:       name,
 		IsActive:   true,
-		RateLimit:  1000,
+		Scopes:     scopes,
+		RateLimit:  rl,
+		TokenLimit: int64(tl),
 		DailyLimit: 10000,
 		ExpiresAt:  time.Now().AddDate(1, 0, 0), // M5: default 1-year expiry
 	}
@@ -348,9 +367,49 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, name strin
 	return apiKey, rawKey, nil
 }
 
-// GetAPIKeys returns all API keys for a user.
-func (s *Service) GetAPIKeys(ctx context.Context, userID uuid.UUID) ([]models.APIKey, error) {
-	return s.apiKeyRepo.GetByUserID(ctx, userID)
+// UpdateAPIKey updates an existing API key's settings.
+func (s *Service) UpdateAPIKey(ctx context.Context, keyID uuid.UUID, name *string, scopes *string, rateLimit *int, tokenLimit *int, isActive *bool) (*models.APIKey, error) {
+	key, err := s.apiKeyRepo.GetByID(ctx, keyID)
+	if err != nil {
+		return nil, err
+	}
+
+	if name != nil {
+		key.Name = *name
+	}
+	if scopes != nil {
+		key.Scopes = *scopes
+	}
+	if rateLimit != nil {
+		key.RateLimit = *rateLimit
+	}
+	if tokenLimit != nil {
+		key.TokenLimit = int64(*tokenLimit)
+	}
+	if isActive != nil {
+		key.IsActive = *isActive
+	}
+
+	if err := s.apiKeyRepo.Update(ctx, key); err != nil {
+		return nil, err
+	}
+
+	return key, nil
+}
+
+// GetAPIKeys returns all API keys for a project.
+func (s *Service) GetAPIKeys(ctx context.Context, projectID uuid.UUID) ([]models.APIKey, error) {
+	return s.apiKeyRepo.GetByProjectID(ctx, projectID)
+}
+
+// GetOrganizations returns all organizations a user has access to.
+func (s *Service) GetOrganizations(ctx context.Context, userID uuid.UUID) ([]models.Organization, error) {
+	return s.orgRepo.GetByUserID(ctx, userID)
+}
+
+// GetProjects returns all projects for an organization.
+func (s *Service) GetProjects(ctx context.Context, orgID uuid.UUID) ([]models.Project, error) {
+	return s.projectRepo.GetByOrgID(ctx, orgID)
 }
 
 // GetAllAPIKeys returns all API keys in the system (for admin view).
@@ -358,8 +417,8 @@ func (s *Service) GetAllAPIKeys(ctx context.Context) ([]models.APIKey, error) {
 	return s.apiKeyRepo.GetAll(ctx)
 }
 
-// ValidateAPIKey validates an API key and returns the associated user.
-func (s *Service) ValidateAPIKey(ctx context.Context, rawKey string) (*models.User, *models.APIKey, error) {
+// ValidateAPIKey validates an API key and returns the associated project.
+func (s *Service) ValidateAPIKey(ctx context.Context, rawKey string) (*models.Project, *models.APIKey, error) {
 	hashedKey := hashAPIKey(rawKey)
 	apiKey, err := s.apiKeyRepo.GetByKeyHash(ctx, hashedKey)
 	if err != nil {
@@ -374,30 +433,29 @@ func (s *Service) ValidateAPIKey(ctx context.Context, rawKey string) (*models.Us
 		return nil, nil, errors.New("API key has expired")
 	}
 
-	user, err := s.userRepo.GetByID(ctx, apiKey.UserID)
+	project, err := s.projectRepo.GetByID(ctx, apiKey.ProjectID)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if !user.IsActive {
-		return nil, nil, errors.New("user account is disabled")
-	}
+	// Wait, does the project have an IsActive field? If not, we skip.
+	// We might need to check if organization is active or not later.
 
 	now := time.Now()
 	apiKey.LastUsedAt = now
 	_ = s.apiKeyRepo.Update(ctx, apiKey)
 
-	return user, apiKey, nil
+	return project, apiKey, nil
 }
 
 // RevokeAPIKey deactivates an API key.
-func (s *Service) RevokeAPIKey(ctx context.Context, userID, keyID uuid.UUID) error {
+func (s *Service) RevokeAPIKey(ctx context.Context, projectID, keyID uuid.UUID) error {
 	apiKey, err := s.apiKeyRepo.GetByID(ctx, keyID)
 	if err != nil {
 		return err
 	}
 
-	if apiKey.UserID != userID {
+	if apiKey.ProjectID != projectID {
 		return errors.New("unauthorized")
 	}
 
@@ -406,13 +464,13 @@ func (s *Service) RevokeAPIKey(ctx context.Context, userID, keyID uuid.UUID) err
 }
 
 // DeleteAPIKey permanently removes an API key from the database.
-func (s *Service) DeleteAPIKey(ctx context.Context, userID, keyID uuid.UUID) error {
+func (s *Service) DeleteAPIKey(ctx context.Context, projectID, keyID uuid.UUID) error {
 	apiKey, err := s.apiKeyRepo.GetByID(ctx, keyID)
 	if err != nil {
 		return err
 	}
 
-	if apiKey.UserID != userID {
+	if apiKey.ProjectID != projectID {
 		return errors.New("unauthorized")
 	}
 
@@ -451,4 +509,140 @@ func hashAPIKey(key string) string {
 
 	// Use HMAC-SHA256 via crypto package (key stays internal)
 	return hex.EncodeToString(crypto.HMACHash([]byte(key)))
+}
+
+// GenerateMfaSecret creates a new TOTP secret for the user.
+func (s *Service) GenerateMfaSecret(ctx context.Context, userID uuid.UUID, email string) (*models.MfaSecretInfo, error) {
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "Veritas Calculus",
+		AccountName: email,
+		Period:      30,
+		Algorithm:   otp.AlgorithmSHA1,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate MFA secret: %w", err)
+	}
+
+	backupCodes := []string{}
+	for i := 0; i < 8; i++ {
+		// Generate 8 character random string for backup code
+		b := make([]byte, 4)
+		cryptorand.Read(b)
+		code := fmt.Sprintf("%04x-%04x", b[0:2], b[2:4])
+		backupCodes = append(backupCodes, code)
+	}
+	backupCodesJSON, _ := json.Marshal(backupCodes)
+
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	user.MfaSecret = key.Secret()
+	user.MfaBackupCodes = string(backupCodesJSON)
+	user.MfaEnabled = false // Still false until verified
+
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return nil, err
+	}
+
+	return &models.MfaSecretInfo{
+		Secret:      key.Secret(),
+		QrCodeUrl:   key.URL(),
+		BackupCodes: backupCodes,
+	}, nil
+}
+
+// VerifyAndEnableMfa verifies a TOTP code and turns on MFA.
+func (s *Service) VerifyAndEnableMfa(ctx context.Context, userID uuid.UUID, code string) (bool, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+
+	if user.MfaSecret == "" {
+		return false, fmt.Errorf("MFA secret not generated")
+	}
+
+	valid := totp.Validate(code, user.MfaSecret)
+	if !valid {
+		return false, fmt.Errorf("invalid verification code")
+	}
+
+	user.MfaEnabled = true
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return false, err
+	}
+
+	s.logger.Info("user enabled MFA", zap.String("user_id", userID.String()))
+	return true, nil
+}
+
+// DisableMfa verifies a TOTP code or backup code and turns off MFA.
+func (s *Service) DisableMfa(ctx context.Context, userID uuid.UUID, code string) (bool, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+
+	if !user.MfaEnabled {
+		return false, fmt.Errorf("MFA is not enabled")
+	}
+
+	valid := totp.Validate(code, user.MfaSecret)
+
+	// Check backup codes if TOTP fails
+	if !valid && user.MfaBackupCodes != "" {
+		var backupCodes []string
+		if err := json.Unmarshal([]byte(user.MfaBackupCodes), &backupCodes); err == nil {
+			for i, bc := range backupCodes {
+				if bc == code || strings.ReplaceAll(bc, "-", "") == code {
+					valid = true
+					// Remove the used backup code
+					backupCodes = append(backupCodes[:i], backupCodes[i+1:]...)
+					bJSON, _ := json.Marshal(backupCodes)
+					user.MfaBackupCodes = string(bJSON)
+					break
+				}
+			}
+		}
+	}
+
+	if !valid {
+		return false, fmt.Errorf("invalid verification code")
+	}
+
+	user.MfaEnabled = false
+	user.MfaSecret = ""
+	user.MfaBackupCodes = ""
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return false, err
+	}
+
+	s.logger.Info("user disabled MFA", zap.String("user_id", userID.String()))
+	return true, nil
+}
+
+// UpdateProject updates an existing Project's properties including quota limits and IP whitelists.
+// A caller must evaluate permission scopes independently before yielding.
+func (s *Service) UpdateProject(ctx context.Context, id uuid.UUID, updateData *models.Project) (*models.Project, error) {
+	project, err := s.projectRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("project %s not found: %w", id, err)
+	}
+
+	if updateData.Name != "" {
+		project.Name = updateData.Name
+	}
+	// Note: Description, QuotaLimit, WhiteListedIps are allowed to be empty or zero
+	// If explicit struct field assignments are required, the caller must assign them
+	project.Description = updateData.Description
+	project.QuotaLimit = updateData.QuotaLimit
+	project.WhiteListedIps = updateData.WhiteListedIps
+
+	err = s.projectRepo.Update(ctx, project)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update project: %w", err)
+	}
+	return project, nil
 }

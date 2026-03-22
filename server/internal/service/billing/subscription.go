@@ -48,7 +48,7 @@ func (s *SubscriptionService) GetUserSubscription(ctx context.Context, userID uu
 	}
 
 	newSub := &models.Subscription{
-		UserID:            userID,
+		OrgID:             userID,
 		PlanID:            freePlan.ID,
 		Status:            "active",
 		CurrentPeriodStart: time.Now(),
@@ -75,7 +75,7 @@ func (s *SubscriptionService) CheckQuota(ctx context.Context, userID uuid.UUID) 
 	}
 
 	// Calculate usage in current period
-	summary, err := s.usageRepo.AggregateByTimeRange(ctx, &userID, sub.CurrentPeriodStart, time.Now())
+	summary, err := s.usageRepo.AggregateByTimeRange(ctx, &userID, nil, nil, sub.CurrentPeriodStart, time.Now())
 	if err != nil {
 		return false, "unable to verify usage", err
 	}

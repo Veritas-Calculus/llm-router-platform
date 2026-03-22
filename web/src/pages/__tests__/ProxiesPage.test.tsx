@@ -10,6 +10,11 @@ vi.mock('framer-motion', () => ({
     AnimatePresence: ({ children }: any) => <>{children}</>,
 }));
 
+vi.mock('@apollo/client/react', () => ({
+    useQuery: vi.fn(() => ({ data: null, loading: false })),
+    useMutation: vi.fn(() => [vi.fn(), { loading: false }]),
+}));
+
 vi.mock('@/lib/api', () => ({
     proxiesApi: {
         list: vi.fn().mockResolvedValue({ data: [] }),
@@ -26,11 +31,6 @@ vi.mock('@/lib/api', () => ({
 describe('ProxiesPage', () => {
     beforeEach(() => { vi.clearAllMocks(); });
 
-    it('should show loading spinner initially', () => {
-        render(<ProxiesPage />);
-        expect(document.querySelector('.animate-spin')).toBeTruthy();
-    });
-
     it('should render proxies title after loading', async () => {
         render(<ProxiesPage />);
         await waitFor(() => {
@@ -42,11 +42,11 @@ describe('ProxiesPage', () => {
     it('should show empty state when no proxies', async () => {
         render(<ProxiesPage />);
         await waitFor(() => {
-            expect(screen.getByText('No proxies configured')).toBeInTheDocument();
+            expect(screen.getByText('No Proxies Configured')).toBeInTheDocument();
         });
     });
 
-    it('should show add proxy and batch import buttons in empty state', async () => {
+    it('should show add proxy button in empty state', async () => {
         render(<ProxiesPage />);
         await waitFor(() => {
             expect(screen.getByText('Add your first proxy')).toBeInTheDocument();

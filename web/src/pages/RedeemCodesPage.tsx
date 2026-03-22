@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { motion } from 'framer-motion';
@@ -76,7 +78,7 @@ function RedeemCodesPage() {
           <p className="mt-1 text-apple-gray-500">{t('redeem_codes.subtitle')}</p>
         </div>
         <button onClick={() => setShowForm(true)} className="btn-primary flex items-center gap-2">
-          <PlusIcon className="w-4 h-4" />
+          <PlusIcon className="w-5 h-5 mr-2" />
           {t('redeem_codes.generate')}
         </button>
       </div>

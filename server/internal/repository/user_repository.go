@@ -128,10 +128,10 @@ func (r *APIKeyRepository) GetByKeyHash(ctx context.Context, hash string) (*mode
 	return &key, nil
 }
 
-// GetByUserID retrieves all API keys for a user.
-func (r *APIKeyRepository) GetByUserID(ctx context.Context, userID uuid.UUID) ([]models.APIKey, error) {
+// GetByProjectID retrieves all API keys for a project.
+func (r *APIKeyRepository) GetByProjectID(ctx context.Context, projectID uuid.UUID) ([]models.APIKey, error) {
 	var keys []models.APIKey
-	if err := r.db.WithContext(ctx).Where("user_id = ?", userID).Find(&keys).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("project_id = ?", projectID).Find(&keys).Error; err != nil {
 		return nil, err
 	}
 	return keys, nil

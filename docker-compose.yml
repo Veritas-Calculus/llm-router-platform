@@ -1,11 +1,13 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: llm-router-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
       POSTGRES_DB: ${DB_NAME:-llm_router}
+    ports:
+      - "5432:5432"
     # Removed ports mapping for production security
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -66,7 +68,7 @@ services:
     # Server port is now internal-only, proxied by web container
     environment:
       - SERVER_PORT=8080
-      - GIN_MODE=release
+      - GIN_MODE=debug
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=${DB_USER:-postgres}

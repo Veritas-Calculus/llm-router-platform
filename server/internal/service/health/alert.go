@@ -90,6 +90,10 @@ func (n *AlertNotifier) UpdateAlertConfig(ctx context.Context, config *models.Al
 
 	existing.IsEnabled = config.IsEnabled
 	existing.FailureThreshold = config.FailureThreshold
+	existing.ErrorRateThreshold = config.ErrorRateThreshold
+	existing.LatencyThresholdMs = config.LatencyThresholdMs
+	existing.BudgetThreshold = config.BudgetThreshold
+	existing.CooldownMinutes = config.CooldownMinutes
 	existing.WebhookURL = config.WebhookURL
 	existing.Email = config.Email
 

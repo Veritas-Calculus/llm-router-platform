@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { useState as useReactState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowPathIcon, CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon, ServerIcon, Cog6ToothIcon, CpuChipIcon, KeyIcon, GlobeAltIcon, BellSlashIcon } from '@heroicons/react/24/outline';
@@ -130,8 +132,9 @@ function HealthPage() {
                       <p className="text-sm text-apple-gray-500">{provider.last_check ? formatDate(provider.last_check) : 'Never'}</p>
                       <p className="text-xs text-apple-gray-400">Last checked</p>
                     </div>
-                    <button onClick={() => checkProvider(provider.id)} className="btn btn-ghost p-2" title="Check now">
-                      <ArrowPathIcon className="w-5 h-5" />
+                    <button onClick={() => checkProvider(provider.id)} className="btn btn-secondary text-sm px-3 py-1.5" title="Check now">
+                      <ArrowPathIcon className="w-4 h-4 mr-1" />
+                      Test
                     </button>
                   </div>
                 </div>
@@ -173,8 +176,9 @@ function HealthPage() {
                       <p className="text-sm text-apple-gray-500">{key.last_check ? formatDate(key.last_check) : 'Never'}</p>
                       <p className="text-xs text-apple-gray-400">Last checked</p>
                     </div>
-                    <button onClick={() => checkApiKey(key.id)} className="btn btn-ghost p-2" title="Check now">
-                      <ArrowPathIcon className="w-5 h-5" />
+                    <button onClick={() => checkApiKey(key.id)} className="btn btn-secondary text-sm px-3 py-1.5" title="Check now">
+                      <ArrowPathIcon className="w-4 h-4 mr-1" />
+                      Test
                     </button>
                   </div>
                 </div>
@@ -217,8 +221,9 @@ function HealthPage() {
                       <p className="text-sm font-medium text-apple-gray-900">{(proxy.success_rate * 100).toFixed(1)}%</p>
                       <p className="text-xs text-apple-gray-500">Success rate</p>
                     </div>
-                    <button onClick={() => checkProxy(proxy.id)} className="btn btn-ghost p-2" title="Check now">
-                      <ArrowPathIcon className="w-5 h-5" />
+                    <button onClick={() => checkProxy(proxy.id)} className="btn btn-secondary text-sm px-3 py-1.5" title="Check now">
+                      <ArrowPathIcon className="w-4 h-4 mr-1" />
+                      Test
                     </button>
                   </div>
                 </div>

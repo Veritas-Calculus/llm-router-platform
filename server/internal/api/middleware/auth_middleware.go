@@ -205,15 +205,15 @@ func (m *AuthMiddleware) APIKey() gin.HandlerFunc {
 			return
 		}
 
-		userObj, key, err := m.userService.ValidateAPIKey(c.Request.Context(), apiKey)
+		projectObj, key, err := m.userService.ValidateAPIKey(c.Request.Context(), apiKey)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
 
-		c.Set("user", userObj)
+		c.Set("project", projectObj)
 		c.Set("api_key", key)
-		c.Set("user_id", userObj.ID.String())
+		c.Set("project_id", projectObj.ID.String())
 		c.Next()
 	}
 }

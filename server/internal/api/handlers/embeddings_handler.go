@@ -3,10 +3,12 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"llm-router-platform/internal/models"
+	"llm-router-platform/internal/service/dlp"
 	"llm-router-platform/internal/service/provider"
 
 	"github.com/gin-gonic/gin"
@@ -35,22 +37,41 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 		EncodingFormat: req.EncodingFormat,
 	}
 
-	userObj := c.MustGet("user").(*models.User)
+	projectObj := c.MustGet("project").(*models.Project)
 	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	// === Data Loss Prevention (DLP) ===
+	if projectObj.DlpConfig != nil && projectObj.DlpConfig.IsEnabled {
+		rawBytes, _ := json.Marshal(req.Input)
+		rawStr := string(rawBytes)
+
+		switch projectObj.DlpConfig.Strategy {
+		case dlp.StrategyBlock:
+			if dlp.HasPII(rawStr, projectObj.DlpConfig) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Request blocked by Data Loss Prevention (DLP) policy due to sensitive information."})
+				return
+			}
+		case dlp.StrategyRedact:
+			scrubbedStr := dlp.ScrubText(rawStr, projectObj.DlpConfig)
+			var newContent interface{}
+			_ = json.Unmarshal([]byte(scrubbedStr), &newContent)
+			providerReq.Input = newContent
+		}
+	}
 
 	// Observability: Start Trace
 	reqID := c.GetHeader("X-Request-ID")
 	if reqID == "" {
 		reqID = uuid.New().String()
 	}
-	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "embeddings", userObj.ID.String(), "", map[string]interface{}{
+	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "embeddings", projectObj.ID.String(), "", map[string]interface{}{
 		"model":           req.Model,
 		"encoding_format": req.EncodingFormat,
 	})
 	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
-	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
+	if quotaErr := h.checkProjectQuota(c, projectObj); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error": gin.H{
 				"message": *quotaErr,
@@ -71,7 +92,7 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 		gen.EndWithError(err)
 		latency := time.Since(start)
 		usageLog := &models.UsageLog{
-			UserID:     userObj.ID,
+			ProjectID:   projectObj.ID,
 			APIKeyID:   userAPIKey.ID,
 			ProviderID: selectedProvider.ID,
 			ModelName:  req.Model,
@@ -101,7 +122,8 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 
 	latency := time.Since(start)
 	usageLog := &models.UsageLog{
-		UserID:         userObj.ID,
+		ProjectID:      projectObj.ID,
+		Channel:        userAPIKey.Channel,
 		APIKeyID:       userAPIKey.ID,
 		ProviderID:     selectedProvider.ID,
 		ModelName:      req.Model,

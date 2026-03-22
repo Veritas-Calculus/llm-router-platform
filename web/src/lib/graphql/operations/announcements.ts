@@ -56,3 +56,20 @@ export const DELETE_ANNOUNCEMENT = gql`
     deleteAnnouncement(id: $id)
   }
 `;
+
+// ── User-facing: Active Announcements ─────────────────────────────
+
+export const ACTIVE_ANNOUNCEMENTS_QUERY = gql`
+  query ActiveAnnouncements {
+    activeAnnouncements {
+      id
+      title
+      content
+      type
+      priority
+      startsAt
+      endsAt
+      createdAt
+    }
+  }
+`;

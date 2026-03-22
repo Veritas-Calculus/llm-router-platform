@@ -98,7 +98,7 @@ function UsersPage() {
                 </form>
             </div>
 
-            <div className="card overflow-hidden">
+            <div className="card overflow-x-auto">
                 <table className="w-full">
                     <thead>
                         <tr className="border-b border-apple-gray-200">
@@ -171,9 +171,10 @@ function UsersPage() {
                                         <div className="relative" ref={openMenuId === user.id ? menuRef : undefined} onClick={(e) => e.stopPropagation()}>
                                             <button
                                                 onClick={() => setOpenMenuId(openMenuId === user.id ? null : user.id)}
-                                                className="p-1.5 rounded-lg text-apple-gray-400 hover:text-apple-gray-700 hover:bg-apple-gray-100 transition-colors"
+                                                className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-apple-gray-500 hover:text-apple-gray-700 hover:bg-apple-gray-100 transition-colors text-sm"
                                             >
-                                                <EllipsisVerticalIcon className="w-5 h-5" />
+                                                <EllipsisVerticalIcon className="w-4 h-4" />
+                                                Actions
                                             </button>
                                             <AnimatePresence>
                                                 {openMenuId === user.id && (

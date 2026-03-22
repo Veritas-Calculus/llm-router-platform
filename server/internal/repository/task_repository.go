@@ -35,12 +35,12 @@ func (r *TaskRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Asy
 	return &task, nil
 }
 
-// ListByUserID returns tasks for a user with optional status filter and pagination.
-func (r *TaskRepository) ListByUserID(ctx context.Context, userID uuid.UUID, status string, limit, offset int) ([]models.AsyncTask, int64, error) {
+// ListByProjectID returns tasks for a user with optional status filter and pagination.
+func (r *TaskRepository) ListByProjectID(ctx context.Context, projectID uuid.UUID, status string, limit, offset int) ([]models.AsyncTask, int64, error) {
 	var tasks []models.AsyncTask
 	var total int64
 
-	query := r.db.WithContext(ctx).Where("user_id = ?", userID)
+	query := r.db.WithContext(ctx).Where("project_id = ?", projectID)
 	if status != "" {
 		query = query.Where("status = ?", status)
 	}

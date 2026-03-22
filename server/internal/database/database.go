@@ -48,8 +48,19 @@ func New(cfg *config.DatabaseConfig, log *zap.Logger) (*Database, error) {
 
 // Migrate runs database migrations.
 func (d *Database) Migrate() error {
-	return d.DB.AutoMigrate(
+	// Ensure required PostgreSQL extensions are loaded before AutoMigrate
+	// (pgvector is needed for SemanticCache HNSW indexes, pgcrypto for UUID generation)
+	for _, ext := range []string{"vector", "pgcrypto"} {
+		if err := d.DB.Exec("CREATE EXTENSION IF NOT EXISTS \"" + ext + "\"").Error; err != nil {
+			d.logger.Warn("could not create extension (non-fatal)", zap.String("extension", ext), zap.Error(err))
+		}
+	}
+
+	if err := d.DB.AutoMigrate(
 		&models.User{},
+		&models.Organization{},
+		&models.OrganizationMember{},
+		&models.Project{},
 		&models.APIKey{},
 		&models.Provider{},
 		&models.Model{},
@@ -76,7 +87,29 @@ func (d *Database) Migrate() error {
 		&models.Coupon{},
 		&models.Document{},
 		&models.PasswordResetToken{},
-	)
+		&models.ErrorLog{},
+		&models.IntegrationConfig{},
+		&models.RoutingRule{},
+		&models.SemanticCache{},
+		&models.IdentityProvider{},
+		&models.WebhookEndpoint{},
+		&models.WebhookDelivery{},
+		&models.PromptTemplate{},
+		&models.PromptVersion{},
+		&models.CacheConfig{},
+		&models.NotificationChannel{},
+		&models.BackupRecord{},
+	); err != nil {
+		return err
+	}
+
+	// Create HNSW index on SemanticCache.embedding via raw SQL
+	// (GORM cannot generate valid USING hnsw syntax)
+	if err := d.DB.Exec(`CREATE INDEX IF NOT EXISTS idx_semantic_caches_embedding ON semantic_caches USING hnsw (embedding vector_cosine_ops)`).Error; err != nil {
+		d.logger.Warn("could not create HNSW index on semantic_caches (pgvector may be unavailable, semantic caching will be disabled)", zap.Error(err))
+	}
+
+	return nil
 }
 
 // Close closes the database connection.
@@ -249,6 +282,8 @@ func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
 		} else {
 			d.logger.Info("admin user already exists, password matches", zap.String("email", cfg.Email))
 		}
+		// Back-fill org+project if missing (admin was created before this logic existed)
+		d.ensureDefaultOrgProject(&existing)
 		return nil
 	}
 
@@ -272,8 +307,44 @@ func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
 		return err
 	}
 
+	// Auto-create default org+project for new admin (same as register flow)
+	d.ensureDefaultOrgProject(admin)
+
 	d.logger.Info("default admin user created", zap.String("email", cfg.Email))
 	return nil
+}
+
+// ensureDefaultOrgProject creates a default Organization, Project, and membership
+// for a user if they don't already belong to any organization.
+func (d *Database) ensureDefaultOrgProject(user *models.User) {
+	var count int64
+	d.DB.Model(&models.OrganizationMember{}).Where("user_id = ?", user.ID).Count(&count)
+	if count > 0 {
+		return // user already has an org
+	}
+
+	orgName := "Default Org"
+	if user.Name != "" {
+		orgName = user.Name + "'s Org"
+	}
+
+	org := models.Organization{Name: orgName, OwnerID: user.ID}
+	if err := d.DB.Create(&org).Error; err != nil {
+		d.logger.Error("failed to create default org for admin", zap.Error(err))
+		return
+	}
+
+	d.DB.Create(&models.OrganizationMember{OrgID: org.ID, UserID: user.ID, Role: "OWNER"})
+	d.DB.Create(&models.Project{OrgID: org.ID, Name: "Default", Description: "Auto-created project"})
+
+	// Grant welcome credit
+	if user.Balance == 0 {
+		user.Balance = 5.0
+		d.DB.Model(user).UpdateColumn("balance", 5.0)
+		d.DB.Create(&models.Transaction{OrgID: org.ID, Type: "recharge", Amount: 5.0, Balance: 5.0, Description: "Welcome credit", Currency: "USD"})
+	}
+
+	d.logger.Info("created default org+project for user", zap.String("email", user.Email), zap.String("orgId", org.ID.String()))
 }
 
 // CleanupOldHealthHistory removes health history records older than the specified duration.

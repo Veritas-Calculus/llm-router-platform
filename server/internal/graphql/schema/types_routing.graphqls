@@ -1,0 +1,44 @@
+# types_routing.graphqls
+
+type RoutingRule {
+    id: ID!
+    name: String!
+    description: String!
+    modelPattern: String!
+    targetProviderId: ID!
+    fallbackProviderId: ID
+    priority: Int!
+    isEnabled: Boolean!
+    createdAt: DateTime!
+    updatedAt: DateTime!
+    
+    targetProvider: Provider
+    fallbackProvider: Provider
+}
+
+type RoutingRuleList {
+    data: [RoutingRule!]!
+    total: Int!
+    page: Int!
+    pageSize: Int!
+}
+
+input CreateRoutingRuleInput {
+    name: String!
+    description: String
+    modelPattern: String!
+    targetProviderId: ID!
+    fallbackProviderId: ID
+    priority: Int!
+    isEnabled: Boolean!
+}
+
+input UpdateRoutingRuleInput {
+    name: String
+    description: String
+    modelPattern: String
+    targetProviderId: ID
+    fallbackProviderId: ID
+    priority: Int
+    isEnabled: Boolean
+}

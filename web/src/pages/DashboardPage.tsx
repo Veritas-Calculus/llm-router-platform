@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowTrendingUpIcon,
@@ -22,6 +25,8 @@ import {
 } from 'recharts';
 import { useAuthStore } from '@/stores/authStore';
 import { useDashboard } from '@/hooks/useDashboard';
+
+/* ── Admin Dashboard ── */
 
 interface StatCardProps {
   title: string;
@@ -54,7 +59,7 @@ function StatCard({ title, value, subtitle, icon: Icon, color, trend }: StatCard
           {subtitle && <p className="text-sm text-apple-gray-400 mt-1">{subtitle}</p>}
           {trend && (
             <p className={`text-xs mt-1 ${trend.value >= 0 ? 'text-apple-green' : 'text-apple-red'}`}>
-              {trend.value >= 0 ? '↑' : '↓'} {Math.abs(trend.value)}% {trend.label}
+              {trend.value >= 0 ? '+' : '-'} {Math.abs(trend.value)}% {trend.label}
             </p>
           )}
         </div>
@@ -76,6 +81,17 @@ const tooltipStyle = {
 function DashboardPage() {
   const { user, adminView, isAdmin } = useAuthStore();
   const showAdminDashboard = isAdmin && adminView;
+  const [channelFilter, setChannelFilter] = useState('');
+  const [debouncedChannel, setDebouncedChannel] = useState('');
+
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedChannel(channelFilter);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [channelFilter]);
+
   const {
     stats,
     chartData,
@@ -86,9 +102,11 @@ function DashboardPage() {
     formatNumber,
     formatTokens,
     COLORS,
-  } = useDashboard();
+  } = useDashboard({
+    channel: debouncedChannel || undefined
+  });
 
-  if (loading) {
+  if (loading && !stats) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-apple-blue" />
@@ -98,18 +116,31 @@ function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-apple-gray-900">Dashboard</h1>
           <p className="text-apple-gray-500 mt-1">Overview of your LLM usage and performance</p>
         </div>
-        <div className="text-right">
-          <p className="text-sm text-apple-gray-500">Last updated</p>
-          <p className="text-sm font-medium text-apple-gray-700">
-            {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-          </p>
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Filter by channel..."
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value)}
+              className="pl-3 pr-4 py-2 text-sm border border-apple-gray-200 rounded-apple-lg focus:outline-none focus:ring-2 focus:ring-apple-blue/50 focus:border-apple-blue transition-shadow bg-white w-48"
+            />
+          </div>
+          <div className="text-right whitespace-nowrap hidden sm:block">
+            <p className="text-sm text-apple-gray-500">Last updated</p>
+            <p className="text-sm font-medium text-apple-gray-700">
+              {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          </div>
         </div>
       </div>
+
+
 
       {/* Quota Warnings */}
       {user && (user.monthly_budget_usd! > 0 || user.monthly_token_limit! > 0 || user.balance !== undefined) && (

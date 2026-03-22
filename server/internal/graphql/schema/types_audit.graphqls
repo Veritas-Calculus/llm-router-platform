@@ -1,0 +1,17 @@
+type AuditLog {
+  id: ID!
+  createdAt: DateTime!
+  action: String!
+  actorId: ID!
+  targetId: ID!
+  ip: String!
+  userAgent: String!
+  detail: String!
+}
+
+type AuditLogConnection {
+  data: [AuditLog!]!
+  total: Int!
+  page: Int!
+  pageSize: Int!
+}

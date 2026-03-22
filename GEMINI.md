@@ -115,6 +115,6 @@ From the project root:
 
 ## User-Specific Context
 - **API Base:** The server runs on port `8080` by default.
-- **Admin Default:** `admin@example.com` / `admin123` (configurable via env).
+- **Admin Default:** `admin@example.com` / `admin@example.com` (configurable via env).
 - **LLM Compatibility:** Supports OpenAI, Claude, and Gemini providers out of the box.
 - **GraphQL Playground:** Available at `/graphql` in non-release mode.

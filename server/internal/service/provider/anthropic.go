@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -70,7 +69,12 @@ func (c *AnthropicClient) Chat(ctx context.Context, req *ChatRequest) (*ChatResp
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, errors.New(string(respBody))
+		return nil, &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       respBody,
+			Message:    "Anthropic API error",
+		}
 	}
 
 	var anthropicResp struct {
@@ -198,7 +202,12 @@ func (c *AnthropicClient) StreamChat(ctx context.Context, req *ChatRequest) (<-c
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		return nil, errors.New(string(respBody))
+		return nil, &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       respBody,
+			Message:    "Anthropic API error",
+		}
 	}
 
 	chunks := make(chan StreamChunk)

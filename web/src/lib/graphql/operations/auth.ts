@@ -7,7 +7,7 @@ export const LOGIN = gql`
     login(input: $input) {
       token
       refreshToken
-      user { id email name role isActive }
+      user { id email name role isActive mfaEnabled }
     }
   }
 `;
@@ -17,7 +17,7 @@ export const REGISTER = gql`
     register(input: $input) {
       token
       refreshToken
-      user { id email name role isActive }
+      user { id email name role isActive mfaEnabled }
     }
   }
 `;
@@ -27,7 +27,7 @@ export const REFRESH_TOKEN = gql`
     refreshToken {
       token
       refreshToken
-      user { id email name role isActive }
+      user { id email name role isActive mfaEnabled }
     }
   }
 `;
@@ -59,13 +59,46 @@ export const CHANGE_PASSWORD = gql`
 export const UPDATE_PROFILE = gql`
   mutation UpdateProfile($input: UpdateProfileInput!) {
     updateProfile(input: $input) {
-      id email name role isActive
+      id email name role isActive mfaEnabled
     }
   }
 `;
 
 export const ME = gql`
   query Me {
-    me { id email name role isActive createdAt }
+    me { id email name role isActive mfaEnabled createdAt }
+  }
+`;
+
+export const REGISTRATION_MODE = gql`
+  query RegistrationMode {
+    registrationMode {
+      mode
+      inviteCodeRequired
+    }
+  }
+`;
+
+// -- MFA Operations --
+
+export const GENERATE_MFA_SECRET = gql`
+  mutation GenerateMfaSecret {
+    generateMfaSecret {
+      secret
+      qrCodeUrl
+      backupCodes
+    }
+  }
+`;
+
+export const VERIFY_AND_ENABLE_MFA = gql`
+  mutation VerifyAndEnableMfa($code: String!) {
+    verifyAndEnableMfa(code: $code)
+  }
+`;
+
+export const DISABLE_MFA = gql`
+  mutation DisableMfa($code: String!) {
+    disableMfa(code: $code)
   }
 `;

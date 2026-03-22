@@ -56,7 +56,7 @@ func TestCostCalculation(t *testing.T) {
 
 func TestUsageLogModel(t *testing.T) {
 	log := models.UsageLog{
-		UserID:         uuid.New(),
+		ProjectID:         uuid.New(),
 		APIKeyID:       uuid.New(),
 		ProviderID:     uuid.New(),
 		RequestTokens:  100,

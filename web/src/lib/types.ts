@@ -37,15 +37,37 @@ export interface User {
   monthly_budget_usd?: number;
   balance?: number;
   created_at?: string;
+  mfaEnabled?: boolean;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  billing_limit: number;
+  created_at: string;
+}
+
+export interface Project {
+  id: string;
+  org_id: string;
+  name: string;
+  description: string;
+  quota_limit: number;
+  whiteListedIps?: string;
+  created_at: string;
 }
 
 export interface ApiKey {
   id: string;
+  project_id: string;
+  channel: string;
   name: string;
   key: string;
   key_prefix: string;
   is_active: boolean;
+  scopes?: string;
   rate_limit: number;
+  token_limit: number;
   daily_limit: number;
   expires_at: string | null;
   last_used_at: string | null;
@@ -334,4 +356,26 @@ export interface UserDetail {
     success_rate: number;
     error_count: number;
   };
+}
+
+export interface RoutingRule {
+	id: string;
+	name: string;
+	description?: string;
+	modelPattern: string;
+	targetProviderId: string;
+	fallbackProviderId?: string | null;
+	priority: number;
+	isEnabled: boolean;
+	createdAt: string;
+	targetProvider?: {
+		id: string;
+		name: string;
+		isActive: boolean;
+	};
+	fallbackProvider?: {
+		id: string;
+		name: string;
+		isActive: boolean;
+	};
 }

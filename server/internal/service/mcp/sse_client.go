@@ -62,7 +62,7 @@ func (c *SSEClient) Connect(ctx context.Context) error {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return fmt.Errorf("failed to connect to SSE: status %d", resp.StatusCode)
 	}
 
@@ -95,7 +95,7 @@ func (c *SSEClient) Close() error {
 }
 
 func (c *SSEClient) listen(body io.ReadCloser, endpointFound chan bool) {
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	defer c.wg.Done()
 
 	scanner := bufio.NewScanner(body)
@@ -196,7 +196,7 @@ func (c *SSEClient) sendRequest(ctx context.Context, method string, params inter
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("POST request failed: status %d", resp.StatusCode)

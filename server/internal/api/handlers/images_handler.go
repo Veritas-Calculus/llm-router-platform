@@ -43,7 +43,7 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 		ResponseFormat: req.ResponseFormat,
 	}
 
-	userObj := c.MustGet("user").(*models.User)
+	projectObj := c.MustGet("project").(*models.Project)
 	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 
 	// Observability: Start Trace
@@ -51,7 +51,7 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 	if reqID == "" {
 		reqID = uuid.New().String()
 	}
-	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "generate_image", userObj.ID.String(), "", map[string]interface{}{
+	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "generate_image", projectObj.ID.String(), "", map[string]interface{}{
 		"model":           model,
 		"size":            req.Size,
 		"response_format": req.ResponseFormat,
@@ -59,7 +59,7 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
-	if quotaErr := h.checkUserQuota(c, userObj); quotaErr != nil {
+	if quotaErr := h.checkProjectQuota(c, projectObj); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error": gin.H{
 				"message": *quotaErr,
@@ -82,7 +82,7 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 		gen.EndWithError(err)
 		latency := time.Since(start)
 		usageLog := &models.UsageLog{
-			UserID:     userObj.ID,
+			ProjectID:   projectObj.ID,
 			APIKeyID:   userAPIKey.ID,
 			ProviderID: selectedProvider.ID,
 			ModelName:  model,
@@ -111,7 +111,7 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 
 	latency := time.Since(start)
 	usageLog := &models.UsageLog{
-		UserID:     userObj.ID,
+		ProjectID:   projectObj.ID,
 		APIKeyID:   userAPIKey.ID,
 		ProviderID: selectedProvider.ID,
 		ModelName:  model,

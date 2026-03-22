@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { motion } from 'framer-motion';
@@ -66,7 +68,7 @@ function AnnouncementsPage() {
           <p className="mt-1 text-apple-gray-500">{t('announcements.subtitle')}</p>
         </div>
         <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-          <PlusIcon className="w-4 h-4" />{t('announcements.create')}
+          <PlusIcon className="w-5 h-5 mr-2" />{t('announcements.create')}
         </button>
       </div>
 

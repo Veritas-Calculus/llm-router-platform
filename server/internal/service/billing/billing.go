@@ -66,7 +66,7 @@ func (s *Service) UpdateUsageTokens(ctx context.Context, logID uuid.UUID, reques
 	if s.redis != nil && err == nil && log.IsSuccess {
 		now := time.Now()
 		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
-		key := fmt.Sprintf("billing:usage:%s:%s", log.UserID.String(), monthStr)
+		key := fmt.Sprintf("billing:usage:%s:%s", log.ProjectID.String(), monthStr)
 
 		pipe := s.redis.Pipeline()
 		pipe.HIncrBy(ctx, key, "total_tokens", int64(log.TotalTokens))
@@ -93,7 +93,7 @@ func (s *Service) RecordUsage(ctx context.Context, log *models.UsageLog) error {
 	if s.redis != nil && err == nil {
 		now := time.Now()
 		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
-		key := fmt.Sprintf("billing:usage:%s:%s", log.UserID.String(), monthStr)
+		key := fmt.Sprintf("billing:usage:%s:%s", log.ProjectID.String(), monthStr)
 
 		pipe := s.redis.Pipeline()
 		pipe.HIncrBy(ctx, key, "total_requests", 1)
@@ -125,16 +125,23 @@ type UsageSummary struct {
 	MCPErrorCount int64   `json:"mcp_error_count"`
 }
 
-// GetUsageSummary returns aggregated usage for a user.
-func (s *Service) GetUsageSummary(ctx context.Context, userID uuid.UUID, startTime, endTime time.Time) (*UsageSummary, error) {
+// GetUsageSummary returns aggregated usage for an organization or project.
+func (s *Service) GetUsageSummary(ctx context.Context, orgID uuid.UUID, projectID *uuid.UUID, channel *string, startTime, endTime time.Time) (*UsageSummary, error) {
 	now := time.Now()
 	isCurrentMonth := startTime.Year() == now.Year() && startTime.Month() == now.Month()
 
 	// Try Redis cache for current month
-	if s.redis != nil && isCurrentMonth {
-		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
-		key := fmt.Sprintf("billing:usage:%s:%s", userID.String(), monthStr)
+	key := fmt.Sprintf("billing:usage:org:%s:", orgID.String())
+	if projectID != nil {
+		key += "proj:" + projectID.String() + ":"
+	}
+	if channel != nil && *channel != "" {
+		key += "chan:" + *channel + ":"
+	}
+	monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
+	key += monthStr
 
+	if s.redis != nil && isCurrentMonth {
 		res, err := s.redis.HGetAll(ctx, key).Result()
 		if err == nil && len(res) > 0 {
 			reqs, _ := strconv.ParseInt(res["total_requests"], 10, 64)
@@ -150,7 +157,7 @@ func (s *Service) GetUsageSummary(ctx context.Context, userID uuid.UUID, startTi
 	}
 
 	// SQL aggregation — no full-row load
-	row, err := s.usageRepo.AggregateByTimeRange(ctx, &userID, startTime, endTime)
+	row, err := s.usageRepo.AggregateByTimeRange(ctx, &orgID, projectID, channel, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
@@ -170,9 +177,6 @@ func (s *Service) GetUsageSummary(ctx context.Context, userID uuid.UUID, startTi
 
 	// Backfill Redis cache
 	if s.redis != nil && isCurrentMonth {
-		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
-		key := fmt.Sprintf("billing:usage:%s:%s", userID.String(), monthStr)
-
 		pipe := s.redis.Pipeline()
 		pipe.HSet(ctx, key, "total_requests", summary.TotalRequests)
 		pipe.HSet(ctx, key, "total_tokens", summary.TotalTokens)
@@ -185,8 +189,8 @@ func (s *Service) GetUsageSummary(ctx context.Context, userID uuid.UUID, startTi
 }
 
 // GetSystemUsageSummary returns aggregated usage for all users (system-wide).
-func (s *Service) GetSystemUsageSummary(ctx context.Context, startTime, endTime time.Time) (*UsageSummary, error) {
-	row, err := s.usageRepo.AggregateByTimeRange(ctx, nil, startTime, endTime)
+func (s *Service) GetSystemUsageSummary(ctx context.Context, channel *string, startTime, endTime time.Time) (*UsageSummary, error) {
+	row, err := s.usageRepo.AggregateByTimeRange(ctx, nil, nil, channel, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
@@ -216,11 +220,11 @@ type DailyUsage struct {
 }
 
 // GetDailyUsage returns daily usage statistics (SQL aggregation).
-func (s *Service) GetDailyUsage(ctx context.Context, userID uuid.UUID, days int) ([]DailyUsage, error) {
+func (s *Service) GetDailyUsage(ctx context.Context, orgID uuid.UUID, projectID *uuid.UUID, channel *string, days int) ([]DailyUsage, error) {
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -days)
 
-	rows, err := s.usageRepo.AggregateDailyByTimeRange(ctx, &userID, startTime, endTime)
+	rows, err := s.usageRepo.AggregateDailyByTimeRange(ctx, &orgID, projectID, channel, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
@@ -233,11 +237,11 @@ func (s *Service) GetDailyUsage(ctx context.Context, userID uuid.UUID, days int)
 }
 
 // GetSystemDailyUsage returns daily usage statistics for all users (SQL aggregation).
-func (s *Service) GetSystemDailyUsage(ctx context.Context, days int) ([]DailyUsage, error) {
+func (s *Service) GetSystemDailyUsage(ctx context.Context, channel *string, days int) ([]DailyUsage, error) {
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -days)
 
-	rows, err := s.usageRepo.AggregateDailyByTimeRange(ctx, nil, startTime, endTime)
+	rows, err := s.usageRepo.AggregateDailyByTimeRange(ctx, nil, nil, channel, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
@@ -259,8 +263,8 @@ type ProviderUsage struct {
 }
 
 // GetUsageByProvider returns usage grouped by provider (SQL aggregation).
-func (s *Service) GetUsageByProvider(ctx context.Context, userID uuid.UUID, startTime, endTime time.Time) ([]ProviderUsage, error) {
-	rows, err := s.usageRepo.AggregateByProviderByTimeRange(ctx, &userID, startTime, endTime)
+func (s *Service) GetUsageByProvider(ctx context.Context, orgID uuid.UUID, projectID *uuid.UUID, channel *string, startTime, endTime time.Time) ([]ProviderUsage, error) {
+	rows, err := s.usageRepo.AggregateByProviderByTimeRange(ctx, &orgID, projectID, channel, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
@@ -273,8 +277,8 @@ func (s *Service) GetUsageByProvider(ctx context.Context, userID uuid.UUID, star
 }
 
 // GetSystemUsageByProvider returns usage grouped by provider for all users (SQL aggregation).
-func (s *Service) GetSystemUsageByProvider(ctx context.Context, startTime, endTime time.Time) ([]ProviderUsage, error) {
-	rows, err := s.usageRepo.AggregateByProviderByTimeRange(ctx, nil, startTime, endTime)
+func (s *Service) GetSystemUsageByProvider(ctx context.Context, channel *string, startTime, endTime time.Time) ([]ProviderUsage, error) {
+	rows, err := s.usageRepo.AggregateByProviderByTimeRange(ctx, nil, nil, channel, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
@@ -298,8 +302,8 @@ type ModelUsage struct {
 }
 
 // GetUsageByModel returns usage grouped by model name (SQL aggregation).
-func (s *Service) GetUsageByModel(ctx context.Context, userID uuid.UUID, startTime, endTime time.Time) ([]ModelUsage, error) {
-	rows, err := s.usageRepo.AggregateByModelByTimeRange(ctx, &userID, startTime, endTime)
+func (s *Service) GetUsageByModel(ctx context.Context, orgID uuid.UUID, projectID *uuid.UUID, channel *string, startTime, endTime time.Time) ([]ModelUsage, error) {
+	rows, err := s.usageRepo.AggregateByModelByTimeRange(ctx, &orgID, projectID, channel, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
@@ -320,8 +324,8 @@ func (s *Service) GetUsageByModel(ctx context.Context, userID uuid.UUID, startTi
 }
 
 // GetSystemUsageByModel returns usage grouped by model for all users (SQL aggregation).
-func (s *Service) GetSystemUsageByModel(ctx context.Context, startTime, endTime time.Time) ([]ModelUsage, error) {
-	rows, err := s.usageRepo.AggregateByModelByTimeRange(ctx, nil, startTime, endTime)
+func (s *Service) GetSystemUsageByModel(ctx context.Context, channel *string, startTime, endTime time.Time) ([]ModelUsage, error) {
+	rows, err := s.usageRepo.AggregateByModelByTimeRange(ctx, nil, nil, channel, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
@@ -342,11 +346,11 @@ func (s *Service) GetSystemUsageByModel(ctx context.Context, startTime, endTime 
 }
 
 // GetRecentUsage returns recent usage logs.
-func (s *Service) GetRecentUsage(ctx context.Context, userID uuid.UUID, limit int) ([]models.UsageLog, error) {
+func (s *Service) GetRecentUsage(ctx context.Context, orgID uuid.UUID, projectID *uuid.UUID, limit int) ([]models.UsageLog, error) {
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -30)
 
-	logs, err := s.usageRepo.GetByUserIDAndTimeRange(ctx, userID, startTime, endTime)
+	logs, err := s.usageRepo.GetByOrgOrProjectPaginated(ctx, &orgID, projectID, startTime, endTime, limit, 0)
 	if err != nil {
 		return nil, err
 	}

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { motion } from 'framer-motion';
@@ -56,10 +58,10 @@ function AdminDocsPage() {
   };
 
   const categoryColors: Record<string, string> = {
-    'getting-started': 'bg-blue-50 text-blue-700',
-    'api-reference': 'bg-purple-50 text-purple-700',
-    faq: 'bg-yellow-50 text-yellow-700',
-    general: 'bg-gray-100 text-gray-600',
+    'getting-started': 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+    'api-reference': 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+    faq: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+    general: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
   };
 
   return (
@@ -70,7 +72,7 @@ function AdminDocsPage() {
           <p className="mt-1 text-apple-gray-500">{t('documents.subtitle')}</p>
         </div>
         <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-          <PlusIcon className="w-4 h-4" />{t('documents.create')}
+          <PlusIcon className="w-5 h-5 mr-2" />{t('documents.create')}
         </button>
       </div>
 
@@ -155,16 +157,18 @@ function AdminDocsPage() {
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                      d.isPublished ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                      d.isPublished ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>
                       {d.isPublished ? t('documents.published') : t('documents.draft')}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right flex gap-2 justify-end">
-                    <button onClick={() => openEdit(d)} className="text-blue-600 hover:text-blue-700">
+                    <button onClick={() => openEdit(d)} className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1 text-sm">
                       <PencilSquareIcon className="w-4 h-4" />
+                      {t('common.edit')}
                     </button>
-                    <button onClick={() => handleDelete(d.id)} className="text-red-600 hover:text-red-700">
+                    <button onClick={() => handleDelete(d.id)} className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 flex items-center gap-1 text-sm">
                       <TrashIcon className="w-4 h-4" />
+                      {t('common.delete')}
                     </button>
                   </td>
                 </tr>

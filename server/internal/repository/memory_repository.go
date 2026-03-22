@@ -25,10 +25,10 @@ func (r *ConversationMemoryRepository) Create(ctx context.Context, memory *model
 }
 
 // GetByConversation retrieves messages for a conversation.
-func (r *ConversationMemoryRepository) GetByConversation(ctx context.Context, userID uuid.UUID, conversationID string) ([]models.ConversationMemory, error) {
+func (r *ConversationMemoryRepository) GetByConversation(ctx context.Context, projectID uuid.UUID, conversationID string) ([]models.ConversationMemory, error) {
 	var memories []models.ConversationMemory
 	if err := r.db.WithContext(ctx).
-		Where("user_id = ? AND conversation_id = ?", userID, conversationID).
+		Where("project_id = ? AND conversation_id = ?", projectID, conversationID).
 		Order("sequence ASC").
 		Find(&memories).Error; err != nil {
 		return nil, err
@@ -37,19 +37,19 @@ func (r *ConversationMemoryRepository) GetByConversation(ctx context.Context, us
 }
 
 // DeleteByConversation permanently removes all messages in a conversation.
-func (r *ConversationMemoryRepository) DeleteByConversation(ctx context.Context, userID uuid.UUID, conversationID string) error {
+func (r *ConversationMemoryRepository) DeleteByConversation(ctx context.Context, projectID uuid.UUID, conversationID string) error {
 	return r.db.WithContext(ctx).Unscoped().
-		Where("user_id = ? AND conversation_id = ?", userID, conversationID).
+		Where("project_id = ? AND conversation_id = ?", projectID, conversationID).
 		Delete(&models.ConversationMemory{}).Error
 }
 
 // DeleteOldestByConversation deletes the oldest N messages from a conversation.
-func (r *ConversationMemoryRepository) DeleteOldestByConversation(ctx context.Context, userID uuid.UUID, conversationID string, count int) error {
+func (r *ConversationMemoryRepository) DeleteOldestByConversation(ctx context.Context, projectID uuid.UUID, conversationID string, count int) error {
 	// Find the oldest N message IDs
 	var ids []uuid.UUID
 	if err := r.db.WithContext(ctx).
 		Model(&models.ConversationMemory{}).
-		Where("user_id = ? AND conversation_id = ?", userID, conversationID).
+		Where("project_id = ? AND conversation_id = ?", projectID, conversationID).
 		Order("sequence ASC").
 		Limit(count).
 		Pluck("id", &ids).Error; err != nil {
@@ -66,11 +66,11 @@ func (r *ConversationMemoryRepository) DeleteOldestByConversation(ctx context.Co
 }
 
 // ListConversationIDs returns all conversation IDs for a user.
-func (r *ConversationMemoryRepository) ListConversationIDs(ctx context.Context, userID uuid.UUID) ([]string, error) {
+func (r *ConversationMemoryRepository) ListConversationIDs(ctx context.Context, projectID uuid.UUID) ([]string, error) {
 	var ids []string
 	if err := r.db.WithContext(ctx).
 		Model(&models.ConversationMemory{}).
-		Where("user_id = ?", userID).
+		Where("project_id = ?", projectID).
 		Distinct("conversation_id").
 		Pluck("conversation_id", &ids).Error; err != nil {
 		return nil, err

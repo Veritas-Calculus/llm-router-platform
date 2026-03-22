@@ -1,0 +1,60 @@
+type IdentityProvider {
+    id: ID!
+    orgId: ID!
+    organization: Organization!
+    type: String!
+    name: String!
+    isActive: Boolean!
+    domains: String!
+    
+    oidcClientId: String
+    oidcIssuerUrl: String
+    
+    samlEntityId: String
+    samlSsoUrl: String
+    samlIdpCert: String
+    
+    enableJit: Boolean!
+    defaultRole: String!
+    groupRoleMapping: String!
+    
+    createdAt: DateTime!
+    updatedAt: DateTime!
+}
+
+input CreateIdentityProviderInput {
+    orgId: ID!
+    type: String!
+    name: String!
+    domains: String!
+    
+    oidcClientId: String
+    oidcClientSecret: String
+    oidcIssuerUrl: String
+    
+    samlEntityId: String
+    samlSsoUrl: String
+    samlIdpCert: String
+    
+    enableJit: Boolean
+    defaultRole: String
+    groupRoleMapping: String
+}
+
+input UpdateIdentityProviderInput {
+    name: String
+    isActive: Boolean
+    domains: String
+    
+    oidcClientId: String
+    oidcClientSecret: String
+    oidcIssuerUrl: String
+    
+    samlEntityId: String
+    samlSsoUrl: String
+    samlIdpCert: String
+    
+    enableJit: Boolean
+    defaultRole: String
+    groupRoleMapping: String
+}

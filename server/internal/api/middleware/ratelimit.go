@@ -106,6 +106,30 @@ func (l *PerKeyRateLimiter) Limit() gin.HandlerFunc {
 			}
 		}
 
+		// 3. Tokens Per Minute (TPM)
+		if apiKey.TokenLimit > 0 {
+			tpmKey := fmt.Sprintf("rl:tpm:%s:%d", apiKey.ID.String(), time.Now().Unix()/60)
+
+			// Fast GET to see if we've already exceeded TPM
+			currentStr := l.redis.Get(ctx, tpmKey).Val()
+			currentTokens, _ := strconv.ParseInt(currentStr, 10, 64)
+
+			c.Header("X-RateLimit-Tokens-Limit", strconv.FormatInt(apiKey.TokenLimit, 10))
+			c.Header("X-RateLimit-Tokens-Remaining", strconv.FormatInt(max(0, apiKey.TokenLimit-currentTokens), 10))
+
+			if currentTokens >= apiKey.TokenLimit {
+				c.Header("X-RateLimit-Tokens-Remaining", "0")
+				c.Header("Retry-After", "60")
+				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+					"error":       "API key token limit exceeded",
+					"limit":       apiKey.TokenLimit,
+					"window":      "1m",
+					"retry_after": 60,
+				})
+				return
+			}
+		}
+
 		c.Next()
 	}
 }

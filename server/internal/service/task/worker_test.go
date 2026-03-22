@@ -21,7 +21,7 @@ func noopProgress(_ int) {}
 func testAsyncTask(taskType, input string) *models.AsyncTask {
 	return &models.AsyncTask{
 		BaseModel: models.BaseModel{ID: uuid.New()},
-		UserID:    uuid.New(),
+		ProjectID: uuid.New(),
 		Type:      taskType,
 		Status:    "pending",
 		Input:     input,

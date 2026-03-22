@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   PlusIcon,
@@ -10,8 +10,17 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { useQuery, useMutation } from '@apollo/client/react';
-import { MY_API_KEYS, CREATE_API_KEY, REVOKE_API_KEY, DELETE_API_KEY } from '@/lib/graphql/operations';
-import type { ApiKey } from '@/lib/types';
+import { MY_API_KEYS, MY_ORGANIZATIONS, MY_PROJECTS, CREATE_API_KEY, REVOKE_API_KEY, DELETE_API_KEY, UPDATE_PROJECT } from '@/lib/graphql/operations';
+import type { ApiKey, Organization, Project } from '@/lib/types';
+
+const AVAILABLE_SCOPES = [
+  { id: 'all', label: 'All Permissions' },
+  { id: 'chat', label: 'Chat Completions' },
+  { id: 'embeddings', label: 'Embeddings' },
+  { id: 'images', label: 'Image Generation' },
+  { id: 'audio', label: 'Audio & TTS' },
+  { id: 'admin', label: 'Admin (Mgmt API)' },
+];
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -78,22 +87,64 @@ function ConfirmModal({
 
 function mapApiKey(d: any): ApiKey {
   return {
-    id: d.id, name: d.name, key: d.key || '', key_prefix: d.keyPrefix,
-    is_active: d.isActive, rate_limit: d.rateLimit, daily_limit: d.dailyLimit,
+    id: d.id, project_id: d.projectId, channel: d.channel, name: d.name, key: d.key || '', key_prefix: d.keyPrefix,
+    is_active: d.isActive, scopes: d.scopes, rate_limit: d.rateLimit, token_limit: d.tokenLimit, daily_limit: d.dailyLimit,
     created_at: d.createdAt, last_used_at: d.lastUsedAt, expires_at: d.expiresAt,
   };
 }
 
 function ApiKeysPage() {
-  const { data, loading, refetch } = useQuery<any>(MY_API_KEYS);
+  // Organization state
+  const { data: orgData } = useQuery<any>(MY_ORGANIZATIONS);
+  const orgs: Organization[] = useMemo(() => orgData?.myOrganizations || [], [orgData]);
+  const [selectedOrgId, setSelectedOrgId] = useState<string>('');
+
+  useEffect(() => {
+    if (orgs.length > 0 && !selectedOrgId) {
+      setSelectedOrgId(orgs[0].id);
+    }
+  }, [orgs, selectedOrgId]);
+
+  // Project state
+  const { data: projData } = useQuery<any>(MY_PROJECTS, {
+    variables: { orgId: selectedOrgId },
+    skip: !selectedOrgId,
+  });
+  const projects: Project[] = useMemo(() => projData?.myProjects || [], [projData]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+
+  useEffect(() => {
+    if (projects.length > 0) {
+      // If we swapped orgs and the old project doesn't exist in the new org
+      if (!selectedProjectId || !projects.find(p => p.id === selectedProjectId)) {
+        setSelectedProjectId(projects[0].id);
+      }
+    } else if (projects.length === 0 && selectedProjectId) {
+      setSelectedProjectId('');
+    }
+  }, [projects, selectedProjectId]);
+
+  const { data, loading, refetch } = useQuery<any>(MY_API_KEYS, {
+    variables: { projectId: selectedProjectId },
+    skip: !selectedProjectId,
+  });
   const apiKeys: ApiKey[] = useMemo(() => (data?.myApiKeys || []).map(mapApiKey), [data]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
+  const [selectedScopes, setSelectedScopes] = useState<string[]>(['all']);
+  const [newKeyRateLimit, setNewKeyRateLimit] = useState<string>('');
+  const [newKeyTokenLimit, setNewKeyTokenLimit] = useState<string>('');
   const [createdKey, setCreatedKey] = useState<ApiKey | null>(null);
   const [creating, setCreating] = useState(false);
   const [createKeyMut] = useMutation(CREATE_API_KEY);
   const [revokeKeyMut] = useMutation(REVOKE_API_KEY);
   const [deleteKeyMut] = useMutation(DELETE_API_KEY);
+  const [updateProjectMut] = useMutation(UPDATE_PROJECT);
+
+  // Project Settings Modal State
+  const [isProjectSettingsOpen, setIsProjectSettingsOpen] = useState(false);
+  const [projectWhiteListedIps, setProjectWhiteListedIps] = useState('');
+  const [updatingProject, setUpdatingProject] = useState(false);
 
   // Confirm modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -109,13 +160,33 @@ function ApiKeysPage() {
       return;
     }
 
+    if (!selectedProjectId) {
+      toast.error('Please select a project first');
+      return;
+    }
+
     setCreating(true);
     try {
-      const { data: result } = await createKeyMut({ variables: { name: newKeyName.trim() } });
+      const scopeStr = selectedScopes.includes('all') ? 'all' : selectedScopes.join(',');
+      
+      const variables: any = { 
+        projectId: selectedProjectId, 
+        name: newKeyName.trim(), 
+        scopes: scopeStr 
+      };
+      if (newKeyRateLimit) variables.rateLimit = parseInt(newKeyRateLimit, 10);
+      if (newKeyTokenLimit) variables.tokenLimit = parseInt(newKeyTokenLimit, 10);
+
+      const { data: result } = await createKeyMut({
+        variables
+      });
       const key = mapApiKey((result as any)?.createApiKey);
       setCreatedKey(key);
       await refetch();
       setNewKeyName('');
+      setSelectedScopes(['all']);
+      setNewKeyRateLimit('');
+      setNewKeyTokenLimit('');
       toast.success('API key created successfully');
     } catch {
       toast.error('Failed to create API key');
@@ -142,10 +213,10 @@ function ApiKeysPage() {
 
     try {
       if (type === 'revoke') {
-        await revokeKeyMut({ variables: { id: keyId } });
+        await revokeKeyMut({ variables: { projectId: selectedProjectId, id: keyId } });
         toast.success('API key revoked');
       } else {
-        await deleteKeyMut({ variables: { id: keyId } });
+        await deleteKeyMut({ variables: { projectId: selectedProjectId, id: keyId } });
         toast.success('API key deleted');
       }
       await refetch();
@@ -188,11 +259,62 @@ function ApiKeysPage() {
         <div>
           <h1 className="text-2xl font-semibold text-apple-gray-900">API Keys</h1>
           <p className="text-apple-gray-500 mt-1">Manage your API keys for accessing the LLM Router</p>
+          
+          <div className="mt-4 flex gap-4 items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-apple-gray-500">Organization</label>
+              <select
+                value={selectedOrgId}
+                onChange={(e) => setSelectedOrgId(e.target.value)}
+                className="input py-2 pl-3 pr-8 min-w-[220px]"
+              >
+                {orgs.map(org => (
+                  <option key={org.id} value={org.id}>{org.name}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-apple-gray-500">Project</label>
+              <select
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+                className="input py-2 pl-3 pr-8 min-w-[220px]"
+                disabled={!projects.length}
+              >
+                {projects.length === 0 && <option value="">No Projects Available</option>}
+                {projects.map(proj => (
+                  <option key={proj.id} value={proj.id}>{proj.name}</option>
+                ))}
+              </select>
+            </div>
+            {selectedProjectId && (
+              <button
+                onClick={() => {
+                  const p = projects.find(x => x.id === selectedProjectId);
+                  if (p) {
+                    setProjectWhiteListedIps(p.whiteListedIps || '');
+                    setIsProjectSettingsOpen(true);
+                  }
+                }}
+                className="btn btn-secondary px-3"
+                title="Project Settings"
+              >
+                Settings
+              </button>
+            )}
+          </div>
         </div>
-        <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
-          <PlusIcon className="w-5 h-5 mr-2" />
-          Create API Key
-        </button>
+        {apiKeys.length > 0 && (
+          <button 
+            onClick={() => setShowCreateModal(true)} 
+            className="btn btn-primary"
+            disabled={!selectedProjectId}
+          >
+            <PlusIcon className="w-5 h-5 mr-2" />
+            Create API Key
+          </button>
+        )}
       </div>
 
       {createdKey && (
@@ -256,6 +378,7 @@ function ApiKeysPage() {
                   <th className="table-header">Name</th>
                   <th className="table-header">Key</th>
                   <th className="table-header">Status</th>
+                  <th className="table-header">Scopes</th>
                   <th className="table-header">Limits</th>
                   <th className="table-header">Expires</th>
                   <th className="table-header">Created</th>
@@ -278,8 +401,22 @@ function ApiKeysPage() {
                       </span>
                     </td>
                     <td className="table-cell">
+                      <div className="flex flex-wrap gap-1">
+                        {key.scopes === 'all' ? (
+                          <span className="badge-purple">All</span>
+                        ) : (
+                          key.scopes?.split(',').map((s: string) => (
+                            <span key={s} className="px-2 py-0.5 rounded-full bg-apple-gray-100 text-apple-gray-600 text-xs border border-apple-gray-200">
+                              {s}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </td>
+                    <td className="table-cell">
                       <div className="text-xs text-apple-gray-600 space-y-1">
-                        <div><span className="text-apple-gray-400">Rate:</span> {key.rate_limit || 'Unlimited'}</div>
+                        <div><span className="text-apple-gray-400">RPM:</span> {key.rate_limit || 'Unlimited'}</div>
+                        <div><span className="text-apple-gray-400">TPM:</span> {key.token_limit || 'Unlimited'}</div>
                         <div><span className="text-apple-gray-400">Daily:</span> {key.daily_limit || 'Unlimited'}</div>
                       </div>
                     </td>
@@ -346,11 +483,82 @@ function ApiKeysPage() {
                 autoFocus
               />
             </div>
+
+            <div className="mb-6">
+              <label className="label mb-2">Permissions (Scopes)</label>
+              <div className="space-y-2 max-h-48 overflow-y-auto p-3 border border-apple-gray-200 rounded-apple bg-apple-gray-50/50">
+                {AVAILABLE_SCOPES.map(scope => {
+                  const isChecked = selectedScopes.includes(scope.id);
+                  const isAllChecked = selectedScopes.includes('all');
+                  const isDisabled = scope.id !== 'all' && isAllChecked;
+                  
+                  return (
+                    <label key={scope.id} className={`flex items-start gap-3 p-2 rounded-lg transition-colors ${isDisabled ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:bg-[var(--theme-bg-input)] cursor-pointer'}`}>
+                      <div className="pt-0.5">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 text-apple-blue border-apple-gray-300 rounded focus:ring-apple-blue transition-all"
+                          checked={isChecked || isDisabled}
+                          disabled={isDisabled}
+                          onChange={(e) => {
+                            if (scope.id === 'all') {
+                              setSelectedScopes(e.target.checked ? ['all'] : []);
+                            } else {
+                              if (e.target.checked) {
+                                setSelectedScopes([...selectedScopes.filter(s => s !== 'all'), scope.id]);
+                              } else {
+                                setSelectedScopes(selectedScopes.filter(s => s !== scope.id));
+                              }
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-apple-gray-900">{scope.label}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div>
+                <label htmlFor="rateLimit" className="label">
+                  Requests/Min (RPM)
+                </label>
+                <input
+                  type="number"
+                  id="rateLimit"
+                  value={newKeyRateLimit}
+                  onChange={(e) => setNewKeyRateLimit(e.target.value)}
+                  className="input mt-1 block w-full"
+                  placeholder="Unlimited (1000)"
+                />
+              </div>
+              <div>
+                <label htmlFor="tokenLimit" className="label">
+                  Tokens/Min (TPM)
+                </label>
+                <input
+                  type="number"
+                  id="tokenLimit"
+                  value={newKeyTokenLimit}
+                  onChange={(e) => setNewKeyTokenLimit(e.target.value)}
+                  className="input mt-1 block w-full"
+                  placeholder="Unlimited (0)"
+                />
+              </div>
+            </div>
+
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => {
                   setShowCreateModal(false);
                   setNewKeyName('');
+                  setSelectedScopes(['all']);
+                  setNewKeyRateLimit('');
+                  setNewKeyTokenLimit('');
                 }}
                 className="btn btn-secondary"
               >
@@ -378,6 +586,71 @@ function ApiKeysPage() {
         onCancel={closeConfirmModal}
         loading={processing}
       />
+
+      {/* Project Settings Modal */}
+      {isProjectSettingsOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-lg mx-4"
+          >
+            <h3 className="text-xl font-semibold text-apple-gray-900 mb-6">Project Settings</h3>
+            
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-apple-gray-700 mb-1">
+                  API IP Whitelist
+                </label>
+                <textarea
+                  value={projectWhiteListedIps}
+                  onChange={(e) => setProjectWhiteListedIps(e.target.value)}
+                  placeholder="e.g. 192.168.1.1, 10.0.0.0/24 (comma separated)"
+                  rows={4}
+                  className="input w-full font-mono text-sm"
+                />
+                <p className="mt-2 text-xs text-apple-gray-500 max-w">
+                  Restrict API key usage to specific IP addresses or CIDR blocks. Leave empty to allow any IP. <strong>Note:</strong> This takes effect for all API keys in this project.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-8">
+              <button
+                onClick={() => setIsProjectSettingsOpen(false)}
+                className="btn btn-secondary"
+                disabled={updatingProject}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setUpdatingProject(true);
+                  try {
+                    await updateProjectMut({
+                      variables: {
+                        id: selectedProjectId,
+                        input: { whiteListedIps: projectWhiteListedIps.trim() }
+                      }
+                    });
+                    toast.success("Project settings updated");
+                    setIsProjectSettingsOpen(false);
+                    // This updates the local cache automatically because of Apollo cache normalization if id matches
+                  } catch (e: any) {
+                    toast.error(e.message || "Failed to update settings");
+                  } finally {
+                    setUpdatingProject(false);
+                  }
+                }}
+                className="btn btn-primary"
+                disabled={updatingProject}
+              >
+                {updatingProject ? 'Saving...' : 'Save Settings'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

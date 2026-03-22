@@ -77,7 +77,7 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
   };
 
   return (
-    <div className="card">
+    <div className="card overflow-x-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-apple-gray-900">{t('providers.models')}</h3>
@@ -167,10 +167,11 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
                   <td className="table-cell text-right">
                     <button
                       onClick={() => setConfirmModal({ isOpen: true, modelId: m.id })}
-                      className="p-1.5 rounded-lg text-apple-gray-400 hover:text-apple-red hover:bg-red-50 transition-colors"
+                      className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-apple-gray-400 hover:text-apple-red hover:bg-red-50 transition-colors text-sm"
                       title={t('common.delete')}
                     >
                       <TrashIcon className="w-4 h-4" />
+                      {t('common.delete')}
                     </button>
                   </td>
                 </tr>

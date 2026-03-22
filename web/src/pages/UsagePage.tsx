@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ChartBarIcon, TableCellsIcon } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
 import {
@@ -18,9 +18,23 @@ import { MY_USAGE_SUMMARY, MY_DAILY_USAGE, MY_RECENT_USAGE } from '@/lib/graphql
 function UsagePage() {
   const [page, setPage] = useState(1);
   const pageSize = 20;
+  
+  const [channelFilter, setChannelFilter] = useState('');
+  const [debouncedChannel, setDebouncedChannel] = useState('');
 
-  const { data: summaryData, loading: sumLoading } = useQuery<any>(MY_USAGE_SUMMARY);
-  const { data: dailyData, loading: dailyLoading } = useQuery<any>(MY_DAILY_USAGE, { variables: { days: 30 } });
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedChannel(channelFilter);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [channelFilter]);
+
+  const queryVars = {
+    channel: debouncedChannel || undefined
+  };
+
+  const { data: summaryData, loading: sumLoading } = useQuery<any>(MY_USAGE_SUMMARY, { variables: queryVars });
+  const { data: dailyData, loading: dailyLoading } = useQuery<any>(MY_DAILY_USAGE, { variables: { days: 30, ...queryVars } });
   const { data: recentData, loading: recentLoading } = useQuery<any>(MY_RECENT_USAGE, { variables: { page, pageSize } });
   const loading = sumLoading || dailyLoading || recentLoading;
 
@@ -75,9 +89,22 @@ function UsagePage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-apple-gray-900">Usage</h1>
-        <p className="text-apple-gray-500 mt-1">Monitor your API usage and costs</p>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-apple-gray-900">Usage</h1>
+          <p className="text-apple-gray-500 mt-1">Monitor your API usage and costs</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Filter by channel..."
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value)}
+              className="pl-3 pr-4 py-2 text-sm border border-apple-gray-200 rounded-apple-lg focus:outline-none focus:ring-2 focus:ring-apple-blue/50 focus:border-apple-blue transition-shadow bg-white w-48"
+            />
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">

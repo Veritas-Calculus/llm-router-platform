@@ -2,6 +2,9 @@ package repository
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -13,17 +16,50 @@ import (
 
 // AuditLogRepository handles audit log data access.
 type AuditLogRepository struct {
-	db *gorm.DB
+	db        *gorm.DB
+	secretKey string // Used for HMAC-SHA256 signature chain
 }
 
 // NewAuditLogRepository creates a new audit log repository.
-func NewAuditLogRepository(db *gorm.DB) *AuditLogRepository {
-	return &AuditLogRepository{db: db}
+func NewAuditLogRepository(db *gorm.DB, secretKey string) *AuditLogRepository {
+	return &AuditLogRepository{db: db, secretKey: secretKey}
 }
 
 // Create inserts a new audit log entry.
 func (r *AuditLogRepository) Create(ctx context.Context, entry *models.AuditLog) error {
-	return r.db.WithContext(ctx).Create(entry).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. Find the last log to get its signature as our PreviousHash
+		var lastLog models.AuditLog
+		if err := tx.Order("created_at DESC, id DESC").First(&lastLog).Error; err == nil {
+			entry.PreviousHash = lastLog.Signature
+		} else if err == gorm.ErrRecordNotFound {
+			entry.PreviousHash = "genesis"
+		} else {
+			return err
+		}
+
+		// 2. Compute HMAC signature logic
+		// This ensures that the event is cryptographically tied to the chain.
+		if entry.ID == uuid.Nil {
+			entry.ID = uuid.New()
+		}
+		
+		payload := fmt.Sprintf("%s|%s|%s|%s|%s|%s",
+			entry.PreviousHash,
+			entry.ID.String(),
+			entry.Action,
+			entry.ActorID.String(),
+			entry.TargetID.String(),
+			entry.Detail,
+		)
+		
+		mac := hmac.New(sha256.New, []byte(r.secretKey))
+		mac.Write([]byte(payload))
+		entry.Signature = hex.EncodeToString(mac.Sum(nil))
+
+		// 3. Insert the verified entry
+		return tx.Create(entry).Error
+	})
 }
 
 // AuditQueryFilter defines filters for audit log queries.

@@ -1,4 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import {
@@ -9,10 +11,15 @@ import {
   CloudArrowUpIcon,
   CreditCardIcon,
   CheckCircleIcon,
+  XCircleIcon,
+  CloudIcon,
+  KeyIcon,
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { SYSTEM_SETTINGS_QUERY, UPDATE_SYSTEM_SETTINGS, SEND_TEST_EMAIL, TRIGGER_BACKUP } from '@/lib/graphql/operations/settings';
+import { GET_INTEGRATIONS, UPDATE_INTEGRATION } from '@/lib/graphql/operations/integrations';
 import { useTranslation } from '@/lib/i18n';
+import toast from 'react-hot-toast';
 
 /* ── Tab definitions ── */
 
@@ -23,6 +30,8 @@ const settingsTabs = [
   { key: 'email', icon: EnvelopeIcon, labelKey: 'admin_settings.tabs.email' },
   { key: 'backup', icon: CloudArrowUpIcon, labelKey: 'admin_settings.tabs.backup' },
   { key: 'payment', icon: CreditCardIcon, labelKey: 'admin_settings.tabs.payment' },
+  { key: 'sso', icon: KeyIcon, labelKey: 'admin_settings.tabs.sso' },
+  { key: 'integrations', icon: CloudIcon, labelKey: 'admin_settings.tabs.integrations' },
 ] as const;
 
 type TabKey = typeof settingsTabs[number]['key'];
@@ -325,13 +334,179 @@ function PaymentSettingsTab({ data, onChange, t }: { data: any; onChange: (d: an
   );
 }
 
+const SsoManagementContent = lazy(() => import('@/pages/SsoManagementPage'));
+
+function SsoSettingsTab({ data, onChange }: { data: any; onChange: (d: any) => void; t: (k: string) => string }) {
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-apple-gray-500">
+        Configure OAuth2 social login providers. Users will see login buttons for enabled providers.
+      </p>
+
+      {/* GitHub */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <svg className="w-5 h-5 text-apple-gray-700" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+          </svg>
+          <h4 className="text-sm font-semibold text-apple-gray-900 flex-1">GitHub</h4>
+          <Toggle checked={data.githubEnabled ?? false} onChange={(v) => onChange({ ...data, githubEnabled: v })} label="" />
+        </div>
+        {data.githubEnabled && (
+          <div className="space-y-4 pl-8">
+            <FormField label="Client ID">
+              <TextInput value={data.githubClientId || ''} onChange={(v) => onChange({ ...data, githubClientId: v })} placeholder="Ov23li..." />
+            </FormField>
+            <FormField label="Client Secret">
+              <TextInput type="password" value={data.githubClientSecret || ''} onChange={(v) => onChange({ ...data, githubClientSecret: v })} placeholder="••••••••" />
+            </FormField>
+            <div className="bg-apple-gray-50 rounded-xl p-3">
+              <p className="text-xs text-apple-gray-500">
+                <strong>Callback URL:</strong>{' '}
+                <code className="bg-apple-gray-100 px-1.5 py-0.5 rounded text-xs">
+                  {window.location.origin}/auth/oauth2/github/callback
+                </code>
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-apple-gray-200" />
+
+      {/* Google */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+          </svg>
+          <h4 className="text-sm font-semibold text-apple-gray-900 flex-1">Google</h4>
+          <Toggle checked={data.googleEnabled ?? false} onChange={(v) => onChange({ ...data, googleEnabled: v })} label="" />
+        </div>
+        {data.googleEnabled && (
+          <div className="space-y-4 pl-8">
+            <FormField label="Client ID">
+              <TextInput value={data.googleClientId || ''} onChange={(v) => onChange({ ...data, googleClientId: v })} placeholder="123456789.apps.googleusercontent.com" />
+            </FormField>
+            <FormField label="Client Secret">
+              <TextInput type="password" value={data.googleClientSecret || ''} onChange={(v) => onChange({ ...data, googleClientSecret: v })} placeholder="••••••••" />
+            </FormField>
+            <div className="bg-apple-gray-50 rounded-xl p-3">
+              <p className="text-xs text-apple-gray-500">
+                <strong>Callback URL:</strong>{' '}
+                <code className="bg-apple-gray-100 px-1.5 py-0.5 rounded text-xs">
+                  {window.location.origin}/auth/oauth2/google/callback
+                </code>
+              </p>
+            </div>
+          </div>
+        )}
+    </div>
+
+      {/* Enterprise SSO (OIDC / SAML) */}
+      <div className="border-t border-apple-gray-200 pt-6">
+        <h3 className="text-sm font-semibold text-apple-gray-900 mb-1">Enterprise SSO</h3>
+        <p className="text-xs text-apple-gray-500 mb-4">Configure OIDC and SAML identity providers for organization-level single sign-on.</p>
+        <Suspense fallback={<div className="text-center py-8 text-apple-gray-400 text-sm">Loading SSO configuration...</div>}>
+          <SsoManagementContent />
+        </Suspense>
+      </div>
+    </div>
+  );
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function IntegrationsSettingsTab() {
+  const { data, loading, refetch } = useQuery<any>(GET_INTEGRATIONS, { fetchPolicy: 'cache-and-network' });
+  const [updateIntegration] = useMutation(UPDATE_INTEGRATION);
+
+  const integrations = (data?.integrations || []) as any[];
+
+  const handleSave = async (name: string, enabled: boolean, configStr: string) => {
+    try {
+      JSON.parse(configStr);
+      await updateIntegration({ variables: { name, input: { enabled, config: configStr } } });
+      toast.success(`${name} configuration saved`);
+      refetch();
+    } catch (err: any) {
+      toast.error(`Failed: ${err.message || 'Invalid JSON'}`);
+    }
+  };
+
+  if (loading) return <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-apple-blue" /></div>;
+
+  const getTemplate = (name: string) => {
+    if (name === 'sentry') return '{\n  "dsn": "https://example@sentry.io/123"\n}';
+    if (name === 'loki') return '{\n  "endpoint": "http://loki:3100/loki/api/v1/push"\n}';
+    if (name === 'langfuse') return '{\n  "publicKey": "",\n  "secretKey": "",\n  "baseUrl": ""\n}';
+    return '{\n  \n}';
+  };
+
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-apple-gray-500">Configure external logging, tracing, and metrics platforms.</p>
+      {integrations.map((ig: any) => (
+        <IntegrationInlineCard key={ig.id} integration={ig} getTemplate={getTemplate} onSave={handleSave} />
+      ))}
+      {integrations.length === 0 && (
+        <p className="text-sm text-apple-gray-400 text-center py-8">No integrations configured yet.</p>
+      )}
+    </div>
+  );
+}
+
+function IntegrationInlineCard({ integration, getTemplate, onSave }: {
+  integration: any;
+  getTemplate: (name: string) => string;
+  onSave: (name: string, enabled: boolean, config: string) => void;
+}) {
+  const [enabled, setEnabled] = useState(integration.enabled);
+  const [configStr, setConfigStr] = useState(
+    integration.config === '{}' ? getTemplate(integration.name) : JSON.stringify(JSON.parse(integration.config), null, 2)
+  );
+
+  return (
+    <div className="border border-apple-gray-200 rounded-xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <CloudIcon className="w-5 h-5 text-apple-gray-500" />
+          <h4 className="text-sm font-semibold text-apple-gray-900 capitalize">{integration.name}</h4>
+          {enabled ? (
+            <span className="flex items-center text-xs font-medium text-emerald-600"><CheckCircleIcon className="w-3.5 h-3.5 mr-0.5" /> Active</span>
+          ) : (
+            <span className="flex items-center text-xs font-medium text-apple-gray-400"><XCircleIcon className="w-3.5 h-3.5 mr-0.5" /> Off</span>
+          )}
+        </div>
+        <Toggle checked={enabled} onChange={setEnabled} label="" />
+      </div>
+      <textarea
+        value={configStr}
+        onChange={(e) => setConfigStr(e.target.value)}
+        className="w-full h-28 p-3 bg-apple-gray-50 border border-apple-gray-200 rounded-lg text-sm font-mono text-apple-gray-700 focus:outline-none focus:ring-2 focus:ring-apple-blue/20 focus:border-apple-blue resize-none"
+        placeholder={getTemplate(integration.name)}
+      />
+      <div className="flex justify-end">
+        <button
+          onClick={() => onSave(integration.name, enabled, configStr)}
+          className="px-4 py-2 bg-apple-blue text-white rounded-xl text-sm font-semibold hover:bg-blue-600 transition-all"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main settings page ── */
 
 function AdminSettingsPage() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabKey>('site');
   const [formData, setFormData] = useState<Record<TabKey, any>>({
-    site: {}, security: {}, defaults: {}, email: {}, backup: {}, payment: {},
+    site: {}, security: {}, defaults: {}, email: {}, backup: {}, payment: {}, sso: {}, integrations: {},
   });
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -343,7 +518,7 @@ function AdminSettingsPage() {
   useEffect(() => {
     if (data?.systemSettings) {
       const s = data.systemSettings;
-      const parsed: Record<TabKey, any> = { site: {}, security: {}, defaults: {}, email: {}, backup: {}, payment: {} };
+      const parsed: Record<TabKey, any> = { site: {}, security: {}, defaults: {}, email: {}, backup: {}, payment: {}, sso: {}, integrations: {} };
       for (const key of Object.keys(parsed) as TabKey[]) {
         try {
           if (s[key]) parsed[key] = JSON.parse(s[key]);
@@ -387,6 +562,8 @@ function AdminSettingsPage() {
       case 'email': return <EmailSettingsTab {...props} />;
       case 'backup': return <BackupSettingsTab {...props} />;
       case 'payment': return <PaymentSettingsTab {...props} />;
+      case 'sso': return <SsoSettingsTab {...props} />;
+      case 'integrations': return <IntegrationsSettingsTab />;
     }
   };
 

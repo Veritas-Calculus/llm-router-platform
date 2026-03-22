@@ -36,6 +36,7 @@ import (
 	configService "llm-router-platform/internal/service/config"
 	"llm-router-platform/internal/service/coupon"
 	"llm-router-platform/internal/service/document"
+	"llm-router-platform/internal/service/email"
 	"llm-router-platform/internal/service/health"
 	"llm-router-platform/internal/service/mcp"
 	"llm-router-platform/internal/service/memory"
@@ -46,6 +47,7 @@ import (
 	"llm-router-platform/internal/service/router"
 	"llm-router-platform/internal/service/task"
 	"llm-router-platform/internal/service/user"
+	"llm-router-platform/internal/service/webhook"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -106,13 +108,14 @@ func run() error {
 	defer func() { _ = db.Close() }()
 
 	// Run database migrations.
-	// In release mode we log a warning encouraging explicit SQL migrations,
-	// but we still run AutoMigrate so that fresh databases are usable.
+	// In release mode, AutoMigrate is bypassed to prevent accidental schema changes.
+	// Use 'cmd/migrate' or explicit SQL migrations for production deployments.
 	if cfg.Server.Mode == "release" {
-		logger.Warn("running AutoMigrate in release mode — consider using explicit SQL migrations for production")
-	}
-	if err := db.Migrate(); err != nil {
-		return err
+		logger.Info("Bypassing AutoMigrate in release mode. Please ensure database migrations are already applied.")
+	} else {
+		if err := db.Migrate(); err != nil {
+			return err
+		}
 	}
 
 	_ = db.SeedDefaultProviders()
@@ -121,7 +124,7 @@ func run() error {
 	seedDefaultPlans(db.DB)
 
 	gormDB := db.DB
-	repos := initRepositories(db)
+	repos := initRepositories(db, cfg)
 
 	// Initialize Redis client for rate limiting
 	redisOpts := &redis.Options{
@@ -199,6 +202,20 @@ func run() error {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
+	// Periodic Webhook dispatcher (runs every 5 seconds)
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				services.Webhook.ProcessPendingDeliveries(context.Background())
+			case <-lifecycleCtx.Done():
+				return
+			}
+		}
+	}()
+
 	// Periodic data cleanup (runs daily)
 	go func() {
 		ticker := time.NewTicker(24 * time.Hour)
@@ -208,6 +225,7 @@ func run() error {
 			case <-ticker.C:
 				_, _ = db.CleanupOldHealthHistory(30) // 30-day retention
 				_, _ = db.CleanupOldAlerts(90)        // 90-day retention for resolved alerts
+				_, _ = services.AuditService.PurgeOlderThan(context.Background(), 90*24*time.Hour) // 90-day retention for audit logs
 			case <-lifecycleCtx.Done():
 				return
 			}
@@ -252,6 +270,8 @@ func run() error {
 // Repositories holds all repository instances.
 type Repositories struct {
 	User           *repository.UserRepository
+	Organization   *repository.OrganizationRepository
+	Project        *repository.ProjectRepository
 	APIKey         *repository.APIKeyRepository
 	Provider       *repository.ProviderRepository
 	ProviderAPIKey *repository.ProviderAPIKeyRepository
@@ -270,11 +290,15 @@ type Repositories struct {
 	Subscription   *repository.SubscriptionRepository
 	Transaction    *repository.TransactionRepository
 	Config         *repository.ConfigRepository
+	RoutingRule    repository.RoutingRuleRepo
+	Webhook        repository.WebhookRepository
 }
 
-func initRepositories(db *database.Database) *Repositories {
+func initRepositories(db *database.Database, cfg *config.Config) *Repositories {
 	return &Repositories{
 		User:           repository.NewUserRepository(db.DB),
+		Organization:   repository.NewOrganizationRepository(db.DB),
+		Project:        repository.NewProjectRepository(db.DB),
 		APIKey:         repository.NewAPIKeyRepository(db.DB),
 		Provider:       repository.NewProviderRepository(db.DB),
 		ProviderAPIKey: repository.NewProviderAPIKeyRepository(db.DB),
@@ -287,17 +311,19 @@ func initRepositories(db *database.Database) *Repositories {
 		AlertConfig:    repository.NewAlertConfigRepository(db.DB),
 		Budget:         repository.NewBudgetRepository(db.DB),
 		Task:           repository.NewTaskRepository(db.DB),
-		AuditLog:       repository.NewAuditLogRepository(db.DB),
+		AuditLog:       repository.NewAuditLogRepository(db.DB, cfg.Encryption.Key),
 		MCP:            repository.NewMCPRepository(db.DB),
 		Plan:           repository.NewPlanRepository(db.DB),
 		Subscription:   repository.NewSubscriptionRepository(db.DB),
 		Transaction:    repository.NewTransactionRepository(db.DB),
 		Config:         repository.NewConfigRepository(db.DB),
+		RoutingRule:    repository.NewRoutingRuleRepository(db.DB),
+		Webhook:        repository.NewWebhookRepository(db.DB),
 	}
 }
 
 func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, redisClient *redis.Client, gormDB *gorm.DB) *routes.Services {
-	userService := user.NewService(repos.User, repos.APIKey, logger)
+	userService := user.NewService(repos.User, repos.APIKey, repos.Project, repos.Organization, logger)
 
 	// Provider registry - clients are created dynamically based on database configuration
 	// API keys are stored encrypted in the database and configured via Web UI
@@ -306,14 +332,16 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	mcpService := mcp.NewService(repos.MCP, logger)
 	configService := configService.NewService(repos.Config, logger)
 
-	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, providerRegistry, mcpService, logger)
+	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, repos.RoutingRule, providerRegistry, mcpService, logger)
 	if redisClient != nil {
 		routerService.SetRedisClient(redisClient)
 	}
 	billingService := billing.NewService(repos.UsageLog, repos.Model, redisClient, logger)
 	budgetService := billing.NewBudgetService(repos.UsageLog, repos.Budget, logger)
 	subscriptionService := billing.NewSubscriptionService(repos.Plan, repos.Subscription, repos.UsageLog, logger)
-	balanceService := billing.NewBalanceService(gormDB, repos.User, repos.Transaction, logger)
+	
+	emailSvc := email.NewService(cfg.Email, cfg.Frontend.URL)
+	balanceService := billing.NewBalanceService(gormDB, repos.User, repos.Transaction, redisClient, emailSvc, logger)
 	
 	// Dynamically get Stripe config from DB if available
 	stripeCfg := configService.GetStripeConfig(context.Background(), cfg.Stripe)
@@ -321,7 +349,10 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	
 	memoryService := memory.NewService(repos.Memory, redisClient, logger)
 	proxyService := proxy.NewService(repos.Proxy, logger)
-	obsService := observability.NewLangfuseService(cfg.Observability, logger)
+	obsService := observability.NewCompositeService(
+		observability.NewLangfuseService(cfg.Observability, logger),
+		observability.NewOTelService(context.Background(), cfg.Observability, logger),
+	)
 	auditService := audit.NewService(repos.AuditLog, logger)
 
 	alertNotifier := health.NewAlertNotifier(repos.Alert, repos.AlertConfig, logger)
@@ -342,6 +373,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	announcementService := announcement.NewService(gormDB, logger)
 	couponService := coupon.NewService(gormDB, logger)
 	documentService := document.NewService(gormDB, logger)
+	webhookService := webhook.NewWebhookService(repos.Webhook, logger)
 
 	return &routes.Services{
 		User:          userService,
@@ -363,6 +395,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		AnnouncementSvc: announcementService,
 		CouponSvc:     couponService,
 		DocumentSvc:   documentService,
+		Webhook:       webhookService,
 		MCP:           mcpService,
 		RedisClient:   redisClient,
 		DB:            gormDB, // For health checks (operational handler)

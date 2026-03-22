@@ -111,10 +111,11 @@ type SystemSettings {
   email: String         # JSON — email/SMTP configuration
   backup: String        # JSON — backup & recovery settings
   payment: String       # JSON — payment channel settings
+  oauth: String         # JSON — OAuth2 social login settings (GitHub, Google)
 }
 
 input SystemSettingsInput {
-  category: String!     # "site"|"security"|"defaults"|"email"|"backup"|"payment"
+  category: String!     # "site"|"security"|"defaults"|"email"|"backup"|"payment"|"oauth"
   data: String!         # JSON payload for the category
 }
 

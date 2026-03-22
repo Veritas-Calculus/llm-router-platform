@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 
+	"llm-router-platform/internal/api/middleware"
 	"llm-router-platform/internal/graphql/model"
 )
 
@@ -56,6 +57,19 @@ func Auth(ctx context.Context, obj interface{}, next graphql.Resolver, role *mod
 		userRole, _ := gc.Get("role")
 		if userRole != "admin" {
 			return nil, fmt.Errorf("forbidden: admin access required")
+		}
+
+		// Enforce Admin IP Whitelist
+		if whitelistStr, exists := gc.Get("admin_ip_whitelist"); exists {
+			whitelist := whitelistStr.(string)
+			if whitelist != "" {
+				whitelistedSNs := middleware.ParseWhitelist(whitelist, nil)
+				if len(whitelistedSNs) > 0 {
+					if !middleware.CheckIPAllowed(gc.ClientIP(), whitelistedSNs, nil) {
+						return nil, fmt.Errorf("forbidden: IP not inside admin whitelist")
+					}
+				}
+			}
 		}
 	}
 

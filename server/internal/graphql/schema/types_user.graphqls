@@ -14,14 +14,57 @@ type User {
   balance: Float
   createdAt: DateTime!
   lastLoginAt: DateTime
+  mfaEnabled: Boolean!
+}
+
+type MfaSecretInfo {
+  secret: String!
+  qrCodeUrl: String!
+  backupCodes: [String!]!
+}
+
+type Organization {
+  id: ID!
+  name: String!
+  billingLimit: Float!
+  createdAt: DateTime!
+}
+
+type OrganizationMember {
+  userId: ID!
+  orgId: ID!
+  role: String!
+  user: UserListItem!
+  createdAt: DateTime!
+}
+
+type Project {
+  id: ID!
+  orgId: ID!
+  name: String!
+  description: String
+  quotaLimit: Float!
+  whiteListedIps: String
+  createdAt: DateTime!
+}
+
+input UpdateProjectInput {
+  name: String
+  description: String
+  quotaLimit: Float
+  whiteListedIps: String
 }
 
 type ApiKey {
   id: ID!
+  projectId: ID!
+  channel: String!
   name: String!
   keyPrefix: String!
   isActive: Boolean!
+  scopes: String!
   rateLimit: Int!
+  tokenLimit: Int!
   dailyLimit: Int!
   expiresAt: DateTime
   lastUsedAt: DateTime
@@ -30,11 +73,15 @@ type ApiKey {
 
 type ApiKeyWithSecret {
   id: ID!
+  projectId: ID!
+  channel: String!
   name: String!
   key: String!
   keyPrefix: String!
   isActive: Boolean!
+  scopes: String!
   rateLimit: Int!
+  tokenLimit: Int!
   dailyLimit: Int!
   expiresAt: DateTime
   createdAt: DateTime!
@@ -66,6 +113,7 @@ type UserDetail {
   apiKeys: Int!
   monthlyTokenLimit: Int
   monthlyBudgetUsd: Float
+  mfaEnabled: Boolean!
   usageMonth: UserMonthlyUsage
 }
 

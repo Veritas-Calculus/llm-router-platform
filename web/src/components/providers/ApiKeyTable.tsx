@@ -89,7 +89,7 @@ export default function ApiKeyTable({
   };
 
   return (
-    <div className="card">
+    <div className="card overflow-x-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-apple-gray-900">API Keys</h3>
@@ -97,10 +97,12 @@ export default function ApiKeyTable({
             Manage API keys for {providerName}
           </p>
         </div>
-        <button onClick={() => setShowAddModal(true)} className="btn btn-primary">
-          <PlusIcon className="w-5 h-5 mr-2" />
-          Add Key
-        </button>
+        {apiKeys.length > 0 && (
+          <button onClick={() => setShowAddModal(true)} className="btn btn-primary">
+            <PlusIcon className="w-5 h-5 mr-2" />
+            Add Key
+          </button>
+        )}
       </div>
 
       {apiKeys.length === 0 ? (
@@ -217,10 +219,11 @@ export default function ApiKeyTable({
                         </button>
                         <button
                           onClick={() => setConfirmModal({ isOpen: true, keyId: key.id })}
-                          className="text-apple-red hover:text-red-600 transition-colors text-sm"
+                          className="text-apple-red hover:text-red-600 transition-colors text-sm inline-flex items-center gap-1"
                           title="Delete API key"
                         >
                           <TrashIcon className="w-4 h-4" />
+                          Delete
                         </button>
                       </div>
                     )}

@@ -2,25 +2,51 @@
 package email
 
 import (
+	"bytes"
 	"fmt"
+	"html/template"
 	"net/smtp"
 	"strings"
 
 	"llm-router-platform/internal/config"
+	"llm-router-platform/internal/service/email/templates"
 )
 
 // Service handles sending transactional emails.
 type Service struct {
 	config config.EmailConfig
 	feURL  string
+	tmpl   *template.Template
 }
 
 // NewService creates a new email service.
 func NewService(cfg config.EmailConfig, feURL string) *Service {
+	// Parse embedded templates once
+	tmpl, err := template.ParseFS(templates.FS, "*.html")
+	if err != nil {
+		// Log this or panic, depending on application initialization strategy
+		// For now, we print to console during startup
+		fmt.Printf("Error parsing email templates: %v\n", err)
+	}
+
 	return &Service{
 		config: cfg,
 		feURL:  feURL,
+		tmpl:   tmpl,
 	}
+}
+
+// render is a helper to render a template into a string.
+func (s *Service) render(name string, data interface{}) (string, error) {
+	if s.tmpl == nil {
+		return "", fmt.Errorf("templates not loaded")
+	}
+
+	var buf bytes.Buffer
+	if err := s.tmpl.ExecuteTemplate(&buf, name, data); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
 
 // SendResetPasswordEmail sends a password reset link to the user.
@@ -31,13 +57,12 @@ func (s *Service) SendResetPasswordEmail(to, token string) error {
 
 	resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.feURL, token)
 	subject := "Reset Your Password - LLM Router"
-	body := fmt.Sprintf(
-		"Hello,\n\nYou requested a password reset for your LLM Router account. "+
-			"Please click the link below to set a new password:\n\n%s\n\n"+
-			"This link will expire in 1 hour. If you did not request this, please ignore this email.\n\n"+
-			"Best regards,\nThe LLM Router Team",
-		resetURL,
-	)
+	body, err := s.render("reset_password.html", map[string]string{
+		"ResetURL": resetURL,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to render template: %w", err)
+	}
 
 	return s.send(to, subject, body)
 }
@@ -49,12 +74,33 @@ func (s *Service) SendWelcomeEmail(to, name string) error {
 	}
 
 	subject := "Welcome to LLM Router!"
-	body := fmt.Sprintf(
-		"Hello %s,\n\nWelcome to LLM Router! Your account has been successfully created.\n\n"+
-			"You can now log in and start using our intelligent routing services.\n\n"+
-			"Best regards,\nThe LLM Router Team",
-		name,
-	)
+	body, err := s.render("welcome.html", map[string]string{
+		"Name":     name,
+		"LoginURL": fmt.Sprintf("%s/login", s.feURL),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to render template: %w", err)
+	}
+
+	return s.send(to, subject, body)
+}
+
+// SendQuotaWarningEmail sends a warning email when balance is low.
+func (s *Service) SendQuotaWarningEmail(to, name, balance, threshold string) error {
+	if !s.config.Enabled {
+		return nil
+	}
+
+	subject := "Action Required: Low Balance Warning - LLM Router"
+	body, err := s.render("quota_warning.html", map[string]string{
+		"Name":         name,
+		"Balance":      balance,
+		"Threshold":    threshold,
+		"DashboardURL": fmt.Sprintf("%s/admin/billing", s.feURL),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to render template: %w", err)
+	}
 
 	return s.send(to, subject, body)
 }
@@ -84,7 +130,7 @@ func (s *Service) send(to, subject, body string) error {
 	}
 
 	msg := fmt.Sprintf(
-		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
+		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
 		fromAddr,
 		to,
 		subject,

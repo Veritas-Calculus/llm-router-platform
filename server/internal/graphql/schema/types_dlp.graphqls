@@ -1,0 +1,47 @@
+enum DlpStrategy {
+    REDACT
+    BLOCK
+}
+
+type DlpConfig {
+    id: ID!
+    projectId: ID!
+    isEnabled: Boolean!
+    strategy: DlpStrategy!
+    maskEmails: Boolean!
+    maskPhones: Boolean!
+    maskCreditCards: Boolean!
+    maskSsn: Boolean!
+    maskApiKeys: Boolean!
+    customRegex: [String!]!
+    createdAt: DateTime!
+    updatedAt: DateTime!
+}
+
+input UpdateDlpConfigInput {
+    projectId: ID!
+    isEnabled: Boolean
+    strategy: DlpStrategy
+    maskEmails: Boolean
+    maskPhones: Boolean
+    maskCreditCards: Boolean
+    maskSsn: Boolean
+    maskApiKeys: Boolean
+    customRegex: [String!]
+}
+
+type DlpTestResult {
+    originalText: String!
+    scrubbedText: String!
+    hasPii: Boolean!
+    blocked: Boolean!
+}
+
+extend type Query {
+    getDlpConfig(projectId: ID!): DlpConfig! @auth
+    testDlpRedaction(projectId: ID!, input: String!): DlpTestResult! @auth
+}
+
+extend type Mutation {
+    updateDlpConfig(input: UpdateDlpConfigInput!): DlpConfig! @auth
+}

@@ -3,23 +3,22 @@ import { gql } from '@apollo/client';
 // ── Usage Operations ────────────────────────────────────────────────
 
 export const MY_USAGE_SUMMARY = gql`
-  query MyUsageSummary {
-    myUsageSummary {
-      totalRequests totalTokens totalCost
-      periodStart periodEnd
+  query MyUsageSummary($projectId: ID, $channel: String) {
+    myUsageSummary(projectId: $projectId, channel: $channel) {
+      totalRequests totalTokens totalCost successRate
     }
   }
 `;
 
 export const MY_DAILY_USAGE = gql`
-  query MyDailyUsage($days: Int) {
-    myDailyUsage(days: $days) { date requests tokens cost }
+  query MyDailyUsage($days: Int, $projectId: ID, $channel: String) {
+    myDailyUsage(days: $days, projectId: $projectId, channel: $channel) { date requests tokens cost }
   }
 `;
 
 export const MY_USAGE_BY_PROVIDER = gql`
-  query MyUsageByProvider {
-    myUsageByProvider { provider requests tokens cost }
+  query MyUsageByProvider($projectId: ID, $channel: String) {
+    myUsageByProvider(projectId: $projectId, channel: $channel) { providerName requests tokens totalCost }
   }
 `;
 

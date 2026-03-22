@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -51,8 +51,7 @@ function UserDetailPage() {
     const [tokenLimit, setTokenLimit] = useState('');
     const [budgetLimit, setBudgetLimit] = useState('');
 
-    // Set limits from user data on first load  
-    useMemo(() => {
+    useEffect(() => {
         if (user) {
             setTokenLimit(String(user.monthly_token_limit || 0));
             setBudgetLimit(String(user.monthly_budget_usd || 0));

@@ -19,24 +19,26 @@ type Plan struct {
 	Features       string  `gorm:"type:text" json:"features"` // JSON string or comma-separated list
 }
 
-// Subscription represents a user's active plan.
+// Subscription represents an organization's active plan.
 type Subscription struct {
 	BaseModel
-	UserID            uuid.UUID `gorm:"type:uuid;uniqueIndex;not null" json:"user_id"`
-	PlanID            uuid.UUID `gorm:"type:uuid;not null" json:"plan_id"`
-	Status            string    `gorm:"default:'active'" json:"status"` // active, trialing, canceled, past_due
-	CurrentPeriodStart time.Time `json:"current_period_start"`
-	CurrentPeriodEnd   time.Time `json:"current_period_end"`
-	CancelAtPeriodEnd  bool      `gorm:"default:false" json:"cancel_at_period_end"`
+	OrgID                uuid.UUID `gorm:"type:uuid;uniqueIndex;not null" json:"org_id"`
+	PlanID               uuid.UUID `gorm:"type:uuid;not null" json:"plan_id"`
+	Status               string    `gorm:"default:'active'" json:"status"` // active, trialing, canceled, past_due
+	CurrentPeriodStart   time.Time `json:"current_period_start"`
+	CurrentPeriodEnd     time.Time `json:"current_period_end"`
+	CancelAtPeriodEnd    bool      `gorm:"default:false" json:"cancel_at_period_end"`
+	StripeCustomerID     string    `gorm:"index" json:"stripe_customer_id"`
+	StripeSubscriptionID string    `gorm:"uniqueIndex" json:"stripe_subscription_id"`
 	
-	User User `gorm:"foreignKey:UserID" json:"-"`
+	Organization Organization `gorm:"foreignKey:OrgID" json:"-"`
 	Plan Plan `gorm:"foreignKey:PlanID" json:"plan"`
 }
 
 // Order represents a payment order.
 type Order struct {
 	BaseModel
-	UserID        uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	OrgID         uuid.UUID `gorm:"type:uuid;not null;index" json:"org_id"`
 	PlanID        uuid.UUID `gorm:"type:uuid;index" json:"plan_id"`
 	OrderNo       string    `gorm:"uniqueIndex;not null" json:"order_no"`
 	Amount        float64   `gorm:"not null" json:"amount"`
@@ -49,7 +51,7 @@ type Order struct {
 // Transaction represents any balance movement (recharge, usage deduction, refund).
 type Transaction struct {
 	BaseModel
-	UserID      uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	OrgID       uuid.UUID `gorm:"type:uuid;not null;index" json:"org_id"`
 	Type        string    `gorm:"not null;index" json:"type"` // recharge, deduction, refund
 	Amount      float64   `gorm:"not null" json:"amount"`
 	Currency    string    `gorm:"default:'USD'" json:"currency"`
@@ -61,7 +63,8 @@ type Transaction struct {
 // UsageLog represents a single API usage record.
 type UsageLog struct {
 	BaseModel
-	UserID         uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	ProjectID      uuid.UUID `gorm:"type:uuid;not null;index" json:"project_id"`
+	Channel        string    `gorm:"index" json:"channel"`
 	APIKeyID       uuid.UUID `gorm:"type:uuid;not null;index" json:"api_key_id"`
 	ProviderID     uuid.UUID `gorm:"type:uuid;index" json:"provider_id"`
 	ModelID        uuid.UUID `gorm:"type:uuid;index" json:"model_id"`
@@ -85,10 +88,11 @@ type UsageLog struct {
 	IsSuccess      bool      `gorm:"-" json:"is_success"`
 }
 
-// Budget represents monthly spending limits for a user.
+// Budget represents monthly spending limits for an organization or project.
 type Budget struct {
 	BaseModel
-	UserID          uuid.UUID  `gorm:"type:uuid;not null;uniqueIndex" json:"user_id"`
+	OrgID           uuid.UUID  `gorm:"type:uuid;not null;uniqueIndex" json:"org_id"`
+	ProjectID       *uuid.UUID `gorm:"type:uuid;index" json:"project_id,omitempty"`
 	APIKeyID        *uuid.UUID `gorm:"type:uuid;index" json:"api_key_id,omitempty"`
 	MonthlyLimitUSD float64    `gorm:"not null" json:"monthly_limit_usd"`
 	AlertThreshold  float64    `gorm:"default:0.8" json:"alert_threshold"`

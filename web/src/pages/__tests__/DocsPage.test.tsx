@@ -2,6 +2,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { BrowserRouter } from 'react-router-dom';
 import DocsPage from '@/pages/DocsPage';
 
 vi.mock('framer-motion', () => ({
@@ -12,19 +13,24 @@ vi.mock('framer-motion', () => ({
     AnimatePresence: ({ children }: any) => <>{children}</>,
 }));
 
+vi.mock('@apollo/client/react', () => ({
+    useQuery: vi.fn(() => ({ data: null, loading: false })),
+    useMutation: vi.fn(() => [vi.fn(), { loading: false }]),
+}));
+
 describe('DocsPage', () => {
     it('should render documentation title', () => {
-        render(<DocsPage />);
+        render(<BrowserRouter><DocsPage /></BrowserRouter>);
         expect(screen.getByRole('heading', { name: 'Documentation' })).toBeInTheDocument();
     });
 
     it('should render navigation sidebar with multiple sections', () => {
-        render(<DocsPage />);
+        render(<BrowserRouter><DocsPage /></BrowserRouter>);
         expect(screen.getAllByText('Quick Start').length).toBeGreaterThanOrEqual(1);
     });
 
     it('should render page subtitle', () => {
-        render(<DocsPage />);
-        expect(screen.getByText('Learn how to integrate and use the platform')).toBeInTheDocument();
+        render(<BrowserRouter><DocsPage /></BrowserRouter>);
+        expect(screen.getByText('API reference, SDKs, and integration guides')).toBeInTheDocument();
     });
 });

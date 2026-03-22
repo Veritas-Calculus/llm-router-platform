@@ -26,7 +26,7 @@ func TestUserModel(t *testing.T) {
 func TestAPIKeyModel(t *testing.T) {
 	userID := uuid.New()
 	apiKey := APIKey{
-		UserID:     userID,
+		ProjectID:  userID,
 		KeyHash:    "hashedkey",
 		KeyPrefix:  "llm_abc",
 		Name:       "Test Key",
@@ -35,7 +35,7 @@ func TestAPIKeyModel(t *testing.T) {
 		DailyLimit: 10000,
 	}
 
-	assert.Equal(t, userID, apiKey.UserID)
+	assert.Equal(t, userID, apiKey.ProjectID)
 	assert.Equal(t, "llm_abc", apiKey.KeyPrefix)
 	assert.Equal(t, "Test Key", apiKey.Name)
 	assert.True(t, apiKey.IsActive)
@@ -94,7 +94,7 @@ func TestProxyModel(t *testing.T) {
 
 func TestUsageLogModel(t *testing.T) {
 	log := UsageLog{
-		UserID:         uuid.New(),
+		ProjectID:         uuid.New(),
 		APIKeyID:       uuid.New(),
 		ProviderID:     uuid.New(),
 		RequestTokens:  100,
@@ -195,7 +195,7 @@ func TestModelMultiDimensionalPricing(t *testing.T) {
 func TestUsageLogExtendedFields(t *testing.T) {
 	// TTS usage log with duration
 	ttsLog := UsageLog{
-		UserID:     uuid.New(),
+		ProjectID:     uuid.New(),
 		APIKeyID:   uuid.New(),
 		ProviderID: uuid.New(),
 		ModelName:  "tts-1",
@@ -209,7 +209,7 @@ func TestUsageLogExtendedFields(t *testing.T) {
 
 	// Image generation usage log with item count
 	imageLog := UsageLog{
-		UserID:     uuid.New(),
+		ProjectID:     uuid.New(),
 		APIKeyID:   uuid.New(),
 		ProviderID: uuid.New(),
 		ModelName:  "dall-e-3",
@@ -221,7 +221,7 @@ func TestUsageLogExtendedFields(t *testing.T) {
 
 	// Video analysis usage log with bytes processed
 	videoLog := UsageLog{
-		UserID:         uuid.New(),
+		ProjectID:         uuid.New(),
 		APIKeyID:       uuid.New(),
 		ProviderID:     uuid.New(),
 		ModelName:      "gemini-2.0-flash",
@@ -236,7 +236,7 @@ func TestUsageLogExtendedFields(t *testing.T) {
 
 func TestAsyncTaskModel(t *testing.T) {
 	task := AsyncTask{
-		UserID:     uuid.New(),
+		ProjectID:     uuid.New(),
 		Type:       "batch_tts",
 		Status:     "pending",
 		Input:      `[{"text":"hello"},{"text":"world"}]`,
@@ -259,7 +259,7 @@ func TestAsyncTaskStatusTransitions(t *testing.T) {
 
 	// Completed task
 	completed := AsyncTask{
-		UserID:      uuid.New(),
+		ProjectID:      uuid.New(),
 		Type:        "tts",
 		Status:      "completed",
 		Input:       `{"text":"test"}`,
@@ -274,7 +274,7 @@ func TestAsyncTaskStatusTransitions(t *testing.T) {
 
 	// Failed task
 	failed := AsyncTask{
-		UserID:      uuid.New(),
+		ProjectID:      uuid.New(),
 		Type:        "video_analysis",
 		Status:      "failed",
 		Input:       `{"video_url":"https://example.com/video.mp4"}`,

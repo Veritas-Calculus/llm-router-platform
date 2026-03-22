@@ -162,7 +162,12 @@ func (c *GoogleClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, errors.New(string(respBody))
+		return nil, &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       respBody,
+			Message:    "Google API error",
+		}
 	}
 
 	var geminiResp geminiResponse
@@ -271,7 +276,12 @@ func (c *GoogleClient) Embeddings(ctx context.Context, req *EmbeddingRequest) (*
 		if resp.StatusCode != http.StatusOK {
 			respBody, _ := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
-			return nil, errors.New(string(respBody))
+			return nil, &ProviderError{
+				StatusCode: resp.StatusCode,
+				Headers:    resp.Header,
+				Body:       respBody,
+				Message:    "Google API error",
+			}
 		}
 
 		var embedResp geminiEmbedResponse
@@ -355,7 +365,12 @@ func (c *GoogleClient) StreamChat(ctx context.Context, req *ChatRequest) (<-chan
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		return nil, errors.New(string(respBody))
+		return nil, &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       respBody,
+			Message:    "Google API error",
+		}
 	}
 
 	chunks := make(chan StreamChunk)

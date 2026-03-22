@@ -50,7 +50,7 @@ func NewBudgetService(usageRepo *repository.UsageLogRepository, budgetRepo *repo
 // SetBudget creates or updates a budget for a user.
 func (s *BudgetService) SetBudget(ctx context.Context, userID uuid.UUID, limitUSD, threshold float64, webhookURL, email string) (*models.Budget, error) {
 	budget := &models.Budget{
-		UserID:          userID,
+		OrgID:           userID,
 		MonthlyLimitUSD: limitUSD,
 		AlertThreshold:  threshold,
 		IsActive:        true,
@@ -100,7 +100,7 @@ func (s *BudgetService) CheckBudget(ctx context.Context, userID uuid.UUID) (*Bud
 	periodEnd := periodStart.AddDate(0, 1, 0).Add(-time.Second)
 
 	// Use SQL SUM aggregation instead of loading all rows
-	row, err := s.usageRepo.AggregateByTimeRange(ctx, &userID, periodStart, periodEnd)
+	row, err := s.usageRepo.AggregateByTimeRange(ctx, &userID, nil, nil, periodStart, periodEnd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to aggregate usage: %w", err)
 	}
@@ -151,7 +151,7 @@ type AnomalyResult struct {
 // DetectCostAnomaly compares today's cost against a sliding window.
 // Returns anomaly if current day cost exceeds mean + threshold*σ.
 // Uses SQL daily aggregation to avoid loading individual rows.
-func (s *Service) DetectCostAnomaly(ctx context.Context, userID uuid.UUID, windowDays int, sigmaThreshold float64) (*AnomalyResult, error) {
+func (s *Service) DetectCostAnomaly(ctx context.Context, orgID uuid.UUID, projectID *uuid.UUID, windowDays int, sigmaThreshold float64) (*AnomalyResult, error) {
 	if windowDays <= 1 {
 		windowDays = 14 // default 14-day window
 	}
@@ -164,7 +164,7 @@ func (s *Service) DetectCostAnomaly(ctx context.Context, userID uuid.UUID, windo
 	windowStart := todayStart.AddDate(0, 0, -windowDays)
 
 	// Use SQL aggregation: one row per day instead of loading all individual logs
-	dailyRows, err := s.usageRepo.AggregateDailyByTimeRange(ctx, &userID, windowStart, now)
+	dailyRows, err := s.usageRepo.AggregateDailyByTimeRange(ctx, &orgID, projectID, nil, windowStart, now)
 	if err != nil {
 		return nil, fmt.Errorf("failed to aggregate daily usage: %w", err)
 	}
@@ -216,7 +216,7 @@ func (s *Service) DetectCostAnomaly(ctx context.Context, userID uuid.UUID, windo
 	if isAnomaly {
 		result.Message = fmt.Sprintf("cost anomaly detected: $%.4f is %.1fσ above expected $%.4f", todayCost, deviation, mean)
 		s.logger.Warn("cost anomaly detected",
-			zap.String("user_id", userID.String()),
+			zap.String("org_id", orgID.String()),
 			zap.Float64("today_cost", todayCost),
 			zap.Float64("expected", mean),
 			zap.Float64("sigma", deviation),
@@ -319,7 +319,7 @@ func (s *Service) ExportUsageCSV(ctx context.Context, userID uuid.UUID, startTim
 	// Stream in batches to avoid OOM
 	offset := 0
 	for {
-		logs, err := s.usageRepo.GetByUserIDAndTimeRangePaginated(ctx, userID, startTime, endTime, csvBatchSize, offset)
+		logs, err := s.usageRepo.GetByOrgOrProjectPaginated(ctx, &userID, nil, startTime, endTime, csvBatchSize, offset)
 		if err != nil {
 			return fmt.Errorf("failed to get usage logs (offset %d): %w", offset, err)
 		}
@@ -377,7 +377,7 @@ func (s *Service) ExportSystemUsageCSV(ctx context.Context, startTime, endTime t
 		for _, log := range logs {
 			row := []string{
 				log.CreatedAt.Format(time.RFC3339),
-				log.UserID.String(),
+				log.ProjectID.String(),
 				log.APIKeyID.String(),
 				log.ModelName,
 				strconv.Itoa(log.RequestTokens),

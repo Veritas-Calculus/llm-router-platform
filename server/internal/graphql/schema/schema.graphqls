@@ -15,24 +15,28 @@ enum Role {
 type Query {
   # ── 个人数据 ──
   me: User! @auth
-  myApiKeys: [ApiKey!]! @auth
-  myUsageSummary: UsageSummary! @auth
-  myDailyUsage(days: Int = 30): [DailyStats!]! @auth
-  myUsageByProvider: [ProviderUsage!]! @auth
-  myRecentUsage(page: Int = 1, pageSize: Int = 20): UsageConnection! @auth
-  myBudget: Budget @auth
-  myBudgetStatus: BudgetStatus @auth
-  mySubscription: UserSubscription @auth
-  myOrders: [Order!]! @auth
+  myOrganizations: [Organization!]! @auth
+  organizationMembers(orgId: ID!): [OrganizationMember!]! @auth
+  identityProviders(orgId: ID!): [IdentityProvider!]! @auth
+  myProjects(orgId: ID!): [Project!]! @auth
+  myApiKeys(projectId: ID!): [ApiKey!]! @auth
+  myUsageSummary(orgId: ID, projectId: ID, channel: String): UsageSummary! @auth
+  myDailyUsage(days: Int = 30, orgId: ID, projectId: ID, channel: String): [DailyStats!]! @auth
+  myUsageByProvider(orgId: ID, projectId: ID, channel: String): [ProviderUsage!]! @auth
+  myRecentUsage(page: Int = 1, pageSize: Int = 20, orgId: ID, projectId: ID): UsageConnection! @auth
+  myBudget(orgId: ID): Budget @auth
+  myBudgetStatus(orgId: ID): BudgetStatus @auth
+  mySubscription(orgId: ID): UserSubscription @auth
+  myOrders(orgId: ID): [Order!]! @auth
   myTasks(page: Int = 1, pageSize: Int = 20): TaskConnection! @auth
   myAnomalyDetection: AnomalyResult! @auth
   myRedeemHistory: [RedeemRecord!]! @auth
 
   # ── Dashboard ──
-  dashboard: Dashboard! @auth
-  usageChart(days: Int = 30): [UsageChartPoint!]! @auth
-  providerStats: [ProviderStats!]! @auth
-  modelStats: [ModelStats!]! @auth
+  dashboard(projectId: ID, channel: String): Dashboard! @auth
+  usageChart(days: Int = 30, projectId: ID, channel: String): [UsageChartPoint!]! @auth
+  providerStats(projectId: ID, channel: String): [ProviderStats!]! @auth
+  modelStats(projectId: ID, channel: String): [ModelStats!]! @auth
 
   # ── Plans（需要登录）──
   plans: [Plan!]! @auth
@@ -53,6 +57,9 @@ type Query {
   healthProxies: [ProxyHealth!]! @auth(role: ADMIN)
   healthProviders: [ProviderHealth!]! @auth(role: ADMIN)
   healthHistory: [HealthEvent!]! @auth(role: ADMIN)
+  systemStatus: SystemStatus! @auth(role: ADMIN)
+  systemLoad: SystemLoad! @auth(role: ADMIN)
+  backupStatus: BackupStatus! @auth(role: ADMIN)
   mcpServers: [McpServer!]! @auth(role: ADMIN)
   mcpServer(id: ID!): McpServer! @auth(role: ADMIN)
   mcpTools: [McpTool!]! @auth(role: ADMIN)
@@ -61,6 +68,14 @@ type Query {
   inviteCodes: [InviteCode!]! @auth(role: ADMIN)
   systemAnomalyDetection: AnomalyResult! @auth(role: ADMIN)
   redeemCodes(page: Int, pageSize: Int): RedeemCodeConnection! @auth(role: ADMIN)
+  auditLogs(page: Int = 1, pageSize: Int = 20, action: String): AuditLogConnection! @auth(role: ADMIN)
+  errorLogs(page: Int = 1, pageSize: Int = 20): ErrorLogConnection! @auth(role: ADMIN)
+  integrations: [IntegrationConfig!]! @auth(role: ADMIN)
+  routingRules(page: Int = 1, pageSize: Int = 20): RoutingRuleList! @auth(role: ADMIN)
+  promptTemplates: PromptTemplateConnection! @auth(role: ADMIN)
+  promptTemplate(id: ID!): PromptTemplate! @auth(role: ADMIN)
+  promptVersions(templateId: ID!): [PromptVersion!]! @auth(role: ADMIN)
+  systemSla(hours: Int = 24): SystemSLA! @auth(role: ADMIN)
 
   # ── 公告 ──
   activeAnnouncements: [Announcement!]! @auth
@@ -74,6 +89,14 @@ type Query {
   documents: [Document!]! @auth(role: ADMIN)
   publishedDocuments: [Document!]! @auth
   document(id: ID!): Document! @auth(role: ADMIN)
+
+  # ── Public (unauthenticated) ──
+  registrationMode: RegistrationMode!
+}
+
+type RegistrationMode {
+  mode: String!
+  inviteCodeRequired: Boolean!
 }
 
 type Mutation {
@@ -88,10 +111,27 @@ type Mutation {
   changePassword(input: ChangePasswordInput!): Boolean! @auth
   updateProfile(input: UpdateProfileInput!): User! @auth
 
-  # ── API Keys ──
-  createApiKey(name: String!): ApiKeyWithSecret! @auth
-  revokeApiKey(id: ID!): ApiKey! @auth
-  deleteApiKey(id: ID!): Boolean! @auth
+  # -- MFA (Multi-Factor Auth) --
+  generateMfaSecret: MfaSecretInfo! @auth
+  verifyAndEnableMfa(code: String!): Boolean! @auth
+  disableMfa(code: String!): Boolean! @auth
+
+  # ── API Keys & Projects ──
+  createApiKey(projectId: ID!, name: String!, scopes: String, rateLimit: Int, tokenLimit: Int): ApiKeyWithSecret! @auth
+  updateApiKey(id: ID!, name: String, scopes: String, rateLimit: Int, tokenLimit: Int, isActive: Boolean): ApiKey! @auth
+  revokeApiKey(projectId: ID!, id: ID!): ApiKey! @auth
+  deleteApiKey(projectId: ID!, id: ID!): Boolean! @auth
+  updateProject(id: ID!, input: UpdateProjectInput!): Project! @auth
+
+  # ── Organization Members ──
+  addOrganizationMember(orgId: ID!, email: String!, role: String!): OrganizationMember! @auth
+  updateOrganizationMemberRole(orgId: ID!, userId: ID!, role: String!): OrganizationMember! @auth
+  removeOrganizationMember(orgId: ID!, userId: ID!): Boolean! @auth
+
+  # ── Identity Providers (SSO) ──
+  createIdentityProvider(input: CreateIdentityProviderInput!): IdentityProvider! @auth
+  updateIdentityProvider(id: ID!, input: UpdateIdentityProviderInput!): IdentityProvider! @auth
+  deleteIdentityProvider(id: ID!): Boolean! @auth
 
   # ── Budget ──
   setBudget(input: BudgetInput!): Budget! @auth
@@ -106,6 +146,7 @@ type Mutation {
 
   # ── Plans & Payments ──
   createCheckoutSession(planId: ID!): CheckoutSession! @auth
+  createPortalSession: CheckoutSession! @auth
   createRechargeSession(amount: Float!): CheckoutSession! @auth
 
   # ── Redeem Codes ──
@@ -147,6 +188,9 @@ type Mutation {
   checkProviderHealth(id: ID!): ProviderHealth! @auth(role: ADMIN)
   checkAllProviderHealth: [ProviderHealth!]! @auth(role: ADMIN)
 
+  # ── Admin: Integrations ──
+  updateIntegration(name: String!, input: UpdateIntegrationInput!): IntegrationConfig! @auth(role: ADMIN)
+
   # ── Admin: Alerts ──
   acknowledgeAlert(id: ID!): Alert! @auth(role: ADMIN)
   resolveAlert(id: ID!): Alert! @auth(role: ADMIN)
@@ -157,6 +201,13 @@ type Mutation {
   updateMcpServer(id: ID!, input: McpServerInput!): McpServer! @auth(role: ADMIN)
   deleteMcpServer(id: ID!): Boolean! @auth(role: ADMIN)
   refreshMcpTools(id: ID!): McpServer! @auth(role: ADMIN)
+
+  # ── Admin: Prompts ──
+  createPromptTemplate(input: PromptTemplateInput!): PromptTemplate! @auth(role: ADMIN)
+  updatePromptTemplate(id: ID!, input: PromptTemplateInput!): PromptTemplate! @auth(role: ADMIN)
+  deletePromptTemplate(id: ID!): Boolean! @auth(role: ADMIN)
+  createPromptVersion(input: PromptVersionInput!): PromptVersion! @auth(role: ADMIN)
+  setActivePromptVersion(templateId: ID!, versionId: ID!): PromptTemplate! @auth(role: ADMIN)
 
   # ── Admin: Plans ──
   createPlan(input: PlanInput!): Plan! @auth(role: ADMIN)
@@ -191,4 +242,9 @@ type Mutation {
   createDocument(input: DocumentInput!): Document! @auth(role: ADMIN)
   updateDocument(id: ID!, input: DocumentInput!): Document! @auth(role: ADMIN)
   deleteDocument(id: ID!): Boolean! @auth(role: ADMIN)
+
+  # ── Admin: Routing Rules ──
+  createRoutingRule(input: CreateRoutingRuleInput!): RoutingRule! @auth(role: ADMIN)
+  updateRoutingRule(id: ID!, input: UpdateRoutingRuleInput!): RoutingRule! @auth(role: ADMIN)
+  deleteRoutingRule(id: ID!): Boolean! @auth(role: ADMIN)
 }

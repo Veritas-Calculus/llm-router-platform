@@ -27,7 +27,7 @@ func TestUserModelFields(t *testing.T) {
 func TestAPIKeyModelFields(t *testing.T) {
 	userID := uuid.New()
 	apiKey := &models.APIKey{
-		UserID:     userID,
+		ProjectID:  userID,
 		KeyHash:    "hashed-key",
 		KeyPrefix:  "llm_abc",
 		Name:       "Test Key",
@@ -36,7 +36,7 @@ func TestAPIKeyModelFields(t *testing.T) {
 		DailyLimit: 10000,
 	}
 
-	assert.Equal(t, userID, apiKey.UserID)
+	assert.Equal(t, userID, apiKey.ProjectID)
 	assert.Equal(t, "llm_abc", apiKey.KeyPrefix)
 	assert.Equal(t, 1000, apiKey.RateLimit)
 }
@@ -105,7 +105,7 @@ func TestProxyModelFields(t *testing.T) {
 
 func TestUsageLogModelFields(t *testing.T) {
 	log := &models.UsageLog{
-		UserID:         uuid.New(),
+		ProjectID:         uuid.New(),
 		APIKeyID:       uuid.New(),
 		ProviderID:     uuid.New(),
 		RequestTokens:  100,
@@ -161,7 +161,7 @@ func TestAlertConfigModelFields(t *testing.T) {
 
 func TestConversationMemoryModelFields(t *testing.T) {
 	memory := &models.ConversationMemory{
-		UserID:         uuid.New(),
+		ProjectID:         uuid.New(),
 		ConversationID: "conv-123",
 		Role:           "user",
 		Content:        "Hello",

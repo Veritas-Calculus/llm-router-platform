@@ -71,6 +71,10 @@ type AlertConfig {
   targetId: ID!
   isEnabled: Boolean!
   failureThreshold: Int!
+  errorRateThreshold: Float!
+  latencyThresholdMs: Int!
+  budgetThreshold: Float!
+  cooldownMinutes: Int!
   webhookUrl: String
   email: String
 }
@@ -80,6 +84,117 @@ input AlertConfigInput {
   targetId: ID!
   isEnabled: Boolean!
   failureThreshold: Int!
+  errorRateThreshold: Float
+  latencyThresholdMs: Int
+  budgetThreshold: Float
+  cooldownMinutes: Int
   webhookUrl: String
   email: String
+}
+
+type SystemSLA {
+  totalRequests: Int!
+  failureRate: Float!
+  avgLatencyMs: Float!
+  p95LatencyMs: Float!
+  p99LatencyMs: Float!
+  activeProviders: Int!
+  healthyProviders: Int!
+}
+
+# ──────────────────────────────────────────────────
+# System Monitoring types
+# ──────────────────────────────────────────────────
+
+type SystemStatus {
+  service: ServiceInfo!
+  runtime: RuntimeInfo!
+  dependencies: [DependencyStatus!]!
+  overallStatus: String!
+}
+
+type ServiceInfo {
+  version: String!
+  gitCommit: String!
+  buildTime: String!
+  uptime: String!
+  configMode: String!
+}
+
+type RuntimeInfo {
+  goroutines: Int!
+  heapAllocMB: Float!
+  heapSysMB: Float!
+  gcPauseMs: Float!
+  numGC: Int!
+  cpuCores: Int!
+}
+
+type DependencyStatus {
+  name: String!
+  status: String!
+  latencyMs: Float!
+  version: String
+  details: String
+}
+
+# ──────────────────────────────────────────────────
+# Load Monitoring types
+# ──────────────────────────────────────────────────
+
+type SystemLoad {
+  service: ServiceLoad!
+  database: DatabaseLoad!
+  redis: RedisLoad!
+}
+
+type ServiceLoad {
+  requestsInFlight: Int!
+  requestsPerSecond: Float!
+  avgLatencyMs: Float!
+  p95LatencyMs: Float!
+  errorRate: Float!
+}
+
+type DatabaseLoad {
+  activeConnections: Int!
+  maxConnections: Int!
+  poolIdle: Int!
+  poolInUse: Int!
+  transactionsPerSecond: Float!
+  cacheHitRate: Float!
+  deadlocks: Int!
+}
+
+type RedisLoad {
+  connectedClients: Int!
+  usedMemoryMB: Float!
+  maxMemoryMB: Float!
+  opsPerSecond: Float!
+  hitRate: Float!
+  keyCount: Int!
+}
+
+# ──────────────────────────────────────────────────
+# Backup Status types
+# ──────────────────────────────────────────────────
+
+type BackupStatus {
+  lastBackup: BackupRecord
+  records: [BackupRecord!]!
+  isConfigured: Boolean!
+  scheduleEnabled: Boolean!
+  nextScheduled: DateTime
+}
+
+type BackupRecord {
+  id: ID!
+  type: String!
+  status: String!
+  sizeBytes: Int!
+  durationMs: Int!
+  destination: String!
+  errorMessage: String
+  startedAt: DateTime!
+  completedAt: DateTime
 }

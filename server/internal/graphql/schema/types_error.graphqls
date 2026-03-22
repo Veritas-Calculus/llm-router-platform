@@ -1,0 +1,18 @@
+type ErrorLog {
+  id: ID!
+  trajectoryId: String!
+  traceId: String!
+  provider: String!
+  model: String!
+  statusCode: Int!
+  headers: String!
+  responseBody: String!
+  createdAt: DateTime!
+}
+
+type ErrorLogConnection {
+  data: [ErrorLog!]!
+  total: Int!
+  page: Int!
+  pageSize: Int!
+}

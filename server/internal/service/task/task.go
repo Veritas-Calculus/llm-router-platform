@@ -29,7 +29,7 @@ func NewService(repo repository.TaskRepo, logger *zap.Logger) *Service {
 }
 
 // CreateTask creates a new async task.
-func (s *Service) CreateTask(ctx context.Context, userID uuid.UUID, taskType, input, webhookURL string) (*models.AsyncTask, error) {
+func (s *Service) CreateTask(ctx context.Context, projectID uuid.UUID, taskType, input, webhookURL string) (*models.AsyncTask, error) {
 	// Validate webhook URL against SSRF before persisting
 	if webhookURL != "" {
 		if err := sanitize.ValidateWebhookURL(webhookURL, false); err != nil {
@@ -38,7 +38,7 @@ func (s *Service) CreateTask(ctx context.Context, userID uuid.UUID, taskType, in
 	}
 
 	task := &models.AsyncTask{
-		UserID:     userID,
+		ProjectID:  projectID,
 		Type:       taskType,
 		Status:     "pending",
 		Input:      input,
@@ -58,9 +58,9 @@ func (s *Service) GetTask(ctx context.Context, taskID uuid.UUID) (*models.AsyncT
 	return s.repo.GetByID(ctx, taskID)
 }
 
-// ListTasks returns tasks for a user, optionally filtered by status.
-func (s *Service) ListTasks(ctx context.Context, userID uuid.UUID, status string, limit, offset int) ([]models.AsyncTask, int64, error) {
-	return s.repo.ListByUserID(ctx, userID, status, limit, offset)
+// ListTasks returns tasks for a project, optionally filtered by status.
+func (s *Service) ListTasks(ctx context.Context, projectID uuid.UUID, status string, limit, offset int) ([]models.AsyncTask, int64, error) {
+	return s.repo.ListByProjectID(ctx, projectID, status, limit, offset)
 }
 
 // UpdateProgress updates a task's progress percentage.

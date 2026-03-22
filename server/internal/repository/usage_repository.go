@@ -40,13 +40,22 @@ func (r *UsageLogRepository) Update(ctx context.Context, log *models.UsageLog) e
 	return r.db.WithContext(ctx).Save(log).Error
 }
 
-// GetByUserIDAndTimeRange retrieves usage logs for a user in time range.
-func (r *UsageLogRepository) GetByUserIDAndTimeRange(ctx context.Context, userID uuid.UUID, start, end time.Time) ([]models.UsageLog, error) {
+// GetByOrgOrProjectTimeRange retrieves usage logs for a specific org or project.
+func (r *UsageLogRepository) GetByOrgOrProjectTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, start, end time.Time) ([]models.UsageLog, error) {
 	var logs []models.UsageLog
-	if err := r.db.WithContext(ctx).
-		Where("user_id = ? AND created_at >= ? AND created_at <= ?", userID, start, end).
-		Order("created_at DESC").
-		Find(&logs).Error; err != nil {
+	query := r.db.WithContext(ctx).Model(&models.UsageLog{}).
+		Select("usage_logs.*").
+		Where("usage_logs.created_at >= ? AND usage_logs.created_at <= ?", start, end).
+		Order("usage_logs.created_at DESC")
+
+	if orgID != nil {
+		query = query.Joins("JOIN projects ON usage_logs.project_id = projects.id").Where("projects.org_id = ?", *orgID)
+	}
+	if projectID != nil {
+		query = query.Where("usage_logs.project_id = ?", *projectID)
+	}
+
+	if err := query.Find(&logs).Error; err != nil {
 		return nil, err
 	}
 	return logs, nil
@@ -64,14 +73,23 @@ func (r *UsageLogRepository) GetByTimeRange(ctx context.Context, start, end time
 	return logs, nil
 }
 
-// GetByUserIDAndTimeRangePaginated retrieves usage logs for a user with LIMIT/OFFSET pagination.
-func (r *UsageLogRepository) GetByUserIDAndTimeRangePaginated(ctx context.Context, userID uuid.UUID, start, end time.Time, limit, offset int) ([]models.UsageLog, error) {
+// GetByOrgOrProjectPaginated retrieves usage logs with LIMIT/OFFSET pagination.
+func (r *UsageLogRepository) GetByOrgOrProjectPaginated(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, start, end time.Time, limit, offset int) ([]models.UsageLog, error) {
 	var logs []models.UsageLog
-	if err := r.db.WithContext(ctx).
-		Where("user_id = ? AND created_at >= ? AND created_at <= ?", userID, start, end).
-		Order("created_at ASC").
-		Limit(limit).Offset(offset).
-		Find(&logs).Error; err != nil {
+	query := r.db.WithContext(ctx).Model(&models.UsageLog{}).
+		Select("usage_logs.*").
+		Where("usage_logs.created_at >= ? AND usage_logs.created_at <= ?", start, end).
+		Order("usage_logs.created_at DESC").
+		Limit(limit).Offset(offset)
+
+	if orgID != nil {
+		query = query.Joins("JOIN projects ON usage_logs.project_id = projects.id").Where("projects.org_id = ?", *orgID)
+	}
+	if projectID != nil {
+		query = query.Where("usage_logs.project_id = ?", *projectID)
+	}
+
+	if err := query.Find(&logs).Error; err != nil {
 		return nil, err
 	}
 	return logs, nil
@@ -106,22 +124,28 @@ type UsageSummaryRow struct {
 	MCPErrorCount int64   `json:"mcp_error_count"`
 }
 
-// AggregateByTimeRange returns SQL-aggregated usage for a user in a time range.
-func (r *UsageLogRepository) AggregateByTimeRange(ctx context.Context, userID *uuid.UUID, start, end time.Time) (*UsageSummaryRow, error) {
+// AggregateByTimeRange returns SQL-aggregated usage for an org/project in a time range.
+func (r *UsageLogRepository) AggregateByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) (*UsageSummaryRow, error) {
 	var row UsageSummaryRow
 	query := r.db.WithContext(ctx).Model(&models.UsageLog{}).
-		Select(`COUNT(*) AS total_requests,
-				COALESCE(SUM(total_tokens), 0) AS total_tokens,
-				COALESCE(SUM(cost), 0) AS total_cost,
-				COALESCE(AVG(latency), 0) AS avg_latency,
-				COALESCE(SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END), 0) AS success_count,
-				COALESCE(SUM(CASE WHEN status_code < 200 OR status_code >= 300 THEN 1 ELSE 0 END), 0) AS error_count,
-				COALESCE(SUM(mcp_call_count), 0) AS mcp_call_count,
-				COALESCE(SUM(mcp_error_count), 0) AS mcp_error_count`).
-		Where("created_at >= ? AND created_at <= ?", start, end)
+		Select(`COUNT(usage_logs.id) AS total_requests,
+				COALESCE(SUM(usage_logs.total_tokens), 0) AS total_tokens,
+				COALESCE(SUM(usage_logs.cost), 0) AS total_cost,
+				COALESCE(AVG(usage_logs.latency), 0) AS avg_latency,
+				COALESCE(SUM(CASE WHEN usage_logs.status_code >= 200 AND usage_logs.status_code < 300 THEN 1 ELSE 0 END), 0) AS success_count,
+				COALESCE(SUM(CASE WHEN usage_logs.status_code < 200 OR usage_logs.status_code >= 300 THEN 1 ELSE 0 END), 0) AS error_count,
+				COALESCE(SUM(usage_logs.mcp_call_count), 0) AS mcp_call_count,
+				COALESCE(SUM(usage_logs.mcp_error_count), 0) AS mcp_error_count`).
+		Where("usage_logs.created_at >= ? AND usage_logs.created_at <= ?", start, end)
 
-	if userID != nil {
-		query = query.Where("user_id = ?", *userID)
+	if orgID != nil {
+		query = query.Joins("JOIN projects ON usage_logs.project_id = projects.id").Where("projects.org_id = ?", *orgID)
+	}
+	if projectID != nil {
+		query = query.Where("usage_logs.project_id = ?", *projectID)
+	}
+	if channel != nil && *channel != "" {
+		query = query.Where("usage_logs.channel = ?", *channel)
 	}
 
 	if err := query.Scan(&row).Error; err != nil {
@@ -139,19 +163,25 @@ type DailyUsageRow struct {
 }
 
 // AggregateDailyByTimeRange returns usage aggregated by day (SQL GROUP BY).
-func (r *UsageLogRepository) AggregateDailyByTimeRange(ctx context.Context, userID *uuid.UUID, start, end time.Time) ([]DailyUsageRow, error) {
+func (r *UsageLogRepository) AggregateDailyByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) ([]DailyUsageRow, error) {
 	var rows []DailyUsageRow
 	query := r.db.WithContext(ctx).Model(&models.UsageLog{}).
-		Select(`TO_CHAR(created_at, 'YYYY-MM-DD') AS date,
-				COUNT(*) AS requests,
-				COALESCE(SUM(total_tokens), 0) AS tokens,
-				COALESCE(SUM(cost), 0) AS cost`).
-		Where("created_at >= ? AND created_at <= ?", start, end).
-		Group("TO_CHAR(created_at, 'YYYY-MM-DD')").
+		Select(`TO_CHAR(usage_logs.created_at, 'YYYY-MM-DD') AS date,
+				COUNT(usage_logs.id) AS requests,
+				COALESCE(SUM(usage_logs.total_tokens), 0) AS tokens,
+				COALESCE(SUM(usage_logs.cost), 0) AS cost`).
+		Where("usage_logs.created_at >= ? AND usage_logs.created_at <= ?", start, end).
+		Group("TO_CHAR(usage_logs.created_at, 'YYYY-MM-DD')").
 		Order("date")
 
-	if userID != nil {
-		query = query.Where("user_id = ?", *userID)
+	if orgID != nil {
+		query = query.Joins("JOIN projects ON usage_logs.project_id = projects.id").Where("projects.org_id = ?", *orgID)
+	}
+	if projectID != nil {
+		query = query.Where("usage_logs.project_id = ?", *projectID)
+	}
+	if channel != nil && *channel != "" {
+		query = query.Where("usage_logs.channel = ?", *channel)
 	}
 
 	if err := query.Scan(&rows).Error; err != nil {
@@ -169,18 +199,24 @@ type ProviderUsageRow struct {
 }
 
 // AggregateByProviderByTimeRange returns usage grouped by provider (SQL GROUP BY).
-func (r *UsageLogRepository) AggregateByProviderByTimeRange(ctx context.Context, userID *uuid.UUID, start, end time.Time) ([]ProviderUsageRow, error) {
+func (r *UsageLogRepository) AggregateByProviderByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) ([]ProviderUsageRow, error) {
 	var rows []ProviderUsageRow
 	query := r.db.WithContext(ctx).Model(&models.UsageLog{}).
-		Select(`provider_id,
-				COUNT(*) AS requests,
-				COALESCE(SUM(total_tokens), 0) AS tokens,
-				COALESCE(SUM(cost), 0) AS cost`).
-		Where("created_at >= ? AND created_at <= ?", start, end).
-		Group("provider_id")
+		Select(`usage_logs.provider_id,
+				COUNT(usage_logs.id) AS requests,
+				COALESCE(SUM(usage_logs.total_tokens), 0) AS tokens,
+				COALESCE(SUM(usage_logs.cost), 0) AS cost`).
+		Where("usage_logs.created_at >= ? AND usage_logs.created_at <= ?", start, end).
+		Group("usage_logs.provider_id")
 
-	if userID != nil {
-		query = query.Where("user_id = ?", *userID)
+	if orgID != nil {
+		query = query.Joins("JOIN projects ON usage_logs.project_id = projects.id").Where("projects.org_id = ?", *orgID)
+	}
+	if projectID != nil {
+		query = query.Where("usage_logs.project_id = ?", *projectID)
+	}
+	if channel != nil && *channel != "" {
+		query = query.Where("usage_logs.channel = ?", *channel)
 	}
 
 	if err := query.Scan(&rows).Error; err != nil {
@@ -201,21 +237,27 @@ type ModelUsageRow struct {
 }
 
 // AggregateByModelByTimeRange returns usage grouped by model name (SQL GROUP BY).
-func (r *UsageLogRepository) AggregateByModelByTimeRange(ctx context.Context, userID *uuid.UUID, start, end time.Time) ([]ModelUsageRow, error) {
+func (r *UsageLogRepository) AggregateByModelByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) ([]ModelUsageRow, error) {
 	var rows []ModelUsageRow
 	query := r.db.WithContext(ctx).Model(&models.UsageLog{}).
-		Select(`model_id, model_name,
-				COUNT(*) AS requests,
-				COALESCE(SUM(request_tokens), 0) AS input_tokens,
-				COALESCE(SUM(response_tokens), 0) AS output_tokens,
-				COALESCE(SUM(total_tokens), 0) AS total_tokens,
-				COALESCE(SUM(cost), 0) AS cost`).
-		Where("created_at >= ? AND created_at <= ?", start, end).
-		Where("model_name != ''").
-		Group("model_id, model_name")
+		Select(`usage_logs.model_id, usage_logs.model_name,
+				COUNT(usage_logs.id) AS requests,
+				COALESCE(SUM(usage_logs.request_tokens), 0) AS input_tokens,
+				COALESCE(SUM(usage_logs.response_tokens), 0) AS output_tokens,
+				COALESCE(SUM(usage_logs.total_tokens), 0) AS total_tokens,
+				COALESCE(SUM(usage_logs.cost), 0) AS cost`).
+		Where("usage_logs.created_at >= ? AND usage_logs.created_at <= ?", start, end).
+		Where("usage_logs.model_name != ''").
+		Group("usage_logs.model_id, usage_logs.model_name")
 
-	if userID != nil {
-		query = query.Where("user_id = ?", *userID)
+	if orgID != nil {
+		query = query.Joins("JOIN projects ON usage_logs.project_id = projects.id").Where("projects.org_id = ?", *orgID)
+	}
+	if projectID != nil {
+		query = query.Where("usage_logs.project_id = ?", *projectID)
+	}
+	if channel != nil && *channel != "" {
+		query = query.Where("usage_logs.channel = ?", *channel)
 	}
 
 	if err := query.Scan(&rows).Error; err != nil {

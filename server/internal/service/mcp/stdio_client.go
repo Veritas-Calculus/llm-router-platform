@@ -106,7 +106,7 @@ func (c *StdioClient) Connect(ctx context.Context) error {
 
 	// MCP Initialize handshake
 	if err := c.initialize(ctx); err != nil {
-		c.Close()
+		_ = c.Close()
 		return err
 	}
 

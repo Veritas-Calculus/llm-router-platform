@@ -16,7 +16,7 @@ type Plan {
 
 type UserSubscription {
   id: ID!
-  userId: ID!
+  orgId: ID!
   planId: ID!
   status: String!
   currentPeriodStart: DateTime!
@@ -38,7 +38,7 @@ type Order {
 
 type Budget {
   id: ID!
-  userId: ID!
+  orgId: ID!
   monthlyLimitUsd: Float!
   alertThreshold: Float!
   enforceHardLimit: Boolean!

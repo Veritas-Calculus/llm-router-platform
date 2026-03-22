@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -6,7 +8,6 @@ import {
   KeyIcon,
   ChartBarIcon,
   CreditCardIcon,
-  GiftIcon,
   DocumentTextIcon,
   UserIcon,
   HomeIcon,
@@ -14,7 +15,6 @@ import {
   MegaphoneIcon,
   SparklesIcon,
   TicketIcon,
-  TagIcon,
   GlobeAltIcon,
   CommandLineIcon,
   DocumentDuplicateIcon,
@@ -23,24 +23,56 @@ import {
   Bars3Icon,
   ShieldCheckIcon,
   LanguageIcon,
+  ArrowPathIcon,
   CpuChipIcon,
   HeartIcon,
   SunIcon,
   MoonIcon,
+  ChatBubbleLeftRightIcon,
+  ShieldExclamationIcon,
+  BugAntIcon,
+  CircleStackIcon,
+  BoltIcon,
+  BellAlertIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/stores/authStore';
 import { useTranslation } from '@/lib/i18n';
 import NotificationCenter from '@/components/NotificationCenter';
+import OrgSwitcher from '@/components/OrgSwitcher';
 
 /* ── Navigation definitions ── */
 
-const userNavItems = [
-  { key: 'nav.api_keys', href: '/api-keys', icon: KeyIcon },
-  { key: 'nav.usage', href: '/usage', icon: ChartBarIcon },
-  { key: 'nav.subscription', href: '/subscription', icon: CreditCardIcon },
-  { key: 'nav.redeem', href: '/redeem', icon: GiftIcon },
-  { key: 'nav.docs', href: '/docs', icon: DocumentTextIcon },
-  { key: 'nav.profile', href: '/profile', icon: UserIcon },
+const userNavGroups = [
+  {
+    labelKey: 'nav.group_overview',
+    items: [
+      { key: 'nav.dashboard', href: '/dashboard', icon: HomeIcon },
+      { key: 'nav.playground', href: '/playground', icon: ChatBubbleLeftRightIcon },
+    ],
+  },
+  {
+    labelKey: 'nav.group_development',
+    items: [
+      { key: 'nav.api_keys', href: '/api-keys', icon: KeyIcon },
+      { key: 'nav.webhooks', href: '/webhooks', icon: BoltIcon },
+      { key: 'nav.data_privacy', href: '/dlp', icon: ShieldCheckIcon },
+      { key: 'nav.docs', href: '/docs', icon: DocumentTextIcon },
+    ],
+  },
+  {
+    labelKey: 'nav.group_billing',
+    items: [
+      { key: 'nav.usage', href: '/usage', icon: ChartBarIcon },
+      { key: 'nav.subscription', href: '/subscription', icon: CreditCardIcon },
+    ],
+  },
+  {
+    labelKey: 'nav.group_account',
+    items: [
+      { key: 'nav.members', href: '/members', icon: UsersIcon },
+      { key: 'nav.profile', href: '/profile', icon: UserIcon },
+    ],
+  },
 ];
 
 const adminNavGroups = [
@@ -48,7 +80,7 @@ const adminNavGroups = [
     labelKey: 'nav.group_overview',
     items: [
       { key: 'nav.dashboard', href: '/admin/dashboard', icon: HomeIcon },
-      { key: 'nav.admin_usage', href: '/admin/usage', icon: ChartBarIcon },
+      { key: 'nav.analytics', href: '/admin/analytics', icon: ChartBarIcon },
     ],
   },
   {
@@ -62,28 +94,29 @@ const adminNavGroups = [
     labelKey: 'nav.group_commerce',
     items: [
       { key: 'nav.admin_plans', href: '/admin/plans', icon: SparklesIcon },
-      { key: 'nav.redeem_codes', href: '/admin/redeem-codes', icon: TicketIcon },
-      { key: 'nav.coupons', href: '/admin/coupons', icon: TagIcon },
+      { key: 'nav.promotions', href: '/admin/promotions', icon: TicketIcon },
     ],
   },
   {
     labelKey: 'nav.group_infra',
     items: [
       { key: 'nav.providers', href: '/admin/providers', icon: CpuChipIcon },
+      { key: 'nav.routing_engine', href: '/admin/routing-rules', icon: ArrowPathIcon },
       { key: 'nav.proxies', href: '/admin/proxies', icon: GlobeAltIcon },
       { key: 'nav.mcp', href: '/admin/mcp', icon: CommandLineIcon },
-      { key: 'nav.health', href: '/admin/health', icon: HeartIcon },
-    ],
-  },
-  {
-    labelKey: 'nav.group_content',
-    items: [
-      { key: 'nav.admin_docs', href: '/admin/docs', icon: DocumentDuplicateIcon },
+      { key: 'nav.cache', href: '/admin/cache', icon: CircleStackIcon },
+      { key: 'nav.monitoring', href: '/admin/monitoring', icon: HeartIcon },
+      { key: 'nav.admin_notifications', href: '/admin/notifications', icon: BellAlertIcon },
+      { key: 'nav.prompts', href: '/admin/prompts', icon: DocumentTextIcon },
+      { key: 'nav.rate_limits', href: '/admin/rate-limits', icon: ShieldExclamationIcon },
     ],
   },
   {
     labelKey: 'nav.group_system',
     items: [
+      { key: 'nav.admin_audit', href: '/admin/audit', icon: ShieldExclamationIcon },
+      { key: 'nav.admin_error_logs', href: '/admin/error-logs', icon: BugAntIcon },
+      { key: 'nav.admin_docs', href: '/admin/docs', icon: DocumentDuplicateIcon },
       { key: 'nav.admin_settings', href: '/admin/settings', icon: Cog6ToothIcon },
     ],
   },
@@ -167,9 +200,13 @@ function Layout() {
   }, [location.pathname]);
 
   // If admin switches to user view while on an admin-only page, redirect
+  // If admin switches to admin view while on a user page, redirect to admin dashboard
   useEffect(() => {
     if (isAdmin && !adminView && location.pathname.startsWith('/admin')) {
       navigate('/api-keys', { replace: true });
+    }
+    if (isAdmin && adminView && !location.pathname.startsWith('/admin')) {
+      navigate('/admin/dashboard', { replace: true });
     }
   }, [adminView, isAdmin, location.pathname, navigate]);
 
@@ -202,7 +239,7 @@ function Layout() {
       {/* Sidebar */}
       <aside
         className={clsx(
-          'fixed inset-y-0 left-0 z-50 w-64 bg-white/80 backdrop-blur-xl border-r border-apple-gray-200 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0',
+          'sidebar-bg fixed inset-y-0 left-0 z-50 w-64 backdrop-blur-xl border-r border-apple-gray-200 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0',
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
@@ -216,6 +253,9 @@ function Layout() {
             </span>
           </div>
 
+          {/* Organization Switcher */}
+          <OrgSwitcher />
+
           {/* Admin / User View Toggle */}
           {isAdmin && (
             <div className="px-4 pb-3">
@@ -225,7 +265,7 @@ function Layout() {
                   className={clsx(
                     'flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200',
                     !adminView
-                      ? 'bg-white text-apple-blue shadow-sm border border-apple-gray-200'
+                      ? 'bg-apple-gray-50 text-apple-blue shadow-sm border border-apple-gray-200'
                       : 'text-apple-gray-500 hover:text-apple-gray-700'
                   )}
                 >
@@ -237,7 +277,7 @@ function Layout() {
                   className={clsx(
                     'flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200',
                     adminView
-                      ? 'bg-white text-apple-blue shadow-sm border border-apple-gray-200'
+                      ? 'bg-apple-gray-50 text-apple-blue shadow-sm border border-apple-gray-200'
                       : 'text-apple-gray-500 hover:text-apple-gray-700'
                   )}
                 >
@@ -249,14 +289,7 @@ function Layout() {
           )}
 
           <nav className="flex-1 px-3 space-y-1 overflow-y-auto pb-4">
-            {!showAdminNav ? (
-              /* User view nav */
-              userNavItems.map((item) => (
-                <NavItem key={item.key} item={item} t={t} />
-              ))
-            ) : (
-              /* Admin view nav — grouped */
-              adminNavGroups.map((group, idx) => (
+            {(showAdminNav ? adminNavGroups : userNavGroups).map((group, idx) => (
                 <div key={group.labelKey} className={idx > 0 ? 'border-t border-apple-gray-100 mt-2 pt-2' : ''}>
                   <div className="pt-3 pb-2 px-4 first:pt-0">
                     <p className="text-[11px] font-semibold text-apple-gray-400 uppercase tracking-wider">
@@ -267,8 +300,7 @@ function Layout() {
                     <NavItem key={item.key} item={item} t={t} />
                   ))}
                 </div>
-              ))
-            )}
+              ))}
           </nav>
         </div>
       </aside>
@@ -276,7 +308,7 @@ function Layout() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Header */}
-        <header className="bg-white/80 backdrop-blur-md border-b border-apple-gray-200 h-14 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30">
+        <header className="header-bg backdrop-blur-md border-b border-apple-gray-200 h-14 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsSidebarOpen(true)}
@@ -329,7 +361,7 @@ function Layout() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -4, scale: 0.95 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-lg border border-apple-gray-200 py-2 z-50"
+                    className="absolute right-0 top-full mt-2 w-56 bg-apple-gray-50 rounded-xl shadow-lg border border-apple-gray-200 py-2 z-50"
                   >
                     <div className="px-4 py-2 border-b border-apple-gray-100">
                       <p className="text-sm font-semibold text-apple-gray-900 truncate">{user?.name || 'User'}</p>

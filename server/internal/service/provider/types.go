@@ -14,6 +14,28 @@ var (
 	ErrNotImplemented = errors.New("operation not implemented by this provider")
 )
 
+// ProviderError encapsulates an error from an upstream LLM provider, preserving HTTP details.
+type ProviderError struct {
+	StatusCode int
+	Headers    map[string][]string
+	Body       []byte
+	Message    string
+}
+
+// Error implements the error interface.
+func (e *ProviderError) Error() string {
+	if e.Message != "" && len(e.Body) > 0 {
+		return e.Message + ": " + string(e.Body)
+	}
+	if len(e.Body) > 0 {
+		return string(e.Body)
+	}
+	if e.Message != "" {
+		return e.Message
+	}
+	return "unknown provider error"
+}
+
 // FlexibleContent handles the OpenAI-compatible content field which can be
 // either a plain string or an array of content parts (multimodal format).
 // After unmarshalling, Text contains the concatenated text content.

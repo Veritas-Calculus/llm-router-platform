@@ -149,7 +149,7 @@ function RedeemPage() {
 
       {history.length === 0 && (
         <div className="card p-8 text-center">
-          <TicketIcon className="w-10 h-10 text-apple-gray-300 mx-auto mb-3" />
+          <TicketIcon className="w-12 h-12 text-apple-gray-300 mx-auto mb-3" />
           <p className="text-sm text-apple-gray-500">{t('redeem.no_history')}</p>
         </div>
       )}

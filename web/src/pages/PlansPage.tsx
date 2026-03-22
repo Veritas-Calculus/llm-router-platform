@@ -8,7 +8,7 @@ import {
   BuildingOffice2Icon
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation } from '@apollo/client/react';
-import { PLANS_QUERY, MY_BILLING_QUERY, CREATE_CHECKOUT_SESSION, CREATE_RECHARGE_SESSION } from '@/lib/graphql/operations';
+import { PLANS_QUERY, MY_BILLING_QUERY, CREATE_CHECKOUT_SESSION, CREATE_RECHARGE_SESSION, CREATE_PORTAL_SESSION } from '@/lib/graphql/operations';
 import type { Plan } from '@/lib/types';
 import toast from 'react-hot-toast';
 
@@ -18,6 +18,7 @@ function PlansPage() {
   const { data: plansData, loading: plansLoading } = useQuery<any>(PLANS_QUERY);
   const { data: billingData, loading: billingLoading } = useQuery<any>(MY_BILLING_QUERY);
   const [checkoutMut] = useMutation(CREATE_CHECKOUT_SESSION);
+  const [portalMut] = useMutation(CREATE_PORTAL_SESSION);
   const [rechargeMut] = useMutation(CREATE_RECHARGE_SESSION);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const loading = plansLoading || billingLoading;
@@ -38,6 +39,14 @@ function PlansPage() {
   const handleSubscribe = async (planId: string) => {
     try {
       setProcessingId(planId);
+      if (subscription?.status === 'active' && subscription?.plan_name !== 'Free') {
+        // Already have a paid sub
+        const { data } = await portalMut();
+        const url = (data as any)?.createPortalSession?.url;
+        if (url) window.location.href = url;
+        return;
+      }
+      
       const { data } = await checkoutMut({ variables: { planId } });
       const url = (data as any)?.createCheckoutSession?.url;
       if (url) window.location.href = url;
@@ -164,6 +173,8 @@ function PlansPage() {
                       <ArrowPathIcon className="w-5 h-5 animate-spin" />
                     ) : isCurrent ? (
                       'Subscribed'
+                    ) : (subscription?.status === 'active' && subscription?.plan_name !== 'Free') ? (
+                      'Manage Subscription'
                     ) : (
                       'Upgrade Now'
                     )}

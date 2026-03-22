@@ -3,38 +3,50 @@ import { gql } from '@apollo/client';
 // ── Dashboard Operations ────────────────────────────────────────────
 
 export const DASHBOARD_QUERY = gql`
-  query Dashboard($days: Int) {
-    dashboard {
+  query Dashboard($days: Int, $projectId: ID, $channel: String) {
+    dashboard(projectId: $projectId, channel: $channel) {
       totalRequests
+      successRate
       totalTokens
       totalCost
       activeUsers
       activeProviders
-      activeModels
-      errorRate
-      avgLatency
+      activeProxies
+      requestsToday
+      costToday
+      tokensToday
+      errorCount
+      mcpCallCount
+      mcpErrorCount
+      apiKeys {
+        total
+        healthy
+      }
+      proxies {
+        total
+        healthy
+      }
     }
-    usageChart(days: $days) {
+    usageChart(days: $days, projectId: $projectId, channel: $channel) {
       date
       requests
       tokens
       cost
     }
-    providerStats {
-      provider
+    providerStats(projectId: $projectId, channel: $channel) {
+      providerName
       requests
       tokens
-      cost
-      errorRate
-      avgLatency
+      totalCost
+      successRate
+      avgLatencyMs
     }
-    modelStats {
-      model
-      provider
+    modelStats(projectId: $projectId, channel: $channel) {
+      modelName
       requests
-      tokens
-      cost
-      avgLatency
+      inputTokens
+      outputTokens
+      totalCost
     }
   }
 `;

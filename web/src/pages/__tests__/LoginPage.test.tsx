@@ -32,6 +32,11 @@ vi.mock('framer-motion', () => ({
     AnimatePresence: ({ children }: any) => <>{children}</>,
 }));
 
+vi.mock('@apollo/client/react', () => ({
+    useQuery: vi.fn(() => ({ data: { registrationMode: { mode: 'open', inviteCodeRequired: false } }, loading: false })),
+    useMutation: vi.fn(() => [vi.fn(), { loading: false }]),
+}));
+
 function renderLoginPage() {
     return render(
         <BrowserRouter>

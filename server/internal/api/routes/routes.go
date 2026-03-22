@@ -3,10 +3,12 @@ package routes
 
 import (
 	"database/sql"
+	"net/http" // Added for http.StatusOK
 	"net/http/pprof"
 
 	"llm-router-platform/internal/api/handlers"
 	"llm-router-platform/internal/api/middleware"
+	"llm-router-platform/internal/api/openapi" // Added import
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/graphql/dataloaders"
 	gqlhandler "llm-router-platform/internal/graphql/handler"
@@ -14,6 +16,7 @@ import (
 	announcementSvc "llm-router-platform/internal/service/announcement"
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/billing"
+	semantic "llm-router-platform/internal/service/cache"
 	configService "llm-router-platform/internal/service/config"
 	couponSvc "llm-router-platform/internal/service/coupon"
 	documentSvc "llm-router-platform/internal/service/document"
@@ -21,6 +24,7 @@ import (
 	"llm-router-platform/internal/service/health"
 	"llm-router-platform/internal/service/mcp"
 	"llm-router-platform/internal/service/memory"
+	"llm-router-platform/internal/service/monitoring"
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/proxy"
@@ -28,6 +32,7 @@ import (
 	"llm-router-platform/internal/service/router"
 	"llm-router-platform/internal/service/task"
 	"llm-router-platform/internal/service/user"
+	"llm-router-platform/internal/service/webhook"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -69,6 +74,7 @@ type Services struct {
 	AnnouncementSvc *announcementSvc.Service
 	CouponSvc     *couponSvc.Service
 	DocumentSvc   *documentSvc.Service
+	Webhook       webhook.Service
 	RedisClient   *redis.Client // For rate limiting
 	DB            *gorm.DB      // For operational health checks only
 }
@@ -129,6 +135,19 @@ func Setup(
 
 	// ─── GraphQL Endpoint ────────────────────────────────────────────
 	emailSvcForGql := email.NewService(cfg.Email, cfg.Frontend.URL)
+
+	// Instantiate Semantic Cache Service (defaults threshold to 0.05)
+	cacheSvc := semantic.NewSemanticCacheService(services.DB, logger, 0.05)
+
+	// Instantiate System Monitoring Collector
+	monitoringCollector := monitoring.NewCollector(
+		services.DB,
+		services.RedisClient,
+		monitoring.BuildInfo{Version: Version, GitCommit: GitCommit, BuildTime: BuildTime},
+		cfg.Server.Mode,
+		logger,
+	)
+
 	gqlResolver := &resolvers.Resolver{
 		UserSvc:         services.User,
 		PasswordResetSvc: user.NewPasswordResetService(services.DB),
@@ -152,10 +171,13 @@ func Setup(
 		AnnouncementSvc: services.AnnouncementSvc,
 		CouponSvc:       services.CouponSvc,
 		DocumentSvc:     services.DocumentSvc,
+		WebhookSvc:      services.Webhook,
+		MonitoringSvc:   monitoringCollector,
 		RedisClient:     services.RedisClient,
 		DB:              services.DB,
 		Config:          cfg,
 		Logger:          logger,
+		SemanticCache:   cacheSvc,
 	}
 	graphqlHandler := gqlhandler.NewHandler(gqlResolver, cfg, logger)
 
@@ -173,6 +195,11 @@ func Setup(
 			c.Next()
 		})
 	}
+	// Inject security properties for dynamic internal `@auth` checks
+	graphqlGroup.Use(func(c *gin.Context) {
+		c.Set("admin_ip_whitelist", cfg.Security.AdminIPWhitelist)
+		c.Next()
+	})
 	graphqlGroup.POST("", graphqlHandler.ServeGraphQL())
 
 	if cfg.Server.Mode != "release" {
@@ -214,18 +241,25 @@ func Setup(
 		logger.Info("pprof debug endpoints enabled at /debug/pprof/ (admin auth required)")
 	}
 
+	// ─── OpenAPI Spec ──────────────────────────────────────────
+	engine.GET("/openapi.json", func(c *gin.Context) {
+		c.Data(http.StatusOK, "application/json; charset=utf-8", openapi.OpenAPIJSON)
+	})
+
 	// ─── API Routes ────────────────────────────────────────────────────
 	// NOTE: Management REST API has been deprecated.
 	// All management operations are now served via /graphql (Apollo Client).
 	// Only LLM proxy endpoints and payment webhooks remain under /api/v1.
 
-	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Subscription, services.Balance, services.Observability, logger)
+	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Subscription, services.Balance, services.Observability, services.DB, cacheSvc, services.RedisClient, logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)
 	paymentHandler := handlers.NewPaymentHandler(services.Payment, logger)
+	auditExportHandler := handlers.NewAuditHandler(services.AuditService, logger)
 
 	// Shared middleware chain for all LLM API endpoints.
 	applyLLMMiddleware := func(g *gin.RouterGroup) {
 		g.Use(authMiddleware.APIKey())
+		g.Use(middleware.TenantAPIKeyWhitelist(logger))
 		g.Use(perKeyLimiter.Limit())
 		g.Use(quotaChecker.Check())
 		g.Use(rateLimiter.Limit())
@@ -239,10 +273,36 @@ func Setup(
 			// ── Public / Webhooks ──────────────────────────────
 			v1.POST("/payments/webhook/stripe", paymentHandler.StripeWebhook)
 
+			// ─── SSO / Tenant-Aware Login ───────────────────────────
+			ssoHandler := handlers.NewSSOHandler(cfg, services.DB, logger)
+			sso := v1.Group("/sso")
+			{
+				sso.POST("/discover", ssoHandler.Discover)
+				sso.GET("/callback/:id", ssoHandler.Callback)
+			}
+
+			// ─── Compliance / Audit Export ───────────────────────────
+			// Uses standard REST for large file streaming. Protected by JWT.
+			auditGrp := v1.Group("/audit")
+			auditGrp.Use(authMiddleware.JWT())
+			auditGrp.Use(middleware.AdminOnly())
+			{
+				auditGrp.GET("/export/csv", auditExportHandler.ExportCSV)
+			}
+
 			// ─── LLM API Endpoints ──────────────────────────────
 			// Registered under /api/v1 (management API namespace).
 			registerLLMEndpoints(v1, applyLLMMiddleware, chatHandler, modelHandler, authMiddleware)
 		}
+	}
+
+	// ─── OAuth2 Social Login ────────────────────────────────────────
+	oauth2Handler := handlers.NewOAuth2Handler(cfg, services.SystemConfig, services.DB, logger)
+	authGroup := engine.Group("/auth/oauth2")
+	{
+		authGroup.GET("/providers", oauth2Handler.Providers)
+		authGroup.GET("/:provider/redirect", oauth2Handler.Redirect)
+		authGroup.GET("/:provider/callback", oauth2Handler.Callback)
 	}
 
 	// ─── OpenAI-Compatible Route Aliases ───────────────────────────

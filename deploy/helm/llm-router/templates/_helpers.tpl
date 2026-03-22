@@ -7,6 +7,8 @@ Expand the name of the chart.
 
 {{/*
 Create a default fully qualified app name.
+We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
+If release name contains chart name it will be used as a full name.
 */}}
 {{- define "llm-router.fullname" -}}
 {{- if .Values.fullnameOverride }}
@@ -22,12 +24,21 @@ Create a default fully qualified app name.
 {{- end }}
 
 {{/*
+Create chart name and version as used by the chart label.
+*/}}
+{{- define "llm-router.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
 Common labels
 */}}
 {{- define "llm-router.labels" -}}
-helm.sh/chart: {{ include "llm-router.name" . }}-{{ .Chart.Version | replace "+" "_" }}
+helm.sh/chart: {{ include "llm-router.chart" . }}
 {{ include "llm-router.selectorLabels" . }}
-app.kubernetes.io/version: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
@@ -40,23 +51,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Database DSN
+Create the name of the service account to use
 */}}
-{{- define "llm-router.databaseDSN" -}}
-{{- if .Values.postgresql.enabled }}
-{{- printf "host=%s-postgresql port=5432 user=%s password=%s dbname=%s sslmode=disable" (include "llm-router.fullname" .) .Values.postgresql.auth.username .Values.postgresql.auth.password .Values.postgresql.auth.database }}
+{{- define "llm-router.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "llm-router.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
-{{- printf "host=%s port=%d user=%s password=%s dbname=%s sslmode=%s" .Values.postgresql.external.host (int .Values.postgresql.external.port) .Values.postgresql.external.username .Values.postgresql.external.password .Values.postgresql.external.database .Values.postgresql.external.sslMode }}
-{{- end }}
-{{- end }}
-
-{{/*
-Redis URL
-*/}}
-{{- define "llm-router.redisURL" -}}
-{{- if .Values.redis.enabled }}
-{{- printf "redis://:%s@%s-redis-master:6379/0" .Values.redis.auth.password (include "llm-router.fullname" .) }}
-{{- else }}
-{{- printf "redis://:%s@%s:%d/0" .Values.redis.external.password .Values.redis.external.host (int .Values.redis.external.port) }}
+{{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}

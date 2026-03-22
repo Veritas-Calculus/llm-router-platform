@@ -1,0 +1,42 @@
+type SemanticCache {
+    id: ID!
+    hash: String!
+    provider: String!
+    model: String!
+    hitCount: Int!
+    createdAt: DateTime!
+}
+
+type CacheStats {
+    totalCaches: Int!
+    totalHits: Int!
+}
+
+type CacheConfig {
+    id: ID!
+    isEnabled: Boolean!
+    similarityThreshold: Float!
+    defaultTtlMinutes: Int!
+    embeddingModel: String!
+    maxCacheSize: Int!
+}
+
+input CacheConfigInput {
+    isEnabled: Boolean!
+    similarityThreshold: Float!
+    defaultTtlMinutes: Int!
+    embeddingModel: String!
+    maxCacheSize: Int!
+}
+
+extend type Query {
+    semanticCaches(limit: Int = 50, offset: Int = 0): [SemanticCache!]! @auth(role: ADMIN)
+    cacheStats: CacheStats! @auth(role: ADMIN)
+    cacheConfig: CacheConfig! @auth(role: ADMIN)
+}
+
+extend type Mutation {
+    clearSemanticCache(id: ID!): Boolean! @auth(role: ADMIN)
+    clearAllSemanticCaches: Boolean! @auth(role: ADMIN)
+    updateCacheConfig(input: CacheConfigInput!): CacheConfig! @auth(role: ADMIN)
+}

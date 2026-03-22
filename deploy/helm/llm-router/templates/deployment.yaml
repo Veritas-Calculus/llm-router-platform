@@ -13,11 +13,10 @@ spec:
       {{- include "llm-router.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- with .Values.podAnnotations }}
       annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-        {{- end }}
+      {{- end }}
       labels:
         {{- include "llm-router.selectorLabels" . | nindent 8 }}
     spec:
@@ -25,37 +24,36 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      serviceAccountName: {{ include "llm-router.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          securityContext:
-            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-          ports:
-            - name: http
-              containerPort: {{ .Values.server.port }}
-              protocol: TCP
           envFrom:
             - configMapRef:
-                name: {{ include "llm-router.fullname" . }}-config
+                name: {{ include "llm-router.fullname" . }}
             - secretRef:
-                name: {{ include "llm-router.fullname" . }}-secrets
+                name: {{ include "llm-router.fullname" . }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
           livenessProbe:
             httpGet:
-              path: {{ .Values.probes.liveness.path }}
+              path: /health
               port: http
-            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
-            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            initialDelaySeconds: 15
+            periodSeconds: 20
           readinessProbe:
             httpGet:
-              path: {{ .Values.probes.readiness.path }}
+              path: /health
               port: http
-            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
-            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       {{- with .Values.nodeSelector }}

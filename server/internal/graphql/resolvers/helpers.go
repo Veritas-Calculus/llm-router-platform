@@ -11,6 +11,7 @@ import (
 	"llm-router-platform/internal/models"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // clientInfo extracts client IP and User-Agent from the Gin context.
@@ -80,7 +81,7 @@ func userToGQL(u *models.User) *model.User {
 		ID: u.ID.String(), Email: u.Email, Name: u.Name,
 		Role: u.Role, IsActive: u.IsActive, Balance: &balance,
 		MonthlyBudgetUsd: &u.MonthlyBudgetUSD,
-		CreatedAt: u.CreatedAt,
+		CreatedAt:        u.CreatedAt,
 	}
 }
 
@@ -101,9 +102,38 @@ func apiKeyToGQL(k *models.APIKey) *model.APIKey {
 		expires = &k.ExpiresAt
 	}
 	return &model.APIKey{
-		ID: k.ID.String(), Name: k.Name, KeyPrefix: k.KeyPrefix,
-		IsActive: k.IsActive, LastUsedAt: lastUsed,
-		ExpiresAt: expires, CreatedAt: k.CreatedAt,
+		ID: k.ID.String(), ProjectID: k.ProjectID.String(), Channel: k.Channel, Name: k.Name, KeyPrefix: k.KeyPrefix,
+		IsActive: k.IsActive, Scopes: k.Scopes, RateLimit: k.RateLimit, TokenLimit: int(k.TokenLimit), DailyLimit: k.DailyLimit,
+		LastUsedAt: lastUsed, ExpiresAt: expires, CreatedAt: k.CreatedAt,
+	}
+}
+
+func orgToGQL(o *models.Organization) *model.Organization {
+	return &model.Organization{
+		ID:           o.ID.String(),
+		Name:         o.Name,
+		BillingLimit: o.BillingLimit,
+		CreatedAt:    o.CreatedAt,
+	}
+}
+
+func projectToGQL(p *models.Project) *model.Project {
+	var desc *string
+	if p.Description != "" {
+		desc = &p.Description
+	}
+	var ips *string
+	if p.WhiteListedIps != "" {
+		ips = &p.WhiteListedIps
+	}
+	return &model.Project{
+		ID:             p.ID.String(),
+		OrgID:          p.OrgID.String(),
+		Name:           p.Name,
+		Description:    desc,
+		QuotaLimit:     p.QuotaLimit,
+		WhiteListedIps: ips,
+		CreatedAt:      p.CreatedAt,
 	}
 }
 
@@ -119,7 +149,7 @@ func providerToGQL(p *models.Provider) *model.Provider {
 		MaxRetries: p.MaxRetries, Timeout: p.Timeout,
 		UseProxy: p.UseProxy, DefaultProxyID: proxyID,
 		RequiresAPIKey: p.RequiresAPIKey,
-		CreatedAt: p.CreatedAt,
+		CreatedAt:      p.CreatedAt,
 	}
 }
 
@@ -204,7 +234,7 @@ func asyncTaskToGQL(t *models.AsyncTask) *model.Task {
 		errMsg = &t.Error
 	}
 	return &model.Task{
-		ID: t.ID.String(), UserID: t.UserID.String(),
+		ID: t.ID.String(), ProjectID: t.ProjectID.String(),
 		Type: t.Type, Status: t.Status,
 		Progress: t.Progress, Error: errMsg,
 		CreatedAt: t.CreatedAt,
@@ -220,7 +250,7 @@ func budgetToGQL(b *models.Budget) *model.Budget {
 		em = &b.Email
 	}
 	return &model.Budget{
-		ID: b.ID.String(), UserID: b.UserID.String(),
+		ID: b.ID.String(), OrgID: b.OrgID.String(),
 		MonthlyLimitUsd: b.MonthlyLimitUSD, AlertThreshold: b.AlertThreshold,
 		EnforceHardLimit: b.EnforceHardLimit, IsActive: b.IsActive,
 		WebhookURL: wh, Email: em,
@@ -312,5 +342,154 @@ func buildSystemSettings(registrationMode string, all map[string]string) *model.
 	if v, ok := all["payment"]; ok {
 		s.Payment = &v
 	}
+	if v, ok := all["oauth"]; ok {
+		s.Oauth = &v
+	}
 	return s
+}
+
+func routingRuleToGQL(rule *models.RoutingRule) *model.RoutingRule {
+	var targetProvider, fallbackProvider *model.Provider
+	if rule.TargetProvider != nil {
+		targetProvider = providerToGQL(rule.TargetProvider)
+	}
+	if rule.FallbackProvider != nil {
+		fallbackProvider = providerToGQL(rule.FallbackProvider)
+	}
+
+	var fallbackID *string
+	if rule.FallbackProviderID != nil {
+		s := rule.FallbackProviderID.String()
+		fallbackID = &s
+	}
+
+	return &model.RoutingRule{
+		ID:                 rule.ID.String(),
+		Name:               rule.Name,
+		Description:        rule.Description,
+		ModelPattern:       rule.ModelPattern,
+		TargetProviderID:   rule.TargetProviderID.String(),
+		FallbackProviderID: fallbackID,
+		Priority:           rule.Priority,
+		IsEnabled:          rule.IsEnabled,
+		CreatedAt:          rule.CreatedAt,
+		UpdatedAt:          rule.UpdatedAt,
+		TargetProvider:     targetProvider,
+		FallbackProvider:   fallbackProvider,
+	}
+}
+
+func (r *Resolver) resolveOrgID(ctx context.Context, providedOrgID *string) (uuid.UUID, error) {
+	if providedOrgID != nil && *providedOrgID != "" {
+		return uuid.Parse(*providedOrgID)
+	}
+	uidStr, _ := directives.UserIDFromContext(ctx)
+	userID, err := uuid.Parse(uidStr)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("invalid user ID in context")
+	}
+
+	orgs, err := r.UserSvc.GetOrganizations(ctx, userID)
+	if err != nil || len(orgs) == 0 {
+		return uuid.Nil, fmt.Errorf("no organization found for user")
+	}
+	return orgs[0].ID, nil
+}
+
+func (r *Resolver) resolveProjectID(providedProjectID *string) *uuid.UUID {
+	if providedProjectID != nil && *providedProjectID != "" {
+		id, err := uuid.Parse(*providedProjectID)
+		if err == nil {
+			return &id
+		}
+	}
+	return nil
+}
+
+func mapIdentityProviderToGraphQL(idp *models.IdentityProvider) *model.IdentityProvider {
+	if idp == nil {
+		return nil
+	}
+	return &model.IdentityProvider{
+		ID:               idp.ID.String(),
+		OrgID:            idp.OrgID.String(),
+		Type:             idp.Type,
+		Name:             idp.Name,
+		IsActive:         idp.IsActive,
+		Domains:          idp.Domains,
+		OidcClientID:     &idp.OIDCClientID,
+		OidcIssuerURL:    &idp.OIDCIssuerURL,
+		SamlEntityID:     &idp.SAMLEntityID,
+		SamlSsoURL:       &idp.SAMLSSOURL,
+		SamlIdpCert:      &idp.SAMLIdPCert,
+		EnableJit:        idp.EnableJIT,
+		DefaultRole:      idp.DefaultRole,
+		GroupRoleMapping: idp.GroupRoleMapping,
+		CreatedAt:        idp.CreatedAt,
+		UpdatedAt:        idp.UpdatedAt,
+	}
+}
+
+func (r *Resolver) resolveOrgProjectIDs(ctx context.Context, providedOrgID *string, providedProjectID *string) (uuid.UUID, *uuid.UUID, error) {
+	orgID, err := r.resolveOrgID(ctx, providedOrgID)
+	if err != nil {
+		return uuid.Nil, nil, err
+	}
+	projectID := r.resolveProjectID(providedProjectID)
+	return orgID, projectID, nil
+}
+
+// ── Prompt helpers ──────────────────────────────────────────────────
+
+func promptTemplateToGQL(t *models.PromptTemplate, versionCount int) *model.PromptTemplate {
+	result := &model.PromptTemplate{
+		ID:           t.ID.String(),
+		Name:         t.Name,
+		Description:  t.Description,
+		IsActive:     t.IsActive,
+		VersionCount: versionCount,
+		CreatedAt:    t.CreatedAt,
+		UpdatedAt:    t.UpdatedAt,
+	}
+	if t.ProjectID != nil {
+		pid := t.ProjectID.String()
+		result.ProjectID = &pid
+	}
+	if t.ActiveVersionID != nil {
+		avid := t.ActiveVersionID.String()
+		result.ActiveVersionID = &avid
+	}
+	return result
+}
+
+func promptVersionToGQL(v *models.PromptVersion) *model.PromptVersion {
+	result := &model.PromptVersion{
+		ID:         v.ID.String(),
+		TemplateID: v.TemplateID.String(),
+		Version:    v.Version,
+		Content:    v.Content,
+		CreatedAt:  v.CreatedAt,
+	}
+	if v.Model != "" {
+		result.Model = &v.Model
+	}
+	if len(v.Parameters) > 0 {
+		p := string(v.Parameters)
+		result.Parameters = &p
+	}
+	if v.ChangeLog != "" {
+		result.ChangeLog = &v.ChangeLog
+	}
+	return result
+}
+
+func cacheConfigToGQL(cfg *models.CacheConfig) *model.CacheConfig {
+	return &model.CacheConfig{
+		ID:                  cfg.ID.String(),
+		IsEnabled:           cfg.IsEnabled,
+		SimilarityThreshold: cfg.SimilarityThreshold,
+		DefaultTTLMinutes:   cfg.DefaultTTLMinutes,
+		EmbeddingModel:      cfg.EmbeddingModel,
+		MaxCacheSize:        cfg.MaxCacheSize,
+	}
 }

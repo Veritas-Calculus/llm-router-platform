@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to LLM Router</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1d1d1f; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f7; }
+        .container { background-color: #ffffff; border-radius: 18px; padding: 40px; box-shadow: 0 4px 24px rgba(0,0,0,0.04); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .logo { width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #007AFF 0%, #0051FF 100%); margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 24px; }
+        h1 { font-size: 24px; font-weight: 600; margin: 0 0 10px; text-align: center; }
+        p { font-size: 15px; margin: 0 0 20px; color: #515154; }
+        .btn { display: inline-block; background-color: #007AFF; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; font-size: 15px; text-align: center; }
+        .btn-container { text-align: center; margin: 30px 0; }
+        .footer { text-align: center; margin-top: 40px; font-size: 13px; color: #86868b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">VC</div>
+            <h1>Welcome to LLM Router!</h1>
+        </div>
+        <p>Hello {{.Name}},</p>
+        <p>Thank you for joining Veritas Calculus's LLM Router Platform. Your account has been successfully created.</p>
+        <p>You can now log in, generate API keys, and start unified routing requests to OpenAI, Claude, Gemini, and more.</p>
+        <div class="btn-container">
+            <a href="{{.LoginURL}}" class="btn">Log In to Your Account</a>
+        </div>
+        <p>If you have any questions, feel free to contact our support team.</p>
+        <div class="footer">
+            &copy; 2026 Veritas Calculus. All rights reserved.
+        </div>
+    </div>
+</body>
+</html>

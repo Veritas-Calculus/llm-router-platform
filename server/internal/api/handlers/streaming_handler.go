@@ -19,7 +19,7 @@ import (
 
 // handleStreamingChat handles streaming chat completion requests.
 // It receives a pre-established stream channel (connection already opened with retry by Router).
-func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider.StreamChunk, req *provider.ChatRequest, selectedProvider *models.Provider, userObj *models.User, userAPIKey *models.APIKey, start time.Time, trace observability.Trace, conversationID string, originalMessages []MessageRequest, logID uuid.UUID) {
+func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider.StreamChunk, req *provider.ChatRequest, selectedProvider *models.Provider, projectObj *models.Project, userAPIKey *models.APIKey, start time.Time, trace observability.Trace, conversationID string, originalMessages []MessageRequest, logID uuid.UUID, promptHash string, promptEmbedding []float32) {
 	gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, "Provider: "+selectedProvider.Name, req.Model, map[string]interface{}{
 		"temperature": req.Temperature,
 		"max_tokens":  req.MaxTokens,
@@ -92,8 +92,34 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 
 	if conversationID != "" && h.memory != nil {
 		for _, m := range originalMessages {
-			_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, conversationID, m.Role, m.Content.Text, 0)
+			_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, conversationID, m.Role, m.Content.Text, 0)
 		}
-		_ = h.memory.AddMessage(c.Request.Context(), userObj.ID, conversationID, "assistant", fullText, completionTokens)
+		_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, conversationID, "assistant", fullText, completionTokens)
+	}
+
+	if h.cache != nil && promptHash != "" && fullText != "" {
+		go func(hash string, emb []float32, text string, pid string, m string) {
+			if len(emb) == 0 {
+				emb = make([]float32, 1536)
+			}
+			cachedResp := provider.ChatResponse{
+				ID:    uuid.New().String(),
+				Model: m,
+				Choices: []provider.Choice{
+					{
+						Message: provider.Message{
+							Role:    "assistant",
+							Content: provider.FlexibleContent{Text: text},
+						},
+					},
+				},
+				Usage: provider.Usage{
+					PromptTokens:     promptTokens,
+					CompletionTokens: completionTokens,
+					TotalTokens:      promptTokens + completionTokens,
+				},
+			}
+			_ = h.cache.StoreCache(context.Background(), hash, emb, cachedResp, pid, m, nil)
+		}(promptHash, promptEmbedding, fullText, selectedProvider.Name, req.Model)
 	}
 }

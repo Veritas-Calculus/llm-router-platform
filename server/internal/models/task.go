@@ -9,7 +9,7 @@ import (
 // AsyncTask represents a long-running asynchronous task.
 type AsyncTask struct {
 	BaseModel
-	UserID      uuid.UUID  `gorm:"type:uuid;not null;index" json:"user_id"`
+	ProjectID   uuid.UUID  `gorm:"type:uuid;not null;index" json:"project_id"`
 	Type        string     `gorm:"not null;index" json:"type"`           // "tts", "batch_tts", "video_analysis", "batch_image"
 	Status      string     `gorm:"default:pending;index" json:"status"`  // pending, running, completed, failed, cancelled
 	Input       string     `gorm:"type:text" json:"input"`               // JSON-encoded input parameters

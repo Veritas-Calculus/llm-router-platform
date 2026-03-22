@@ -48,15 +48,6 @@ var (
 		[]string{"operation"},
 	)
 
-	graphqlComplexityRejected = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: "llm_router",
-			Subsystem: "graphql",
-			Name:      "complexity_rejected_total",
-			Help:      "Number of queries rejected due to complexity limits.",
-		},
-	)
-
 	graphqlDepthRejected = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Namespace: "llm_router",
