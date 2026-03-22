@@ -386,9 +386,7 @@ export default function PlaygroundPage() {
         if (data.data) {
           setModels(data.data);
           if (data.data.length > 0 && !selectedModel) setSelectedModel(data.data[0].id);
-          // Auto-select STT/TTS models
-          const sttCandidate = data.data.find((m: ModelRef) => isSTTModel(m));
-          if (sttCandidate && !sttModel) setSttModel(sttCandidate.id);
+          // Auto-select TTS model if available
           const ttsCandidate = data.data.find((m: ModelRef) => isTTSModel(m));
           if (ttsCandidate && !ttsModel) setTtsModel(ttsCandidate.id);
         }
@@ -456,31 +454,80 @@ export default function PlaygroundPage() {
     }
   }, [addImageFiles]);
 
-  /* ── STT: Microphone recording ────────────────────────────────── */
+  /* ── STT: Speech-to-Text ─────────────────────────────────────── */
+  // Strategy: Use browser Web Speech API as primary (works in Chrome/Edge),
+  // fall back to server-side /v1/audio/transcriptions (for OpenAI provider etc.)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const speechRecognitionRef = useRef<any>(null);
+
+  const hasBrowserSTT = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
   const startRecording = useCallback(async () => {
-    if (!apiKey) { setErrorMsg('Configure an API Key first.'); return; }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4' });
-      audioChunksRef.current = [];
-      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
-      mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType });
-        if (blob.size < 100) { setErrorMsg('Recording is too short.'); return; }
-        await transcribeAudio(blob);
+    if (hasBrowserSTT && !sttModel) {
+      // ── Browser Web Speech API ─────────────────────
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const W = window as any;
+      const SRClass = W.SpeechRecognition || W.webkitSpeechRecognition;
+      const recognition = new SRClass();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = navigator.language || 'en-US';
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        transcript = transcript.trim();
+        if (transcript) {
+          setInput(prev => prev ? prev + ' ' + transcript : transcript);
+        }
       };
-      mediaRecorder.start();
-      mediaRecorderRef.current = mediaRecorder;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      recognition.onerror = (event: any) => {
+        if (event.error !== 'aborted') {
+          setErrorMsg(`Speech recognition error: ${event.error}`);
+        }
+        setIsRecording(false);
+      };
+      recognition.onend = () => setIsRecording(false);
+
+      speechRecognitionRef.current = recognition;
+      recognition.start();
       setIsRecording(true);
-    } catch (err) {
-      setErrorMsg('Microphone access denied. Please allow microphone access in browser settings.');
-      console.error('Microphone access error:', err);
+    } else {
+      // ── Server-side STT (MediaRecorder → /v1/audio/transcriptions) ──
+      if (!apiKey) { setErrorMsg('Configure an API Key first.'); return; }
+      if (!sttModel) { setErrorMsg('Select an STT model in Settings, or use a browser that supports Web Speech API.'); return; }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4' });
+        audioChunksRef.current = [];
+        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop());
+          const blob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType });
+          if (blob.size < 100) { setErrorMsg('Recording is too short.'); return; }
+          await transcribeAudio(blob);
+        };
+        mediaRecorder.start();
+        mediaRecorderRef.current = mediaRecorder;
+        setIsRecording(true);
+      } catch (err) {
+        setErrorMsg('Microphone access denied. Please allow microphone access in browser settings.');
+        console.error('Microphone access error:', err);
+      }
     }
-  }, [apiKey]);
+  }, [apiKey, sttModel, hasBrowserSTT]);
 
   const stopRecording = useCallback(() => {
+    // Stop browser speech recognition
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      speechRecognitionRef.current = null;
+    }
+    // Stop MediaRecorder (server-side STT)
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
@@ -805,14 +852,14 @@ export default function PlaygroundPage() {
           {models.length > 0 && (
             <div>
               <label className="block text-xs font-medium text-apple-gray-700 dark:text-gray-300 mb-1.5">
-                <MicrophoneIcon className="w-3.5 h-3.5 inline-block mr-1" />STT Model (Whisper)
+                <MicrophoneIcon className="w-3.5 h-3.5 inline-block mr-1" />STT Model
               </label>
               <select
                 value={sttModel}
                 onChange={(e) => setSttModel(e.target.value)}
                 className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100"
               >
-                <option value="">Not configured</option>
+                <option value="">Browser built-in (default)</option>
                 {models.map(m => (
                   <option key={m.id} value={m.id}>{isSTTModel(m) ? '[STT] ' : ''}{m.id}</option>
                 ))}
