@@ -357,6 +357,9 @@ func registerLLMEndpoints(
 	models.Use(authMiddleware.APIKey())
 	models.GET("", modelHandler.List)
 	models.GET("/providers", modelHandler.ListProviders)
+	// GET /models/{model_id} — supports slashed IDs like "qwen/qwen3-vl-8b"
+	// Uses a two-segment pattern to avoid conflicts with /models/providers
+	models.GET("/:org/*name", modelHandler.Retrieve)
 
 	// ─── Anthropic-Compatible Routes ───────────────────────────
 	anthro := parent.Group("/v1/messages")

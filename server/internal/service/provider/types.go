@@ -183,6 +183,33 @@ type ModelInfo struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Created int64  `json:"created"`
+	// Extra holds any additional fields from the upstream /v1/models response
+	// (e.g., type, capabilities, input_modalities, output_modalities).
+	// These are transparently forwarded to clients so they can detect
+	// model features such as vision support.
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+// UnmarshalJSON implements custom unmarshalling to capture extra upstream fields.
+func (m *ModelInfo) UnmarshalJSON(data []byte) error {
+	// Unmarshal known fields first
+	type plain ModelInfo
+	if err := json.Unmarshal(data, (*plain)(m)); err != nil {
+		return err
+	}
+	// Capture ALL fields into a map
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(data, &all); err != nil {
+		return err
+	}
+	// Remove known fields, keep the rest as extras
+	delete(all, "id")
+	delete(all, "name")
+	delete(all, "created")
+	if len(all) > 0 {
+		m.Extra = all
+	}
+	return nil
 }
 
 // EmbeddingRequest represents an embeddings request.
