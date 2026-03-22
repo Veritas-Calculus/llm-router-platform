@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Cog6ToothIcon,
   PaperAirplaneIcon,
@@ -10,28 +10,62 @@ import {
   CurrencyDollarIcon,
   DocumentDuplicateIcon,
   ArrowsRightLeftIcon,
+  PhotoIcon,
+  XMarkIcon,
+  EyeIcon,
 } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+/* ── Types ──────────────────────────────────────────────────────── */
+
+/** A single content part (text or image_url) within a multimodal message. */
+interface ContentPart {
+  type: 'text' | 'image_url';
+  text?: string;
+  image_url?: { url: string; detail?: 'auto' | 'low' | 'high' };
+}
+
 interface Message {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | ContentPart[];
+}
+
+/** Extracts text from a message regardless of content format. */
+function getMessageText(msg: Message): string {
+  if (typeof msg.content === 'string') return msg.content;
+  return msg.content.filter(p => p.type === 'text').map(p => p.text || '').join('');
+}
+
+/** Extracts image URLs from a multimodal message. */
+function getMessageImages(msg: Message): string[] {
+  if (typeof msg.content === 'string') return [];
+  return msg.content.filter(p => p.type === 'image_url').map(p => p.image_url?.url || '').filter(Boolean);
 }
 
 interface ModelRef {
   id: string;
   object: string;
+  type?: string;
+  capabilities?: { vision?: boolean; chat?: boolean; completion?: boolean };
+  input_modalities?: string[];
 }
 
 interface UsageStats {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
-  ttfbMs: number;     // Time to first byte
-  totalMs: number;    // Total response time
+  ttfbMs: number;
+  totalMs: number;
   tokensPerSec: number;
+}
+
+/** Pending image attachment (base64 data URL). */
+interface ImageAttachment {
+  id: string;
+  dataUrl: string;
+  name: string;
 }
 
 // Rough token estimator (GPT-style: ~4 chars per token)
@@ -40,11 +74,30 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-/** Runs one streaming chat completion and collects stats */
+function estimateMessageTokens(msg: Message): number {
+  if (typeof msg.content === 'string') return estimateTokens(msg.content);
+  return msg.content.reduce((sum, p) => {
+    if (p.type === 'text') return sum + estimateTokens(p.text || '');
+    if (p.type === 'image_url') return sum + 85; // ~85 tokens per low-detail image
+    return sum;
+  }, 0);
+}
+
+/** Check if a model supports vision based on its metadata or name. */
+function isVisionModel(m: ModelRef): boolean {
+  if (m.type === 'vlm') return true;
+  if (m.capabilities?.vision) return true;
+  if (m.input_modalities?.includes('image')) return true;
+  const lower = m.id.toLowerCase();
+  return ['-vl-', '-vl/', '/vl-', '-vision', 'vision-', '4o', 'gemini-1.5', 'gemini-2', 'claude-3', 'claude-4', 'pixtral', 'llava', 'cogvlm', 'internvl', 'minicpm-v', 'glm-4v', 'glm-4.6v', 'glm-4.7v'].some(p => lower.includes(p));
+}
+
+/* ── Streaming completion runner ─────────────────────────────── */
+
 async function runCompletion(
   apiKey: string,
   model: string,
-  messages: Array<{ role: string; content: string }>,
+  messages: Message[],
   temperature: number,
   maxTokens: number,
   signal: AbortSignal,
@@ -55,10 +108,16 @@ async function runCompletion(
   let promptTokens = 0;
   let completionTokens = 0;
 
+  // Build API message payload — multimodal content is sent as content arrays
+  const apiMessages = messages.map(m => ({
+    role: m.role,
+    content: m.content, // string OR ContentPart[] — OpenAI API accepts both
+  }));
+
   const response = await fetch('/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, messages, temperature, max_tokens: maxTokens, stream: true }),
+    body: JSON.stringify({ model, messages: apiMessages, temperature, max_tokens: maxTokens, stream: true }),
     signal,
   });
 
@@ -77,17 +136,13 @@ async function runCompletion(
     if (done) break;
     const chunk = decoder.decode(value, { stream: true });
     for (const line of chunk.split('\n')) {
-      if (!line.startsWith('data: ') || line === 'data: [DONE]') {
-        // Try to capture usage from [DONE] alternative format
-        continue;
-      }
+      if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
       try {
         const data = JSON.parse(line.slice(6));
         const delta = data.choices?.[0]?.delta?.content || '';
         if (delta && !ttfb) ttfb = performance.now() - t0;
         full += delta;
         onDelta(full);
-        // Capture usage if provided (OpenAI sends it in the last chunk)
         if (data.usage) {
           promptTokens = data.usage.prompt_tokens || 0;
           completionTokens = data.usage.completion_tokens || 0;
@@ -99,9 +154,8 @@ async function runCompletion(
   }
 
   const totalMs = performance.now() - t0;
-  // If backend didn't provide usage, estimate client-side
   if (!promptTokens) {
-    promptTokens = messages.reduce((s, m) => s + estimateTokens(m.content), 0);
+    promptTokens = messages.reduce((s, m) => s + estimateMessageTokens(m), 0);
   }
   if (!completionTokens) {
     completionTokens = estimateTokens(full);
@@ -139,6 +193,26 @@ function StatsBar({ stats, model }: { stats: UsageStats | null; model: string })
   );
 }
 
+/* ── Image thumbnail in chat ────────────────────────────────────── */
+function ChatImageThumbnail({ url }: { url: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      <button onClick={() => setExpanded(true)} className="block rounded-xl overflow-hidden border border-white/20 hover:ring-2 hover:ring-apple-blue/50 transition-all max-w-[180px]">
+        <img src={url} alt="Uploaded" className="w-full h-auto max-h-32 object-cover" />
+      </button>
+      {expanded && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-8" onClick={() => setExpanded(false)}>
+          <img src={url} alt="Full size" className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" />
+          <button onClick={() => setExpanded(false)} className="absolute top-4 right-4 text-white hover:text-gray-300">
+            <XMarkIcon className="w-8 h-8" />
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ── Chat pane (reusable for single & compare modes) ─────────── */
 interface ChatPaneProps {
   messages: Message[];
@@ -153,7 +227,6 @@ function ChatPane({ messages, isStreaming, stats, model, compact }: ChatPaneProp
 
   return (
     <div className={clsx("flex flex-col bg-white rounded-2xl border border-apple-gray-200 overflow-hidden", compact ? "h-full" : "flex-1")}>
-      {/* Model header for compare mode */}
       {compact && (
         <div className="h-10 bg-apple-gray-50 border-b border-apple-gray-100 flex items-center px-3">
           <span className="text-xs font-semibold text-apple-gray-700 truncate">{model}</span>
@@ -167,31 +240,63 @@ function ChatPane({ messages, isStreaming, stats, model, compact }: ChatPaneProp
             <p className="text-sm">Send a message to start.</p>
           </div>
         )}
-        {messages.map((msg, i) => (
-          <div key={i} className={clsx("flex items-start gap-3 max-w-2xl", msg.role === 'user' ? "ml-auto flex-row-reverse" : "")}>
-            <div className={clsx(
-              "w-7 h-7 rounded-full flex items-center justify-center shrink-0 uppercase text-[10px] font-bold shadow-sm",
-              msg.role === 'user' ? "bg-apple-blue text-white" : "bg-apple-gray-100 text-apple-gray-600"
-            )}>
-              {msg.role === 'user' ? 'U' : 'AI'}
+        {messages.map((msg, i) => {
+          const text = getMessageText(msg);
+          const images = getMessageImages(msg);
+          return (
+            <div key={i} className={clsx("flex items-start gap-3 max-w-2xl", msg.role === 'user' ? "ml-auto flex-row-reverse" : "")}>
+              <div className={clsx(
+                "w-7 h-7 rounded-full flex items-center justify-center shrink-0 uppercase text-[10px] font-bold shadow-sm",
+                msg.role === 'user' ? "bg-apple-blue text-white" : "bg-apple-gray-100 text-apple-gray-600"
+              )}>
+                {msg.role === 'user' ? 'U' : 'AI'}
+              </div>
+              <div className={clsx(
+                "px-3 py-2.5 rounded-2xl text-sm leading-relaxed",
+                msg.role === 'user'
+                  ? "bg-apple-blue text-white rounded-tr-sm"
+                  : "bg-apple-gray-50 text-apple-gray-800 rounded-tl-sm border border-apple-gray-100 prose prose-sm prose-p:my-1 prose-pre:bg-apple-gray-800 prose-pre:text-apple-gray-100 prose-pre:py-2 prose-pre:px-3 prose-pre:rounded-xl prose-pre:my-2 prose-code:text-xs"
+              )}>
+                {images.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {images.map((url, j) => <ChatImageThumbnail key={j} url={url} />)}
+                  </div>
+                )}
+                {msg.role === 'user' ? (
+                  <div className="whitespace-pre-wrap">{text}</div>
+                ) : (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+                )}
+              </div>
             </div>
-            <div className={clsx(
-              "px-3 py-2.5 rounded-2xl text-sm leading-relaxed",
-              msg.role === 'user'
-                ? "bg-apple-blue text-white rounded-tr-sm"
-                : "bg-apple-gray-50 text-apple-gray-800 rounded-tl-sm border border-apple-gray-100 prose prose-sm prose-p:my-1 prose-pre:bg-apple-gray-800 prose-pre:text-apple-gray-100 prose-pre:py-2 prose-pre:px-3 prose-pre:rounded-xl prose-pre:my-2 prose-code:text-xs"
-            )}>
-              {msg.role === 'user' ? (
-                <div className="whitespace-pre-wrap">{msg.content}</div>
-              ) : (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={endRef} />
       </div>
       <StatsBar stats={stats} model={model} />
+    </div>
+  );
+}
+
+/* ── Image attachment preview bar ─────────────────────────────── */
+function AttachmentBar({ attachments, onRemove }: { attachments: ImageAttachment[]; onRemove: (id: string) => void }) {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="flex gap-2 px-3 py-2 flex-wrap">
+      {attachments.map(att => (
+        <div key={att.id} className="relative group">
+          <img src={att.dataUrl} alt={att.name} className="h-16 w-16 object-cover rounded-xl border border-apple-gray-200 shadow-sm" />
+          <button
+            onClick={() => onRemove(att.id)}
+            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity shadow"
+          >
+            <XMarkIcon className="w-3 h-3" />
+          </button>
+          <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] text-center rounded-b-xl truncate px-1">
+            {att.name}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -210,20 +315,26 @@ export default function PlaygroundPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [messagesB, setMessagesB] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isStreamingB, setIsStreamingB] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [showSettings, setShowSettings] = useState(true);
   const [stats, setStats] = useState<UsageStats | null>(null);
   const [statsB, setStatsB] = useState<UsageStats | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const abortControllerBRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const selectedModelRef = models.find(m => m.id === selectedModel);
+  const modelSupportsVision = selectedModelRef ? isVisionModel(selectedModelRef) : false;
 
   // Input token estimation (live)
   const inputTokenEstimate = estimateTokens(input) + estimateTokens(systemPrompt) +
-    messages.reduce((s, m) => s + estimateTokens(m.content), 0);
+    messages.reduce((s, m) => s + estimateMessageTokens(m), 0) + attachments.length * 85;
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
@@ -256,24 +367,98 @@ export default function PlaygroundPage() {
     }
   };
 
+  /* ── Image handling ──────────────────────────────────────────── */
+
+  const addImageFiles = useCallback((files: FileList | File[]) => {
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        setAttachments(prev => [...prev, {
+          id: crypto.randomUUID(),
+          dataUrl: reader.result as string,
+          name: file.name,
+        }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments(prev => prev.filter(a => a.id !== id));
+  }, []);
+
+  // Paste handler (Ctrl+V)
+  useEffect(() => {
+    const handler = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const imageFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        addImageFiles(imageFiles);
+      }
+    };
+    document.addEventListener('paste', handler);
+    return () => document.removeEventListener('paste', handler);
+  }, [addImageFiles]);
+
+  // Drag-and-drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+  const handleDragLeave = useCallback(() => setIsDragOver(false), []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files.length > 0) {
+      addImageFiles(Array.from(e.dataTransfer.files));
+    }
+  }, [addImageFiles]);
+
+  /* ── Send message ─────────────────────────────────────────────── */
 
   const handleSend = async () => {
-    if (!input.trim() || isStreaming) return;
+    if ((!input.trim() && attachments.length === 0) || isStreaming) return;
     if (!apiKey) { setErrorMsg('Configure an API Key first.'); if (!showSettings) setShowSettings(true); return; }
     if (!selectedModel) { setErrorMsg('Select a model.'); return; }
     if (compareMode && !compareModel) { setErrorMsg('Select a comparison model.'); return; }
 
-    const userMsg: Message = { role: 'user', content: input.trim() };
+    // Build user message content
+    let userContent: string | ContentPart[];
+    if (attachments.length > 0) {
+      // Multimodal message with images
+      const parts: ContentPart[] = [];
+      attachments.forEach(att => {
+        parts.push({ type: 'image_url', image_url: { url: att.dataUrl, detail: 'auto' } });
+      });
+      if (input.trim()) {
+        parts.push({ type: 'text', text: input.trim() });
+      }
+      userContent = parts;
+    } else {
+      userContent = input.trim();
+    }
+
+    const userMsg: Message = { role: 'user', content: userContent };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     if (compareMode) setMessagesB([...messagesB, userMsg]);
     setInput('');
+    setAttachments([]);
     setErrorMsg('');
     setStats(null);
     setStatsB(null);
 
     // Build API messages
-    const apiMsgs: Array<{ role: string; content: string }> = [];
+    const apiMsgs: Message[] = [];
     if (systemPrompt.trim()) apiMsgs.push({ role: 'system', content: systemPrompt.trim() });
     apiMsgs.push(...newMessages);
 
@@ -297,7 +482,7 @@ export default function PlaygroundPage() {
       const runB = runCompletion(apiKey, compareModel, apiMsgs, temperature, maxTokens, abortControllerBRef.current.signal, (content) => {
         setMessagesB(prev => { const u = [...prev]; u[u.length - 1] = { role: 'assistant', content }; return u; });
       }).then(s => { setStatsB(s); }).catch(err => {
-        if (err.name !== 'AbortError') setErrorMsg(prev => prev ? prev + ' | Model B: ' + err.message : 'Model B: ' + err.message);
+        if (err.name !== 'AbortError') setErrorMsg(prev => typeof prev === 'string' && prev ? prev + ' | Model B: ' + err.message : 'Model B: ' + err.message);
       }).finally(() => { setIsStreamingB(false); abortControllerBRef.current = null; });
 
       await Promise.allSettled([runA, runB]);
@@ -314,13 +499,12 @@ export default function PlaygroundPage() {
   };
 
   const handleClear = () => {
-    setMessages([]); setMessagesB([]); setErrorMsg(''); setStats(null); setStatsB(null);
+    setMessages([]); setMessagesB([]); setErrorMsg(''); setStats(null); setStatsB(null); setAttachments([]);
   };
 
   const toggleCompareMode = () => {
     setCompareMode(prev => {
       if (!prev && models.length > 1 && !compareModel) {
-        // Auto-select a different model for comparison
         const other = models.find(m => m.id !== selectedModel);
         if (other) setCompareModel(other.id);
       }
@@ -330,7 +514,32 @@ export default function PlaygroundPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col lg:flex-row gap-4">
+    <div
+      className={clsx("h-[calc(100vh-8rem)] flex flex-col lg:flex-row gap-4 relative", isDragOver && "ring-2 ring-apple-blue ring-inset rounded-3xl")}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag overlay */}
+      {isDragOver && (
+        <div className="absolute inset-0 z-40 bg-apple-blue/10 flex items-center justify-center rounded-3xl pointer-events-none">
+          <div className="bg-white px-8 py-6 rounded-2xl shadow-lg flex items-center gap-3">
+            <PhotoIcon className="w-8 h-8 text-apple-blue" />
+            <span className="text-lg font-medium text-apple-gray-800">Drop image here</span>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden file input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => { if (e.target.files) addImageFiles(e.target.files); e.target.value = ''; }}
+      />
+
       {/* Settings Sidebar */}
       <div className={clsx(
         "bg-white rounded-3xl shadow-sm border border-apple-gray-200 overflow-y-auto transition-all duration-300",
@@ -370,8 +579,18 @@ export default function PlaygroundPage() {
             >
               {models.length === 0
                 ? <option value="">No models</option>
-                : models.map(m => <option key={m.id} value={m.id}>{m.id}</option>)}
+                : models.map(m => (
+                  <option key={m.id} value={m.id}>
+                    {isVisionModel(m) ? '👁️ ' : ''}{m.id}
+                  </option>
+                ))}
             </select>
+            {selectedModelRef && isVisionModel(selectedModelRef) && (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-green-600">
+                <EyeIcon className="w-3.5 h-3.5" />
+                <span>Vision model — image upload enabled</span>
+              </div>
+            )}
           </div>
 
           {/* Compare Mode Toggle */}
@@ -401,7 +620,9 @@ export default function PlaygroundPage() {
                 className="w-full px-3 py-2 bg-apple-gray-50 border border-apple-gray-200 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm disabled:opacity-50"
               >
                 {models.filter(m => m.id !== selectedModel).map(m => (
-                  <option key={m.id} value={m.id}>{m.id}</option>
+                  <option key={m.id} value={m.id}>
+                    {isVisionModel(m) ? '👁️ ' : ''}{m.id}
+                  </option>
                 ))}
               </select>
             </div>
@@ -460,6 +681,11 @@ export default function PlaygroundPage() {
             {compareMode
               ? `${selectedModel} vs ${compareModel}`
               : selectedModel ? `Talking to ${selectedModel}` : 'Playground'}
+            {modelSupportsVision && !compareMode && (
+              <span className="ml-2 inline-flex items-center gap-1 text-[10px] text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full font-medium">
+                <EyeIcon className="w-3 h-3" /> Vision
+              </span>
+            )}
             {(isStreaming || isStreamingB) && (
               <span className="ml-2 inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse" />
             )}
@@ -488,6 +714,12 @@ export default function PlaygroundPage() {
                   <div className="h-full flex flex-col items-center justify-center text-apple-gray-400">
                     <PlayIcon className="w-12 h-12 mb-4 opacity-50" />
                     <p>Send a message to start playing around.</p>
+                    {modelSupportsVision && (
+                      <p className="mt-2 text-sm text-green-500 flex items-center gap-1.5">
+                        <PhotoIcon className="w-4 h-4" />
+                        Paste, drop, or click 📎 to attach images
+                      </p>
+                    )}
                     {models.length > 1 && (
                       <button onClick={toggleCompareMode}
                         className="mt-3 flex items-center gap-1.5 text-sm text-apple-blue hover:underline">
@@ -497,28 +729,37 @@ export default function PlaygroundPage() {
                     )}
                   </div>
                 )}
-                {messages.map((msg, i) => (
-                  <div key={i} className={clsx("flex items-start gap-4 max-w-3xl", msg.role === 'user' ? "ml-auto flex-row-reverse" : "")}>
-                    <div className={clsx(
-                      "w-8 h-8 rounded-full flex items-center justify-center shrink-0 uppercase text-xs font-bold shadow-sm",
-                      msg.role === 'user' ? "bg-apple-blue text-white" : "bg-apple-gray-100 text-apple-gray-600"
-                    )}>
-                      {msg.role === 'user' ? 'U' : 'AI'}
+                {messages.map((msg, i) => {
+                  const text = getMessageText(msg);
+                  const images = getMessageImages(msg);
+                  return (
+                    <div key={i} className={clsx("flex items-start gap-4 max-w-3xl", msg.role === 'user' ? "ml-auto flex-row-reverse" : "")}>
+                      <div className={clsx(
+                        "w-8 h-8 rounded-full flex items-center justify-center shrink-0 uppercase text-xs font-bold shadow-sm",
+                        msg.role === 'user' ? "bg-apple-blue text-white" : "bg-apple-gray-100 text-apple-gray-600"
+                      )}>
+                        {msg.role === 'user' ? 'U' : 'AI'}
+                      </div>
+                      <div className={clsx(
+                        "px-4 py-3 rounded-2xl text-sm leading-relaxed",
+                        msg.role === 'user'
+                          ? "bg-apple-blue text-white rounded-tr-sm"
+                          : "bg-apple-gray-50 text-apple-gray-800 rounded-tl-sm border border-apple-gray-100 prose prose-sm prose-p:my-1 prose-pre:bg-apple-gray-800 prose-pre:text-apple-gray-100 prose-pre:py-2 prose-pre:px-3 prose-pre:rounded-xl prose-pre:my-2 prose-code:text-xs"
+                      )}>
+                        {images.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {images.map((url, j) => <ChatImageThumbnail key={j} url={url} />)}
+                          </div>
+                        )}
+                        {msg.role === 'user' ? (
+                          <div className="whitespace-pre-wrap">{text}</div>
+                        ) : (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+                        )}
+                      </div>
                     </div>
-                    <div className={clsx(
-                      "px-4 py-3 rounded-2xl text-sm leading-relaxed",
-                      msg.role === 'user'
-                        ? "bg-apple-blue text-white rounded-tr-sm"
-                        : "bg-apple-gray-50 text-apple-gray-800 rounded-tl-sm border border-apple-gray-100 prose prose-sm prose-p:my-1 prose-pre:bg-apple-gray-800 prose-pre:text-apple-gray-100 prose-pre:py-2 prose-pre:px-3 prose-pre:rounded-xl prose-pre:my-2 prose-code:text-xs"
-                    )}>
-                      {msg.role === 'user' ? (
-                        <div className="whitespace-pre-wrap">{msg.content}</div>
-                      ) : (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 <div ref={messagesEndRef} />
               </div>
               <StatsBar stats={stats} model={selectedModel} />
@@ -537,16 +778,32 @@ export default function PlaygroundPage() {
 
         {/* Input Area */}
         <div className="pt-3 shrink-0">
+          {/* Attachment preview bar */}
+          <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
           <div className="relative flex items-end">
             <textarea
               rows={input.split('\n').length > 1 ? Math.min(input.split('\n').length, 5) : 1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              placeholder="Type a message..."
-              className="w-full py-3.5 pl-4 pr-24 bg-white border border-apple-gray-200 rounded-2xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm resize-none shadow-sm"
+              placeholder={modelSupportsVision ? "Type a message or paste/drop an image..." : "Type a message..."}
+              className="w-full py-3.5 pl-12 pr-24 bg-white border border-apple-gray-200 rounded-2xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm resize-none shadow-sm"
               style={{ minHeight: '52px' }}
             />
+            {/* Attach image button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!modelSupportsVision}
+              title={modelSupportsVision ? 'Attach image' : 'Select a vision-capable model to enable image uploads'}
+              className={clsx(
+                "absolute left-3 bottom-3 p-1.5 rounded-lg transition-colors",
+                modelSupportsVision
+                  ? "text-apple-gray-400 hover:text-apple-blue hover:bg-apple-blue/10"
+                  : "text-apple-gray-200 cursor-not-allowed"
+              )}
+            >
+              <PhotoIcon className="w-5 h-5" />
+            </button>
             <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
               <span className="text-[10px] text-apple-gray-400 font-mono mr-1">~{estimateTokens(input)} tok</span>
               {isStreaming || isStreamingB ? (
@@ -555,7 +812,7 @@ export default function PlaygroundPage() {
                   <div className="w-4 h-4 rounded-sm bg-white" />
                 </button>
               ) : (
-                <button onClick={handleSend} disabled={!input.trim()}
+                <button onClick={handleSend} disabled={!input.trim() && attachments.length === 0}
                   className="p-2 bg-apple-blue text-white rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50 shadow-sm">
                   <PaperAirplaneIcon className="w-4 h-4" />
                 </button>
@@ -563,7 +820,10 @@ export default function PlaygroundPage() {
             </div>
           </div>
           <div className="text-center mt-1.5">
-            <span className="text-[10px] text-apple-gray-400">Enter to send · Shift+Enter for new line</span>
+            <span className="text-[10px] text-apple-gray-400">
+              Enter to send · Shift+Enter for new line
+              {modelSupportsVision && ' · Ctrl+V to paste image · Drag & drop images'}
+            </span>
           </div>
         </div>
       </div>
