@@ -247,7 +247,12 @@ func (c *OpenAIClient) CheckHealth(ctx context.Context) (bool, time.Duration, er
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	return resp.StatusCode == http.StatusOK, latency, nil
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return false, latency, errors.New("API returned HTTP " + resp.Status + ": " + string(respBody))
+	}
+
+	return true, latency, nil
 }
 
 // GenerateImage sends an image generation request to OpenAI.

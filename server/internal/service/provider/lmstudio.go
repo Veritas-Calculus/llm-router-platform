@@ -176,7 +176,12 @@ func (c *LMStudioClient) CheckHealth(ctx context.Context) (bool, time.Duration, 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	return resp.StatusCode == http.StatusOK, latency, nil
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return false, latency, errors.New("API returned HTTP " + resp.Status + ": " + string(respBody))
+	}
+
+	return true, latency, nil
 }
 
 // StreamChat sends a streaming chat completion request to LM Studio.

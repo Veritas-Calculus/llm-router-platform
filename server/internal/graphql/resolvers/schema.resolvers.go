@@ -902,8 +902,9 @@ func (r *mutationResolver) ToggleProviderProxy(ctx context.Context, id string) (
 // CreateProviderAPIKey is the resolver for the createProviderApiKey field.
 func (r *mutationResolver) CreateProviderAPIKey(ctx context.Context, providerID string, input model.ProviderAPIKeyInput) (*model.ProviderAPIKey, error) {
 	pid, _ := uuid.Parse(providerID)
+	input.APIKey = strings.TrimSpace(input.APIKey)
 	keyPrefix := input.APIKey
-	if len(keyPrefix) > 8 {
+	if len(keyPrefix) > 10 {
 		keyPrefix = keyPrefix[:8] + "..."
 	}
 	encrypted, err := crypto.Encrypt(input.APIKey)
