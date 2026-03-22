@@ -95,6 +95,18 @@ function isVisionModel(m: ModelRef): boolean {
   return ['-vl-', '-vl/', '/vl-', '-vision', 'vision-', '4o', 'gemini-1.5', 'gemini-2', 'claude-3', 'claude-4', 'pixtral', 'llava', 'cogvlm', 'internvl', 'minicpm-v', 'glm-4v', 'glm-4.6v', 'glm-4.7v'].some(p => lower.includes(p));
 }
 
+/** Check if a model is an STT (speech-to-text / whisper) model. */
+function isSTTModel(m: ModelRef): boolean {
+  const lower = m.id.toLowerCase();
+  return ['whisper', 'stt', 'speech-to-text', 'transcri'].some(p => lower.includes(p));
+}
+
+/** Check if a model is a TTS (text-to-speech) model. */
+function isTTSModel(m: ModelRef): boolean {
+  const lower = m.id.toLowerCase();
+  return ['tts', 'text-to-speech', 'speech', 'cosyvoice', 'bark', 'parler'].some(p => lower.includes(p));
+}
+
 /* ── Streaming completion runner ─────────────────────────────── */
 
 async function runCompletion(
@@ -326,6 +338,8 @@ export default function PlaygroundPage() {
   const [stats, setStats] = useState<UsageStats | null>(null);
   const [statsB, setStatsB] = useState<UsageStats | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [sttModel, setSttModel] = useState('');
+  const [ttsModel, setTtsModel] = useState('');
 
   // ── STT (Speech-to-Text) state ──
   const [isRecording, setIsRecording] = useState(false);
@@ -372,6 +386,11 @@ export default function PlaygroundPage() {
         if (data.data) {
           setModels(data.data);
           if (data.data.length > 0 && !selectedModel) setSelectedModel(data.data[0].id);
+          // Auto-select STT/TTS models
+          const sttCandidate = data.data.find((m: ModelRef) => isSTTModel(m));
+          if (sttCandidate && !sttModel) setSttModel(sttCandidate.id);
+          const ttsCandidate = data.data.find((m: ModelRef) => isTTSModel(m));
+          if (ttsCandidate && !ttsModel) setTtsModel(ttsCandidate.id);
         }
       } else {
         setErrorMsg('Failed to fetch models. Check your API Key.');
@@ -474,7 +493,7 @@ export default function PlaygroundPage() {
       const formData = new FormData();
       const ext = blob.type.includes('webm') ? 'webm' : blob.type.includes('mp4') ? 'm4a' : 'wav';
       formData.append('file', blob, `recording.${ext}`);
-      formData.append('model', 'whisper-1');
+      formData.append('model', sttModel || 'whisper-1');
       formData.append('response_format', 'json');
       const res = await fetch('/v1/audio/transcriptions', {
         method: 'POST',
@@ -515,7 +534,7 @@ export default function PlaygroundPage() {
       const res = await fetch('/v1/audio/speech', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ model: 'tts-1', input: text.slice(0, 4096), voice: 'alloy' }),
+        body: JSON.stringify({ model: ttsModel || 'tts-1', input: text.slice(0, 4096), voice: 'alloy' }),
       });
       if (!res.ok) {
         const errBody = await res.text();
@@ -781,6 +800,38 @@ export default function PlaygroundPage() {
               ~{inputTokenEstimate} tokens in context
             </span>
           </div>
+
+          {/* STT / TTS Models */}
+          {models.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-apple-gray-700 dark:text-gray-300 mb-1.5">
+                <MicrophoneIcon className="w-3.5 h-3.5 inline-block mr-1" />STT Model (Whisper)
+              </label>
+              <select
+                value={sttModel}
+                onChange={(e) => setSttModel(e.target.value)}
+                className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100"
+              >
+                <option value="">Not configured</option>
+                {models.map(m => (
+                  <option key={m.id} value={m.id}>{isSTTModel(m) ? '[STT] ' : ''}{m.id}</option>
+                ))}
+              </select>
+              <label className="block text-xs font-medium text-apple-gray-700 dark:text-gray-300 mb-1.5 mt-3">
+                <SpeakerWaveIcon className="w-3.5 h-3.5 inline-block mr-1" />TTS Model
+              </label>
+              <select
+                value={ttsModel}
+                onChange={(e) => setTtsModel(e.target.value)}
+                className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100"
+              >
+                <option value="">Not configured</option>
+                {models.map(m => (
+                  <option key={m.id} value={m.id}>{isTTSModel(m) ? '[TTS] ' : ''}{m.id}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
