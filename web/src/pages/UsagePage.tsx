@@ -12,10 +12,12 @@ import {
 } from 'recharts';
 import { useQuery } from '@apollo/client/react';
 import { MY_USAGE_SUMMARY, MY_DAILY_USAGE, MY_RECENT_USAGE } from '@/lib/graphql/operations';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 function UsagePage() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const pageSize = 20;
   
@@ -202,7 +204,7 @@ function UsagePage() {
                   stroke="#007AFF"
                   strokeWidth={2}
                   dot={false}
-                  name="Requests"
+                  name={t('usage.requests')}
                 />
               </LineChart>
             </ResponsiveContainer>

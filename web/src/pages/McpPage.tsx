@@ -18,10 +18,12 @@ import { MCP_SERVERS_QUERY, CREATE_MCP_SERVER, UPDATE_MCP_SERVER, DELETE_MCP_SER
 import type { McpServer } from '@/lib/types';
 import toast from 'react-hot-toast';
 import ConfirmModal from '@/components/ConfirmModal';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 function McpPage() {
+  const { t } = useTranslation();
   const { data, loading, refetch } = useQuery<any>(MCP_SERVERS_QUERY);
   const servers: McpServer[] = useMemo(() =>
     (data?.mcpServers || []).map((s: any) => ({
@@ -221,14 +223,14 @@ function McpPage() {
                     <button
                       onClick={() => handleRefreshTools(server.id)}
                       className="p-2 text-apple-gray-400 hover:text-apple-blue transition-colors"
-                      title="Refresh Tools"
+                      title={t('mcp.refresh_tools')}
                     >
                       <ArrowPathIcon className="w-5 h-5" />
                     </button>
                     <button
                       onClick={() => handleOpenModal(server)}
                       className="p-2 text-apple-gray-400 hover:text-apple-gray-600 transition-colors"
-                      title="Edit"
+                      title={t('common.edit')}
                     >
                       <PlusIcon className="w-5 h-5 rotate-45" />
                     </button>
@@ -238,7 +240,7 @@ function McpPage() {
                         setIsModalDeleteOpen(true);
                       }}
                       className="p-2 text-apple-gray-400 hover:text-red-500 transition-colors"
-                      title="Delete"
+                      title={t('common.delete')}
                     >
                       <TrashIcon className="w-5 h-5" />
                     </button>
@@ -414,9 +416,9 @@ function McpPage() {
         isOpen={isDeleteModalOpen}
         onCancel={() => setIsModalDeleteOpen(false)}
         onConfirm={handleDelete}
-        title="Delete MCP Server"
+        title={t('mcp.delete_confirm')}
         message={`Are you sure you want to delete "${selectedServer?.name}"? This will also remove all its discovered tools.`}
-        confirmText="Delete"
+        confirmText={t('common.delete')}
         confirmColor="red"
       />
     </div>

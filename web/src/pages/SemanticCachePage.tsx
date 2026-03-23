@@ -12,12 +12,14 @@ import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { TrashIcon, BeakerIcon, Cog6ToothIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 // ─── Cache Config Panel ─────────────────────────────────────────────
 
 function CacheConfigPanel() {
+  const { t } = useTranslation();
   const { data, refetch } = useQuery<any>(CACHE_CONFIG_QUERY, { fetchPolicy: 'cache-and-network' });
   const [updateMut, { loading: saving }] = useMutation(UPDATE_CACHE_CONFIG);
   const [expanded, setExpanded] = useState(false);
@@ -306,7 +308,7 @@ function SemanticCachePage() {
                     <button
                       onClick={() => handleClearCache(c.id)}
                       className="text-apple-gray-400 hover:text-red-500 transition-colors p-1"
-                      title="Delete Entry"
+                      title={t('cache.delete_entry')}
                     >
                       <TrashIcon className="w-4 h-4" />
                     </button>

@@ -6,6 +6,7 @@ import { GET_DLP_CONFIG, UPDATE_DLP_CONFIG, TEST_DLP_REDACTION } from '@/lib/gra
 import { MY_ORGANIZATIONS, MY_PROJECTS } from '@/lib/graphql/operations';
 import type { Organization, Project } from '@/lib/types';
 import { useAuthStore } from '@/stores/authStore';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -106,6 +107,7 @@ const POLICY_PRESETS: PolicyPreset[] = [
 
 // ── Detect which preset matches the current config ──────────────
 function detectActivePreset(config: any): string {
+  const { t } = useTranslation();
   if (!config?.isEnabled) return 'none';
   for (const preset of POLICY_PRESETS) {
     if (preset.id === 'custom') continue;
@@ -349,23 +351,23 @@ export default function DlpSettingsPage() {
         
         <div className="flex items-center gap-2">
           <select
-            title="Organization"
+            title={t('common.organization')}
             value={selectedOrgId}
             onChange={(e) => setSelectedOrgId(e.target.value)}
             className="block w-40 rounded-xl border border-[var(--theme-border-default)] bg-[var(--theme-bg-surface)] text-[var(--theme-text-primary)] shadow-sm px-3 py-2 text-sm focus:ring-[var(--theme-color-primary)] focus:border-[var(--theme-color-primary)]"
           >
-            <option value="" disabled>Select Org</option>
+            <option value="" disabled>{t('common.select_org')}</option>
             {orgs.map((o) => (
               <option key={o.id} value={o.id}>{o.name}</option>
             ))}
           </select>
           <select
-            title="Project"
+            title={t('common.project')}
             value={currentProjectId}
             onChange={(e) => setCurrentProjectId(e.target.value)}
             className="block w-40 rounded-xl border border-[var(--theme-border-default)] bg-[var(--theme-bg-surface)] text-[var(--theme-text-primary)] shadow-sm px-3 py-2 text-sm focus:ring-[var(--theme-color-primary)] focus:border-[var(--theme-color-primary)]"
           >
-            <option value="" disabled>Select Project</option>
+            <option value="" disabled>{t('common.select_project')}</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}

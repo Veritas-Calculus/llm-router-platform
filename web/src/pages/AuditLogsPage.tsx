@@ -5,8 +5,10 @@ import {
   ShieldExclamationIcon,
 } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
+import { useTranslation } from '@/lib/i18n';
 
 export default function AuditLogsPage() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const pageSize = 20;
 

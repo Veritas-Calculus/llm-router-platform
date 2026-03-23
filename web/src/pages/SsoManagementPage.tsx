@@ -17,12 +17,14 @@ import {
   UPDATE_IDENTITY_PROVIDER,
   DELETE_IDENTITY_PROVIDER,
 } from '@/lib/graphql/operations/sso';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const MY_ORGS_INLINE = gql`query MyOrgsForSSO { myOrganizations { id name } }`;
 
 function SsoManagementPage() {
+  const { t } = useTranslation();
   // Load user's orgs to scope IdP listing
   const { data: orgResult } = useQuery<any>(MY_ORGS_INLINE);
   const orgs = useMemo(() => orgResult?.myOrganizations || [], [orgResult]);
@@ -337,9 +339,9 @@ function SsoManagementPage() {
                 <div>
                   <label className="label">Default Role</label>
                   <select value={defaultRole} onChange={(e) => setDefaultRole(e.target.value)} className="input">
-                    <option value="MEMBER">Member</option>
-                    <option value="ADMIN">Admin</option>
-                    <option value="READONLY">Read Only</option>
+                    <option value="MEMBER">{t('common.member')}</option>
+                    <option value="ADMIN">{t('common.admin')}</option>
+                    <option value="READONLY">{t('common.readonly')}</option>
                   </select>
                 </div>
                 <div className="flex flex-col justify-end pb-1">

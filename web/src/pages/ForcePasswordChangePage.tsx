@@ -5,8 +5,10 @@ import toast from 'react-hot-toast';
 import { useMutation } from '@apollo/client/react';
 import { CHANGE_PASSWORD } from '@/lib/graphql/operations';
 import { useAuthStore } from '@/stores/authStore';
+import { useTranslation } from '@/lib/i18n';
 
 function ForcePasswordChangePage() {
+  const { t } = useTranslation();
     const navigate = useNavigate();
     const { user, updateUser, logout } = useAuthStore();
     const [changePwd] = useMutation(CHANGE_PASSWORD);

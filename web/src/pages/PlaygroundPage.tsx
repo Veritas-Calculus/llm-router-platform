@@ -20,6 +20,7 @@ import {
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useTranslation } from '@/lib/i18n';
 
 /* ── Types ──────────────────────────────────────────────────────── */
 
@@ -37,6 +38,7 @@ interface Message {
 
 /** Extracts text from a message regardless of content format. */
 function getMessageText(msg: Message): string {
+  const { t } = useTranslation();
   if (typeof msg.content === 'string') return msg.content;
   return msg.content.filter(p => p.type === 'text').map(p => p.text || '').join('');
 }
@@ -759,7 +761,7 @@ export default function PlaygroundPage() {
               className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 disabled:opacity-50"
             >
               {models.length === 0
-                ? <option value="">No models</option>
+                ? <option value="">{t('playground.no_models')}</option>
                 : models.map(m => (
                   <option key={m.id} value={m.id}>
                     {isVisionModel(m) ? '[VLM] ' : ''}{m.id}
@@ -872,7 +874,7 @@ export default function PlaygroundPage() {
                 onChange={(e) => setTtsModel(e.target.value)}
                 className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100"
               >
-                <option value="">Not configured</option>
+                <option value="">{t('common.not_configured')}</option>
                 {models.map(m => (
                   <option key={m.id} value={m.id}>{isTTSModel(m) ? '[TTS] ' : ''}{m.id}</option>
                 ))}

@@ -5,8 +5,10 @@ import { motion } from 'framer-motion';
 import { ArrowPathIcon, CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon, ServerIcon, Cog6ToothIcon, CpuChipIcon, KeyIcon, GlobeAltIcon, BellSlashIcon } from '@heroicons/react/24/outline';
 import { useHealth } from '@/hooks/useHealth';
 import type { AlertConfig } from '@/lib/types';
+import { useTranslation } from '@/lib/i18n';
 
 function getStatusIcon(status: string | boolean) {
+  const { t } = useTranslation();
   if (typeof status === 'boolean') {
     return status
       ? <CheckCircleIcon className="w-5 h-5 text-apple-green" />
@@ -132,7 +134,7 @@ function HealthPage() {
                       <p className="text-sm text-apple-gray-500">{provider.last_check ? formatDate(provider.last_check) : 'Never'}</p>
                       <p className="text-xs text-apple-gray-400">Last checked</p>
                     </div>
-                    <button onClick={() => checkProvider(provider.id)} className="btn btn-secondary text-sm px-3 py-1.5" title="Check now">
+                    <button onClick={() => checkProvider(provider.id)} className="btn btn-secondary text-sm px-3 py-1.5" title={t('health.check_now')}>
                       <ArrowPathIcon className="w-4 h-4 mr-1" />
                       Test
                     </button>

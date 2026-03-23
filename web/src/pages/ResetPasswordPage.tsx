@@ -4,8 +4,10 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useMutation } from '@apollo/client/react';
 import { RESET_PASSWORD } from '@/lib/graphql/operations';
+import { useTranslation } from '@/lib/i18n';
 
 function ResetPasswordPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
@@ -102,7 +104,7 @@ function ResetPasswordPage() {
                 value={formData.confirmPassword}
                 onChange={handleInputChange}
                 className="input"
-                placeholder="Repeat your password"
+                placeholder={t('auth.reset_confirm_placeholder')}
                 required
               />
             </div>

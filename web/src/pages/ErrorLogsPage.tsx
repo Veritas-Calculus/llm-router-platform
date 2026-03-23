@@ -11,8 +11,10 @@ import {
 } from '@heroicons/react/24/outline';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { useTranslation } from '@/lib/i18n';
 
 export default function ErrorLogsPage() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const pageSize = 20;
   const [selectedLog, setSelectedLog] = useState<any>(null);
@@ -117,7 +119,7 @@ ${log.responseBody}`;
                         copySherlog(log);
                       }}
                       className="p-1.5 text-apple-gray-400 hover:text-apple-blue hover:bg-apple-gray-100 rounded-lg transition-colors inline-block"
-                      title="Copy Sherlog"
+                      title={t('error_logs.copy_sherlog')}
                     >
                       <DocumentDuplicateIcon className="w-5 h-5" />
                     </button>
@@ -127,7 +129,7 @@ ${log.responseBody}`;
                         toast.success('Pushed to Integrations!');
                       }}
                       className="ml-1 p-1.5 text-apple-gray-400 hover:text-apple-blue hover:bg-apple-gray-100 rounded-lg transition-colors inline-block"
-                      title="Push to Integrations"
+                      title={t('error_logs.push_integrations')}
                     >
                       <CloudArrowUpIcon className="w-5 h-5" />
                     </button>

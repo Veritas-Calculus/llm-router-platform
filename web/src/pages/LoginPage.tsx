@@ -8,10 +8,12 @@ import { useMutation, useQuery } from '@apollo/client/react';
 import { LOGIN, REGISTER, REGISTRATION_MODE } from '@/lib/graphql/operations';
 import { useAuthStore } from '@/stores/authStore';
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
+import { useTranslation } from '@/lib/i18n';
 
 function LoginPage() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
+  const { t } = useTranslation();
   const [loginMut] = useMutation(LOGIN);
   const [registerMut] = useMutation(REGISTER);
   const [isLogin, setIsLogin] = useState(true);
@@ -57,7 +59,7 @@ function LoginPage() {
 
     // CAPTCHA validation
     if (captchaConfig.enabled && !captchaToken) {
-      toast.error('Please complete the CAPTCHA verification');
+      toast.error(t('auth.captcha_required'));
       return;
     }
 
@@ -70,7 +72,7 @@ function LoginPage() {
         });
         const resp = (data as any)?.login;
         setAuth(resp.token, resp.user);
-        toast.success('Welcome back!');
+        toast.success(t('auth.welcome_back'));
       } else {
         const registerInput: Record<string, string | null> = {
           email: formData.email,
@@ -86,13 +88,13 @@ function LoginPage() {
         });
         const resp = (data as any)?.register;
         setAuth(resp.token, resp.user);
-        toast.success('Account created successfully!');
+        toast.success(t('auth.account_created'));
       }
       // Read from store (just set above) to determine where to navigate
       const user = useAuthStore.getState().user;
       navigate(user?.require_password_change ? '/change-password' : '/dashboard');
     } catch {
-      toast.error(isLogin ? 'Invalid credentials' : 'Registration failed');
+      toast.error(isLogin ? t('auth.invalid_credentials') : t('auth.registration_failed'));
       // Reset turnstile widget on failure so user can retry
       turnstileRef.current?.reset();
       setCaptchaToken(null);
@@ -104,7 +106,7 @@ function LoginPage() {
   const handleSsoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.email) {
-      toast.error('Please enter your organizational email');
+      toast.error(t('auth.sso_email_required'));
       return;
     }
     setLoading(true);
@@ -115,10 +117,10 @@ function LoginPage() {
         body: JSON.stringify({ email: formData.email })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to initialize SSO');
+      if (!res.ok) throw new Error(data.error || t('auth.sso_failed'));
       window.location.href = data.redirect_url;
     } catch (err: any) {
-      toast.error(err.message || 'SSO configuration not found for this domain');
+      toast.error(err.message || t('auth.sso_failed'));
       setLoading(false);
     }
   };
@@ -143,8 +145,8 @@ function LoginPage() {
           <div className="w-16 h-16 bg-gradient-to-br from-apple-blue to-blue-600 rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-5">
             <span className="text-white font-bold text-2xl">R</span>
           </div>
-          <h1 className="text-3xl font-semibold text-apple-gray-900 mb-2">LLM Router Platform</h1>
-          <p className="text-apple-gray-500">Intelligent routing for LLM APIs</p>
+          <h1 className="text-3xl font-semibold text-apple-gray-900 mb-2">{t('auth.platform_name')}</h1>
+          <p className="text-apple-gray-500">{t('auth.platform_slogan')}</p>
         </div>
 
         <div className="card">
@@ -158,7 +160,7 @@ function LoginPage() {
                   : 'text-apple-gray-500 hover:text-apple-gray-700'
               }`}
             >
-              Sign In
+              {t('auth.login')}
             </button>
             <button
               onClick={() => setIsLogin(false)}
@@ -170,16 +172,16 @@ function LoginPage() {
                     ? 'text-apple-gray-300 cursor-not-allowed'
                     : 'text-apple-gray-500 hover:text-apple-gray-700'
               }`}
-              title={!registrationOpen ? 'Registration is currently closed' : undefined}
+              title={!registrationOpen ? t('auth.registration_closed_hint') : undefined}
             >
-              Sign Up
+              {t('auth.register')}
             </button>
           </div>
 
           {/* Registration closed hint */}
           {!isLogin && !registrationOpen && (
             <div className="mb-6 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
-              Registration is currently closed. Contact an administrator for access.
+              {t('auth.registration_closed')}
             </div>
           )}
 
@@ -187,7 +189,7 @@ function LoginPage() {
             {!isLogin && !isSsoMode && (
               <div>
                 <label htmlFor="name" className="label">
-                  Name
+                  {t('auth.name_label')}
                 </label>
                 <input
                   type="text"
@@ -196,7 +198,7 @@ function LoginPage() {
                   value={formData.name}
                   onChange={handleInputChange}
                   className="input"
-                  placeholder="Enter your name"
+                  placeholder={t('auth.enter_name')}
                   required={!isLogin}
                 />
               </div>
@@ -204,7 +206,7 @@ function LoginPage() {
 
             <div>
               <label htmlFor="email" className="label">
-                Email
+                {t('auth.email')}
               </label>
               <input
                 type="email"
@@ -213,7 +215,7 @@ function LoginPage() {
                 value={formData.email}
                 onChange={handleInputChange}
                 className="input"
-                placeholder="Enter your email"
+                placeholder={t('auth.enter_email')}
                 required
               />
             </div>
@@ -222,7 +224,7 @@ function LoginPage() {
               <>
                 <div>
                   <label htmlFor="password" className="label">
-                    Password
+                    {t('auth.password')}
               </label>
               <input
                 type="password"
@@ -231,7 +233,7 @@ function LoginPage() {
                 value={formData.password}
                 onChange={handleInputChange}
                 className="input"
-                placeholder="Enter your password"
+                placeholder={t('auth.enter_password')}
                 required
                 minLength={6}
               />
@@ -241,7 +243,7 @@ function LoginPage() {
                     to="/forgot-password"
                     className="text-sm text-apple-blue hover:underline font-medium"
                   >
-                    Forgot Password?
+                    {t('auth.forgot_password')}
                   </Link>
                   </div>
                 )}
@@ -253,7 +255,7 @@ function LoginPage() {
             {!isLogin && inviteRequired && (
               <div>
                 <label htmlFor="inviteCode" className="label">
-                  Invite Code
+                  {t('auth.invited_code')}
                 </label>
                 <input
                   type="text"
@@ -262,7 +264,7 @@ function LoginPage() {
                   value={formData.inviteCode}
                   onChange={handleInputChange}
                   className="input"
-                  placeholder="Enter your invite code"
+                  placeholder={t('auth.enter_invite_code')}
                   required
                 />
               </div>
@@ -289,12 +291,12 @@ function LoginPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  Processing...
+                  {t('common.processing')}
                 </span>
               ) : isLogin ? (
-                'Sign In'
+                t('auth.login')
               ) : (
-                'Create Account'
+                t('auth.create_account_btn')
               )}
             </button>
           </form>
@@ -307,7 +309,7 @@ function LoginPage() {
                 onClick={() => setIsSsoMode(!isSsoMode)}
                 className="text-sm font-medium text-apple-gray-500 hover:text-apple-gray-800 transition-colors"
               >
-                {isSsoMode ? 'Back to password login' : 'Log in with Enterprise SSO'}
+                {isSsoMode ? t('auth.sso_back') : t('auth.sso_login')}
               </button>
             </div>
           )}
@@ -320,7 +322,7 @@ function LoginPage() {
                   <div className="w-full border-t border-apple-gray-200" />
                 </div>
                 <div className="relative flex justify-center text-xs">
-                  <span className="bg-white px-3 text-apple-gray-400 font-medium">or continue with</span>
+                  <span className="bg-white px-3 text-apple-gray-400 font-medium">{t('auth.or_continue_with')}</span>
                 </div>
               </div>
               <div className="flex gap-3">

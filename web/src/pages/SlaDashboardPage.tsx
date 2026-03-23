@@ -11,8 +11,10 @@ import {
   ArrowPathIcon
 } from '@heroicons/react/24/outline';
 import { SYSTEM_SLA_QUERY } from '@/lib/graphql/operations/health';
+import { useTranslation } from '@/lib/i18n';
 
 function SlaDashboardPage() {
+  const { t } = useTranslation();
   const [timeWindow, setTimeWindow] = useState<number>(24);
   const { data, loading, error, refetch, networkStatus } = useQuery<any>(SYSTEM_SLA_QUERY, {
     variables: { hours: timeWindow },

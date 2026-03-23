@@ -11,6 +11,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { GET_ROUTING_RULES } from '@/lib/graphql/operations/routingRules';
 import { PROVIDERS_QUERY } from '@/lib/graphql/operations';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -26,6 +27,7 @@ const PROVIDER_COLORS = [
 ];
 
 function getProviderColor(index: number) {
+  const { t } = useTranslation();
   return PROVIDER_COLORS[index % PROVIDER_COLORS.length];
 }
 

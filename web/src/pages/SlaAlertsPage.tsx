@@ -16,6 +16,7 @@ import {
   ACKNOWLEDGE_ALERT,
   RESOLVE_ALERT,
 } from '@/lib/graphql/operations/health';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -48,6 +49,7 @@ const defaultForm: AlertRuleFormState = {
 };
 
 function AlertRulesCard() {
+  const { t } = useTranslation();
   const { data, loading, refetch } = useQuery<any>(ALERT_CONFIG_QUERY, {
     variables: { targetType: GLOBAL_TARGET_TYPE, targetId: GLOBAL_TARGET_ID },
     fetchPolicy: 'cache-and-network',
@@ -322,10 +324,10 @@ function ActiveAlertsTable() {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="input py-2 text-sm"
           >
-            <option value="">All Statuses</option>
-            <option value="active">Active</option>
-            <option value="acknowledged">Acknowledged</option>
-            <option value="resolved">Resolved</option>
+            <option value="">{t('sla_alerts.all_statuses')}</option>
+            <option value="active">{t('sla_alerts.active')}</option>
+            <option value="acknowledged">{t('sla_alerts.acknowledged')}</option>
+            <option value="resolved">{t('sla_alerts.resolved')}</option>
           </select>
           {unresolved.length > 0 && (
             <button

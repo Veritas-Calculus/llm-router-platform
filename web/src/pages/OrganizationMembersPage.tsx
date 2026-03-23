@@ -16,6 +16,7 @@ import {
     REMOVE_ORG_MEMBER,
 } from '@/lib/graphql/operations';
 import { useAuthStore } from '@/stores/authStore';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -27,6 +28,7 @@ const ROLES = [
 ];
 
 export default function OrganizationMembersPage() {
+  const { t } = useTranslation();
     const { user } = useAuthStore();
     
     // We get the orgs from MY_API_KEYS query context currently 
@@ -64,12 +66,12 @@ export default function OrganizationMembersPage() {
             await addMember({
                 variables: { orgId: selectedOrgId, email: newMemberEmail, role: newMemberRole },
             });
-            toast.success("Member added successfully");
+            toast.success(t('org_members.member_added'));
             setIsAddModalOpen(false);
             setNewMemberEmail('');
             refetch();
         } catch (err: any) {
-            toast.error(err.message || "Failed to add member");
+            toast.error(err.message || t('org_members.add_error'));
         }
     };
 
@@ -78,10 +80,10 @@ export default function OrganizationMembersPage() {
             await updateRole({
                 variables: { orgId: selectedOrgId, userId, role: targetRole },
             });
-            toast.success("Role updated");
+            toast.success(t('org_members.role_updated'));
             refetch();
         } catch (err: any) {
-            toast.error(err.message || "Failed to update role");
+            toast.error(err.message || t('org_members.role_update_error'));
         }
     };
 
@@ -91,10 +93,10 @@ export default function OrganizationMembersPage() {
             await removeMember({
                 variables: { orgId: selectedOrgId, userId },
             });
-            toast.success("Member removed");
+            toast.success(t('org_members.member_removed'));
             refetch();
         } catch (err: any) {
-            toast.error(err.message || "Failed to remove member");
+            toast.error(err.message || t('org_members.remove_error'));
         }
     };
 
@@ -187,7 +189,7 @@ export default function OrganizationMembersPage() {
                                             onClick={() => handleRemoveMember(m.userId)}
                                             disabled={m.userId === user?.id}
                                             className="p-2 text-apple-gray-400 hover:text-red-600 disabled:opacity-30 disabled:hover:text-apple-gray-400 transition-colors rounded-lg hover:bg-apple-gray-100"
-                                            title="Remove Member"
+                                            title={t('org_members.remove_member')}
                                         >
                                             <TrashIcon className="w-5 h-5" />
                                         </button>

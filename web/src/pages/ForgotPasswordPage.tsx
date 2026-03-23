@@ -4,8 +4,10 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useMutation } from '@apollo/client/react';
 import { FORGOT_PASSWORD } from '@/lib/graphql/operations';
+import { useTranslation } from '@/lib/i18n';
 
 function ForgotPasswordPage() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -52,7 +54,7 @@ function ForgotPasswordPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="input"
-                  placeholder="Enter your registered email"
+                  placeholder={t('auth.forgot_enter_email')}
                   required
                 />
               </div>

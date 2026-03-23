@@ -14,10 +14,12 @@ import {
 } from 'recharts';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { USER_DETAIL_QUERY, TOGGLE_USER, UPDATE_USER_ROLE, UPDATE_USER_QUOTA } from '@/lib/graphql/operations';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 function UserDetailPage() {
+  const { t } = useTranslation();
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const { data, loading, refetch } = useQuery<any>(USER_DETAIL_QUERY, { variables: { id }, skip: !id });
@@ -299,7 +301,7 @@ function UserDetailPage() {
                             <Tooltip
                                 contentStyle={{ borderRadius: 12, border: '1px solid #E5E5EA', fontSize: 13 }}
                             />
-                            <Bar dataKey="requests" name="Requests" fill="#007AFF" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="requests" name={t('user_detail.requests')} fill="#007AFF" radius={[4, 4, 0, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 ) : (

@@ -12,10 +12,12 @@ import {
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import type { Organization, Project } from '@/lib/types';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export default function WebhooksPage() {
+  const { t } = useTranslation();
   // Organization state
   const { data: orgData } = useQuery<any>(MY_ORGANIZATIONS);
   const orgs: Organization[] = useMemo(() => orgData?.myOrganizations || [], [orgData]);
@@ -186,12 +188,12 @@ export default function WebhooksPage() {
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Organization</label>
               <select
-                title="Organization"
+                title={t('common.organization')}
                 value={selectedOrgId}
                 onChange={(e) => setSelectedOrgId(e.target.value)}
                 className="block w-48 rounded-xl border-gray-300 dark:border-white/10 bg-white dark:bg-white/5 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-900 dark:text-white"
               >
-                <option value="" disabled>Select Organization</option>
+                <option value="" disabled>{t('common.select_org')}</option>
                 {orgs.map((o) => (
                   <option key={o.id} value={o.id} className="text-gray-900 dark:bg-[#1A1A1A] dark:text-white">{o.name}</option>
                 ))}
@@ -200,12 +202,12 @@ export default function WebhooksPage() {
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Project</label>
               <select
-                title="Project"
+                title={t('common.project')}
                 value={selectedProjectId}
                 onChange={(e) => setSelectedProjectId(e.target.value)}
                 className="block w-48 rounded-xl border-gray-300 dark:border-white/10 bg-white dark:bg-white/5 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-gray-900 dark:text-white"
               >
-                <option value="" disabled>Select Project</option>
+                <option value="" disabled>{t('common.select_project')}</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id} className="text-gray-900 dark:bg-[#1A1A1A] dark:text-white">{p.name}</option>
                 ))}
@@ -330,7 +332,7 @@ export default function WebhooksPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex items-center justify-end gap-3">
                       <button 
-                        title="Test Ping"
+                        title={t('webhooks.test_ping')}
                         onClick={() => {
                           setSelectedEndpointId(webhook.id);
                           testWebhook({ variables: { id: webhook.id } });
@@ -340,21 +342,21 @@ export default function WebhooksPage() {
                         <BoltIcon className="w-5 h-5" />
                       </button>
                       <button 
-                        title="View Deliveries"
+                        title={t('webhooks.view_deliveries')}
                         onClick={() => setSelectedEndpointId(selectedEndpointId === webhook.id ? null : webhook.id)}
                         className={`transition-colors ${selectedEndpointId === webhook.id ? 'text-green-600 dark:text-green-400' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
                       >
                         <ClockIcon className="w-5 h-5" />
                       </button>
                       <button 
-                        title="Edit"
+                        title={t('common.edit')}
                         onClick={() => handleOpenModal(webhook)}
                         className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                       >
                         <PencilSquareIcon className="w-5 h-5" />
                       </button>
                       <button 
-                        title="Delete"
+                        title={t('common.delete')}
                         onClick={() => {
                           if (window.confirm('Are you sure you want to delete this webhook endpoint?')) {
                             deleteWebhook({ variables: { id: webhook.id } });
@@ -496,7 +498,7 @@ export default function WebhooksPage() {
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     className="mt-2 block w-full rounded-xl border-gray-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    placeholder="My staging environment webhook"
+                    placeholder={t('webhooks.url_placeholder')}
                   />
                 </div>
 

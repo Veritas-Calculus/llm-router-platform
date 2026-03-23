@@ -14,12 +14,13 @@ import { useQuery, useMutation } from '@apollo/client/react';
 import { MY_API_KEYS, MY_ORGANIZATIONS, MY_PROJECTS, CREATE_API_KEY, REVOKE_API_KEY, DELETE_API_KEY, UPDATE_PROJECT, API_KEY_RATE_LIMIT_STATUS } from '@/lib/graphql/operations';
 import { SUBSCRIPTION_QUOTA_QUERY } from '@/lib/graphql/operations/billing';
 import type { ApiKey, Organization, Project } from '@/lib/types';
+import { useTranslation } from '@/lib/i18n';
 
 const AVAILABLE_SCOPES = [
-  { id: 'all', label: 'All Permissions' },
-  { id: 'chat', label: 'Chat Completions' },
-  { id: 'embeddings', label: 'Embeddings' },
-  { id: 'images', label: 'Image Generation' },
+  { id: 'all', label: t('api_keys.scopes_all') },
+  { id: 'chat', label: t('api_keys.scopes_chat') },
+  { id: 'embeddings', label: t('api_keys.scopes_embeddings') },
+  { id: 'images', label: t('api_keys.scopes_images') },
   { id: 'audio', label: 'Audio & TTS' },
   { id: 'admin', label: 'Admin (Mgmt API)' },
 ];
@@ -27,13 +28,14 @@ const AVAILABLE_SCOPES = [
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  ok: { label: 'OK', className: 'bg-green-50 text-green-700 border-green-200' },
-  near_limit: { label: 'Near Limit', className: 'bg-orange-50 text-orange-700 border-orange-200' },
-  rate_limited: { label: 'Rate Limited', className: 'bg-red-50 text-red-700 border-red-200' },
-  quota_exceeded: { label: 'Quota Exceeded', className: 'bg-red-50 text-red-700 border-red-200' },
+  ok: { label: t('api_keys.ok'), className: 'bg-green-50 text-green-700 border-green-200' },
+  near_limit: { label: t('api_keys.near_limit'), className: 'bg-orange-50 text-orange-700 border-orange-200' },
+  rate_limited: { label: t('api_keys.rate_limited'), className: 'bg-red-50 text-red-700 border-red-200' },
+  quota_exceeded: { label: t('api_keys.quota_exceeded'), className: 'bg-red-50 text-red-700 border-red-200' },
 };
 
 function RateLimitMiniBar({ current, limit, label }: { current: number; limit: number; label: string }) {
+  const { t } = useTranslation();
   if (limit <= 0) return <div className="text-[10px] text-apple-gray-400">{label}: Unlimited</div>;
   const pct = Math.min((current / limit) * 100, 100);
   const color = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-orange-400' : 'bg-green-500';
@@ -64,9 +66,9 @@ function RateLimitStatusCell({ keyId, isActive }: { keyId: string; isActive: boo
       <span className={`inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium border ${badge.className}`}>
         {badge.label}
       </span>
-      <RateLimitMiniBar current={s.rpmCurrent} limit={s.rpmLimit} label="RPM" />
-      <RateLimitMiniBar current={s.tpmCurrent} limit={s.tpmLimit} label="TPM" />
-      <RateLimitMiniBar current={s.dailyCurrent} limit={s.dailyLimit} label="Day" />
+      <RateLimitMiniBar current={s.rpmCurrent} limit={s.rpmLimit} label={t('api_keys.rpm')} />
+      <RateLimitMiniBar current={s.tpmCurrent} limit={s.tpmLimit} label={t('api_keys.tpm')} />
+      <RateLimitMiniBar current={s.dailyCurrent} limit={s.dailyLimit} label={t('api_keys.daily')} />
     </div>
   );
 }
@@ -251,12 +253,12 @@ function ApiKeysPage() {
 
   const handleCreate = async () => {
     if (!newKeyName.trim()) {
-      toast.error('Please enter a name for the API key');
+      toast.error(t('api_keys.enter_name'));
       return;
     }
 
     if (!selectedProjectId) {
-      toast.error('Please select a project first');
+      toast.error(t('api_keys.select_project'));
       return;
     }
 
@@ -283,9 +285,9 @@ function ApiKeysPage() {
       setSelectedScopes(['all']);
       setNewKeyRateLimit('');
       setNewKeyTokenLimit('');
-      toast.success('API key created successfully');
+      toast.success(t('api_keys.created_success'));
     } catch (e: any) {
-      toast.error(e.message || 'Failed to create API key');
+      toast.error(e.message || t('api_keys.create_error'));
     } finally {
       setCreating(false);
     }
@@ -310,15 +312,15 @@ function ApiKeysPage() {
     try {
       if (type === 'revoke') {
         await revokeKeyMut({ variables: { projectId: selectedProjectId, id: keyId } });
-        toast.success('API key revoked');
+        toast.success(t('api_keys.revoked_success'));
       } else {
         await deleteKeyMut({ variables: { projectId: selectedProjectId, id: keyId } });
-        toast.success('API key deleted');
+        toast.success(t('api_keys.deleted_success'));
       }
       await refetch();
       closeConfirmModal();
     } catch {
-      toast.error(type === 'revoke' ? 'Failed to revoke API key' : 'Failed to delete API key');
+      toast.error(type === 'revoke' ? t('api_keys.revoke_error') : t('api_keys.delete_error'));
     } finally {
       setProcessing(false);
     }
@@ -327,9 +329,9 @@ function ApiKeysPage() {
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success('Copied to clipboard');
+      toast.success(t('common.copied_clipboard'));
     } catch {
-      toast.error('Failed to copy');
+      toast.error(t('common.copy_failed'));
     }
   };
 
@@ -354,12 +356,12 @@ function ApiKeysPage() {
       <SubscriptionQuotaBanner />
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-apple-gray-900">API Keys</h1>
-          <p className="text-apple-gray-500 mt-1">Manage your API keys for accessing the LLM Router</p>
+          <h1 className="text-2xl font-semibold text-apple-gray-900">{t('api_keys.title')}</h1>
+          <p className="text-apple-gray-500 mt-1">{t('api_keys.subtitle')}</p>
           
           <div className="mt-4 flex gap-4 items-end">
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-apple-gray-500">Organization</label>
+              <label className="text-xs font-medium text-apple-gray-500">{t('common.organization')}</label>
               <select
                 value={selectedOrgId}
                 onChange={(e) => setSelectedOrgId(e.target.value)}
@@ -372,14 +374,14 @@ function ApiKeysPage() {
             </div>
             
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-apple-gray-500">Project</label>
+              <label className="text-xs font-medium text-apple-gray-500">{t('common.project')}</label>
               <select
                 value={selectedProjectId}
                 onChange={(e) => setSelectedProjectId(e.target.value)}
                 className="input py-2 pl-3 pr-8 min-w-[220px]"
                 disabled={!projects.length}
               >
-                {projects.length === 0 && <option value="">No Projects Available</option>}
+                {projects.length === 0 && <option value="">{t('common.no_projects')}</option>}
                 {projects.map(proj => (
                   <option key={proj.id} value={proj.id}>{proj.name}</option>
                 ))}
@@ -395,7 +397,7 @@ function ApiKeysPage() {
                   }
                 }}
                 className="btn btn-secondary px-3"
-                title="Project Settings"
+                title={t('api_keys.project_settings')}
               >
                 Settings
               </button>
@@ -435,14 +437,14 @@ function ApiKeysPage() {
                 <button
                   onClick={() => copyToClipboard(createdKey.key)}
                   className="btn btn-ghost p-2"
-                  title="Copy to clipboard"
+                  title={t('api_keys.copy_clipboard')}
                 >
                   <ClipboardIcon className="w-5 h-5" />
                 </button>
               </div>
             </div>
             <button onClick={() => setCreatedKey(null)} className="text-apple-gray-400 hover:text-apple-gray-600">
-              <span className="sr-only">Dismiss</span>
+              <span className="sr-only">{t('common.dismiss')}</span>
               &times;
             </button>
           </div>
@@ -459,7 +461,7 @@ function ApiKeysPage() {
             <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <KeyIcon className="w-8 h-8 text-apple-blue" />
             </div>
-            <h3 className="text-lg font-semibold text-apple-gray-900 mb-1">No API Keys Yet</h3>
+            <h3 className="text-lg font-semibold text-apple-gray-900 mb-1">{t('api_keys.no_keys')}</h3>
             <p className="text-apple-gray-500 text-sm mb-6 max-w-sm mx-auto">
               Create an API key to start routing requests through the LLM Router.
             </p>
@@ -472,15 +474,15 @@ function ApiKeysPage() {
             <table className="min-w-full divide-y divide-apple-gray-200">
               <thead>
                 <tr>
-                  <th className="table-header">Name</th>
-                  <th className="table-header">Key</th>
-                  <th className="table-header">Status</th>
-                  <th className="table-header">Scopes</th>
-                  <th className="table-header">Limits</th>
-                  <th className="table-header">Expires</th>
-                  <th className="table-header">Created</th>
-                  <th className="table-header">Last Used</th>
-                  <th className="table-header">Actions</th>
+                  <th className="table-header">{t('common.name')}</th>
+                  <th className="table-header">{t('common.key')}</th>
+                  <th className="table-header">{t('common.status')}</th>
+                  <th className="table-header">{t('common.scopes')}</th>
+                  <th className="table-header">{t('common.limits')}</th>
+                  <th className="table-header">{t('common.expires')}</th>
+                  <th className="table-header">{t('common.created')}</th>
+                  <th className="table-header">{t('common.last_used')}</th>
+                  <th className="table-header">{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-apple-gray-100">
@@ -494,13 +496,13 @@ function ApiKeysPage() {
                     </td>
                     <td className="table-cell">
                       <span className={key.is_active ? 'badge-success' : 'badge-error'}>
-                        {key.is_active ? 'Active' : 'Revoked'}
+                        {key.is_active ? t('common.active') : t('common.revoked')}
                       </span>
                     </td>
                     <td className="table-cell">
                       <div className="flex flex-wrap gap-1">
                         {key.scopes === 'all' ? (
-                          <span className="badge-purple">All</span>
+                          <span className="badge-purple">{t('common.all')}</span>
                         ) : (
                           key.scopes?.split(',').map((s: string) => (
                             <span key={s} className="px-2 py-0.5 rounded-full bg-apple-gray-100 text-apple-gray-600 text-xs border border-apple-gray-200">
@@ -540,7 +542,7 @@ function ApiKeysPage() {
                           <button
                             onClick={() => openRevokeModal(key.id)}
                             className="text-apple-orange hover:text-orange-600 transition-colors"
-                            title="Revoke API key"
+                            title={t('api_keys.revoke_key')}
                           >
                             <XCircleIcon className="w-5 h-5" />
                           </button>
@@ -548,7 +550,7 @@ function ApiKeysPage() {
                         <button
                           onClick={() => openDeleteModal(key.id)}
                           className="text-apple-red hover:text-red-600 transition-colors"
-                          title="Delete API key"
+                          title={t('api_keys.delete_key')}
                         >
                           <TrashIcon className="w-5 h-5" />
                         </button>

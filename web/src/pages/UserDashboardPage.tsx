@@ -30,10 +30,12 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { useUserDashboard } from '@/hooks/useUserDashboard';
+import { useTranslation } from '@/lib/i18n';
 
 /* ── Quick Start Guide ── */
 
 function QuickStartGuide({ onDismiss }: { onDismiss: () => void }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [copied, setCopied] = useState<string | null>(null);
   const baseUrl = `${window.location.origin}/v1`;
@@ -491,11 +493,11 @@ function UserDashboardPage() {
 
       {/* Main Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="My Requests" value={formatNumber(summary?.totalRequests || 0)} subtitle="this month" icon={ArrowTrendingUpIcon} color="blue" />
-        <StatCard title="My Tokens" value={formatTokens(summary?.totalTokens || 0)} subtitle="this month" icon={ClockIcon} color="purple" />
-        <StatCard title="My Spend" value={formatCurrency(summary?.totalCost || 0)} subtitle="this month" icon={CurrencyDollarIcon} color="orange" />
+        <StatCard title={t('user_dashboard.my_requests')} value={formatNumber(summary?.totalRequests || 0)} subtitle={t('common.this_month')} icon={ArrowTrendingUpIcon} color="blue" />
+        <StatCard title={t('user_dashboard.my_tokens')} value={formatTokens(summary?.totalTokens || 0)} subtitle="this month" icon={ClockIcon} color="purple" />
+        <StatCard title={t('user_dashboard.my_spend')} value={formatCurrency(summary?.totalCost || 0)} subtitle="this month" icon={CurrencyDollarIcon} color="orange" />
         <StatCard
-          title="Success Rate"
+          title={t('user_dashboard.success_rate')}
           value={`${(summary?.successRate || 0).toFixed(1)}%`}
           subtitle="of all requests"
           icon={summary?.successRate && summary.successRate >= 95 ? CheckCircleIcon : ExclamationCircleIcon}
