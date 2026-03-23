@@ -380,12 +380,15 @@ func (h *OAuth2Handler) findOrCreateUser(email, name, provider, oauthID string) 
 }
 
 func (h *OAuth2Handler) generateJWT(u *models.User) (string, error) {
+	ttl := h.cfg.JWT.ExpiresIn
+	if ttl <= 0 {
+		ttl = time.Hour // Default: 1 hour (consistent with resolver)
+	}
 	claims := jwt.MapClaims{
-		"sub":   u.ID.String(),
-		"email": u.Email,
-		"role":  u.Role,
-		"exp":   time.Now().Add(h.cfg.JWT.ExpiresIn).Unix(),
-		"iat":   time.Now().Unix(),
+		"sub":  u.ID.String(),
+		"role": u.Role,
+		"exp":  time.Now().Add(ttl).Unix(),
+		"iat":  time.Now().Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(h.cfg.JWT.Secret))

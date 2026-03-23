@@ -196,7 +196,7 @@ func run() error {
 
 	// Start async task worker pool
 	workerPool := task.NewWorkerPool(services.TaskService, repos.Task, task.DefaultWorkerPoolConfig(), logger)
-	task.RegisterDefaultExecutors(workerPool, logger)
+	task.RegisterDefaultExecutors(workerPool, services.Router, logger)
 	go workerPool.Start(lifecycleCtx)
 
 	quit := make(chan os.Signal, 1)

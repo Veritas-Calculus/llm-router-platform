@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"llm-router-platform/internal/models"
+	"llm-router-platform/internal/service/provider"
+	"llm-router-platform/internal/service/router"
 
 	"go.uber.org/zap"
 )
 
-// ─── Placeholder Executors ─────────────────────────────────────────
-// These stub executors demonstrate the Executor interface contract.
-// Replace or extend with real implementations that call Provider clients.
+// ─── Executor Implementations ──────────────────────────────────────
+// These executors use the router to call actual LLM providers.
 
 // BatchTTSInput represents the input for batch TTS tasks.
 type BatchTTSInput struct {
@@ -30,12 +30,13 @@ type BatchTTSItem struct {
 
 // BatchTTSExecutor processes batch text-to-speech tasks.
 type BatchTTSExecutor struct {
+	router *router.Router
 	logger *zap.Logger
 }
 
 // NewBatchTTSExecutor creates a new batch TTS executor.
-func NewBatchTTSExecutor(logger *zap.Logger) *BatchTTSExecutor {
-	return &BatchTTSExecutor{logger: logger.Named("batch-tts")}
+func NewBatchTTSExecutor(r *router.Router, logger *zap.Logger) *BatchTTSExecutor {
+	return &BatchTTSExecutor{router: r, logger: logger.Named("batch-tts")}
 }
 
 // Execute processes a batch TTS task.
@@ -49,7 +50,7 @@ func (e *BatchTTSExecutor) Execute(ctx context.Context, task *models.AsyncTask, 
 		return "", fmt.Errorf("no items to process")
 	}
 
-	results := make([]string, 0, len(input.Items))
+	results := make([]map[string]interface{}, 0, len(input.Items))
 	for i, item := range input.Items {
 		select {
 		case <-ctx.Done():
@@ -57,21 +58,45 @@ func (e *BatchTTSExecutor) Execute(ctx context.Context, task *models.AsyncTask, 
 		default:
 		}
 
+		model := item.Model
+		if model == "" {
+			model = "tts-1"
+		}
+		voice := item.Voice
+		if voice == "" {
+			voice = "alloy"
+		}
+
 		e.logger.Debug("processing TTS item",
 			zap.Int("index", i),
 			zap.String("text_preview", truncate(item.Text, 50)),
 		)
 
-		// TODO: Call actual TTS provider here via router
-		// For now, record that the item was processed
-		results = append(results, fmt.Sprintf("item_%d: processed (%d chars)", i, len(item.Text)))
+		selectedProvider, apiKey, err := e.router.Route(ctx, model)
+		if err != nil {
+			results = append(results, map[string]interface{}{
+				"index": i, "status": "error", "error": fmt.Sprintf("no provider for model %s: %s", model, err.Error()),
+			})
+		} else {
+			req := &provider.SpeechRequest{
+				Model: model,
+				Input: item.Text,
+				Voice: voice,
+			}
+			resp, speechErr := e.router.ExecuteSpeech(ctx, selectedProvider, apiKey, req, 2)
+			if speechErr != nil {
+				results = append(results, map[string]interface{}{
+					"index": i, "status": "error", "error": speechErr.Error(),
+				})
+			} else {
+				results = append(results, map[string]interface{}{
+					"index": i, "status": "ok", "size_bytes": len(resp.Response.Audio),
+				})
+			}
+		}
 
-		// Report progress
 		pct := int(float64(i+1) / float64(len(input.Items)) * 100)
 		progressFn(pct)
-
-		// Simulate processing time (remove when real provider is wired)
-		time.Sleep(100 * time.Millisecond)
 	}
 
 	resultJSON, _ := json.Marshal(map[string]interface{}{
@@ -92,12 +117,13 @@ type BatchImageInput struct {
 
 // BatchImageExecutor processes batch image generation tasks.
 type BatchImageExecutor struct {
+	router *router.Router
 	logger *zap.Logger
 }
 
 // NewBatchImageExecutor creates a new batch image executor.
-func NewBatchImageExecutor(logger *zap.Logger) *BatchImageExecutor {
-	return &BatchImageExecutor{logger: logger.Named("batch-image")}
+func NewBatchImageExecutor(r *router.Router, logger *zap.Logger) *BatchImageExecutor {
+	return &BatchImageExecutor{router: r, logger: logger.Named("batch-image")}
 }
 
 // Execute processes a batch image generation task.
@@ -111,7 +137,16 @@ func (e *BatchImageExecutor) Execute(ctx context.Context, task *models.AsyncTask
 		return "", fmt.Errorf("no prompts to process")
 	}
 
-	results := make([]string, 0, len(input.Prompts))
+	model := input.Model
+	if model == "" {
+		model = "dall-e-3"
+	}
+	size := input.Size
+	if size == "" {
+		size = "1024x1024"
+	}
+
+	results := make([]map[string]interface{}, 0, len(input.Prompts))
 	for i, prompt := range input.Prompts {
 		select {
 		case <-ctx.Done():
@@ -124,13 +159,38 @@ func (e *BatchImageExecutor) Execute(ctx context.Context, task *models.AsyncTask
 			zap.String("prompt_preview", truncate(prompt, 50)),
 		)
 
-		// TODO: Call actual image generation provider here via router
-		results = append(results, fmt.Sprintf("image_%d: generated", i))
+		selectedProvider, apiKey, err := e.router.Route(ctx, model)
+		if err != nil {
+			results = append(results, map[string]interface{}{
+				"index": i, "status": "error", "error": fmt.Sprintf("no provider for model %s: %s", model, err.Error()),
+			})
+		} else {
+			imgReq := &provider.ImageGenerationRequest{
+				Model:  model,
+				Prompt: prompt,
+				N:      1,
+				Size:   size,
+			}
+			resp, imgErr := e.router.ExecuteImage(ctx, selectedProvider, apiKey, imgReq, 2)
+			if imgErr != nil {
+				results = append(results, map[string]interface{}{
+					"index": i, "status": "error", "error": imgErr.Error(),
+				})
+			} else {
+				urls := make([]string, 0)
+				for _, d := range resp.Response.Data {
+					if d.URL != "" {
+						urls = append(urls, d.URL)
+					}
+				}
+				results = append(results, map[string]interface{}{
+					"index": i, "status": "ok", "urls": urls,
+				})
+			}
+		}
 
 		pct := int(float64(i+1) / float64(len(input.Prompts)) * 100)
 		progressFn(pct)
-
-		time.Sleep(100 * time.Millisecond)
 	}
 
 	resultJSON, _ := json.Marshal(map[string]interface{}{
@@ -149,17 +209,18 @@ type VideoAnalysisInput struct {
 	Prompt   string `json:"prompt,omitempty"`
 }
 
-// VideoAnalysisExecutor processes video analysis tasks.
+// VideoAnalysisExecutor processes video analysis tasks using multimodal chat.
 type VideoAnalysisExecutor struct {
+	router *router.Router
 	logger *zap.Logger
 }
 
 // NewVideoAnalysisExecutor creates a new video analysis executor.
-func NewVideoAnalysisExecutor(logger *zap.Logger) *VideoAnalysisExecutor {
-	return &VideoAnalysisExecutor{logger: logger.Named("video-analysis")}
+func NewVideoAnalysisExecutor(r *router.Router, logger *zap.Logger) *VideoAnalysisExecutor {
+	return &VideoAnalysisExecutor{router: r, logger: logger.Named("video-analysis")}
 }
 
-// Execute processes a video analysis task.
+// Execute processes a video analysis task by sending the video URL to a multimodal model.
 func (e *VideoAnalysisExecutor) Execute(ctx context.Context, task *models.AsyncTask, progressFn func(int)) (string, error) {
 	var input VideoAnalysisInput
 	if err := json.Unmarshal([]byte(task.Input), &input); err != nil {
@@ -170,28 +231,68 @@ func (e *VideoAnalysisExecutor) Execute(ctx context.Context, task *models.AsyncT
 		return "", fmt.Errorf("video_url is required")
 	}
 
+	model := input.Model
+	if model == "" {
+		model = "gemini-2.0-flash"
+	}
+	prompt := input.Prompt
+	if prompt == "" {
+		prompt = "Analyze this video and describe its contents in detail."
+	}
+
 	e.logger.Debug("processing video analysis",
 		zap.String("video_url", input.VideoURL),
+		zap.String("model", model),
 	)
 
 	progressFn(10)
 
-	// TODO: Call actual video analysis provider (e.g. Gemini 2.x) here
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case <-time.After(200 * time.Millisecond): // simulated processing
+	selectedProvider, apiKey, err := e.router.Route(ctx, model)
+	if err != nil {
+		return "", fmt.Errorf("no provider for model %s: %w", model, err)
+	}
+
+	progressFn(20)
+
+	// Build multimodal chat request with video URL reference in prompt
+	combinedPrompt := fmt.Sprintf("%s\n\nVideo URL: %s", prompt, input.VideoURL)
+	chatReq := &provider.ChatRequest{
+		Model: model,
+		Messages: []provider.Message{
+			{
+				Role:    "user",
+				Content: provider.StringContent(combinedPrompt),
+			},
+		},
+		MaxTokens: 4096,
+	}
+
+	progressFn(30)
+
+	result, err := e.router.ExecuteChat(ctx, selectedProvider, apiKey, chatReq, 2)
+	if err != nil {
+		return "", fmt.Errorf("provider error: %w", err)
 	}
 
 	progressFn(90)
 
-	result, _ := json.Marshal(map[string]interface{}{
+	analysis := ""
+	if result.Response != nil && len(result.Response.Choices) > 0 {
+		analysis = result.Response.Choices[0].Message.Content.Text
+	}
+
+	resultData, _ := json.Marshal(map[string]interface{}{
 		"video_url": input.VideoURL,
-		"analysis":  "Video analysis placeholder — wire actual provider for real results",
+		"model":     model,
+		"analysis":  analysis,
+		"tokens": map[string]int{
+			"input":  result.Response.Usage.PromptTokens,
+			"output": result.Response.Usage.CompletionTokens,
+		},
 	})
 
 	progressFn(100)
-	return string(result), nil
+	return string(resultData), nil
 }
 
 // ─── Single TTS Executor ───────────────────────────────────────────
@@ -205,12 +306,13 @@ type TTSInput struct {
 
 // TTSExecutor processes single text-to-speech tasks.
 type TTSExecutor struct {
+	router *router.Router
 	logger *zap.Logger
 }
 
 // NewTTSExecutor creates a new TTS executor.
-func NewTTSExecutor(logger *zap.Logger) *TTSExecutor {
-	return &TTSExecutor{logger: logger.Named("tts")}
+func NewTTSExecutor(r *router.Router, logger *zap.Logger) *TTSExecutor {
+	return &TTSExecutor{router: r, logger: logger.Named("tts")}
 }
 
 // Execute processes a single TTS task.
@@ -224,23 +326,45 @@ func (e *TTSExecutor) Execute(ctx context.Context, task *models.AsyncTask, progr
 		return "", fmt.Errorf("text is required")
 	}
 
+	model := input.Model
+	if model == "" {
+		model = "tts-1"
+	}
+	voice := input.Voice
+	if voice == "" {
+		voice = "alloy"
+	}
+
 	e.logger.Debug("processing TTS",
 		zap.String("text_preview", truncate(input.Text, 50)),
+		zap.String("model", model),
 	)
+
+	progressFn(10)
+
+	selectedProvider, apiKey, err := e.router.Route(ctx, model)
+	if err != nil {
+		return "", fmt.Errorf("no provider for model %s: %w", model, err)
+	}
 
 	progressFn(30)
 
-	// TODO: Call actual TTS provider here
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case <-time.After(100 * time.Millisecond):
+	req := &provider.SpeechRequest{
+		Model: model,
+		Input: input.Text,
+		Voice: voice,
+	}
+
+	resp, err := e.router.ExecuteSpeech(ctx, selectedProvider, apiKey, req, 2)
+	if err != nil {
+		return "", fmt.Errorf("TTS provider error: %w", err)
 	}
 
 	progressFn(100)
 
 	result, _ := json.Marshal(map[string]interface{}{
 		"text_length": len(input.Text),
+		"size_bytes":  len(resp.Response.Audio),
 		"status":      "synthesized",
 	})
 	return string(result), nil
@@ -258,9 +382,9 @@ func truncate(s string, maxLen int) string {
 }
 
 // RegisterDefaultExecutors registers all built-in task executors on the pool.
-func RegisterDefaultExecutors(pool *WorkerPool, logger *zap.Logger) {
-	pool.RegisterExecutor("tts", NewTTSExecutor(logger))
-	pool.RegisterExecutor("batch_tts", NewBatchTTSExecutor(logger))
-	pool.RegisterExecutor("batch_image", NewBatchImageExecutor(logger))
-	pool.RegisterExecutor("video_analysis", NewVideoAnalysisExecutor(logger))
+func RegisterDefaultExecutors(pool *WorkerPool, r *router.Router, logger *zap.Logger) {
+	pool.RegisterExecutor("tts", NewTTSExecutor(r, logger))
+	pool.RegisterExecutor("batch_tts", NewBatchTTSExecutor(r, logger))
+	pool.RegisterExecutor("batch_image", NewBatchImageExecutor(r, logger))
+	pool.RegisterExecutor("video_analysis", NewVideoAnalysisExecutor(r, logger))
 }

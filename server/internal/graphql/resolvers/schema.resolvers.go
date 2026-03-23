@@ -22,6 +22,8 @@ import (
 	"llm-router-platform/pkg/sanitize"
 	"net/http"
 	"net/smtp"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -821,7 +823,36 @@ func (r *mutationResolver) DeleteBudget(ctx context.Context) (bool, error) {
 
 // ExportUsageCSV is the resolver for the exportUsageCsv field.
 func (r *mutationResolver) ExportUsageCSV(ctx context.Context) (string, error) {
-	return "", fmt.Errorf("not implemented: use REST endpoint")
+	uid, _ := directives.UserIDFromContext(ctx)
+	userID, _ := uuid.Parse(uid)
+
+	var logs []models.UsageLog
+	since := time.Now().AddDate(0, 0, -30)
+	if err := r.DB.Where("user_id = ? AND created_at >= ?", userID, since).
+		Order("created_at DESC").Limit(10000).Find(&logs).Error; err != nil {
+		return "", fmt.Errorf("failed to query usage: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("date,model,channel,input_tokens,output_tokens,total_tokens,cost_usd,latency_ms,status\n")
+	for _, l := range logs {
+		status := "ok"
+		if l.StatusCode >= 400 {
+			status = "error"
+		}
+		fmt.Fprintf(&buf, "%s,%s,%s,%d,%d,%d,%.6f,%d,%s\n",
+			l.CreatedAt.Format("2006-01-02 15:04:05"),
+			l.ModelName,
+			l.Channel,
+			l.RequestTokens,
+			l.ResponseTokens,
+			l.TotalTokens,
+			l.Cost,
+			l.Latency,
+			status,
+		)
+	}
+	return buf.String(), nil
 }
 
 // CreateTask is the resolver for the createTask field.
@@ -1947,6 +1978,7 @@ func (r *mutationResolver) TriggerBackup(ctx context.Context) (bool, error) {
 
 	// Create backup record
 	now := time.Now()
+	dumpFile := fmt.Sprintf("/tmp/backup-%s.sql.gz", now.Format("20060102-150405"))
 	record := models.BackupRecord{
 		Type:        "manual",
 		Status:      "running",
@@ -1958,20 +1990,58 @@ func (r *mutationResolver) TriggerBackup(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("failed to create backup record: %w", err)
 	}
 
-	// TODO: Implement actual S3 database dump + upload in a goroutine
-	// For now, mark as success immediately to demonstrate tracking
-	completedAt := time.Now()
-	record.Status = "success"
-	record.CompletedAt = &completedAt
-	record.DurationMs = completedAt.Sub(now).Milliseconds()
+	// Execute pg_dump in a background goroutine
+	dbCfg := r.Config.Database
+	go func(recordID uuid.UUID) {
+		// Build pg_dump command: pipe through gzip
+		pgDumpArgs := []string{
+			"-h", dbCfg.Host,
+			"-p", dbCfg.Port,
+			"-U", dbCfg.User,
+			"-d", dbCfg.Name,
+			"--no-password",
+			"-Fc", // Custom format (compressed)
+			"-f", dumpFile,
+		}
 
-	if err := r.DB.WithContext(ctx).Save(&record).Error; err != nil {
-		r.Logger.Warn("failed to update backup record", zap.Error(err))
-	}
+		cmd := exec.Command("pg_dump", pgDumpArgs...) // #nosec G204 -- args from internal config, not user input
+		cmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", dbCfg.Password))
 
-	r.Logger.Info("manual backup triggered",
+		output, cmdErr := cmd.CombinedOutput()
+
+		completedAt := time.Now()
+		updates := map[string]interface{}{
+			"completed_at": completedAt,
+			"duration_ms":  completedAt.Sub(now).Milliseconds(),
+		}
+
+		if cmdErr != nil {
+			updates["status"] = "failed"
+			updates["error_message"] = fmt.Sprintf("pg_dump failed: %s — %s", cmdErr.Error(), string(output))
+			r.Logger.Error("backup pg_dump failed",
+				zap.Error(cmdErr),
+				zap.String("output", string(output)),
+				zap.String("recordId", recordID.String()))
+		} else {
+			// Get file size
+			if info, statErr := os.Stat(dumpFile); statErr == nil {
+				updates["size_bytes"] = info.Size()
+			}
+			updates["status"] = "success"
+			r.Logger.Info("backup pg_dump completed",
+				zap.String("file", dumpFile),
+				zap.String("destination", record.Destination),
+				zap.String("recordId", recordID.String()))
+
+			// TODO: Upload dumpFile to S3 using backupCfg.S3Endpoint + S3Bucket
+			// then os.Remove(dumpFile) after successful upload
+		}
+
+		r.DB.Model(&models.BackupRecord{}).Where("id = ?", recordID).Updates(updates)
+	}(record.ID)
+
+	r.Logger.Info("manual backup triggered (async)",
 		zap.String("bucket", backupCfg.S3Bucket),
-		zap.String("endpoint", backupCfg.S3Endpoint),
 		zap.String("recordId", record.ID.String()))
 
 	return true, nil
@@ -2001,7 +2071,46 @@ func (r *mutationResolver) CreateInviteCode(ctx context.Context, input model.Inv
 
 // ExportSystemUsageCSV is the resolver for the exportSystemUsageCsv field.
 func (r *mutationResolver) ExportSystemUsageCSV(ctx context.Context) (string, error) {
-	return "", fmt.Errorf("not implemented: use REST endpoint")
+	type logWithUser struct {
+		models.UsageLog
+		UserEmail    string `gorm:"column:user_email"`
+		ProviderName string `gorm:"column:provider_name"`
+	}
+
+	since := time.Now().AddDate(0, 0, -30)
+	var logs []logWithUser
+	if err := r.DB.Table("usage_logs").
+		Select("usage_logs.*, users.email as user_email, providers.name as provider_name").
+		Joins("LEFT JOIN users ON users.id = usage_logs.user_id").
+		Joins("LEFT JOIN providers ON providers.id = usage_logs.provider_id").
+		Where("usage_logs.created_at >= ?", since).
+		Order("usage_logs.created_at DESC").Limit(50000).
+		Find(&logs).Error; err != nil {
+		return "", fmt.Errorf("failed to query system usage: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("date,user_email,provider,model,channel,input_tokens,output_tokens,total_tokens,cost_usd,latency_ms,status\n")
+	for _, l := range logs {
+		status := "ok"
+		if l.StatusCode >= 400 {
+			status = "error"
+		}
+		fmt.Fprintf(&buf, "%s,%s,%s,%s,%s,%d,%d,%d,%.6f,%d,%s\n",
+			l.CreatedAt.Format("2006-01-02 15:04:05"),
+			l.UserEmail,
+			l.ProviderName,
+			l.ModelName,
+			l.Channel,
+			l.RequestTokens,
+			l.ResponseTokens,
+			l.TotalTokens,
+			l.Cost,
+			l.Latency,
+			status,
+		)
+	}
+	return buf.String(), nil
 }
 
 // GenerateRedeemCodes is the resolver for the generateRedeemCodes field.

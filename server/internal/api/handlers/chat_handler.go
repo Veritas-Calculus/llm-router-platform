@@ -160,13 +160,102 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 		return
 	}
 
-	// For now, only supporting non-streaming for Anthropic compat
+	start := time.Now()
+	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	// Handle streaming via existing infrastructure
 	if anthroReq.Stream {
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "streaming not yet supported for Anthropic compatible API"})
+		usageLog := &models.UsageLog{
+			UserID:     userAPIKey.UserID,
+			ProjectID:  projectObj.ID,
+			Channel:    userAPIKey.Channel,
+			APIKeyID:   userAPIKey.ID,
+			ProviderID: selectedProvider.ID,
+			ModelName:  anthroReq.Model,
+			Latency:    0,
+			StatusCode: http.StatusProcessing,
+		}
+		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+
+		streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
+		if err != nil {
+			h.logger.Error("anthropic stream failed", zap.Error(err))
+			_ = h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), err.Error())
+			c.JSON(http.StatusBadGateway, gin.H{"type": "error", "error": gin.H{"type": "api_error", "message": "upstream stream failed"}})
+			return
+		}
+
+		c.Writer.Header().Set("Content-Type", "text/event-stream")
+		c.Writer.Header().Set("Cache-Control", "no-cache")
+		c.Writer.Header().Set("Connection", "keep-alive")
+
+		// Anthropic message_start event
+		msgStartEvent := gin.H{
+			"type": "message_start",
+			"message": gin.H{
+				"id":    "msg_" + uuid.New().String()[:8],
+				"type":  "message",
+				"role":  "assistant",
+				"model": anthroReq.Model,
+				"content": []interface{}{},
+				"usage": gin.H{"input_tokens": 0, "output_tokens": 0},
+			},
+		}
+		data, _ := json.Marshal(msgStartEvent)
+		_, _ = c.Writer.Write([]byte("event: message_start\ndata: "))
+		_, _ = c.Writer.Write(data)
+		_, _ = c.Writer.Write([]byte("\n\n"))
+
+		// content_block_start
+		blockStart := gin.H{"type": "content_block_start", "index": 0, "content_block": gin.H{"type": "text", "text": ""}}
+		data, _ = json.Marshal(blockStart)
+		_, _ = c.Writer.Write([]byte("event: content_block_start\ndata: "))
+		_, _ = c.Writer.Write(data)
+		_, _ = c.Writer.Write([]byte("\n\n"))
+		c.Writer.Flush()
+
+		var totalOutput int
+		for chunk := range streamResult.Stream {
+			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+				totalOutput++
+				delta := gin.H{
+					"type":  "content_block_delta",
+					"index": 0,
+					"delta": gin.H{"type": "text_delta", "text": chunk.Choices[0].Delta.Content},
+				}
+				data, _ = json.Marshal(delta)
+				_, _ = c.Writer.Write([]byte("event: content_block_delta\ndata: "))
+				_, _ = c.Writer.Write(data)
+				_, _ = c.Writer.Write([]byte("\n\n"))
+				c.Writer.Flush()
+			}
+		}
+
+		// content_block_stop + message_delta + message_stop
+		blockStop := gin.H{"type": "content_block_stop", "index": 0}
+		data, _ = json.Marshal(blockStop)
+		_, _ = c.Writer.Write([]byte("event: content_block_stop\ndata: "))
+		_, _ = c.Writer.Write(data)
+		_, _ = c.Writer.Write([]byte("\n\n"))
+
+		msgDelta := gin.H{"type": "message_delta", "delta": gin.H{"stop_reason": "end_turn"}, "usage": gin.H{"output_tokens": totalOutput}}
+		data, _ = json.Marshal(msgDelta)
+		_, _ = c.Writer.Write([]byte("event: message_delta\ndata: "))
+		_, _ = c.Writer.Write(data)
+		_, _ = c.Writer.Write([]byte("\n\n"))
+
+		msgStop := gin.H{"type": "message_stop"}
+		data, _ = json.Marshal(msgStop)
+		_, _ = c.Writer.Write([]byte("event: message_stop\ndata: "))
+		_, _ = c.Writer.Write(data)
+		_, _ = c.Writer.Write([]byte("\n\n"))
+		c.Writer.Flush()
+
+		latency := time.Since(start)
+		_ = h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, totalOutput, http.StatusOK, latency.Milliseconds(), "")
 		return
 	}
 
-	start := time.Now()
 	result, err := h.router.ExecuteChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "provider error"})
@@ -195,7 +284,6 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 	}
 
 	// Record usage
-	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 	usageLog := &models.UsageLog{
 		UserID:         userAPIKey.UserID,
 		ProjectID:      projectObj.ID,

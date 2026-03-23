@@ -20,6 +20,7 @@ import (
 // ARGV[4] = tokens to consume (usually 1)
 //
 // Returns: {allowed (0/1), remaining_tokens, retry_after_seconds}
+// #nosec G101 -- Redis Lua script, not a credential
 const tokenBucketScript = `
 local key = KEYS[1]
 local capacity = tonumber(ARGV[1])
