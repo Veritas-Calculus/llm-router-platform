@@ -5,10 +5,8 @@ import ApiKeyTable from '@/components/providers/ApiKeyTable';
 import ModelTable from '@/components/providers/ModelTable';
 import LocalProviderCard from '@/components/providers/LocalProviderCard';
 import { useProviders } from '@/hooks/useProviders';
-import { useTranslation } from '@/lib/i18n';
 
 function ProvidersPage() {
-  const { t } = useTranslation();
   const {
     providers,
     selectedProvider,

@@ -8,10 +8,8 @@ import { useMutation } from '@apollo/client/react';
 import { CHANGE_PASSWORD, GENERATE_MFA_SECRET, VERIFY_AND_ENABLE_MFA, DISABLE_MFA } from '@/lib/graphql/operations';
 import { ShieldCheckIcon, ShieldExclamationIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 import { QRCodeSVG } from 'qrcode.react';
-import { useTranslation } from '@/lib/i18n';
 
 function SettingsPage() {
-  const { t } = useTranslation();
   const { user, updateUser } = useAuthStore();
   const [changePwd] = useMutation<any>(CHANGE_PASSWORD);
   const [generateMfaSecret] = useMutation<any>(GENERATE_MFA_SECRET);

@@ -9,12 +9,10 @@ import {
 } from '@heroicons/react/24/outline';
 import { PROVIDERS_QUERY } from '@/lib/graphql/operations/providers';
 import { SUBSCRIPTION_QUOTA_QUERY } from '@/lib/graphql/operations/billing';
-import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 function RateLimitDashboardPage() {
-  const { t } = useTranslation();
   const { data: provData, loading } = useQuery<any>(PROVIDERS_QUERY);
   const providers = useMemo(() => provData?.providers || [], [provData]);
 

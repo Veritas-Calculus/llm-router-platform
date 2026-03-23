@@ -12,11 +12,9 @@ import {
   ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
-import { useTranslation } from '@/lib/i18n';
 
 /* ── Copy button ───────────────────────────────────────────────── */
 function CopyButton({ text }: { text: string }) {
-  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   return (
     <button

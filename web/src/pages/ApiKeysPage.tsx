@@ -16,26 +16,25 @@ import { SUBSCRIPTION_QUOTA_QUERY } from '@/lib/graphql/operations/billing';
 import type { ApiKey, Organization, Project } from '@/lib/types';
 import { useTranslation } from '@/lib/i18n';
 
-const AVAILABLE_SCOPES = [
-  { id: 'all', label: t('api_keys.scopes_all') },
-  { id: 'chat', label: t('api_keys.scopes_chat') },
-  { id: 'embeddings', label: t('api_keys.scopes_embeddings') },
-  { id: 'images', label: t('api_keys.scopes_images') },
-  { id: 'audio', label: 'Audio & TTS' },
-  { id: 'admin', label: 'Admin (Mgmt API)' },
+const AVAILABLE_SCOPES_BASE = [
+  { id: 'all', labelKey: 'api_keys.scopes_all' },
+  { id: 'chat', labelKey: 'api_keys.scopes_chat' },
+  { id: 'embeddings', labelKey: 'api_keys.scopes_embeddings' },
+  { id: 'images', labelKey: 'api_keys.scopes_images' },
+  { id: 'audio', labelKey: 'api_keys.scopes_audio' },
+  { id: 'admin', labelKey: 'api_keys.scopes_admin' },
 ];
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  ok: { label: t('api_keys.ok'), className: 'bg-green-50 text-green-700 border-green-200' },
-  near_limit: { label: t('api_keys.near_limit'), className: 'bg-orange-50 text-orange-700 border-orange-200' },
-  rate_limited: { label: t('api_keys.rate_limited'), className: 'bg-red-50 text-red-700 border-red-200' },
-  quota_exceeded: { label: t('api_keys.quota_exceeded'), className: 'bg-red-50 text-red-700 border-red-200' },
+const STATUS_BADGE_BASE: Record<string, { labelKey: string; className: string }> = {
+  ok: { labelKey: 'api_keys.ok', className: 'bg-green-50 text-green-700 border-green-200' },
+  near_limit: { labelKey: 'api_keys.near_limit', className: 'bg-orange-50 text-orange-700 border-orange-200' },
+  rate_limited: { labelKey: 'api_keys.rate_limited', className: 'bg-red-50 text-red-700 border-red-200' },
+  quota_exceeded: { labelKey: 'api_keys.quota_exceeded', className: 'bg-red-50 text-red-700 border-red-200' },
 };
 
 function RateLimitMiniBar({ current, limit, label }: { current: number; limit: number; label: string }) {
-  const { t } = useTranslation();
   if (limit <= 0) return <div className="text-[10px] text-apple-gray-400">{label}: Unlimited</div>;
   const pct = Math.min((current / limit) * 100, 100);
   const color = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-orange-400' : 'bg-green-500';
@@ -51,6 +50,7 @@ function RateLimitMiniBar({ current, limit, label }: { current: number; limit: n
 }
 
 function RateLimitStatusCell({ keyId, isActive }: { keyId: string; isActive: boolean }) {
+  const { t } = useTranslation();
   const { data } = useQuery<any>(API_KEY_RATE_LIMIT_STATUS, {
     variables: { keyId },
     skip: !isActive,
@@ -60,11 +60,11 @@ function RateLimitStatusCell({ keyId, isActive }: { keyId: string; isActive: boo
   if (!isActive) return null;
   const s = data?.apiKeyRateLimitStatus;
   if (!s) return <span className="text-[10px] text-apple-gray-300">—</span>;
-  const badge = STATUS_BADGE[s.status] || STATUS_BADGE.ok;
+  const badgeBase = STATUS_BADGE_BASE[s.status] || STATUS_BADGE_BASE.ok;
   return (
     <div className="space-y-1.5">
-      <span className={`inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium border ${badge.className}`}>
-        {badge.label}
+      <span className={`inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium border ${badgeBase.className}`}>
+        {t(badgeBase.labelKey)}
       </span>
       <RateLimitMiniBar current={s.rpmCurrent} limit={s.rpmLimit} label={t('api_keys.rpm')} />
       <RateLimitMiniBar current={s.tpmCurrent} limit={s.tpmLimit} label={t('api_keys.tpm')} />
@@ -191,6 +191,10 @@ function mapApiKey(d: any): ApiKey {
 }
 
 function ApiKeysPage() {
+  const { t } = useTranslation();
+  
+  const AVAILABLE_SCOPES = useMemo(() => AVAILABLE_SCOPES_BASE.map(s => ({ ...s, label: t(s.labelKey) })), [t]);
+
   // Organization state
   const { data: orgData } = useQuery<any>(MY_ORGANIZATIONS);
   const orgs: Organization[] = useMemo(() => orgData?.myOrganizations || [], [orgData]);

@@ -282,6 +282,8 @@
         "scopes_chat": "对话补全",
         "scopes_embeddings": "向量嵌入",
         "scopes_images": "图片生成",
+        "scopes_audio": "音频与语音合成",
+        "scopes_admin": "管理员 (管理API)",
         "rpm": "RPM",
         "tpm": "TPM",
         "daily": "日限",

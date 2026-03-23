@@ -10,10 +10,8 @@ import ProxyTable from '@/components/proxies/ProxyTable';
 import ProxyFormModal from '@/components/proxies/ProxyFormModal';
 import BatchImportModal from '@/components/proxies/BatchImportModal';
 import { useProxies } from '@/hooks/useProxies';
-import { useTranslation } from '@/lib/i18n';
 
 function ProxiesPage() {
-  const { t } = useTranslation();
   const {
     fileInputRef,
     proxies,

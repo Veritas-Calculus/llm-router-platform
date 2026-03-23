@@ -4,12 +4,10 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useMutation } from '@apollo/client/react';
 import { VERIFY_EMAIL } from '@/lib/graphql/operations';
-import { useTranslation } from '@/lib/i18n';
 
 type Status = 'verifying' | 'success' | 'error';
 
 function VerifyEmailPage() {
-  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
   const [status, setStatus] = useState<Status>(token ? 'verifying' : 'error');

@@ -12,12 +12,10 @@ import {
   MY_DAILY_USAGE,
   MY_USAGE_BY_PROVIDER,
 } from '@/lib/graphql/operations/usage';
-import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 function CostAnalysisPage() {
-  const { t } = useTranslation();
   const { data: summaryData, loading: l1 } = useQuery<any>(MY_USAGE_SUMMARY);
   const { data: dailyData, loading: l2 } = useQuery<any>(MY_DAILY_USAGE, { variables: { days: 30 } });
   const { data: providerData, loading: l3 } = useQuery<any>(MY_USAGE_BY_PROVIDER);

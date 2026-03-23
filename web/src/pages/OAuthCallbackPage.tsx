@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
-import { useTranslation } from '@/lib/i18n';
 
 /**
  * OAuthCallbackPage handles the redirect from the backend OAuth2 callback.
  * It extracts the JWT token from the URL, stores it, and redirects to dashboard.
  */
 export default function OAuthCallbackPage() {
-  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);

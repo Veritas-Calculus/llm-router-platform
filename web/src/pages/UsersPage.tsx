@@ -12,12 +12,10 @@ import {
 import { useQuery, useMutation } from '@apollo/client/react';
 import { USERS_QUERY, TOGGLE_USER, UPDATE_USER_ROLE } from '@/lib/graphql/operations';
 import type { UserListItem } from '@/lib/types';
-import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 function UsersPage() {
-  const { t } = useTranslation();
     const navigate = useNavigate();
     const { data, loading, refetch } = useQuery<any>(USERS_QUERY);
     const [toggleUserMut] = useMutation(TOGGLE_USER);

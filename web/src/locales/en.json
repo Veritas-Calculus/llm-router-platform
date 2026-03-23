@@ -282,6 +282,8 @@
         "scopes_chat": "Chat Completions",
         "scopes_embeddings": "Embeddings",
         "scopes_images": "Image Generation",
+        "scopes_audio": "Audio & TTS",
+        "scopes_admin": "Admin (Mgmt API)",
         "rpm": "RPM",
         "tpm": "TPM",
         "daily": "Daily",

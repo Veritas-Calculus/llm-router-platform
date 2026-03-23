@@ -3,10 +3,8 @@ import { useQuery, useMutation } from '@apollo/client/react';
 import { GET_INTEGRATIONS, UPDATE_INTEGRATION, TEST_LANGFUSE_CONNECTION } from '@/lib/graphql/operations/integrations';
 import { CloudIcon, CheckCircleIcon, XCircleIcon, SignalIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { useTranslation } from '@/lib/i18n';
 
 export default function IntegrationsPage() {
-  const { t } = useTranslation();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, loading, refetch } = useQuery<any>(GET_INTEGRATIONS, {
     fetchPolicy: 'cache-and-network',

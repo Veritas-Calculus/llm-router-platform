@@ -11,12 +11,10 @@ import { useQuery } from '@apollo/client/react';
 import { MY_BILLING_QUERY } from '@/lib/graphql/operations';
 import type { Order } from '@/lib/types';
 import toast from 'react-hot-toast';
-import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 function BillingPage() {
-  const { t } = useTranslation();
   const { data, loading } = useQuery<any>(MY_BILLING_QUERY);
   const orders: Order[] = useMemo(() =>
     (data?.myOrders || []).map((o: any) => ({
