@@ -14,26 +14,45 @@ vi.mock('framer-motion', () => ({
 vi.mock('recharts', () => ({
     ResponsiveContainer: ({ children }: any) => <div data-testid="chart-container">{children}</div>,
     LineChart: ({ children }: any) => <div data-testid="line-chart">{children}</div>,
+    BarChart: ({ children }: any) => <div data-testid="bar-chart">{children}</div>,
     Line: () => null,
+    Bar: () => null,
     XAxis: () => null,
     YAxis: () => null,
     CartesianGrid: () => null,
     Tooltip: () => null,
 }));
 
+// Mock i18n — return key as-is so tests are locale-agnostic
+vi.mock('@/lib/i18n', () => ({
+    useTranslation: () => ({
+        t: (key: string) => key,
+        locale: 'en',
+        setLocale: vi.fn(),
+    }),
+}));
+
 vi.mock('@apollo/client/react', () => ({
     useQuery: vi.fn((query: any) => {
         const qName = query?.definitions?.[0]?.name?.value;
-        if (qName === 'DashboardOverview') {
+        if (qName === 'AdminDashboard') {
             return {
                 data: {
-                    dashboardOverview: {
-                        totalRequests: 1234, totalTokens: 56789, totalCost: 12.34,
-                        successRate: 98.5, errorCount: 3, requestsToday: 100,
-                        tokensToday: 5000, costToday: 1.23, activeProviders: 3,
-                        apiKeysHealth: { total: 5, healthy: 4 },
-                        proxiesHealth: { total: 2, healthy: 2 },
+                    adminDashboard: {
+                        totalUsers: 150, activeUsersToday: 42, activeUsersMonth: 120,
+                        totalRevenue: 9500.50, revenueThisMonth: 1200.00,
+                        totalRequests: 1234, requestsToday: 100,
+                        totalTokens: 56789, tokensToday: 5000,
+                        totalCost: 12.34, costToday: 1.23,
+                        successRate: 98.5, errorCount: 3, avgLatencyMs: 450,
+                        activeProviders: 3, totalProviders: 5,
+                        activeProxies: 2, totalProxies: 3,
+                        apiKeysTotal: 10, apiKeysHealthy: 8,
+                        mcpCallCount: 200, mcpErrorCount: 0,
                     },
+                    usageChart: [],
+                    providerStats: [],
+                    modelStats: [],
                 },
                 loading: false,
                 refetch: vi.fn(),
@@ -44,35 +63,29 @@ vi.mock('@apollo/client/react', () => ({
     useMutation: vi.fn(() => [vi.fn(), { loading: false }]),
 }));
 
-vi.mock('@/stores/authStore', () => ({
-    useAuthStore: vi.fn(() => ({
-        user: { id: 'user-1', email: 'test@example.com', name: 'Test User', role: 'user' },
-    })),
-}));
-
 describe('DashboardPage', () => {
     beforeEach(() => { vi.clearAllMocks(); });
 
     it('should render dashboard title after loading', async () => {
         render(<BrowserRouter><DashboardPage /></BrowserRouter>);
         await waitFor(() => {
-            expect(screen.getByText('Dashboard')).toBeInTheDocument();
+            expect(screen.getByText('admin.dashboard.title')).toBeInTheDocument();
         });
     });
 
     it('should render stat cards with data', async () => {
         render(<BrowserRouter><DashboardPage /></BrowserRouter>);
         await waitFor(() => {
-            expect(screen.getByText('Total Requests')).toBeInTheDocument();
-            expect(screen.getByText('Total Tokens')).toBeInTheDocument();
+            expect(screen.getByText('admin.dashboard.total_users')).toBeInTheDocument();
+            expect(screen.getByText('admin.dashboard.total_revenue')).toBeInTheDocument();
         });
     });
 
-    it('should render system health section', async () => {
+    it('should render infrastructure health section', async () => {
         render(<BrowserRouter><DashboardPage /></BrowserRouter>);
         await waitFor(() => {
-            // Dashboard renders even with empty data
-            expect(document.querySelector('.card')).toBeTruthy();
+            expect(screen.getByText('admin.dashboard.providers')).toBeInTheDocument();
+            expect(screen.getByText('admin.dashboard.api_keys')).toBeInTheDocument();
         });
     });
 });
