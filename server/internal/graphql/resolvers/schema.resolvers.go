@@ -197,13 +197,36 @@ func (r *mutationResolver) RotateRefreshToken(ctx context.Context, refreshToken 
 	if err != nil {
 		return nil, fmt.Errorf("invalid refresh token")
 	}
-	id, _ := uuid.Parse(claims.Subject)
+	id, err := uuid.Parse(claims.Subject)
+	if err != nil {
+		return nil, fmt.Errorf("invalid refresh token")
+	}
 	u, err := r.UserSvc.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid refresh token")
+	}
+
+	// Reject if user is deactivated
+	if !u.IsActive {
+		return nil, fmt.Errorf("account is disabled")
+	}
+
+	// Reject if tokens were invalidated (logout, password change) after this refresh token was issued
+	if !u.TokensInvalidatedAt.IsZero() {
+		iat, _ := claims.GetIssuedAt()
+		if iat != nil && iat.Before(u.TokensInvalidatedAt) {
+			return nil, fmt.Errorf("refresh token has been revoked")
+		}
+	}
+
+	token, err := r.generateJWT(u)
 	if err != nil {
 		return nil, err
 	}
-	token, _ := r.generateJWT(u)
-	refresh, _ := r.generateRefreshJWT(u)
+	refresh, err := r.generateRefreshJWT(u)
+	if err != nil {
+		return nil, err
+	}
 	return &model.AuthPayload{Token: token, RefreshToken: &refresh, User: userToGQL(u)}, nil
 }
 
@@ -1840,6 +1863,11 @@ func (r *mutationResolver) UpdateSystemSettings(ctx context.Context, input model
 
 // SendTestEmail is the resolver for the sendTestEmail field.
 func (r *mutationResolver) SendTestEmail(ctx context.Context, to string) (bool, error) {
+	// Validate email format to prevent misuse
+	if !strings.Contains(to, "@") || len(to) < 5 || strings.Contains(to, " ") {
+		return false, fmt.Errorf("invalid email address")
+	}
+
 	// Load email settings from DB
 	all, err := r.SystemConfig.GetAllSettingsDecrypted(ctx)
 	if err != nil {

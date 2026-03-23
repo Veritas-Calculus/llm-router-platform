@@ -126,6 +126,7 @@ type EmailConfig struct {
 	Password string // #nosec G101
 	From     string
 	FromName string
+	TLS      bool // Force TLS for SMTP connection (recommended for production)
 }
 
 // FrontendConfig holds frontend-related configuration.
@@ -270,6 +271,7 @@ func Load() (*Config, error) {
 			Password: viper.GetString("EMAIL_SMTP_PASS"),
 			From:     viper.GetString("EMAIL_FROM"),
 			FromName: viper.GetString("EMAIL_FROM_NAME"),
+			TLS:      viper.GetBool("EMAIL_SMTP_TLS"),
 		},
 		JWT: JWTConfig{
 			Secret:           viper.GetString("JWT_SECRET"),

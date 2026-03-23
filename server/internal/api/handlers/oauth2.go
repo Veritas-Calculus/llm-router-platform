@@ -329,23 +329,35 @@ func (h *OAuth2Handler) findOrCreateUser(email, name, provider, oauthID string) 
 	// Second try: find by email (link accounts)
 	if err := h.db.Where("email = ?", email).First(&user).Error; err == nil {
 		// Link OAuth to existing account (only if no OAuth provider set yet)
+		updates := map[string]interface{}{}
 		if user.OAuthProvider == "" {
-			user.OAuthProvider = provider
-			user.OAuthID = oauthID
-			h.db.Save(&user)
+			updates["oauth_provider"] = provider
+			updates["oauth_id"] = oauthID
+		}
+		// OAuth provider has verified the email, mark as verified
+		if !user.EmailVerified {
+			now := time.Now()
+			updates["email_verified"] = true
+			updates["email_verified_at"] = now
+		}
+		if len(updates) > 0 {
+			h.db.Model(&user).Updates(updates)
 		}
 		return &user, nil
 	}
 
 	// Create new user (no password for OAuth users)
+	now := time.Now()
 	user = models.User{
-		Email:         email,
-		PasswordHash:  "", // OAuth users have no password
-		Name:          name,
-		Role:          "user",
-		IsActive:      true,
-		OAuthProvider: provider,
-		OAuthID:       oauthID,
+		Email:           email,
+		PasswordHash:    "", // OAuth users have no password
+		Name:            name,
+		Role:            "user",
+		IsActive:        true,
+		OAuthProvider:   provider,
+		OAuthID:         oauthID,
+		EmailVerified:   true, // OAuth provider verified the email
+		EmailVerifiedAt: &now,
 	}
 	if err := h.db.Create(&user).Error; err != nil {
 		return nil, err

@@ -97,7 +97,7 @@ func Setup(
 	// 4. Logging (includes request_id)
 	// 5. Recovery
 	requestIDMiddleware := middleware.NewRequestIDMiddleware(logger)
-	corsMiddleware := middleware.NewCORSMiddleware(cfg.Server.CORSOrigins)
+	corsMiddleware := middleware.NewCORSMiddleware(cfg.Server.CORSOrigins, cfg.Server.Mode)
 	loggingMiddleware := middleware.NewLoggingMiddleware(logger)
 	recoveryMiddleware := middleware.NewRecoveryMiddleware(logger)
 

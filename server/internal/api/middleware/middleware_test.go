@@ -16,7 +16,7 @@ func init() {
 
 func TestCORSMiddlewareHandle(t *testing.T) {
 	router := gin.New()
-	cors := NewCORSMiddleware([]string{"*"})
+	cors := NewCORSMiddleware([]string{"*"}, "")
 	router.Use(cors.Handle())
 	router.GET("/test", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
@@ -33,7 +33,7 @@ func TestCORSMiddlewareHandle(t *testing.T) {
 
 func TestCORSMiddlewareAllowsMethods(t *testing.T) {
 	router := gin.New()
-	cors := NewCORSMiddleware([]string{"*"})
+	cors := NewCORSMiddleware([]string{"*"}, "")
 	router.Use(cors.Handle())
 	router.POST("/test", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
@@ -156,7 +156,7 @@ func extractToken(authHeader string) string {
 
 func TestCORSWithSpecificOrigin(t *testing.T) {
 	router := gin.New()
-	cors := NewCORSMiddleware([]string{"http://localhost:3000"})
+	cors := NewCORSMiddleware([]string{"http://localhost:3000"}, "")
 	router.Use(cors.Handle())
 	router.GET("/test", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")

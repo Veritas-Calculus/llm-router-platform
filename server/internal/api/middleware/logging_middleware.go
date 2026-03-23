@@ -60,7 +60,18 @@ type CORSMiddleware struct {
 
 // NewCORSMiddleware creates a new CORS middleware.
 // If no origins are configured, CORS is denied by default (secure default).
-func NewCORSMiddleware(origins []string) *CORSMiddleware {
+// In release mode, wildcard "*" origins are rejected to prevent misconfiguration.
+func NewCORSMiddleware(origins []string, mode string) *CORSMiddleware {
+	if mode == "release" {
+		filtered := make([]string, 0, len(origins))
+		for _, o := range origins {
+			if o != "*" {
+				filtered = append(filtered, o)
+			}
+			// Silently drop "*" in release mode — forces explicit origin config
+		}
+		return &CORSMiddleware{allowOrigins: filtered}
+	}
 	return &CORSMiddleware{allowOrigins: origins}
 }
 

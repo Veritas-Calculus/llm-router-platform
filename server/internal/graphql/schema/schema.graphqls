@@ -111,19 +111,19 @@ type Mutation {
   login(input: LoginInput!): AuthPayload! @rateLimit(max: 5, window: "1m")
   register(input: RegisterInput!): AuthPayload! @rateLimit(max: 5, window: "1m")
   refreshToken: AuthPayload! @auth
-  rotateRefreshToken(refreshToken: String!): AuthPayload!
+  rotateRefreshToken(refreshToken: String!): AuthPayload! @rateLimit(max: 5, window: "1m")
   logout: Boolean! @auth
   forgotPassword(email: String!): Boolean! @rateLimit(max: 3, window: "1m")
   resetPassword(input: ResetPasswordInput!): Boolean! @rateLimit(max: 5, window: "1m")
-  changePassword(input: ChangePasswordInput!): Boolean! @auth
+  changePassword(input: ChangePasswordInput!): Boolean! @auth @rateLimit(max: 5, window: "1m")
   updateProfile(input: UpdateProfileInput!): User! @auth
   verifyEmail(token: String!): Boolean! @rateLimit(max: 10, window: "1m")
   resendVerificationEmail: Boolean! @auth @rateLimit(max: 3, window: "5m")
 
   # -- MFA (Multi-Factor Auth) --
-  generateMfaSecret: MfaSecretInfo! @auth
-  verifyAndEnableMfa(code: String!): Boolean! @auth
-  disableMfa(code: String!): Boolean! @auth
+  generateMfaSecret: MfaSecretInfo! @auth @rateLimit(max: 5, window: "1m")
+  verifyAndEnableMfa(code: String!): Boolean! @auth @rateLimit(max: 5, window: "1m")
+  disableMfa(code: String!): Boolean! @auth @rateLimit(max: 5, window: "1m")
 
   # ── API Keys & Projects ──
   createApiKey(projectId: ID!, name: String!, scopes: String, rateLimit: Int, tokenLimit: Int): ApiKeyWithSecret! @auth
@@ -158,7 +158,7 @@ type Mutation {
   createRechargeSession(amount: Float!): CheckoutSession! @auth @rateLimit(max: 5, window: "1m")
 
   # ── Redeem Codes ──
-  redeemCode(code: String!): RedeemResult! @auth
+  redeemCode(code: String!): RedeemResult! @auth @rateLimit(max: 5, window: "1m")
 
   # ── Admin: Users ──
   toggleUser(id: ID!): User! @auth(role: ADMIN)

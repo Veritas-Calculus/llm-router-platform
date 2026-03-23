@@ -3,8 +3,10 @@ package email
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"html/template"
+	"net"
 	"net/smtp"
 	"strings"
 
@@ -24,8 +26,6 @@ func NewService(cfg config.EmailConfig, feURL string) *Service {
 	// Parse embedded templates once
 	tmpl, err := template.ParseFS(templates.FS, "*.html")
 	if err != nil {
-		// Log this or panic, depending on application initialization strategy
-		// For now, we print to console during startup
 		fmt.Printf("Error parsing email templates: %v\n", err)
 	}
 
@@ -52,7 +52,7 @@ func (s *Service) render(name string, data interface{}) (string, error) {
 // SendResetPasswordEmail sends a password reset link to the user.
 func (s *Service) SendResetPasswordEmail(to, token string) error {
 	if !s.config.Enabled {
-		return nil // Email disabled, ignore or log
+		return nil
 	}
 
 	resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.feURL, token)
@@ -134,6 +134,8 @@ func validateEmailHeader(s string) error {
 }
 
 // send is a helper to perform the actual SMTP delivery.
+// When TLS is enabled, it uses STARTTLS (ports 25/587) or implicit TLS (port 465)
+// with proper certificate verification.
 func (s *Service) send(to, subject, body string) error {
 	// Guard against email header injection
 	if err := validateEmailHeader(to); err != nil {
@@ -157,11 +159,79 @@ func (s *Service) send(to, subject, body string) error {
 	)
 
 	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
+
+	if s.config.TLS {
+		return s.sendTLS(addr, to, msg)
+	}
+
+	// Non-TLS fallback (local development only)
 	var auth smtp.Auth
 	if s.config.Username != "" {
 		auth = smtp.PlainAuth("", s.config.Username, s.config.Password, s.config.Host)
 	}
-
 	return smtp.SendMail(addr, auth, s.config.From, []string{to}, []byte(msg))
 }
 
+// sendTLS establishes a TLS connection for SMTP delivery.
+// Port 465: implicit TLS (SMTPS). Ports 25/587: STARTTLS upgrade.
+func (s *Service) sendTLS(addr, to, msg string) error {
+	tlsConfig := &tls.Config{
+		ServerName: s.config.Host,
+		MinVersion: tls.VersionTLS12,
+	}
+
+	var conn net.Conn
+	var err error
+
+	if s.config.Port == 465 {
+		// Implicit TLS (SMTPS)
+		conn, err = tls.Dial("tcp", addr, tlsConfig)
+	} else {
+		// STARTTLS: connect plain first, then upgrade
+		conn, err = net.Dial("tcp", addr)
+	}
+	if err != nil {
+		return fmt.Errorf("smtp dial failed: %w", err)
+	}
+
+	client, err := smtp.NewClient(conn, s.config.Host)
+	if err != nil {
+		return fmt.Errorf("smtp client creation failed: %w", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	// STARTTLS upgrade for non-465 ports
+	if s.config.Port != 465 {
+		if err := client.StartTLS(tlsConfig); err != nil {
+			return fmt.Errorf("smtp STARTTLS failed: %w", err)
+		}
+	}
+
+	// Authenticate
+	if s.config.Username != "" {
+		auth := smtp.PlainAuth("", s.config.Username, s.config.Password, s.config.Host)
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("smtp auth failed: %w", err)
+		}
+	}
+
+	// Send
+	if err := client.Mail(s.config.From); err != nil {
+		return fmt.Errorf("smtp MAIL FROM failed: %w", err)
+	}
+	if err := client.Rcpt(to); err != nil {
+		return fmt.Errorf("smtp RCPT TO failed: %w", err)
+	}
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("smtp DATA failed: %w", err)
+	}
+	if _, err := w.Write([]byte(msg)); err != nil {
+		return fmt.Errorf("smtp write failed: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("smtp data close failed: %w", err)
+	}
+
+	return client.Quit()
+}

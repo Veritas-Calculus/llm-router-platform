@@ -26,10 +26,14 @@ func clientInfo(ctx context.Context) (ip, userAgent string) {
 // ── JWT helpers ──────────────────────────────────────────────────────
 
 func (r *mutationResolver) generateJWT(u *models.User) (string, error) {
+	ttl := r.Config.JWT.ExpiresIn
+	if ttl <= 0 {
+		ttl = time.Hour // Default: 1 hour (prefer short-lived access tokens)
+	}
 	claims := jwt.MapClaims{
 		"sub":  u.ID.String(),
 		"role": u.Role,
-		"exp":  time.Now().Add(24 * time.Hour).Unix(),
+		"exp":  time.Now().Add(ttl).Unix(),
 		"iat":  time.Now().Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -37,10 +41,14 @@ func (r *mutationResolver) generateJWT(u *models.User) (string, error) {
 }
 
 func (r *mutationResolver) generateRefreshJWT(u *models.User) (string, error) {
+	ttl := r.Config.JWT.RefreshExpiresIn
+	if ttl <= 0 {
+		ttl = 7 * 24 * time.Hour // Default: 7 days
+	}
 	claims := jwt.MapClaims{
 		"sub":  u.ID.String(),
 		"type": "refresh",
-		"exp":  time.Now().Add(7 * 24 * time.Hour).Unix(),
+		"exp":  time.Now().Add(ttl).Unix(),
 		"iat":  time.Now().Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
