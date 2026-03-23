@@ -35,7 +35,6 @@ import { useTranslation } from '@/lib/i18n';
 /* ── Quick Start Guide ── */
 
 function QuickStartGuide({ onDismiss }: { onDismiss: () => void }) {
-  const { t } = useTranslation();
   const navigate = useNavigate();
   const [copied, setCopied] = useState<string | null>(null);
   const baseUrl = `${window.location.origin}/v1`;
@@ -314,6 +313,7 @@ const tooltipStyle = {
 /* ── Main Page ── */
 
 function UserDashboardPage() {
+  const { t } = useTranslation();
   const [channelFilter, setChannelFilter] = useState('');
   const [debouncedChannel, setDebouncedChannel] = useState('');
   const [quickStartDismissed, setQuickStartDismissed] = useState(() => {

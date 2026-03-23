@@ -8,7 +8,6 @@ import type { AlertConfig } from '@/lib/types';
 import { useTranslation } from '@/lib/i18n';
 
 function getStatusIcon(status: string | boolean) {
-  const { t } = useTranslation();
   if (typeof status === 'boolean') {
     return status
       ? <CheckCircleIcon className="w-5 h-5 text-apple-green" />
@@ -27,6 +26,7 @@ function getStatusIcon(status: string | boolean) {
 }
 
 function HealthPage() {
+  const { t } = useTranslation();
   const {
     apiKeyHealth,
     proxyHealth,

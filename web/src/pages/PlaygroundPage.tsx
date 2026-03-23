@@ -38,7 +38,6 @@ interface Message {
 
 /** Extracts text from a message regardless of content format. */
 function getMessageText(msg: Message): string {
-  const { t } = useTranslation();
   if (typeof msg.content === 'string') return msg.content;
   return msg.content.filter(p => p.type === 'text').map(p => p.text || '').join('');
 }
@@ -321,6 +320,7 @@ function AttachmentBar({ attachments, onRemove }: { attachments: ImageAttachment
 /* ── Main Playground ─────────────────────────────────────────── */
 
 export default function PlaygroundPage() {
+  const { t } = useTranslation();
   const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('playground_api_key') || '');
   const [models, setModels] = useState<ModelRef[]>([]);
   const [selectedModel, setSelectedModel] = useState('');

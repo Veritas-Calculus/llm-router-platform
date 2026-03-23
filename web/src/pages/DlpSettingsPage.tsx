@@ -107,7 +107,6 @@ const POLICY_PRESETS: PolicyPreset[] = [
 
 // ── Detect which preset matches the current config ──────────────
 function detectActivePreset(config: any): string {
-  const { t } = useTranslation();
   if (!config?.isEnabled) return 'none';
   for (const preset of POLICY_PRESETS) {
     if (preset.id === 'custom') continue;
@@ -136,6 +135,7 @@ const PII_RULES = [
 ];
 
 export default function DlpSettingsPage() {
+  const { t } = useTranslation();
   const [saving, setSaving] = useState(false);
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'admin';

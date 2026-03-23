@@ -49,7 +49,6 @@ const defaultForm: AlertRuleFormState = {
 };
 
 function AlertRulesCard() {
-  const { t } = useTranslation();
   const { data, loading, refetch } = useQuery<any>(ALERT_CONFIG_QUERY, {
     variables: { targetType: GLOBAL_TARGET_TYPE, targetId: GLOBAL_TARGET_ID },
     fetchPolicy: 'cache-and-network',
@@ -249,6 +248,7 @@ function formatDate(d: string): string {
 }
 
 function ActiveAlertsTable() {
+  const { t } = useTranslation();
   const [statusFilter, setStatusFilter] = useState<string>('active');
   const { data, loading, refetch, networkStatus } = useQuery<any>(ALERTS_QUERY, {
     variables: { status: statusFilter || null },
