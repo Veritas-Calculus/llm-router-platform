@@ -360,7 +360,7 @@ func (h *OAuth2Handler) findOrCreateUser(email, name, provider, oauthID string) 
 		h.db.Create(&project)
 		user.Balance = 5.0
 		h.db.Model(&user).UpdateColumn("balance", 5.0)
-		tx := models.Transaction{OrgID: org.ID, Type: "recharge", Amount: 5.0, Balance: 5.0, Description: "Welcome credit", Currency: "USD"}
+		tx := models.Transaction{OrgID: org.ID, UserID: user.ID, Type: "recharge", Amount: 5.0, Balance: 5.0, Description: "Welcome credit", Currency: "USD"}
 		h.db.Create(&tx)
 	}
 

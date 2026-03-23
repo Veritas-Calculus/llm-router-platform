@@ -539,8 +539,17 @@ func (s *Service) GenerateMfaSecret(ctx context.Context, userID uuid.UUID, email
 		return nil, err
 	}
 
-	user.MfaSecret = key.Secret()
-	user.MfaBackupCodes = string(backupCodesJSON)
+	// Encrypt MFA secret and backup codes at rest (AES-GCM)
+	encSecret, err := crypto.Encrypt(key.Secret())
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt MFA secret: %w", err)
+	}
+	encBackup, err := crypto.Encrypt(string(backupCodesJSON))
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt backup codes: %w", err)
+	}
+	user.MfaSecret = encSecret
+	user.MfaBackupCodes = encBackup
 	user.MfaEnabled = false // Still false until verified
 
 	if err := s.userRepo.Update(ctx, user); err != nil {
@@ -565,7 +574,13 @@ func (s *Service) VerifyAndEnableMfa(ctx context.Context, userID uuid.UUID, code
 		return false, fmt.Errorf("MFA secret not generated")
 	}
 
-	valid := totp.Validate(code, user.MfaSecret)
+	// Decrypt MFA secret for TOTP validation
+	plaintextSecret, err := crypto.Decrypt(user.MfaSecret)
+	if err != nil {
+		s.logger.Error("failed to decrypt MFA secret", zap.Error(err), zap.String("user_id", userID.String()))
+		return false, fmt.Errorf("internal error verifying MFA")
+	}
+	valid := totp.Validate(code, plaintextSecret)
 	if !valid {
 		return false, fmt.Errorf("invalid verification code")
 	}
@@ -590,20 +605,39 @@ func (s *Service) DisableMfa(ctx context.Context, userID uuid.UUID, code string)
 		return false, fmt.Errorf("MFA is not enabled")
 	}
 
-	valid := totp.Validate(code, user.MfaSecret)
+	// Decrypt MFA secret for TOTP validation
+	plaintextSecret, err := crypto.Decrypt(user.MfaSecret)
+	if err != nil {
+		s.logger.Error("failed to decrypt MFA secret", zap.Error(err), zap.String("user_id", userID.String()))
+		return false, fmt.Errorf("internal error verifying MFA")
+	}
+	valid := totp.Validate(code, plaintextSecret)
 
 	// Check backup codes if TOTP fails
 	if !valid && user.MfaBackupCodes != "" {
-		var backupCodes []string
-		if err := json.Unmarshal([]byte(user.MfaBackupCodes), &backupCodes); err == nil {
-			for i, bc := range backupCodes {
-				if bc == code || strings.ReplaceAll(bc, "-", "") == code {
-					valid = true
-					// Remove the used backup code
-					backupCodes = append(backupCodes[:i], backupCodes[i+1:]...)
-					bJSON, _ := json.Marshal(backupCodes)
-					user.MfaBackupCodes = string(bJSON)
-					break
+		// Decrypt backup codes
+		plaintextBackup, decErr := crypto.Decrypt(user.MfaBackupCodes)
+		if decErr != nil {
+			s.logger.Error("failed to decrypt backup codes", zap.Error(decErr))
+		} else {
+			var backupCodes []string
+			if err := json.Unmarshal([]byte(plaintextBackup), &backupCodes); err == nil {
+				for i, bc := range backupCodes {
+					if bc == code || strings.ReplaceAll(bc, "-", "") == code {
+						valid = true
+						// Remove the used backup code
+						backupCodes = append(backupCodes[:i], backupCodes[i+1:]...)
+						bJSON, _ := json.Marshal(backupCodes)
+						// Re-encrypt remaining backup codes
+						encBackup, encErr := crypto.Encrypt(string(bJSON))
+						if encErr != nil {
+							s.logger.Error("failed to re-encrypt backup codes", zap.Error(encErr))
+							user.MfaBackupCodes = string(bJSON) // fallback to plaintext
+						} else {
+							user.MfaBackupCodes = encBackup
+						}
+						break
+					}
 				}
 			}
 		}

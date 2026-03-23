@@ -31,6 +31,7 @@ import (
 	"llm-router-platform/internal/service/redeem"
 	"llm-router-platform/internal/service/router"
 	"llm-router-platform/internal/service/task"
+	"llm-router-platform/internal/service/turnstile"
 	"llm-router-platform/internal/service/user"
 	"llm-router-platform/internal/service/webhook"
 
@@ -154,9 +155,14 @@ func Setup(
 		logger,
 	)
 
+	// Instantiate Turnstile CAPTCHA verification service
+	turnstileSvc := turnstile.New(logger, cfg.Turnstile.Enabled, cfg.Turnstile.SecretKey)
+
 	gqlResolver := &resolvers.Resolver{
 		UserSvc:         services.User,
 		PasswordResetSvc: user.NewPasswordResetService(services.DB),
+		EmailVerifySvc:   user.NewEmailVerificationService(services.DB),
+		LoginLimiter:     user.NewLoginLimiter(services.RedisClient, logger),
 		Router:          services.Router,
 		Billing:         services.Billing,
 		BudgetService:   services.BudgetService,
@@ -179,6 +185,7 @@ func Setup(
 		DocumentSvc:     services.DocumentSvc,
 		WebhookSvc:      services.Webhook,
 		MonitoringSvc:   monitoringCollector,
+		TurnstileSvc:    turnstileSvc,
 		RedisClient:     services.RedisClient,
 		DB:              services.DB,
 		Config:          cfg,
@@ -250,6 +257,14 @@ func Setup(
 	// ─── OpenAPI Spec ──────────────────────────────────────────
 	engine.GET("/openapi.json", func(c *gin.Context) {
 		c.Data(http.StatusOK, "application/json; charset=utf-8", openapi.OpenAPIJSON)
+	})
+
+	// ─── Public Turnstile Config (frontend needs site key) ────────────────
+	engine.GET("/api/v1/captcha/config", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"enabled":  cfg.Turnstile.Enabled,
+			"siteKey":  cfg.Turnstile.SiteKey,
+		})
 	})
 
 	// ─── API Routes ────────────────────────────────────────────────────

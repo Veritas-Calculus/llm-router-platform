@@ -114,9 +114,11 @@ type Mutation {
   rotateRefreshToken(refreshToken: String!): AuthPayload!
   logout: Boolean! @auth
   forgotPassword(email: String!): Boolean! @rateLimit(max: 3, window: "1m")
-  resetPassword(input: ResetPasswordInput!): Boolean!
+  resetPassword(input: ResetPasswordInput!): Boolean! @rateLimit(max: 5, window: "1m")
   changePassword(input: ChangePasswordInput!): Boolean! @auth
   updateProfile(input: UpdateProfileInput!): User! @auth
+  verifyEmail(token: String!): Boolean! @rateLimit(max: 10, window: "1m")
+  resendVerificationEmail: Boolean! @auth @rateLimit(max: 3, window: "5m")
 
   # -- MFA (Multi-Factor Auth) --
   generateMfaSecret: MfaSecretInfo! @auth
@@ -153,6 +155,7 @@ type Mutation {
 
   # ── Plans & Payments ──
   changePlan(planId: ID!): UserSubscription! @auth
+  createRechargeSession(amount: Float!): CheckoutSession! @auth @rateLimit(max: 5, window: "1m")
 
   # ── Redeem Codes ──
   redeemCode(code: String!): RedeemResult! @auth

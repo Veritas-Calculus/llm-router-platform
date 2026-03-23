@@ -540,8 +540,9 @@ type InviteCodeInput struct {
 }
 
 type LoginInput struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email        string  `json:"email"`
+	Password     string  `json:"password"`
+	CaptchaToken *string `json:"captchaToken,omitempty"`
 }
 
 type McpEnvInput struct {
@@ -942,10 +943,11 @@ type RedisLoad struct {
 }
 
 type RegisterInput struct {
-	Email      string  `json:"email"`
-	Password   string  `json:"password"`
-	Name       string  `json:"name"`
-	InviteCode *string `json:"inviteCode,omitempty"`
+	Email        string  `json:"email"`
+	Password     string  `json:"password"`
+	Name         string  `json:"name"`
+	InviteCode   *string `json:"inviteCode,omitempty"`
+	CaptchaToken *string `json:"captchaToken,omitempty"`
 }
 
 type RegistrationMode struct {
@@ -1197,6 +1199,7 @@ type User struct {
 	CreatedAt             time.Time  `json:"createdAt"`
 	LastLoginAt           *time.Time `json:"lastLoginAt,omitempty"`
 	MfaEnabled            bool       `json:"mfaEnabled"`
+	EmailVerified         bool       `json:"emailVerified"`
 }
 
 type UserConnection struct {

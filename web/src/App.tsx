@@ -10,6 +10,7 @@ import OnboardingTour from '@/components/OnboardingTour';
 import LoginPage from '@/pages/LoginPage';
 const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage'));
+const VerifyEmailPage = lazy(() => import('@/pages/VerifyEmailPage'));
 const ForcePasswordChangePage = lazy(() => import('@/pages/ForcePasswordChangePage'));
 const OAuthCallbackPage = lazy(() => import('@/pages/OAuthCallbackPage'));
 
@@ -116,6 +117,7 @@ function App() {
         <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/change-password" element={
           <AuthenticatedRoute>
             <ForcePasswordChangePage />

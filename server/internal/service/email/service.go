@@ -85,6 +85,25 @@ func (s *Service) SendWelcomeEmail(to, name string) error {
 	return s.send(to, subject, body)
 }
 
+// SendEmailVerification sends a verification link to confirm an email address.
+func (s *Service) SendEmailVerification(to, name, token string) error {
+	if !s.config.Enabled {
+		return nil
+	}
+
+	verifyURL := fmt.Sprintf("%s/verify-email?token=%s", s.feURL, token)
+	subject := "Verify Your Email - LLM Router"
+	body, err := s.render("email_verification.html", map[string]string{
+		"Name":      name,
+		"VerifyURL": verifyURL,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to render template: %w", err)
+	}
+
+	return s.send(to, subject, body)
+}
+
 // SendQuotaWarningEmail sends a warning email when balance is low.
 func (s *Service) SendQuotaWarningEmail(to, name, balance, threshold string) error {
 	if !s.config.Enabled {

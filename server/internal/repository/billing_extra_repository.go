@@ -140,7 +140,8 @@ func (r *SubscriptionRepository) UpdateUserBalance(ctx context.Context, userID u
 		}
 
 		transaction := &models.Transaction{
-			OrgID:       userID, // Using user ID as org ID temporarily
+			OrgID:       userID,
+			UserID:      userID,
 			Type:        txType,
 			Amount:      amount,
 			Balance:     user.Balance,
@@ -169,7 +170,7 @@ func (r *TransactionRepository) GetByUserID(ctx context.Context, userID uuid.UUI
 	var txs []models.Transaction
 	var total int64
 
-	query := r.db.WithContext(ctx).Model(&models.Transaction{}).Where("org_id = ?", userID)
+	query := r.db.WithContext(ctx).Model(&models.Transaction{}).Where("user_id = ?", userID)
 	
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err

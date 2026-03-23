@@ -28,6 +28,7 @@ import (
 	"llm-router-platform/internal/service/redeem"
 	"llm-router-platform/internal/service/router"
 	"llm-router-platform/internal/service/task"
+	"llm-router-platform/internal/service/turnstile"
 	"llm-router-platform/internal/service/user"
 	"llm-router-platform/internal/service/webhook"
 
@@ -40,6 +41,7 @@ import (
 type Resolver struct {
 	UserSvc       *user.Service
 	PasswordResetSvc *user.PasswordResetService
+	EmailVerifySvc   *user.EmailVerificationService
 	Router        *router.Router
 	Billing       *billing.Service
 	BudgetService *billing.BudgetService
@@ -62,6 +64,8 @@ type Resolver struct {
 	DocumentSvc     *document.Service
 	WebhookSvc      webhook.Service
 	MonitoringSvc   *monitoring.Collector
+	TurnstileSvc    *turnstile.Service
+	LoginLimiter    *user.LoginLimiter
 	RedisClient     *redis.Client
 	DB            *gorm.DB
 	Config        *config.Config

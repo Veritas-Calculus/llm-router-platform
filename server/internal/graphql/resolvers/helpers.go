@@ -81,6 +81,7 @@ func userToGQL(u *models.User) *model.User {
 		ID: u.ID.String(), Email: u.Email, Name: u.Name,
 		Role: u.Role, IsActive: u.IsActive, Balance: &balance,
 		MonthlyBudgetUsd: &u.MonthlyBudgetUSD,
+		EmailVerified:    u.EmailVerified,
 		CreatedAt:        u.CreatedAt,
 	}
 }

@@ -5,6 +5,7 @@
 input LoginInput {
   email: String!
   password: String!
+  captchaToken: String
 }
 
 input RegisterInput {
@@ -12,6 +13,7 @@ input RegisterInput {
   password: String!
   name: String!
   inviteCode: String
+  captchaToken: String
 }
 
 input ResetPasswordInput {

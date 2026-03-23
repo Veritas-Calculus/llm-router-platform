@@ -76,44 +76,70 @@ func Auth(ctx context.Context, obj interface{}, next graphql.Resolver, role *mod
 	return next(ctx)
 }
 
+// securityCriticalFields lists GraphQL field names where rate limiting MUST NOT
+// fail open. When Redis is unavailable these fields are rejected outright to
+// prevent brute-force and bulk-registration attacks.
+var securityCriticalFields = map[string]bool{
+	"register":       true,
+	"login":          true,
+	"forgotPassword": true,
+	"resetPassword":  true,
+}
+
 // RateLimit implements the @rateLimit directive with per-field sliding window
-// rate limiting using Redis. Falls back to allowing the request if Redis is unavailable,
-// since route-level rate limiting is still active as defense-in-depth.
+// rate limiting using Redis.
+//
+// Security-critical fields (register, login, forgotPassword, resetPassword) use
+// fail-closed semantics: if Redis is unreachable the request is rejected.
+// All other fields fail open so that transient Redis issues do not block normal
+// usage — route-level middleware still provides defense-in-depth.
 func RateLimit(ctx context.Context, obj interface{}, next graphql.Resolver, max int, window string) (interface{}, error) {
 	gc, err := GinContextFromContext(ctx)
 	if err != nil {
 		return next(ctx) // can't rate-limit without gin context
 	}
 
+	// Resolve field name early so we can decide fail-open vs fail-closed.
+	fieldCtx := graphql.GetFieldContext(ctx)
+	fieldName := "unknown"
+	if fieldCtx != nil {
+		fieldName = fieldCtx.Field.Name
+	}
+	critical := securityCriticalFields[fieldName]
+
 	// Get Redis client from gin context (set in routes.go)
 	redisVal, exists := gc.Get("redis")
 	if !exists {
-		return next(ctx) // no Redis available, fall through
+		if critical {
+			return nil, fmt.Errorf("service temporarily unavailable, please try again later")
+		}
+		return next(ctx) // non-critical: fall through
 	}
 	rdb, ok := redisVal.(RedisClient)
 	if !ok {
+		if critical {
+			return nil, fmt.Errorf("service temporarily unavailable, please try again later")
+		}
 		return next(ctx)
 	}
 
 	// Parse window duration
 	dur, err := time.ParseDuration(window)
 	if err != nil {
-		return next(ctx) // invalid window, fall through
+		return next(ctx) // invalid window config, fall through
 	}
 
 	// Build rate limit key: gql_rl:{fieldName}:{clientIP}
-	fieldCtx := graphql.GetFieldContext(ctx)
-	fieldName := "unknown"
-	if fieldCtx != nil {
-		fieldName = fieldCtx.Field.Name
-	}
 	clientIP := gc.ClientIP()
 	key := fmt.Sprintf("gql_rl:%s:%s", fieldName, clientIP)
 
 	// Sliding window: increment and check
 	count, redisErr := rdb.Incr(ctx, key).Result()
 	if redisErr != nil {
-		return next(ctx) // Redis error, fail open
+		if critical {
+			return nil, fmt.Errorf("service temporarily unavailable, please try again later")
+		}
+		return next(ctx) // non-critical: fail open
 	}
 
 	// Set TTL on first increment

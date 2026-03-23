@@ -18,6 +18,7 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/internal/service/audit"
+	"llm-router-platform/internal/service/user"
 	"llm-router-platform/pkg/sanitize"
 	"net/http"
 	"net/smtp"
@@ -33,11 +34,30 @@ import (
 // Login is the resolver for the login field.
 func (r *mutationResolver) Login(ctx context.Context, input model.LoginInput) (*model.AuthPayload, error) {
 	ip, ua := clientInfo(ctx)
+
+	// ── Login failure rate limiting ──
+	if err := r.LoginLimiter.Check(ctx, input.Email, ip); err != nil {
+		r.AuditService.Log(ctx, audit.ActionLoginFailed, uuid.Nil, uuid.Nil, ip, ua, map[string]interface{}{"email": sanitize.LogValue(input.Email), "reason": "rate_limited"})
+		return nil, err
+	}
+
+	// ── Turnstile CAPTCHA verification ──
+	captchaToken := ""
+	if input.CaptchaToken != nil {
+		captchaToken = *input.CaptchaToken
+	}
+	if err := r.TurnstileSvc.Verify(ctx, captchaToken, ip); err != nil {
+		return nil, err
+	}
+
 	u, err := r.UserSvc.Authenticate(ctx, input.Email, input.Password)
 	if err != nil {
+		r.LoginLimiter.RecordFailure(ctx, input.Email, ip)
 		r.AuditService.Log(ctx, audit.ActionLoginFailed, uuid.Nil, uuid.Nil, ip, ua, map[string]interface{}{"email": sanitize.LogValue(input.Email)})
 		return nil, fmt.Errorf("invalid credentials")
 	}
+
+	r.LoginLimiter.ResetOnSuccess(ctx, input.Email, ip)
 	r.AuditService.Log(ctx, audit.ActionLogin, u.ID, u.ID, ip, ua, nil)
 	token, err := r.generateJWT(u)
 	if err != nil {
@@ -64,18 +84,40 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 		if input.InviteCode == nil || *input.InviteCode == "" {
 			return nil, fmt.Errorf("invite code is required")
 		}
-		// Validate invite code from DB
-		var ic models.InviteCode
-		if err := r.DB.Where("code = ?", *input.InviteCode).First(&ic).Error; err != nil {
-			return nil, fmt.Errorf("invalid invite code")
+
+		// ── Turnstile CAPTCHA verification ──
+		ip, _ := clientInfo(ctx)
+		token := ""
+		if input.CaptchaToken != nil {
+			token = *input.CaptchaToken
 		}
-		if !ic.IsValid() {
-			return nil, fmt.Errorf("invite code is expired or exhausted")
+		if err := r.TurnstileSvc.Verify(ctx, token, ip); err != nil {
+			return nil, err
 		}
-		// Increment use count
-		r.DB.Model(&ic).UpdateColumn("use_count", gorm.Expr("use_count + 1"))
+		// Validate + consume invite code atomically with SELECT FOR UPDATE
+		if err := r.DB.Transaction(func(tx *gorm.DB) error {
+			var ic models.InviteCode
+			if err := tx.Set("gorm:query_option", "FOR UPDATE").
+				Where("code = ?", *input.InviteCode).First(&ic).Error; err != nil {
+				return fmt.Errorf("invalid invite code")
+			}
+			if !ic.IsValid() {
+				return fmt.Errorf("invite code is expired or exhausted")
+			}
+			return tx.Model(&ic).UpdateColumn("use_count", gorm.Expr("use_count + 1")).Error
+		}); err != nil {
+			return nil, err
+		}
 	case "open":
-		// Allow registration without invite code
+		// ── Turnstile CAPTCHA verification (open registration) ──
+		ip, _ := clientInfo(ctx)
+		token := ""
+		if input.CaptchaToken != nil {
+			token = *input.CaptchaToken
+		}
+		if err := r.TurnstileSvc.Verify(ctx, token, ip); err != nil {
+			return nil, err
+		}
 	}
 
 	u, err := r.UserSvc.Register(ctx, input.Email, input.Password, input.Name)
@@ -83,27 +125,45 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 		return nil, err
 	}
 
-	// ── Auto-create Organization + Project for new user ──
-	org := models.Organization{Name: u.Name + "'s Org", OwnerID: u.ID}
-	if err := r.DB.Create(&org).Error; err != nil {
-		r.Logger.Error("failed to create default org for new user", zap.Error(err))
-	} else {
-		// Add user as OWNER member
-		member := models.OrganizationMember{OrgID: org.ID, UserID: u.ID, Role: "OWNER"}
-		r.DB.Create(&member)
-		// Create default project
-		project := models.Project{OrgID: org.ID, Name: "Default", Description: "Auto-created project"}
-		r.DB.Create(&project)
-		// Grant welcome credit ($5)
-		u.Balance = 5.0
-		r.DB.Model(u).UpdateColumn("balance", 5.0)
-		// Record welcome transaction
-		tx := models.Transaction{OrgID: org.ID, Type: "recharge", Amount: 5.0, Balance: 5.0, Description: "Welcome credit", Currency: "USD"}
-		r.DB.Create(&tx)
+	// ── Onboard: create Org + Project + optional Welcome Credit ──
+	grantCredit := true
+	if r.RedisClient != nil {
+		ip, _ := clientInfo(ctx)
+		creditKey := fmt.Sprintf("reg_credit:%s", ip)
+		cnt, redisErr := r.RedisClient.Incr(ctx, creditKey).Result()
+		if redisErr == nil {
+			if cnt == 1 {
+				r.RedisClient.Expire(ctx, creditKey, 24*time.Hour)
+			}
+			if cnt > 3 {
+				grantCredit = false
+				r.Logger.Warn("welcome credit denied: IP throttle exceeded",
+					zap.String("ip", ip), zap.Int64("count", cnt))
+			}
+		}
+	}
+
+	if err := user.OnboardAccount(ctx, r.DB, u, user.OnboardAccountParams{
+		GrantWelcomeCredit: grantCredit,
+	}, r.Logger); err != nil {
+		r.Logger.Error("failed to onboard new user", zap.Error(err), zap.String("user_id", u.ID.String()))
 	}
 
 	ip, ua := clientInfo(ctx)
 	r.AuditService.Log(ctx, audit.ActionRegister, u.ID, u.ID, ip, ua, nil)
+
+	// ── Send email verification (non-blocking) ──
+	go func() {
+		rawToken, tokenErr := r.EmailVerifySvc.CreateVerificationToken(ctx, u.ID)
+		if tokenErr != nil {
+			r.Logger.Error("failed to create verification token", zap.Error(tokenErr), zap.String("user_id", u.ID.String()))
+			return
+		}
+		if sendErr := r.EmailService.SendEmailVerification(u.Email, u.Name, rawToken); sendErr != nil {
+			r.Logger.Error("failed to send verification email", zap.Error(sendErr), zap.String("user_id", u.ID.String()))
+		}
+	}()
+
 	token, err := r.generateJWT(u)
 	if err != nil {
 		return nil, err
@@ -215,6 +275,45 @@ func (r *mutationResolver) UpdateProfile(ctx context.Context, input model.Update
 	}
 	u, _ := r.UserSvc.GetByID(ctx, id)
 	return userToGQL(u), nil
+}
+
+// VerifyEmail is the resolver for the verifyEmail field.
+func (r *mutationResolver) VerifyEmail(ctx context.Context, token string) (bool, error) {
+	_, err := r.EmailVerifySvc.VerifyEmail(ctx, token)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ResendVerificationEmail is the resolver for the resendVerificationEmail field.
+func (r *mutationResolver) ResendVerificationEmail(ctx context.Context) (bool, error) {
+	uidStr, _ := directives.UserIDFromContext(ctx)
+	userID, err := uuid.Parse(uidStr)
+	if err != nil {
+		return false, fmt.Errorf("invalid user")
+	}
+
+	u, err := r.UserSvc.GetByID(ctx, userID)
+	if err != nil {
+		return false, fmt.Errorf("user not found")
+	}
+
+	if u.EmailVerified {
+		return false, fmt.Errorf("email is already verified")
+	}
+
+	rawToken, err := r.EmailVerifySvc.CreateVerificationToken(ctx, u.ID)
+	if err != nil {
+		return false, fmt.Errorf("failed to create verification token")
+	}
+
+	if sendErr := r.EmailService.SendEmailVerification(u.Email, u.Name, rawToken); sendErr != nil {
+		r.Logger.Error("failed to send verification email", zap.Error(sendErr))
+		// Don't fail — token was created, user can retry
+	}
+
+	return true, nil
 }
 
 // GenerateMfaSecret is the resolver for the generateMfaSecret field.
@@ -747,6 +846,32 @@ func (r *mutationResolver) ChangePlan(ctx context.Context, planID string) (*mode
 		CurrentPeriodEnd: sub.CurrentPeriodEnd,
 		TokenLimit:       int(sub.Plan.TokenLimit),
 	}, nil
+}
+
+// CreateRechargeSession is the resolver for the createRechargeSession field.
+func (r *mutationResolver) CreateRechargeSession(ctx context.Context, amount float64) (*model.CheckoutSession, error) {
+	if amount < 1.0 {
+		return nil, fmt.Errorf("minimum recharge amount is $1.00")
+	}
+	if amount > 10000.0 {
+		return nil, fmt.Errorf("maximum recharge amount is $10,000.00")
+	}
+
+	uid, err := directives.UserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userID, err := uuid.Parse(uid)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID")
+	}
+
+	url, err := r.Payment.CreateRechargeSession(ctx, userID, amount)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.CheckoutSession{URL: url}, nil
 }
 
 // RedeemCode is the resolver for the redeemCode field.

@@ -7,7 +7,7 @@ export const LOGIN = gql`
     login(input: $input) {
       token
       refreshToken
-      user { id email name role isActive mfaEnabled }
+      user { id email name role isActive mfaEnabled emailVerified }
     }
   }
 `;
@@ -17,7 +17,7 @@ export const REGISTER = gql`
     register(input: $input) {
       token
       refreshToken
-      user { id email name role isActive mfaEnabled }
+      user { id email name role isActive mfaEnabled emailVerified }
     }
   }
 `;
@@ -27,7 +27,7 @@ export const REFRESH_TOKEN = gql`
     refreshToken {
       token
       refreshToken
-      user { id email name role isActive mfaEnabled }
+      user { id email name role isActive mfaEnabled emailVerified }
     }
   }
 `;
@@ -59,14 +59,14 @@ export const CHANGE_PASSWORD = gql`
 export const UPDATE_PROFILE = gql`
   mutation UpdateProfile($input: UpdateProfileInput!) {
     updateProfile(input: $input) {
-      id email name role isActive mfaEnabled
+      id email name role isActive mfaEnabled emailVerified
     }
   }
 `;
 
 export const ME = gql`
   query Me {
-    me { id email name role isActive mfaEnabled createdAt }
+    me { id email name role isActive mfaEnabled emailVerified createdAt }
   }
 `;
 
@@ -76,6 +76,18 @@ export const REGISTRATION_MODE = gql`
       mode
       inviteCodeRequired
     }
+  }
+`;
+
+export const VERIFY_EMAIL = gql`
+  mutation VerifyEmail($token: String!) {
+    verifyEmail(token: $token)
+  }
+`;
+
+export const RESEND_VERIFICATION_EMAIL = gql`
+  mutation ResendVerificationEmail {
+    resendVerificationEmail
   }
 `;
 

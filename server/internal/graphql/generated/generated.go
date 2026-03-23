@@ -528,6 +528,7 @@ type ComplexityRoot struct {
 		CreatePromptVersion          func(childComplexity int, input model.PromptVersionInput) int
 		CreateProviderAPIKey         func(childComplexity int, providerID string, input model.ProviderAPIKeyInput) int
 		CreateProxy                  func(childComplexity int, input model.ProxyInput) int
+		CreateRechargeSession        func(childComplexity int, amount float64) int
 		CreateRoutingRule            func(childComplexity int, input model.CreateRoutingRuleInput) int
 		CreateTask                   func(childComplexity int, input model.CreateTaskInput) int
 		CreateWebhookEndpoint        func(childComplexity int, input model.CreateWebhookEndpointInput) int
@@ -558,6 +559,7 @@ type ComplexityRoot struct {
 		RefreshToken                 func(childComplexity int) int
 		Register                     func(childComplexity int, input model.RegisterInput) int
 		RemoveOrganizationMember     func(childComplexity int, orgID string, userID string) int
+		ResendVerificationEmail      func(childComplexity int) int
 		ResetPassword                func(childComplexity int, input model.ResetPasswordInput) int
 		ResolveAlert                 func(childComplexity int, id string) int
 		RevokeAPIKey                 func(childComplexity int, projectID string, id string) int
@@ -605,6 +607,7 @@ type ComplexityRoot struct {
 		UpdateUserRole               func(childComplexity int, id string, role string) int
 		UpdateWebhookEndpoint        func(childComplexity int, id string, input model.UpdateWebhookEndpointInput) int
 		VerifyAndEnableMfa           func(childComplexity int, code string) int
+		VerifyEmail                  func(childComplexity int, token string) int
 	}
 
 	NotificationChannel struct {
@@ -1077,6 +1080,7 @@ type ComplexityRoot struct {
 		Balance               func(childComplexity int) int
 		CreatedAt             func(childComplexity int) int
 		Email                 func(childComplexity int) int
+		EmailVerified         func(childComplexity int) int
 		ID                    func(childComplexity int) int
 		IsActive              func(childComplexity int) int
 		LastLoginAt           func(childComplexity int) int
@@ -1186,6 +1190,8 @@ type MutationResolver interface {
 	ResetPassword(ctx context.Context, input model.ResetPasswordInput) (bool, error)
 	ChangePassword(ctx context.Context, input model.ChangePasswordInput) (bool, error)
 	UpdateProfile(ctx context.Context, input model.UpdateProfileInput) (*model.User, error)
+	VerifyEmail(ctx context.Context, token string) (bool, error)
+	ResendVerificationEmail(ctx context.Context) (bool, error)
 	GenerateMfaSecret(ctx context.Context) (*model.MfaSecretInfo, error)
 	VerifyAndEnableMfa(ctx context.Context, code string) (bool, error)
 	DisableMfa(ctx context.Context, code string) (bool, error)
@@ -1206,6 +1212,7 @@ type MutationResolver interface {
 	CreateTask(ctx context.Context, input model.CreateTaskInput) (*model.Task, error)
 	CancelTask(ctx context.Context, id string) (*model.Task, error)
 	ChangePlan(ctx context.Context, planID string) (*model.UserSubscription, error)
+	CreateRechargeSession(ctx context.Context, amount float64) (*model.CheckoutSession, error)
 	RedeemCode(ctx context.Context, code string) (*model.RedeemResult, error)
 	ToggleUser(ctx context.Context, id string) (*model.User, error)
 	UpdateUserRole(ctx context.Context, id string, role string) (*model.User, error)
@@ -3681,6 +3688,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.CreateProxy(childComplexity, args["input"].(model.ProxyInput)), true
+	case "Mutation.createRechargeSession":
+		if e.ComplexityRoot.Mutation.CreateRechargeSession == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createRechargeSession_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.CreateRechargeSession(childComplexity, args["amount"].(float64)), true
 	case "Mutation.createRoutingRule":
 		if e.ComplexityRoot.Mutation.CreateRoutingRule == nil {
 			break
@@ -3981,6 +3999,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.RemoveOrganizationMember(childComplexity, args["orgId"].(string), args["userId"].(string)), true
+	case "Mutation.resendVerificationEmail":
+		if e.ComplexityRoot.Mutation.ResendVerificationEmail == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Mutation.ResendVerificationEmail(childComplexity), true
 	case "Mutation.resetPassword":
 		if e.ComplexityRoot.Mutation.ResetPassword == nil {
 			break
@@ -4488,6 +4512,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.VerifyAndEnableMfa(childComplexity, args["code"].(string)), true
+	case "Mutation.verifyEmail":
+		if e.ComplexityRoot.Mutation.VerifyEmail == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_verifyEmail_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.VerifyEmail(childComplexity, args["token"].(string)), true
 
 	case "NotificationChannel.config":
 		if e.ComplexityRoot.NotificationChannel.Config == nil {
@@ -6815,6 +6850,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.User.Email(childComplexity), true
+	case "User.emailVerified":
+		if e.ComplexityRoot.User.EmailVerified == nil {
+			break
+		}
+
+		return e.ComplexityRoot.User.EmailVerified(childComplexity), true
 	case "User.id":
 		if e.ComplexityRoot.User.ID == nil {
 			break
@@ -7494,9 +7535,11 @@ type Mutation {
   rotateRefreshToken(refreshToken: String!): AuthPayload!
   logout: Boolean! @auth
   forgotPassword(email: String!): Boolean! @rateLimit(max: 3, window: "1m")
-  resetPassword(input: ResetPasswordInput!): Boolean!
+  resetPassword(input: ResetPasswordInput!): Boolean! @rateLimit(max: 5, window: "1m")
   changePassword(input: ChangePasswordInput!): Boolean! @auth
   updateProfile(input: UpdateProfileInput!): User! @auth
+  verifyEmail(token: String!): Boolean! @rateLimit(max: 10, window: "1m")
+  resendVerificationEmail: Boolean! @auth @rateLimit(max: 3, window: "5m")
 
   # -- MFA (Multi-Factor Auth) --
   generateMfaSecret: MfaSecretInfo! @auth
@@ -7533,6 +7576,7 @@ type Mutation {
 
   # ── Plans & Payments ──
   changePlan(planId: ID!): UserSubscription! @auth
+  createRechargeSession(amount: Float!): CheckoutSession! @auth @rateLimit(max: 5, window: "1m")
 
   # ── Redeem Codes ──
   redeemCode(code: String!): RedeemResult! @auth
@@ -7687,6 +7731,7 @@ type AuditLogConnection {
 input LoginInput {
   email: String!
   password: String!
+  captchaToken: String
 }
 
 input RegisterInput {
@@ -7694,6 +7739,7 @@ input RegisterInput {
   password: String!
   name: String!
   inviteCode: String
+  captchaToken: String
 }
 
 input ResetPasswordInput {
@@ -8860,6 +8906,7 @@ type User {
   createdAt: DateTime!
   lastLoginAt: DateTime
   mfaEnabled: Boolean!
+  emailVerified: Boolean!
 }
 
 type MfaSecretInfo {
@@ -9391,6 +9438,17 @@ func (ec *executionContext) field_Mutation_createProxy_args(ctx context.Context,
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_createRechargeSession_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "amount", ec.unmarshalNFloat2float64)
+	if err != nil {
+		return nil, err
+	}
+	args["amount"] = arg0
 	return args, nil
 }
 
@@ -10320,6 +10378,17 @@ func (ec *executionContext) field_Mutation_verifyAndEnableMfa_args(ctx context.C
 		return nil, err
 	}
 	args["code"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_verifyEmail_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "token", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["token"] = arg0
 	return args, nil
 }
 
@@ -14732,6 +14801,8 @@ func (ec *executionContext) fieldContext_AuthPayload_user(_ context.Context, fie
 				return ec.fieldContext_User_lastLoginAt(ctx, field)
 			case "mfaEnabled":
 				return ec.fieldContext_User_mfaEnabled(ctx, field)
+			case "emailVerified":
+				return ec.fieldContext_User_emailVerified(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
@@ -21195,7 +21266,30 @@ func (ec *executionContext) _Mutation_resetPassword(ctx context.Context, field g
 			fc := graphql.GetFieldContext(ctx)
 			return ec.Resolvers.Mutation().ResetPassword(ctx, fc.Args["input"].(model.ResetPasswordInput))
 		},
-		nil,
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int(ctx, 5)
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				window, err := ec.unmarshalNString2string(ctx, "1m")
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				if ec.Directives.RateLimit == nil {
+					var zeroVal bool
+					return zeroVal, errors.New("directive rateLimit is not implemented")
+				}
+				return ec.Directives.RateLimit(ctx, nil, directive0, max, window)
+			}
+
+			next = directive1
+			return next
+		},
 		ec.marshalNBoolean2bool,
 		true,
 		true,
@@ -21352,6 +21446,8 @@ func (ec *executionContext) fieldContext_Mutation_updateProfile(ctx context.Cont
 				return ec.fieldContext_User_lastLoginAt(ctx, field)
 			case "mfaEnabled":
 				return ec.fieldContext_User_mfaEnabled(ctx, field)
+			case "emailVerified":
+				return ec.fieldContext_User_emailVerified(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
@@ -21366,6 +21462,134 @@ func (ec *executionContext) fieldContext_Mutation_updateProfile(ctx context.Cont
 	if fc.Args, err = ec.field_Mutation_updateProfile_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_verifyEmail(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_verifyEmail,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().VerifyEmail(ctx, fc.Args["token"].(string))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int(ctx, 10)
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				window, err := ec.unmarshalNString2string(ctx, "1m")
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				if ec.Directives.RateLimit == nil {
+					var zeroVal bool
+					return zeroVal, errors.New("directive rateLimit is not implemented")
+				}
+				return ec.Directives.RateLimit(ctx, nil, directive0, max, window)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_verifyEmail(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_verifyEmail_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_resendVerificationEmail(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_resendVerificationEmail,
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Mutation().ResendVerificationEmail(ctx)
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "USER")
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal bool
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+			directive2 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int(ctx, 3)
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				window, err := ec.unmarshalNString2string(ctx, "5m")
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				if ec.Directives.RateLimit == nil {
+					var zeroVal bool
+					return zeroVal, errors.New("directive rateLimit is not implemented")
+				}
+				return ec.Directives.RateLimit(ctx, nil, directive1, max, window)
+			}
+
+			next = directive2
+			return next
+		},
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_resendVerificationEmail(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
 	}
 	return fc, nil
 }
@@ -22816,6 +23040,86 @@ func (ec *executionContext) fieldContext_Mutation_changePlan(ctx context.Context
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_createRechargeSession(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_createRechargeSession,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().CreateRechargeSession(ctx, fc.Args["amount"].(float64))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "USER")
+				if err != nil {
+					var zeroVal *model.CheckoutSession
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.CheckoutSession
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+			directive2 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int(ctx, 5)
+				if err != nil {
+					var zeroVal *model.CheckoutSession
+					return zeroVal, err
+				}
+				window, err := ec.unmarshalNString2string(ctx, "1m")
+				if err != nil {
+					var zeroVal *model.CheckoutSession
+					return zeroVal, err
+				}
+				if ec.Directives.RateLimit == nil {
+					var zeroVal *model.CheckoutSession
+					return zeroVal, errors.New("directive rateLimit is not implemented")
+				}
+				return ec.Directives.RateLimit(ctx, nil, directive1, max, window)
+			}
+
+			next = directive2
+			return next
+		},
+		ec.marshalNCheckoutSession2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCheckoutSession,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_createRechargeSession(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "url":
+				return ec.fieldContext_CheckoutSession_url(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type CheckoutSession", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_createRechargeSession_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_redeemCode(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -22952,6 +23256,8 @@ func (ec *executionContext) fieldContext_Mutation_toggleUser(ctx context.Context
 				return ec.fieldContext_User_lastLoginAt(ctx, field)
 			case "mfaEnabled":
 				return ec.fieldContext_User_mfaEnabled(ctx, field)
+			case "emailVerified":
+				return ec.fieldContext_User_emailVerified(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
@@ -23037,6 +23343,8 @@ func (ec *executionContext) fieldContext_Mutation_updateUserRole(ctx context.Con
 				return ec.fieldContext_User_lastLoginAt(ctx, field)
 			case "mfaEnabled":
 				return ec.fieldContext_User_mfaEnabled(ctx, field)
+			case "emailVerified":
+				return ec.fieldContext_User_emailVerified(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
@@ -23122,6 +23430,8 @@ func (ec *executionContext) fieldContext_Mutation_updateUserQuota(ctx context.Co
 				return ec.fieldContext_User_lastLoginAt(ctx, field)
 			case "mfaEnabled":
 				return ec.fieldContext_User_mfaEnabled(ctx, field)
+			case "emailVerified":
+				return ec.fieldContext_User_emailVerified(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
@@ -32320,6 +32630,8 @@ func (ec *executionContext) fieldContext_Query_me(_ context.Context, field graph
 				return ec.fieldContext_User_lastLoginAt(ctx, field)
 			case "mfaEnabled":
 				return ec.fieldContext_User_mfaEnabled(ctx, field)
+			case "emailVerified":
+				return ec.fieldContext_User_emailVerified(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
 		},
@@ -42144,6 +42456,35 @@ func (ec *executionContext) fieldContext_User_mfaEnabled(_ context.Context, fiel
 	return fc, nil
 }
 
+func (ec *executionContext) _User_emailVerified(ctx context.Context, field graphql.CollectedField, obj *model.User) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_User_emailVerified,
+		func(ctx context.Context) (any, error) {
+			return obj.EmailVerified, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_User_emailVerified(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "User",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _UserConnection_data(ctx context.Context, field graphql.CollectedField, obj *model.UserConnection) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -46413,7 +46754,7 @@ func (ec *executionContext) unmarshalInputLoginInput(ctx context.Context, obj an
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"email", "password"}
+	fieldsInOrder := [...]string{"email", "password", "captchaToken"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -46434,6 +46775,13 @@ func (ec *executionContext) unmarshalInputLoginInput(ctx context.Context, obj an
 				return it, err
 			}
 			it.Password = data
+		case "captchaToken":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("captchaToken"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CaptchaToken = data
 		}
 	}
 	return it, nil
@@ -47137,7 +47485,7 @@ func (ec *executionContext) unmarshalInputRegisterInput(ctx context.Context, obj
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"email", "password", "name", "inviteCode"}
+	fieldsInOrder := [...]string{"email", "password", "name", "inviteCode", "captchaToken"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -47172,6 +47520,13 @@ func (ec *executionContext) unmarshalInputRegisterInput(ctx context.Context, obj
 				return it, err
 			}
 			it.InviteCode = data
+		case "captchaToken":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("captchaToken"))
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CaptchaToken = data
 		}
 	}
 	return it, nil
@@ -50889,6 +51244,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "verifyEmail":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_verifyEmail(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "resendVerificationEmail":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_resendVerificationEmail(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "generateMfaSecret":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_generateMfaSecret(ctx, field)
@@ -51025,6 +51394,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "changePlan":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_changePlan(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createRechargeSession":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createRechargeSession(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -55941,6 +56317,11 @@ func (ec *executionContext) _User(ctx context.Context, sel ast.SelectionSet, obj
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "emailVerified":
+			out.Values[i] = ec._User_emailVerified(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -57316,6 +57697,20 @@ func (ec *executionContext) marshalNCacheStats2ᚖllmᚑrouterᚑplatformᚋinte
 func (ec *executionContext) unmarshalNChangePasswordInput2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐChangePasswordInput(ctx context.Context, v any) (model.ChangePasswordInput, error) {
 	res, err := ec.unmarshalInputChangePasswordInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNCheckoutSession2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCheckoutSession(ctx context.Context, sel ast.SelectionSet, v model.CheckoutSession) graphql.Marshaler {
+	return ec._CheckoutSession(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNCheckoutSession2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCheckoutSession(ctx context.Context, sel ast.SelectionSet, v *model.CheckoutSession) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._CheckoutSession(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNCoupon2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCoupon(ctx context.Context, sel ast.SelectionSet, v model.Coupon) graphql.Marshaler {

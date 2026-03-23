@@ -24,6 +24,8 @@ type User struct {
 	RateLimitPerMinute    int       `gorm:"default:0" json:"rate_limit_per_minute"` // 0 = use global default
 	Balance               float64   `gorm:"default:0" json:"balance"`               // Current credit balance in USD
 	TokensInvalidatedAt   time.Time `json:"-"`                                      // tokens issued before this time are rejected
+	EmailVerified         bool      `gorm:"default:false" json:"email_verified"`
+	EmailVerifiedAt       *time.Time `json:"email_verified_at,omitempty"`
 	MfaEnabled            bool      `gorm:"default:false" json:"mfa_enabled"`
 	MfaSecret             string    `gorm:"type:varchar(255)" json:"-"`
 	MfaBackupCodes        string    `gorm:"type:text" json:"-"` // JSON array of backup codes

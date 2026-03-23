@@ -15,6 +15,7 @@ type User {
   createdAt: DateTime!
   lastLoginAt: DateTime
   mfaEnabled: Boolean!
+  emailVerified: Boolean!
 }
 
 type MfaSecretInfo {

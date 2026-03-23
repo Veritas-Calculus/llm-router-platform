@@ -64,6 +64,7 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 
 		transaction := &models.Transaction{
 			OrgID:       userID,
+			UserID:      userID,
 			Type:        "deduction",
 			Amount:      -amount,
 			Balance:     user.Balance,
@@ -117,6 +118,7 @@ func (s *BalanceService) AddBalance(ctx context.Context, userID uuid.UUID, amoun
 
 		transaction := &models.Transaction{
 			OrgID:       userID,
+			UserID:      userID,
 			Type:        txType,
 			Amount:      amount,
 			Balance:     user.Balance,

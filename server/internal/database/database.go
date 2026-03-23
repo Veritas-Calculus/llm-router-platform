@@ -88,6 +88,7 @@ func (d *Database) Migrate() error {
 		&models.Coupon{},
 		&models.Document{},
 		&models.PasswordResetToken{},
+		&models.EmailVerificationToken{},
 		&models.ErrorLog{},
 		&models.IntegrationConfig{},
 		&models.RoutingRule{},
@@ -300,6 +301,7 @@ func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
 		Name:                  cfg.Name,
 		Role:                  "admin",
 		IsActive:              true,
+		EmailVerified:         true,
 		RequirePasswordChange: false,
 	}
 
@@ -342,7 +344,7 @@ func (d *Database) ensureDefaultOrgProject(user *models.User) {
 	if user.Balance == 0 {
 		user.Balance = 5.0
 		d.DB.Model(user).UpdateColumn("balance", 5.0)
-		d.DB.Create(&models.Transaction{OrgID: org.ID, Type: "recharge", Amount: 5.0, Balance: 5.0, Description: "Welcome credit", Currency: "USD"})
+		d.DB.Create(&models.Transaction{OrgID: org.ID, UserID: user.ID, Type: "recharge", Amount: 5.0, Balance: 5.0, Description: "Welcome credit", Currency: "USD"})
 	}
 
 	d.logger.Info("created default org+project for user", zap.String("email", user.Email), zap.String("orgId", org.ID.String()))

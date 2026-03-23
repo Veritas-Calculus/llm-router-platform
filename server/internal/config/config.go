@@ -30,6 +30,7 @@ type Config struct {
 	Frontend      FrontendConfig
 	Stripe        StripeConfig
 	OAuth2        OAuth2Config
+	Turnstile     TurnstileConfig
 }
 
 // SecurityConfig holds API and Gateway security environment settings.
@@ -138,6 +139,13 @@ type StripeConfig struct {
 	SecretKey      string // #nosec G101
 	PublishableKey string // #nosec G101
 	WebhookSecret  string // #nosec G101
+}
+
+// TurnstileConfig holds Cloudflare Turnstile CAPTCHA configuration.
+type TurnstileConfig struct {
+	Enabled   bool
+	SecretKey string // #nosec G101 -- server-side secret for Turnstile verification
+	SiteKey   string // Public site key exposed to frontend
 }
 
 // JWTConfig holds JWT authentication configuration.
@@ -317,6 +325,11 @@ func Load() (*Config, error) {
 				ClientSecret: viper.GetString("GOOGLE_CLIENT_SECRET"),
 			},
 		},
+		Turnstile: TurnstileConfig{
+			Enabled:   viper.GetBool("TURNSTILE_ENABLED"),
+			SecretKey: viper.GetString("TURNSTILE_SECRET_KEY"),
+			SiteKey:   viper.GetString("TURNSTILE_SITE_KEY"),
+		},
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -444,6 +457,7 @@ func setDefaults() {
 	viper.SetDefault("OTEL_ENABLED", false)
 	viper.SetDefault("OTEL_ENDPOINT", "")
 	viper.SetDefault("OTEL_SERVICE_NAME", "llm-router-platform")
+	viper.SetDefault("TURNSTILE_ENABLED", false)
 }
 
 // GetDSN returns the database connection string with proper escaping.

@@ -52,6 +52,7 @@ type Order struct {
 type Transaction struct {
 	BaseModel
 	OrgID       uuid.UUID `gorm:"type:uuid;not null;index" json:"org_id"`
+	UserID      uuid.UUID `gorm:"type:uuid;index" json:"user_id"`
 	Type        string    `gorm:"not null;index" json:"type"` // recharge, deduction, refund
 	Amount      float64   `gorm:"not null" json:"amount"`
 	Currency    string    `gorm:"default:'USD'" json:"currency"`

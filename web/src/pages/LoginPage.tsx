@@ -1,12 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
  
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useMutation, useQuery } from '@apollo/client/react';
 import { LOGIN, REGISTER, REGISTRATION_MODE } from '@/lib/graphql/operations';
 import { useAuthStore } from '@/stores/authStore';
+import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 
 function LoginPage() {
   const navigate = useNavigate();
@@ -22,6 +23,19 @@ function LoginPage() {
     name: '',
     inviteCode: '',
   });
+
+  // Turnstile CAPTCHA state
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaConfig, setCaptchaConfig] = useState<{ enabled: boolean; siteKey: string }>({ enabled: false, siteKey: '' });
+  const turnstileRef = useRef<TurnstileInstance | null>(null);
+
+  // Fetch Turnstile config from backend
+  useEffect(() => {
+    fetch('/api/v1/captcha/config')
+      .then(r => r.json())
+      .then(data => setCaptchaConfig({ enabled: data.enabled, siteKey: data.siteKey || '' }))
+      .catch(() => {});
+  }, []);
 
   // Query registration mode (public, no auth required)
   const { data: regModeData } = useQuery<{ registrationMode: { mode: string; inviteCodeRequired: boolean } }>(REGISTRATION_MODE, { fetchPolicy: 'cache-first' });
@@ -40,21 +54,29 @@ function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // CAPTCHA validation
+    if (captchaConfig.enabled && !captchaToken) {
+      toast.error('Please complete the CAPTCHA verification');
+      return;
+    }
+
     setLoading(true);
 
     try {
       if (isLogin) {
         const { data } = await loginMut({
-          variables: { input: { email: formData.email, password: formData.password } },
+          variables: { input: { email: formData.email, password: formData.password, captchaToken } },
         });
         const resp = (data as any)?.login;
         setAuth(resp.token, resp.user);
         toast.success('Welcome back!');
       } else {
-        const registerInput: Record<string, string> = {
+        const registerInput: Record<string, string | null> = {
           email: formData.email,
           password: formData.password,
           name: formData.name,
+          captchaToken,
         };
         if (inviteRequired && formData.inviteCode) {
           registerInput.inviteCode = formData.inviteCode;
@@ -71,6 +93,9 @@ function LoginPage() {
       navigate(user?.require_password_change ? '/change-password' : '/dashboard');
     } catch {
       toast.error(isLogin ? 'Invalid credentials' : 'Registration failed');
+      // Reset turnstile widget on failure so user can retry
+      turnstileRef.current?.reset();
+      setCaptchaToken(null);
     } finally {
       setLoading(false);
     }
@@ -243,7 +268,21 @@ function LoginPage() {
               </div>
             )}
 
-            <button type="submit" className="btn-primary w-full py-3 rounded-xl text-base font-semibold mt-2" disabled={loading || (!isLogin && !registrationOpen)}>
+            {/* Cloudflare Turnstile CAPTCHA */}
+            {captchaConfig.enabled && captchaConfig.siteKey && !isSsoMode && (
+              <div className="flex justify-center">
+                <Turnstile
+                  ref={turnstileRef}
+                  siteKey={captchaConfig.siteKey}
+                  onSuccess={(token) => setCaptchaToken(token)}
+                  onExpire={() => setCaptchaToken(null)}
+                  onError={() => setCaptchaToken(null)}
+                  options={{ theme: 'light', size: 'normal' }}
+                />
+              </div>
+            )}
+
+            <button type="submit" className="btn-primary w-full py-3 rounded-xl text-base font-semibold mt-2" disabled={loading || (!isLogin && !registrationOpen) || (captchaConfig.enabled && !captchaToken && !isSsoMode)}>
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

@@ -209,9 +209,15 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 
 	ctx := context.Background()
 
-	// Update order status
+	// Idempotency: if the order is already fulfilled, skip re-processing.
+	// Stripe may retry webhooks, so this prevents duplicate balance top-ups.
 	order, err := s.subRepo.GetOrderByNo(ctx, orderNo)
 	if err == nil {
+		if order.Status == "paid" {
+			s.logger.Info("order already fulfilled, skipping duplicate webhook",
+				zap.String("order_no", orderNo))
+			return nil
+		}
 		order.Status = "paid"
 		_ = s.subRepo.UpdateOrder(ctx, order)
 	}
