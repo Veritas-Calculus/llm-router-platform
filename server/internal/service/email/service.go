@@ -150,12 +150,14 @@ func (s *Service) send(to, subject, body string) error {
 		fromAddr = fmt.Sprintf("%s <%s>", s.config.FromName, s.config.From)
 	}
 
+	// Defense-in-depth: strip any stray CRLF in body to prevent header injection
+	safeBody := strings.ReplaceAll(body, "\r\n\r\n", "\n\n")
 	msg := fmt.Sprintf(
 		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
 		fromAddr,
 		to,
 		subject,
-		body,
+		safeBody,
 	)
 
 	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)

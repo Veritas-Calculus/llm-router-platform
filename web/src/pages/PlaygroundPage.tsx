@@ -370,7 +370,7 @@ export default function PlaygroundPage() {
 
   useEffect(() => {
     if (apiKey) {
-      sessionStorage.setItem('playground_api_key', apiKey);
+      sessionStorage.setItem('playground_api_key', apiKey); // lgtm[js/clear-text-storage-of-sensitive-data] — intentional session-scoped storage for playground
       fetchModels(apiKey);
     } else {
       sessionStorage.removeItem('playground_api_key');
@@ -464,6 +464,35 @@ export default function PlaygroundPage() {
 
   const hasBrowserSTT = typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
+  const transcribeAudio = useCallback(async (blob: Blob) => {
+    setIsTranscribing(true);
+    try {
+      const formData = new FormData();
+      const ext = blob.type.includes('webm') ? 'webm' : blob.type.includes('mp4') ? 'm4a' : 'wav';
+      formData.append('file', blob, `recording.${ext}`);
+      formData.append('model', sttModel || 'whisper-1');
+      formData.append('response_format', 'json');
+      const res = await fetch('/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: formData,
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`Transcription failed (${res.status}): ${errBody}`);
+      }
+      const data = await res.json();
+      if (data.text) {
+        setInput(prev => prev ? prev + ' ' + data.text : data.text);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Transcription failed';
+      setErrorMsg(msg);
+    } finally {
+      setIsTranscribing(false);
+    }
+  }, [apiKey, sttModel]);
+
   const startRecording = useCallback(async () => {
     if (hasBrowserSTT && !sttModel) {
       // ── Browser Web Speech API ─────────────────────
@@ -521,7 +550,7 @@ export default function PlaygroundPage() {
         console.error('Microphone access error:', err);
       }
     }
-  }, [apiKey, sttModel, hasBrowserSTT]);
+  }, [apiKey, sttModel, hasBrowserSTT, transcribeAudio]);
 
   const stopRecording = useCallback(() => {
     // Stop browser speech recognition
@@ -535,35 +564,6 @@ export default function PlaygroundPage() {
     }
     setIsRecording(false);
   }, []);
-
-  const transcribeAudio = async (blob: Blob) => {
-    setIsTranscribing(true);
-    try {
-      const formData = new FormData();
-      const ext = blob.type.includes('webm') ? 'webm' : blob.type.includes('mp4') ? 'm4a' : 'wav';
-      formData.append('file', blob, `recording.${ext}`);
-      formData.append('model', sttModel || 'whisper-1');
-      formData.append('response_format', 'json');
-      const res = await fetch('/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        body: formData,
-      });
-      if (!res.ok) {
-        const errBody = await res.text();
-        throw new Error(`Transcription failed (${res.status}): ${errBody}`);
-      }
-      const data = await res.json();
-      if (data.text) {
-        setInput(prev => prev ? prev + ' ' + data.text : data.text);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Transcription failed';
-      setErrorMsg(msg);
-    } finally {
-      setIsTranscribing(false);
-    }
-  };
 
   /* ── TTS: Text-to-Speech playback ─────────────────────────────── */
 
@@ -604,7 +604,7 @@ export default function PlaygroundPage() {
     } finally {
       setLoadingTTSIdx(null);
     }
-  }, [apiKey, playingTTSIdx]);
+  }, [apiKey, playingTTSIdx, ttsModel]);
 
   /* ── Send message ─────────────────────────────────────────────── */
 

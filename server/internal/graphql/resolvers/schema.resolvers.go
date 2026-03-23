@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/graphql/generated"
@@ -140,7 +141,7 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 			if cnt > 3 {
 				grantCredit = false
 				r.Logger.Warn("welcome credit denied: IP throttle exceeded",
-					zap.String("ip", ip), zap.Int64("count", cnt))
+					zap.String("ip", sanitize.LogValue(ip)), zap.Int64("count", cnt))
 			}
 		}
 	}
@@ -392,19 +393,19 @@ func (r *mutationResolver) DisableMfa(ctx context.Context, code string) (bool, e
 func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, name string, scopes *string, rateLimit *int, tokenLimit *int) (*model.APIKeyWithSecret, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
 	if err := r.RequireProjectRole(ctx, uid, projectID, "admin", "member"); err != nil {
-		r.Logger.Error("RequireProjectRole failed in CreateAPIKey", zap.Error(err), zap.String("uid", uid), zap.String("projectID", projectID))
+		r.Logger.Error("RequireProjectRole failed in CreateAPIKey", zap.Error(err), zap.String("uid", sanitize.LogValue(uid)), zap.String("projectID", sanitize.LogValue(projectID)))
 		return nil, err
 	}
 
 	id, err := uuid.Parse(projectID)
 	if err != nil {
-		r.Logger.Error("UUID parse failed in CreateAPIKey", zap.Error(err), zap.String("projectID", projectID))
+		r.Logger.Error("UUID parse failed in CreateAPIKey", zap.Error(err), zap.String("projectID", sanitize.LogValue(projectID)))
 		return nil, fmt.Errorf("invalid project ID")
 	}
 
 	userID, err := uuid.Parse(uid)
 	if err != nil {
-		r.Logger.Error("User UUID parse failed in CreateAPIKey", zap.Error(err), zap.String("uid", uid))
+		r.Logger.Error("User UUID parse failed in CreateAPIKey", zap.Error(err), zap.String("uid", sanitize.LogValue(uid)))
 		return nil, fmt.Errorf("invalid user ID")
 	}
 
@@ -415,7 +416,7 @@ func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, n
 
 	key, secret, err := r.UserSvc.CreateAPIKey(ctx, userID, id, name, scopeStr, rateLimit, tokenLimit)
 	if err != nil {
-		r.Logger.Error("Failed to create API key in resolver", zap.Error(err), zap.String("projectID", projectID))
+		r.Logger.Error("Failed to create API key in resolver", zap.Error(err), zap.String("projectID", sanitize.LogValue(projectID)))
 		return nil, err
 	}
 
@@ -1534,6 +1535,11 @@ func (r *mutationResolver) UpdateIntegration(ctx context.Context, name string, i
 
 // TestLangfuseConnection is the resolver for the testLangfuseConnection field.
 func (r *mutationResolver) TestLangfuseConnection(ctx context.Context, publicKey string, secretKey string, host string) (bool, error) {
+	// SSRF protection: validate host URL before making request
+	if err := sanitize.ValidateWebhookURL(host, false); err != nil {
+		return false, fmt.Errorf("invalid host URL: %w", err)
+	}
+
 	// Langfuse exposes GET /api/public/health with Basic Auth
 	url := strings.TrimRight(host, "/") + "/api/public/health"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -1542,7 +1548,10 @@ func (r *mutationResolver) TestLangfuseConnection(ctx context.Context, publicKey
 	}
 	req.SetBasicAuth(publicKey, secretKey)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: sanitize.SafeTransport(),
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return false, fmt.Errorf("connection failed: %w", err)
@@ -1946,7 +1955,7 @@ func (r *mutationResolver) SendTestEmail(ctx context.Context, to string) (bool, 
 	if emailCfg.Username != "" {
 		auth = smtp.PlainAuth("", emailCfg.Username, emailCfg.Password, emailCfg.Host)
 	}
-	if err := smtp.SendMail(addr, auth, from, []string{to}, []byte(msg)); err != nil {
+	if err := smtp.SendMail(addr, auth, safeFrom, []string{safeTo}, []byte(msg)); err != nil {
 		return false, fmt.Errorf("failed to send test email: %w", err)
 	}
 	return true, nil
@@ -2602,6 +2611,9 @@ func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string)
 	tpmKey := fmt.Sprintf("rl:tpm:%s:%d", keyID, now.Unix()/60)
 	tpmStr, _ := r.RedisClient.Get(rctx, tpmKey).Result()
 	tpmCount, _ := strconv.ParseInt(tpmStr, 10, 64)
+	if tpmCount > int64(math.MaxInt32) {
+		tpmCount = int64(math.MaxInt32)
+	}
 	result.TpmCurrent = int(tpmCount)
 	if apiKey.TokenLimit > 0 && tpmCount >= apiKey.TokenLimit {
 		result.TpmExceeded = true
@@ -2612,6 +2624,9 @@ func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string)
 	dailyKey := fmt.Sprintf("rl:key:%s:d:%s", keyID, today)
 	dailyCount, _ := r.RedisClient.Get(rctx, dailyKey).Result()
 	dailyVal, _ := strconv.ParseInt(dailyCount, 10, 64)
+	if dailyVal > int64(math.MaxInt32) {
+		dailyVal = int64(math.MaxInt32)
+	}
 	result.DailyCurrent = int(dailyVal)
 	if apiKey.DailyLimit > 0 && dailyVal >= int64(apiKey.DailyLimit) {
 		result.DailyExceeded = true

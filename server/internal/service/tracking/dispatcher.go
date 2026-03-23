@@ -93,8 +93,8 @@ func (d *Dispatcher) pushToLoki(log *models.ErrorLog, cfg models.IntegrationConf
 	d.logger.Info("pushing to loki",
 		zap.String("endpoint", strings.ReplaceAll(strings.ReplaceAll(endpoint, "\n", ""), "\r", "")),
 		zap.String("trajectory_id", strings.ReplaceAll(strings.ReplaceAll(log.TrajectoryID, "\n", ""), "\r", "")),
-		zap.String("trace_id", log.TraceID),
-		zap.String("model", log.Model),
+		zap.String("trace_id", strings.ReplaceAll(strings.ReplaceAll(log.TraceID, "\n", ""), "\r", "")),
+		zap.String("model", strings.ReplaceAll(strings.ReplaceAll(log.Model, "\n", ""), "\r", "")),
 	)
 }
 
