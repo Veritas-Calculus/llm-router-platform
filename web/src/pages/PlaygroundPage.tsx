@@ -321,7 +321,7 @@ function AttachmentBar({ attachments, onRemove }: { attachments: ImageAttachment
 
 export default function PlaygroundPage() {
   const { t } = useTranslation();
-  const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('playground_api_key') || '');
+  const [apiKey, setApiKey] = useState('');
   const [models, setModels] = useState<ModelRef[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [compareModel, setCompareModel] = useState('');
@@ -370,10 +370,8 @@ export default function PlaygroundPage() {
 
   useEffect(() => {
     if (apiKey) {
-      sessionStorage.setItem('playground_api_key', apiKey); // lgtm[js/clear-text-storage-of-sensitive-data] — intentional session-scoped storage for playground
       fetchModels(apiKey);
     } else {
-      sessionStorage.removeItem('playground_api_key');
       setModels([]);
       setSelectedModel('');
     }

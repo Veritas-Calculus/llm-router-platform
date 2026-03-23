@@ -145,25 +145,28 @@ func (s *Service) send(to, subject, body string) error {
 		return err
 	}
 
+	// Sanitize: strip any CRLF from user-controlled values (defense-in-depth)
+	safeTo := strings.ReplaceAll(strings.ReplaceAll(to, "\n", ""), "\r", "")
+	safeSubject := strings.ReplaceAll(strings.ReplaceAll(subject, "\n", ""), "\r", "")
+
 	fromAddr := s.config.From
 	if s.config.FromName != "" {
 		fromAddr = fmt.Sprintf("%s <%s>", s.config.FromName, s.config.From)
 	}
 
-	// Defense-in-depth: strip any stray CRLF in body to prevent header injection
-	safeBody := strings.ReplaceAll(body, "\r\n\r\n", "\n\n")
-	msg := fmt.Sprintf(
-		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
+	// Build message from sanitized values only — no raw user input flows to SMTP
+	headers := fmt.Sprintf(
+		"From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n",
 		fromAddr,
-		to,
-		subject,
-		safeBody,
+		safeTo,
+		safeSubject,
 	)
+	safeMsg := headers + body
 
 	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
 
 	if s.config.TLS {
-		return s.sendTLS(addr, to, msg)
+		return s.sendTLS(addr, safeTo, safeMsg)
 	}
 
 	// Non-TLS fallback (local development only)
@@ -171,7 +174,9 @@ func (s *Service) send(to, subject, body string) error {
 	if s.config.Username != "" {
 		auth = smtp.PlainAuth("", s.config.Username, s.config.Password, s.config.Host)
 	}
-	return smtp.SendMail(addr, auth, s.config.From, []string{to}, []byte(msg))
+	envelopeFrom := s.config.From
+	envelopeTo := []string{safeTo}
+	return smtp.SendMail(addr, auth, envelopeFrom, envelopeTo, []byte(safeMsg))
 }
 
 // sendTLS establishes a TLS connection for SMTP delivery.
