@@ -63,17 +63,9 @@ func (s *Service) UpdateUsageTokens(ctx context.Context, logID uuid.UUID, reques
 
 	err = s.usageRepo.Update(ctx, log)
 
-	// Refresh redis cache asynchronously
+	// Refresh redis cache — use org-scoped key matching GetUsageSummary read path
 	if s.redis != nil && err == nil && log.IsSuccess {
-		now := time.Now()
-		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
-		key := fmt.Sprintf("billing:usage:%s:%s", log.ProjectID.String(), monthStr)
-
-		pipe := s.redis.Pipeline()
-		pipe.HIncrBy(ctx, key, "total_tokens", int64(log.TotalTokens))
-		pipe.HIncrByFloat(ctx, key, "total_cost", log.Cost)
-		pipe.Expire(ctx, key, 32*24*time.Hour)
-		_, _ = pipe.Exec(ctx)
+		s.incrUsageCache(ctx, log)
 	}
 
 	return err
@@ -90,21 +82,33 @@ func (s *Service) RecordUsage(ctx context.Context, log *models.UsageLog) error {
 
 	err := s.usageRepo.Create(ctx, log)
 
-	// Refresh redis cache asynchronously
+	// Refresh redis cache — use org-scoped key matching GetUsageSummary read path
 	if s.redis != nil && err == nil {
-		now := time.Now()
-		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
-		key := fmt.Sprintf("billing:usage:%s:%s", log.ProjectID.String(), monthStr)
-
-		pipe := s.redis.Pipeline()
-		pipe.HIncrBy(ctx, key, "total_requests", 1)
-		pipe.HIncrBy(ctx, key, "total_tokens", int64(log.TotalTokens))
-		pipe.HIncrByFloat(ctx, key, "total_cost", log.Cost)
-		pipe.Expire(ctx, key, 32*24*time.Hour)
-		_, _ = pipe.Exec(ctx)
+		s.incrUsageCache(ctx, log)
 	}
 
 	return err
+}
+
+// incrUsageCache increments the Redis usage cache using org-scoped keys
+// that match the format read by GetUsageSummary.
+func (s *Service) incrUsageCache(ctx context.Context, log *models.UsageLog) {
+	// Look up the org ID from the project
+	orgID, err := s.usageRepo.GetOrgIDByProjectID(ctx, log.ProjectID)
+	if err != nil || orgID == uuid.Nil {
+		return
+	}
+
+	now := time.Now()
+	monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
+	key := fmt.Sprintf("billing:usage:org:%s:%s", orgID.String(), monthStr)
+
+	pipe := s.redis.Pipeline()
+	pipe.HIncrBy(ctx, key, "total_requests", 1)
+	pipe.HIncrBy(ctx, key, "total_tokens", int64(log.TotalTokens))
+	pipe.HIncrByFloat(ctx, key, "total_cost", log.Cost)
+	pipe.Expire(ctx, key, 32*24*time.Hour)
+	_, _ = pipe.Exec(ctx)
 }
 
 // calculateCost calculates the cost for token usage.
@@ -178,14 +182,14 @@ func (s *Service) GetUsageSummary(ctx context.Context, orgID uuid.UUID, projectI
 		summary.SuccessRate = float64(row.SuccessCount) / float64(row.TotalRequests) * 100
 	}
 
-	// Backfill Redis cache
-	if s.redis != nil && isCurrentMonth {
+	// Backfill Redis cache (skip zeros to avoid stale empty entries)
+	if s.redis != nil && isCurrentMonth && summary.TotalRequests > 0 {
 		pipe := s.redis.Pipeline()
 		pipe.HSet(ctx, key, "total_requests", summary.TotalRequests)
 		pipe.HSet(ctx, key, "total_tokens", summary.TotalTokens)
 		pipe.HSet(ctx, key, "total_cost", summary.TotalCost)
 		pipe.HSet(ctx, key, "success_rate", summary.SuccessRate)
-		pipe.Expire(ctx, key, 32*24*time.Hour)
+		pipe.Expire(ctx, key, 30*time.Second)
 		_, _ = pipe.Exec(ctx)
 	}
 
@@ -264,6 +268,20 @@ type ProviderUsage struct {
 	Requests     int64     `json:"requests"`
 	Tokens       int64     `json:"tokens"`
 	Cost         float64   `json:"cost"`
+	SuccessRate  float64   `json:"success_rate"`
+	AvgLatency   float64   `json:"avg_latency_ms"`
+}
+
+func mapProviderRows(rows []repository.ProviderUsageRow) []ProviderUsage {
+	result := make([]ProviderUsage, len(rows))
+	for i, r := range rows {
+		result[i] = ProviderUsage{
+			ProviderID: r.ProviderID, ProviderName: r.ProviderName,
+			Requests: r.Requests, Tokens: r.Tokens, Cost: r.Cost,
+			SuccessRate: r.SuccessRate, AvgLatency: r.AvgLatency,
+		}
+	}
+	return result
 }
 
 // GetUsageByProvider returns usage grouped by provider (SQL aggregation).
@@ -272,12 +290,7 @@ func (s *Service) GetUsageByProvider(ctx context.Context, orgID uuid.UUID, proje
 	if err != nil {
 		return nil, err
 	}
-
-	result := make([]ProviderUsage, len(rows))
-	for i, r := range rows {
-		result[i] = ProviderUsage{ProviderID: r.ProviderID, Requests: r.Requests, Tokens: r.Tokens, Cost: r.Cost}
-	}
-	return result, nil
+	return mapProviderRows(rows), nil
 }
 
 // GetSystemUsageByProvider returns usage grouped by provider for all users (SQL aggregation).
@@ -286,12 +299,7 @@ func (s *Service) GetSystemUsageByProvider(ctx context.Context, channel *string,
 	if err != nil {
 		return nil, err
 	}
-
-	result := make([]ProviderUsage, len(rows))
-	for i, r := range rows {
-		result[i] = ProviderUsage{ProviderID: r.ProviderID, Requests: r.Requests, Tokens: r.Tokens, Cost: r.Cost}
-	}
-	return result, nil
+	return mapProviderRows(rows), nil
 }
 
 // ModelUsage represents usage per model.
@@ -349,24 +357,27 @@ func (s *Service) GetSystemUsageByModel(ctx context.Context, channel *string, st
 	return result, nil
 }
 
-// GetRecentUsage returns recent usage logs.
-func (s *Service) GetRecentUsage(ctx context.Context, orgID uuid.UUID, projectID *uuid.UUID, limit int) ([]models.UsageLog, error) {
+// GetRecentUsage returns recent usage logs with proper pagination.
+func (s *Service) GetRecentUsage(ctx context.Context, orgID uuid.UUID, projectID *uuid.UUID, page, limit int) ([]models.UsageLog, int64, error) {
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -30)
 
-	logs, err := s.usageRepo.GetByOrgOrProjectPaginated(ctx, &orgID, projectID, startTime, endTime, limit, 0)
-	if err != nil {
-		return nil, err
+	offset := (page - 1) * limit
+	if offset < 0 {
+		offset = 0
 	}
 
-	if len(logs) > limit {
-		logs = logs[:limit]
+	logs, err := s.usageRepo.GetByOrgOrProjectPaginated(ctx, &orgID, projectID, startTime, endTime, limit, offset)
+	if err != nil {
+		return nil, 0, err
 	}
+
+	total, _ := s.usageRepo.CountByOrgOrProject(ctx, &orgID, projectID, startTime, endTime)
 
 	// Set IsSuccess based on StatusCode
 	for i := range logs {
 		logs[i].IsSuccess = logs[i].StatusCode >= 200 && logs[i].StatusCode < 300
 	}
 
-	return logs, nil
+	return logs, total, nil
 }

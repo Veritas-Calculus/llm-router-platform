@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useMutation } from '@apollo/client/react';
 import { CHANGE_PASSWORD, GENERATE_MFA_SECRET, VERIFY_AND_ENABLE_MFA, DISABLE_MFA } from '@/lib/graphql/operations';
 import { ShieldCheckIcon, ShieldExclamationIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
+import { QRCodeSVG } from 'qrcode.react';
 
 function SettingsPage() {
   const { user, updateUser } = useAuthStore();
@@ -339,7 +340,7 @@ function SettingsPage() {
                   Scan this QR code with your authenticator app (e.g., Google Authenticator, Authy).
                 </p>
                 <div className="p-4 bg-white rounded-xl border border-apple-gray-200 shadow-sm inline-block">
-                  <img src={mfaSecretData.qrCodeUrl} alt="MFA QR Code" className="w-48 h-48" />
+                  <QRCodeSVG value={mfaSecretData.qrCodeUrl} size={192} level="M" />
                 </div>
                 <div className="flex items-center gap-2 mt-2">
                   <span className="text-xs text-apple-gray-500">Manual Entry Key:</span>

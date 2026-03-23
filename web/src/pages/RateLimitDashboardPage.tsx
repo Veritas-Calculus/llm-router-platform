@@ -5,8 +5,10 @@ import {
   ShieldExclamationIcon,
   ServerIcon,
   KeyIcon,
+  BoltIcon,
 } from '@heroicons/react/24/outline';
 import { PROVIDERS_QUERY } from '@/lib/graphql/operations/providers';
+import { SUBSCRIPTION_QUOTA_QUERY } from '@/lib/graphql/operations/billing';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -66,6 +68,8 @@ function RateLimitDashboardPage() {
           </motion.div>
         ))}
       </div>
+      {/* Subscription Plan Quota */}
+      <SubscriptionQuotaSection />
 
       {/* Provider rate limits */}
       <div className="card overflow-hidden">
@@ -128,6 +132,7 @@ function RateLimitDashboardPage() {
           <div className="text-sm text-apple-gray-700">
             <p className="font-medium text-apple-gray-900 mb-1">Rate Limit Enforcement</p>
             <ul className="space-y-1 text-apple-gray-600">
+              <li>• <strong>Subscription-level:</strong> Monthly token quota enforced by plan (e.g. Free plan = 100K tokens/month)</li>
               <li>• <strong>Provider-level:</strong> Controls requests-per-minute to each LLM provider</li>
               <li>• <strong>API Key-level:</strong> Per-key rate limits configurable in API Keys page</li>
               <li>• <strong>GraphQL:</strong> Login/register limited to 5 req/min, password reset to 3 req/min</li>
@@ -141,3 +146,39 @@ function RateLimitDashboardPage() {
 }
 
 export default RateLimitDashboardPage;
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function SubscriptionQuotaSection() {
+  const { data } = useQuery<any>(SUBSCRIPTION_QUOTA_QUERY, { fetchPolicy: 'cache-and-network' });
+  const sub = data?.mySubscription;
+  if (!sub || sub.tokenLimit <= 0) return null;
+
+  const pct = sub.quotaPercentage;
+  const exceeded = sub.isQuotaExceeded;
+  const near = pct >= 80 && !exceeded;
+  const barColor = exceeded ? 'bg-red-500' : near ? 'bg-orange-400' : 'bg-apple-blue';
+  const bgColor = exceeded ? 'bg-red-50 border-red-200' : near ? 'bg-orange-50 border-orange-200' : 'bg-blue-50/50 border-blue-200';
+  const textColor = exceeded ? 'text-red-700' : near ? 'text-orange-700' : 'text-apple-blue';
+  const fmt = (n: number) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : `${n}`;
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`card p-5 border ${bgColor}`}>
+      <div className="flex items-center gap-3 mb-3">
+        <BoltIcon className={`w-5 h-5 ${textColor}`} />
+        <h2 className={`text-base font-semibold ${textColor}`}>Subscription Token Quota</h2>
+      </div>
+      <div className="flex items-center justify-between mb-2">
+        <span className={`text-sm font-medium ${textColor}`}>{sub.planName} Plan</span>
+        <span className={`text-sm font-semibold ${textColor}`}>
+          {fmt(sub.usedTokens)} / {fmt(sub.tokenLimit)}{exceeded && ' (Exceeded)'}
+        </span>
+      </div>
+      <div className="h-2.5 bg-white/60 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${barColor} transition-all duration-500`} style={{ width: `${Math.min(pct, 100)}%` }} />
+      </div>
+      {exceeded && (
+        <p className="text-xs text-red-600 mt-2">Monthly token limit reached. API requests will be rejected until the next billing period.</p>
+      )}
+    </motion.div>
+  );
+}

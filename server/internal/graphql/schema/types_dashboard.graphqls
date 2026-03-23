@@ -31,6 +31,57 @@ type ProxiesSummary {
   healthy: Int!
 }
 
+# ── Admin-specific dashboard types ──
+
+type AdminDashboard {
+  # Platform KPIs
+  totalUsers: Int!
+  activeUsersToday: Int!
+  activeUsersMonth: Int!
+  totalRevenue: Float!
+  revenueThisMonth: Float!
+  # Request aggregates (system-wide)
+  totalRequests: Int!
+  requestsToday: Int!
+  totalTokens: Int!
+  tokensToday: Int!
+  totalCost: Float!
+  costToday: Float!
+  successRate: Float!
+  errorCount: Int!
+  avgLatencyMs: Float!
+  # Infrastructure health
+  activeProviders: Int!
+  totalProviders: Int!
+  activeProxies: Int!
+  totalProxies: Int!
+  apiKeysTotal: Int!
+  apiKeysHealthy: Int!
+  mcpCallCount: Int!
+  mcpErrorCount: Int!
+}
+
+type AdminUsageByUser {
+  userId: ID!
+  userName: String!
+  email: String!
+  requests: Int!
+  tokens: Int!
+  cost: Float!
+}
+
+type RevenueChartPoint {
+  date: String!
+  revenue: Float!
+  transactions: Int!
+}
+
+type UserGrowthPoint {
+  date: String!
+  newUsers: Int!
+  totalUsers: Int!
+}
+
 type UsageChartPoint {
   date: String!
   requests: Int!

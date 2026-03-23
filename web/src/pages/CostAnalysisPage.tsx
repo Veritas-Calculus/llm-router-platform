@@ -25,7 +25,7 @@ function CostAnalysisPage() {
   const daily = useMemo(() => dailyData?.myDailyUsage || [], [dailyData]);
   const byProvider = useMemo(() => {
     const items = providerData?.myUsageByProvider || [];
-    return [...items].sort((a: any, b: any) => (b.totalCost || 0) - (a.totalCost || 0));
+    return [...items].sort((a: any, b: any) => (b.cost || 0) - (a.cost || 0));
   }, [providerData]);
 
   const totalCost = summary?.totalCost || 0;
@@ -125,7 +125,7 @@ function CostAnalysisPage() {
               <div className="p-8 text-center text-apple-gray-400">No provider data</div>
             ) : (
               byProvider.map((prov: any, i: number) => {
-                const pct = totalCost > 0 ? ((prov.totalCost || 0) / totalCost) * 100 : 0;
+                const pct = totalCost > 0 ? ((prov.cost || 0) / totalCost) * 100 : 0;
                 return (
                   <motion.div
                     key={prov.providerName}
@@ -137,7 +137,7 @@ function CostAnalysisPage() {
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-medium text-sm text-apple-gray-900">{prov.providerName}</span>
                       <div className="flex items-center gap-3 text-sm">
-                        <span className="font-semibold text-apple-gray-900">${(prov.totalCost || 0).toFixed(2)}</span>
+                        <span className="font-semibold text-apple-gray-900">${(prov.cost || 0).toFixed(2)}</span>
                         <span className="text-xs text-apple-gray-400">{pct.toFixed(1)}%</span>
                       </div>
                     </div>

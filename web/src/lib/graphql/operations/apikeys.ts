@@ -57,3 +57,14 @@ export const UPDATE_PROJECT = gql`
     }
   }
 `;
+
+export const API_KEY_RATE_LIMIT_STATUS = gql`
+  query ApiKeyRateLimitStatus($keyId: ID!) {
+    apiKeyRateLimitStatus(keyId: $keyId) {
+      keyId rpmCurrent rpmLimit rpmExceeded
+      tpmCurrent tpmLimit tpmExceeded
+      dailyCurrent dailyLimit dailyExceeded
+      status
+    }
+  }
+`;

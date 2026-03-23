@@ -11,9 +11,11 @@ import {
   XCircleIcon,
   ClockIcon,
   DocumentDuplicateIcon,
+  GiftIcon,
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation } from '@apollo/client/react';
-import { PLANS_QUERY, MY_BILLING_QUERY, CREATE_CHECKOUT_SESSION, CREATE_RECHARGE_SESSION, CREATE_PORTAL_SESSION } from '@/lib/graphql/operations';
+import { PLANS_QUERY, MY_BILLING_QUERY, CHANGE_PLAN } from '@/lib/graphql/operations';
+import { REDEEM_CODE_MUTATION } from '@/lib/graphql/operations/redeem';
 import { useTranslation } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
@@ -24,49 +26,52 @@ function SubscriptionPage() {
   const { t } = useTranslation();
   const { user } = useAuthStore();
   const { data: plansData, loading: plansLoading } = useQuery<any>(PLANS_QUERY);
-  const { data: billingData, loading: billingLoading } = useQuery<any>(MY_BILLING_QUERY);
-  const [checkoutMut] = useMutation(CREATE_CHECKOUT_SESSION);
-  const [portalMut] = useMutation(CREATE_PORTAL_SESSION);
-  const [rechargeMut] = useMutation(CREATE_RECHARGE_SESSION);
+  const { data: billingData, loading: billingLoading, refetch: refetchBilling } = useQuery<any>(MY_BILLING_QUERY);
+  const [changePlanMut] = useMutation(CHANGE_PLAN);
+  const [redeemMut] = useMutation(REDEEM_CODE_MUTATION);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'plans' | 'orders'>('plans');
+  const [redeemCode, setRedeemCode] = useState('');
+  const [redeeming, setRedeeming] = useState(false);
   const loading = plansLoading || billingLoading;
 
   const plans = useMemo(() => (plansData?.plans || []) as any[], [plansData]);
   const subscription = billingData?.mySubscription as any;
   const orders = useMemo(() => (billingData?.myOrders || []) as any[], [billingData]);
 
-  const handleSubscribe = async (planId: string) => {
+  const handleChangePlan = async (planId: string) => {
     try {
       setProcessingId(planId);
-      if (subscription?.status === 'active' && subscription?.plan?.priceMonth !== 0) {
-        // They already have a paid subscription, send them to the portal to upgrade/downgrade
-        const { data } = await portalMut();
-        const url = (data as any)?.createPortalSession?.url;
-        if (url) window.location.href = url;
-        return;
-      }
-      // Otherwise, create a new checkout session
-      const { data } = await checkoutMut({ variables: { planId } });
-      const url = (data as any)?.createCheckoutSession?.url;
-      if (url) window.location.href = url;
+      await changePlanMut({
+        variables: { planId },
+        refetchQueries: [{ query: MY_BILLING_QUERY }],
+        awaitRefetchQueries: true,
+      });
+      toast.success(t('subscription.change_success'));
     } catch {
-      toast.error(t('subscription.checkout_error'));
+      toast.error(t('subscription.change_error'));
     } finally {
       setProcessingId(null);
     }
   };
 
-  const handleRecharge = async (amount: number) => {
+  const handleRedeem = async () => {
+    if (!redeemCode.trim()) return;
     try {
-      setProcessingId(`recharge-${amount}`);
-      const { data } = await rechargeMut({ variables: { amount } });
-      const url = (data as any)?.createRechargeSession?.url;
-      if (url) window.location.href = url;
+      setRedeeming(true);
+      const { data } = await redeemMut({ variables: { code: redeemCode.trim() } });
+      const result = (data as any)?.redeemCode;
+      if (result?.success) {
+        toast.success(result.message || t('redeem.success_msg'));
+        setRedeemCode('');
+        refetchBilling();
+      } else {
+        toast.error(result?.message || t('redeem.error_msg'));
+      }
     } catch {
-      toast.error(t('subscription.recharge_error'));
+      toast.error(t('redeem.error_msg'));
     } finally {
-      setProcessingId(null);
+      setRedeeming(false);
     }
   };
 
@@ -93,6 +98,13 @@ function SubscriptionPage() {
         {s.label}
       </span>
     );
+  };
+
+  const formatTokens = (n: number) => {
+    if (n === 0) return '∞';
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+    return String(n);
   };
 
   if (loading) {
@@ -151,19 +163,6 @@ function SubscriptionPage() {
                   : '—'}
               </p>
             </div>
-            {subscription?.status === 'active' && subscription?.plan?.priceMonth !== 0 && (
-              <button
-                onClick={() => handleSubscribe('portal')}
-                disabled={!!processingId}
-                className="ml-auto text-xs font-semibold text-apple-blue hover:text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg active:scale-95 transition-all flex items-center gap-1"
-              >
-                {processingId === 'portal' ? (
-                  <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  t('subscription.manage') || 'Manage'
-                )}
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -196,9 +195,10 @@ function SubscriptionPage() {
         <>
           {/* Plan cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {plans.map((plan: any) => {
+            {plans.filter((p: any) => p.isActive).map((plan: any) => {
               const isCurrent = subscription?.planId === plan.id;
               const features = (plan.features || '').split(',').map((f: string) => f.trim()).filter(Boolean);
+              const isUpgrade = plan.priceMonth > (plans.find((p: any) => p.id === subscription?.planId)?.priceMonth || 0);
 
               return (
                 <motion.div
@@ -218,8 +218,12 @@ function SubscriptionPage() {
                     <h3 className="text-xl font-bold text-apple-gray-900">{plan.name}</h3>
                     <p className="mt-1 text-apple-gray-500 text-sm h-10">{plan.description}</p>
                     <div className="mt-4 flex items-baseline">
-                      <span className="text-3xl font-bold text-apple-gray-900">${plan.price}</span>
-                      <span className="ml-1 text-apple-gray-500 text-sm">/{t('subscription.month')}</span>
+                      <span className="text-3xl font-bold text-apple-gray-900">${plan.priceMonth}</span>
+                      <span className="ml-1 text-apple-gray-500 text-sm">{t('subscription.per_month')}</span>
+                    </div>
+                    <div className="mt-3 flex gap-4 text-xs text-apple-gray-500">
+                      <span>{formatTokens(plan.tokenLimit)} {t('subscription.token_limit')}</span>
+                      <span>{plan.rateLimit} {t('subscription.rate_limit_label')}</span>
                     </div>
                     <ul className="mt-5 space-y-2.5">
                       {features.map((f: string, i: number) => (
@@ -232,7 +236,7 @@ function SubscriptionPage() {
                   </div>
                   <div className="p-6 bg-apple-gray-50 border-t border-apple-gray-100">
                     <button
-                      onClick={() => handleSubscribe(plan.id)}
+                      onClick={() => handleChangePlan(plan.id)}
                       disabled={isCurrent || !!processingId}
                       className={`w-full py-2.5 px-4 rounded-xl font-semibold text-sm transition-all flex justify-center items-center ${
                         isCurrent
@@ -244,12 +248,10 @@ function SubscriptionPage() {
                         <ArrowPathIcon className="w-5 h-5 animate-spin" />
                       ) : isCurrent ? (
                         t('subscription.subscribed')
-                      ) : (subscription?.status === 'active' && subscription?.plan?.priceMonth !== 0) ? (
-                        t('subscription.manage') || 'Manage Subscription'
-                      ) : plan.price === 0 ? (
-                        t('subscription.free_tier')
-                      ) : (
+                      ) : isUpgrade ? (
                         t('subscription.upgrade')
+                      ) : (
+                        t('subscription.downgrade')
                       )}
                     </button>
                   </div>
@@ -258,25 +260,30 @@ function SubscriptionPage() {
             })}
           </div>
 
-          {/* Recharge */}
+          {/* Redeem Code */}
           <div className="card p-8 text-center">
-            <h2 className="text-xl font-bold text-apple-gray-900 mb-2">{t('subscription.recharge_title')}</h2>
-            <p className="text-apple-gray-500 text-sm mb-6 max-w-lg mx-auto">{t('subscription.recharge_desc')}</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl mx-auto">
-              {[10, 20, 50, 100].map((amount) => (
-                <button
-                  key={amount}
-                  onClick={() => handleRecharge(amount)}
-                  disabled={!!processingId}
-                  className="bg-apple-gray-50 border border-apple-gray-200 rounded-xl p-4 hover:border-apple-blue hover:bg-blue-50 transition-all active:scale-95 flex flex-col items-center gap-1 group"
-                >
-                  <span className="text-xl font-bold text-apple-gray-900 group-hover:text-apple-blue">${amount}</span>
-                  <span className="text-[10px] text-apple-gray-500 font-medium uppercase tracking-wider">{t('subscription.credits')}</span>
-                  {processingId === `recharge-${amount}` && (
-                    <ArrowPathIcon className="w-4 h-4 animate-spin text-apple-blue mt-1" />
-                  )}
-                </button>
-              ))}
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <GiftIcon className="w-6 h-6 text-apple-blue" />
+              <h2 className="text-xl font-bold text-apple-gray-900">{t('subscription.redeem_code')}</h2>
+            </div>
+            <p className="text-apple-gray-500 text-sm mb-6 max-w-lg mx-auto">{t('redeem.input_desc')}</p>
+            <div className="flex gap-3 max-w-md mx-auto">
+              <input
+                type="text"
+                value={redeemCode}
+                onChange={(e) => setRedeemCode(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleRedeem()}
+                placeholder={t('subscription.redeem_placeholder')}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-apple-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-apple-blue focus:border-transparent font-mono tracking-wider"
+              />
+              <button
+                onClick={handleRedeem}
+                disabled={!redeemCode.trim() || redeeming}
+                className="px-6 py-2.5 bg-apple-blue text-white rounded-xl font-semibold text-sm hover:bg-blue-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {redeeming ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <GiftIcon className="w-4 h-4" />}
+                {t('subscription.redeem_btn')}
+              </button>
             </div>
           </div>
         </>

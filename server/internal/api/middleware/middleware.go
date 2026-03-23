@@ -10,11 +10,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"llm-router-platform/internal/models"
+	"llm-router-platform/pkg/sanitize"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
-
-	"llm-router-platform/pkg/sanitize"
 )
 
 // RateLimiter provides request rate limiting backed by Redis.
@@ -69,12 +70,19 @@ func (r *RateLimiter) cleanupLoop() {
 // Limit applies sliding-window rate limiting per API key (or client IP as fallback).
 func (r *RateLimiter) Limit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		identifier := c.GetHeader("X-API-Key")
+		// Prefer API key UUID from context (set by APIKey auth middleware)
+		// so the Redis key pattern is consistent with PerKeyRateLimiter
+		// and queryable by the rate-limit-status resolver.
+		var identifier string
 		rlSource := "per_ip"
+		if keyVal, exists := c.Get("api_key"); exists {
+			if apiKey, ok := keyVal.(*models.APIKey); ok {
+				identifier = apiKey.ID.String()
+				rlSource = "per_key"
+			}
+		}
 		if identifier == "" {
 			identifier = c.ClientIP()
-		} else {
-			rlSource = "per_key"
 		}
 
 		// Determine effective rate limit

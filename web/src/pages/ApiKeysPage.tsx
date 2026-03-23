@@ -6,11 +6,13 @@ import {
   ClipboardIcon,
   XCircleIcon,
   ExclamationTriangleIcon,
+  ExclamationCircleIcon,
   KeyIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { useQuery, useMutation } from '@apollo/client/react';
-import { MY_API_KEYS, MY_ORGANIZATIONS, MY_PROJECTS, CREATE_API_KEY, REVOKE_API_KEY, DELETE_API_KEY, UPDATE_PROJECT } from '@/lib/graphql/operations';
+import { MY_API_KEYS, MY_ORGANIZATIONS, MY_PROJECTS, CREATE_API_KEY, REVOKE_API_KEY, DELETE_API_KEY, UPDATE_PROJECT, API_KEY_RATE_LIMIT_STATUS } from '@/lib/graphql/operations';
+import { SUBSCRIPTION_QUOTA_QUERY } from '@/lib/graphql/operations/billing';
 import type { ApiKey, Organization, Project } from '@/lib/types';
 
 const AVAILABLE_SCOPES = [
@@ -23,6 +25,99 @@ const AVAILABLE_SCOPES = [
 ];
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+const STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  ok: { label: 'OK', className: 'bg-green-50 text-green-700 border-green-200' },
+  near_limit: { label: 'Near Limit', className: 'bg-orange-50 text-orange-700 border-orange-200' },
+  rate_limited: { label: 'Rate Limited', className: 'bg-red-50 text-red-700 border-red-200' },
+  quota_exceeded: { label: 'Quota Exceeded', className: 'bg-red-50 text-red-700 border-red-200' },
+};
+
+function RateLimitMiniBar({ current, limit, label }: { current: number; limit: number; label: string }) {
+  if (limit <= 0) return <div className="text-[10px] text-apple-gray-400">{label}: Unlimited</div>;
+  const pct = Math.min((current / limit) * 100, 100);
+  const color = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-orange-400' : 'bg-green-500';
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] text-apple-gray-400 w-8 shrink-0">{label}</span>
+      <div className="flex-1 h-1.5 bg-apple-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color} transition-all duration-300`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-[10px] text-apple-gray-500 w-16 text-right">{current}/{limit}</span>
+    </div>
+  );
+}
+
+function RateLimitStatusCell({ keyId, isActive }: { keyId: string; isActive: boolean }) {
+  const { data } = useQuery<any>(API_KEY_RATE_LIMIT_STATUS, {
+    variables: { keyId },
+    skip: !isActive,
+    pollInterval: 10000,
+    fetchPolicy: 'network-only',
+  });
+  if (!isActive) return null;
+  const s = data?.apiKeyRateLimitStatus;
+  if (!s) return <span className="text-[10px] text-apple-gray-300">—</span>;
+  const badge = STATUS_BADGE[s.status] || STATUS_BADGE.ok;
+  return (
+    <div className="space-y-1.5">
+      <span className={`inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium border ${badge.className}`}>
+        {badge.label}
+      </span>
+      <RateLimitMiniBar current={s.rpmCurrent} limit={s.rpmLimit} label="RPM" />
+      <RateLimitMiniBar current={s.tpmCurrent} limit={s.tpmLimit} label="TPM" />
+      <RateLimitMiniBar current={s.dailyCurrent} limit={s.dailyLimit} label="Day" />
+    </div>
+  );
+}
+
+function SubscriptionQuotaBanner() {
+  const { data } = useQuery<any>(SUBSCRIPTION_QUOTA_QUERY, { fetchPolicy: 'cache-and-network' });
+  const sub = data?.mySubscription;
+  if (!sub || sub.tokenLimit <= 0) return null;
+
+  const pct = sub.quotaPercentage;
+  const isExceeded = sub.isQuotaExceeded;
+  const isNear = pct >= 80 && !isExceeded;
+
+  const barColor = isExceeded ? 'bg-red-500' : isNear ? 'bg-orange-400' : 'bg-blue-500';
+  const bgColor = isExceeded ? 'bg-red-50 border-red-200' : isNear ? 'bg-orange-50 border-orange-200' : 'bg-blue-50 border-blue-200';
+  const textColor = isExceeded ? 'text-red-700' : isNear ? 'text-orange-700' : 'text-blue-700';
+  const iconColor = isExceeded ? 'text-red-500' : isNear ? 'text-orange-500' : 'text-blue-500';
+
+  const fmtTokens = (n: number) => n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : `${n}`;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`rounded-apple-lg border p-4 ${bgColor}`}
+    >
+      <div className="flex items-center gap-3">
+        <ExclamationCircleIcon className={`w-5 h-5 shrink-0 ${iconColor}`} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-1">
+            <span className={`text-sm font-medium ${textColor}`}>
+              {sub.planName} Plan -- Token Quota
+            </span>
+            <span className={`text-xs font-medium ${textColor}`}>
+              {fmtTokens(sub.usedTokens)} / {fmtTokens(sub.tokenLimit)}
+              {isExceeded && ' (Exceeded)'}
+            </span>
+          </div>
+          <div className="h-2 bg-white/60 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full ${barColor} transition-all duration-500`} style={{ width: `${pct}%` }} />
+          </div>
+          {isExceeded && (
+            <p className="text-xs text-red-600 mt-1">
+              Monthly token limit reached. API requests will be rejected until the next billing period.
+            </p>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -255,7 +350,8 @@ function ApiKeysPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      <SubscriptionQuotaBanner />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-apple-gray-900">API Keys</h1>
@@ -415,11 +511,15 @@ function ApiKeysPage() {
                       </div>
                     </td>
                     <td className="table-cell">
-                      <div className="text-xs text-apple-gray-600 space-y-1">
-                        <div><span className="text-apple-gray-400">RPM:</span> {key.rate_limit || 'Unlimited'}</div>
-                        <div><span className="text-apple-gray-400">TPM:</span> {key.token_limit || 'Unlimited'}</div>
-                        <div><span className="text-apple-gray-400">Daily:</span> {key.daily_limit || 'Unlimited'}</div>
-                      </div>
+                      {key.is_active ? (
+                        <RateLimitStatusCell keyId={key.id} isActive={key.is_active} />
+                      ) : (
+                        <div className="text-xs text-apple-gray-600 space-y-1">
+                          <div><span className="text-apple-gray-400">RPM:</span> {key.rate_limit || 'Unlimited'}</div>
+                          <div><span className="text-apple-gray-400">TPM:</span> {key.token_limit || 'Unlimited'}</div>
+                          <div><span className="text-apple-gray-400">Daily:</span> {key.daily_limit || 'Unlimited'}</div>
+                        </div>
+                      )}
                     </td>
                     <td className="table-cell text-apple-gray-500">
                       {key.expires_at && new Date(key.expires_at).getTime() > 0

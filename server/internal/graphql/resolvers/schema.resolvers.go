@@ -21,6 +21,7 @@ import (
 	"llm-router-platform/pkg/sanitize"
 	"net/http"
 	"net/smtp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -722,38 +723,30 @@ func (r *mutationResolver) CancelTask(ctx context.Context, id string) (*model.Ta
 	return &model.Task{ID: id, Status: "cancelled"}, nil
 }
 
-// CreateCheckoutSession is the resolver for the createCheckoutSession field.
-func (r *mutationResolver) CreateCheckoutSession(ctx context.Context, planID string) (*model.CheckoutSession, error) {
-	uid, _ := directives.UserIDFromContext(ctx)
-	userID, _ := uuid.Parse(uid)
-	pid, _ := uuid.Parse(planID)
-	url, err := r.Payment.CreateCheckoutSession(ctx, userID, pid)
+// ChangePlan is the resolver for the changePlan field.
+func (r *mutationResolver) ChangePlan(ctx context.Context, planID string) (*model.UserSubscription, error) {
+	orgID, err := r.resolveOrgID(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &model.CheckoutSession{URL: url}, nil
-}
 
-// CreatePortalSession is the resolver for the createPortalSession field.
-func (r *mutationResolver) CreatePortalSession(ctx context.Context) (*model.CheckoutSession, error) {
-	uid, _ := directives.UserIDFromContext(ctx)
-	userID, _ := uuid.Parse(uid)
-	url, err := r.Payment.CreatePortalSession(ctx, userID)
+	pid, err := uuid.Parse(planID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid plan ID")
 	}
-	return &model.CheckoutSession{URL: url}, nil
-}
 
-// CreateRechargeSession is the resolver for the createRechargeSession field.
-func (r *mutationResolver) CreateRechargeSession(ctx context.Context, amount float64) (*model.CheckoutSession, error) {
-	uid, _ := directives.UserIDFromContext(ctx)
-	userID, _ := uuid.Parse(uid)
-	url, err := r.Payment.CreateRechargeSession(ctx, userID, amount)
+	sub, err := r.SubscriptionSvc.ChangePlan(ctx, orgID, pid)
 	if err != nil {
 		return nil, err
 	}
-	return &model.CheckoutSession{URL: url}, nil
+
+	return &model.UserSubscription{
+		ID: sub.ID.String(), OrgID: sub.OrgID.String(), PlanID: sub.PlanID.String(),
+		PlanName: sub.Plan.Name,
+		Status:   sub.Status, CurrentPeriodStart: sub.CurrentPeriodStart,
+		CurrentPeriodEnd: sub.CurrentPeriodEnd,
+		TokenLimit:       int(sub.Plan.TokenLimit),
+	}, nil
 }
 
 // RedeemCode is the resolver for the redeemCode field.
@@ -2295,6 +2288,106 @@ func (r *queryResolver) MyAPIKeys(ctx context.Context, projectID string) ([]*mod
 	return out, nil
 }
 
+// APIKeyRateLimitStatus is the resolver for the apiKeyRateLimitStatus field.
+func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string) (*model.APIKeyRateLimitStatus, error) {
+	// Look up API key to get its configured limits
+	var apiKey models.APIKey
+	if err := r.DB.Where("id = ?", keyID).First(&apiKey).Error; err != nil {
+		return nil, fmt.Errorf("API key not found")
+	}
+
+	result := &model.APIKeyRateLimitStatus{
+		KeyID:      keyID,
+		RpmLimit:   apiKey.RateLimit,
+		TpmLimit:   int(apiKey.TokenLimit),
+		DailyLimit: apiKey.DailyLimit,
+		Status:     "ok",
+	}
+
+	if r.RedisClient == nil {
+		return result, nil
+	}
+
+	rctx := context.Background()
+	now := time.Now()
+
+	// 1. RPM — per-key sliding window sorted set (nanosecond timestamps)
+	rpmKey := fmt.Sprintf("rl:key:%s:m", keyID)
+	windowStartNano := now.Add(-time.Minute)
+	rpmCount, _ := r.RedisClient.ZCount(rctx, rpmKey,
+		strconv.FormatInt(windowStartNano.UnixNano(), 10),
+		strconv.FormatInt(now.UnixNano(), 10)).Result()
+
+	// Also check global rate limiter sorted set (millisecond timestamps)
+	globalKey := fmt.Sprintf("ratelimit:%s", keyID)
+	windowStartMs := now.Add(-time.Minute).UnixMilli()
+	globalCount, _ := r.RedisClient.ZCount(rctx, globalKey,
+		strconv.FormatInt(windowStartMs, 10),
+		strconv.FormatInt(now.UnixMilli(), 10)).Result()
+
+	// Use the higher of the two RPM counters
+	effectiveRpm := rpmCount
+	if globalCount > effectiveRpm {
+		effectiveRpm = globalCount
+	}
+
+	result.RpmCurrent = int(effectiveRpm)
+	if apiKey.RateLimit > 0 && effectiveRpm >= int64(apiKey.RateLimit) {
+		result.RpmExceeded = true
+	}
+
+	// 2. TPM — simple counter keyed by minute
+	tpmKey := fmt.Sprintf("rl:tpm:%s:%d", keyID, now.Unix()/60)
+	tpmStr, _ := r.RedisClient.Get(rctx, tpmKey).Result()
+	tpmCount, _ := strconv.ParseInt(tpmStr, 10, 64)
+	result.TpmCurrent = int(tpmCount)
+	if apiKey.TokenLimit > 0 && tpmCount >= apiKey.TokenLimit {
+		result.TpmExceeded = true
+	}
+
+	// 3. Daily — simple counter keyed by date
+	today := now.Format("2006-01-02")
+	dailyKey := fmt.Sprintf("rl:key:%s:d:%s", keyID, today)
+	dailyCount, _ := r.RedisClient.Get(rctx, dailyKey).Result()
+	dailyVal, _ := strconv.ParseInt(dailyCount, 10, 64)
+	result.DailyCurrent = int(dailyVal)
+	if apiKey.DailyLimit > 0 && dailyVal >= int64(apiKey.DailyLimit) {
+		result.DailyExceeded = true
+	}
+
+	// Compute overall status
+	if result.RpmExceeded || result.TpmExceeded || result.DailyExceeded {
+		result.Status = "rate_limited"
+	} else {
+		// Near limit: any counter > 80% of its limit
+		nearLimit := false
+		if apiKey.RateLimit > 0 && float64(effectiveRpm)/float64(apiKey.RateLimit) > 0.8 {
+			nearLimit = true
+		}
+		if apiKey.TokenLimit > 0 && float64(tpmCount)/float64(apiKey.TokenLimit) > 0.8 {
+			nearLimit = true
+		}
+		if apiKey.DailyLimit > 0 && float64(dailyVal)/float64(apiKey.DailyLimit) > 0.8 {
+			nearLimit = true
+		}
+		if nearLimit {
+			result.Status = "near_limit"
+		}
+	}
+
+	// Check subscription plan quota (project -> org -> subscription)
+	if r.SubscriptionSvc != nil {
+		var proj struct{ OrgID uuid.UUID }
+		if err := r.DB.Table("projects").Select("org_id").Where("id = ?", apiKey.ProjectID).First(&proj).Error; err == nil {
+			if allowed, _, _ := r.SubscriptionSvc.CheckQuota(ctx, proj.OrgID); !allowed {
+				result.Status = "quota_exceeded"
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // MyUsageSummary is the resolver for the myUsageSummary field.
 func (r *queryResolver) MyUsageSummary(ctx context.Context, orgID *string, projectID *string, channel *string) (*model.UsageSummary, error) {
 	oId, err := r.resolveOrgID(ctx, orgID)
@@ -2303,9 +2396,9 @@ func (r *queryResolver) MyUsageSummary(ctx context.Context, orgID *string, proje
 	}
 	pId := r.resolveProjectID(projectID)
 
-	s, err := r.Billing.GetUsageSummary(ctx, oId, pId, nil, monthStart(), time.Now())
+	s, err := r.Billing.GetUsageSummary(ctx, oId, pId, channel, monthStart(), time.Now())
 	if err != nil {
-		return &model.UsageSummary{}, nil
+		return nil, err
 	}
 	return &model.UsageSummary{
 		TotalRequests: safeGQLInt(s.TotalRequests), SuccessRate: s.SuccessRate,
@@ -2322,7 +2415,7 @@ func (r *queryResolver) MyDailyUsage(ctx context.Context, days *int, orgID *stri
 	pId := r.resolveProjectID(projectID)
 
 	d := valInt(days, 30)
-	usage, err := r.Billing.GetDailyUsage(ctx, oId, pId, nil, d)
+	usage, err := r.Billing.GetDailyUsage(ctx, oId, pId, channel, d)
 	if err != nil {
 		return nil, err
 	}
@@ -2341,7 +2434,7 @@ func (r *queryResolver) MyUsageByProvider(ctx context.Context, orgID *string, pr
 	}
 	pId := r.resolveProjectID(projectID)
 
-	usage, err := r.Billing.GetUsageByProvider(ctx, oId, pId, nil, monthStart(), time.Now())
+	usage, err := r.Billing.GetUsageByProvider(ctx, oId, pId, channel, monthStart(), time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -2360,8 +2453,9 @@ func (r *queryResolver) MyRecentUsage(ctx context.Context, page *int, pageSize *
 	}
 	pId := r.resolveProjectID(projectID)
 
+	pg := valInt(page, 1)
 	ps := valInt(pageSize, 20)
-	logs, err := r.Billing.GetRecentUsage(ctx, oId, pId, ps)
+	logs, total, err := r.Billing.GetRecentUsage(ctx, oId, pId, pg, ps)
 	if err != nil {
 		return &model.UsageConnection{Data: []*model.UsageRecord{}, Total: 0}, nil
 	}
@@ -2375,7 +2469,7 @@ func (r *queryResolver) MyRecentUsage(ctx context.Context, page *int, pageSize *
 			CreatedAt: l.CreatedAt,
 		}
 	}
-	return &model.UsageConnection{Data: out, Total: len(out)}, nil
+	return &model.UsageConnection{Data: out, Total: int(total)}, nil
 }
 
 // MyBudget is the resolver for the myBudget field.
@@ -2422,11 +2516,29 @@ func (r *queryResolver) MySubscription(ctx context.Context, orgID *string) (*mod
 	if err != nil || sub == nil {
 		return nil, nil
 	}
-	return &model.UserSubscription{
+
+	result := &model.UserSubscription{
 		ID: sub.ID.String(), OrgID: sub.OrgID.String(), PlanID: sub.PlanID.String(),
-		Status: sub.Status, CurrentPeriodStart: sub.CurrentPeriodStart,
+		PlanName: sub.Plan.Name,
+		Status:   sub.Status, CurrentPeriodStart: sub.CurrentPeriodStart,
 		CurrentPeriodEnd: sub.CurrentPeriodEnd,
-	}, nil
+		TokenLimit:       int(sub.Plan.TokenLimit),
+	}
+
+	// Compute current period token usage
+	if sub.Plan.TokenLimit > 0 {
+		usedTokens, err := r.SubscriptionSvc.GetQuotaUsage(ctx, oId)
+		if err == nil {
+			result.UsedTokens = int(usedTokens)
+			result.QuotaPercentage = float64(usedTokens) / float64(sub.Plan.TokenLimit) * 100
+			if result.QuotaPercentage > 100 {
+				result.QuotaPercentage = 100
+			}
+			result.IsQuotaExceeded = usedTokens >= sub.Plan.TokenLimit
+		}
+	}
+
+	return result, nil
 }
 
 // MyOrders is the resolver for the myOrders field.
@@ -2506,28 +2618,69 @@ func (r *queryResolver) MyRedeemHistory(ctx context.Context) ([]*model.RedeemRec
 // Dashboard is the resolver for the dashboard field.
 func (r *queryResolver) Dashboard(ctx context.Context, projectID *string, channel *string) (*model.Dashboard, error) {
 	activeUsers, _ := r.UserSvc.CountActiveUsers(ctx, monthStart())
-	sysSummary, _ := r.Billing.GetSystemUsageSummary(ctx, nil, monthStart(), time.Now())
-	totalReq := 0
-	totalTokens := 0
-	totalCost := 0.0
-	successRate := 0.0
+	_ = r.resolveProjectID(projectID) // reserved for future project-level filter
+	now := time.Now()
+
+	// Monthly summary
+	sysSummary, _ := r.Billing.GetSystemUsageSummary(ctx, channel, monthStart(), now)
+	totalReq, totalTokens, errorCount, mcpCalls, mcpErrors := 0, 0, 0, 0, 0
+	totalCost, successRate := 0.0, 0.0
 	if sysSummary != nil {
 		totalReq = int(sysSummary.TotalRequests)
 		totalTokens = int(sysSummary.TotalTokens)
 		totalCost = sysSummary.TotalCost
 		successRate = sysSummary.SuccessRate
+		errorCount = int(sysSummary.ErrorCount)
+		mcpCalls = int(sysSummary.MCPCallCount)
+		mcpErrors = int(sysSummary.MCPErrorCount)
 	}
+
+	// Today's summary
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	todayReq, todayTokens := 0, 0
+	todayCost := 0.0
+	if todaySummary, err := r.Billing.GetSystemUsageSummary(ctx, channel, todayStart, now); err == nil && todaySummary != nil {
+		todayReq = int(todaySummary.TotalRequests)
+		todayTokens = int(todaySummary.TotalTokens)
+		todayCost = todaySummary.TotalCost
+	}
+
+	// Provider count from DB
+	var provTotal, provActive int64
+	r.DB.WithContext(ctx).Model(&models.Provider{}).Count(&provTotal)
+	r.DB.WithContext(ctx).Model(&models.Provider{}).Where("is_active = ?", true).Count(&provActive)
+
+	// Proxy count
+	var proxyTotal, proxyActive int64
+	r.DB.WithContext(ctx).Model(&models.Proxy{}).Count(&proxyTotal)
+	r.DB.WithContext(ctx).Model(&models.Proxy{}).Where("is_active = ?", true).Count(&proxyActive)
+
+	// API Key count
+	var keyTotal, keyActive int64
+	r.DB.WithContext(ctx).Model(&models.APIKey{}).Count(&keyTotal)
+	r.DB.WithContext(ctx).Model(&models.APIKey{}).Where("is_active = ?", true).Count(&keyActive)
+
 	return &model.Dashboard{
 		TotalRequests: totalReq, SuccessRate: successRate,
 		TotalTokens: totalTokens, TotalCost: totalCost,
-		ActiveUsers: int(activeUsers),
+		ActiveUsers:     int(activeUsers),
+		ActiveProviders: int(provActive),
+		ActiveProxies:   int(proxyActive),
+		RequestsToday:   todayReq,
+		CostToday:       todayCost,
+		TokensToday:     todayTokens,
+		ErrorCount:      errorCount,
+		McpCallCount:    mcpCalls,
+		McpErrorCount:   mcpErrors,
+		APIKeys:         &model.APIKeysSummary{Total: int(keyTotal), Healthy: int(keyActive)},
+		Proxies:         &model.ProxiesSummary{Total: int(proxyTotal), Healthy: int(proxyActive)},
 	}, nil
 }
 
 // UsageChart is the resolver for the usageChart field.
 func (r *queryResolver) UsageChart(ctx context.Context, days *int, projectID *string, channel *string) ([]*model.UsageChartPoint, error) {
 	d := valInt(days, 30)
-	usage, err := r.Billing.GetSystemDailyUsage(ctx, nil, d)
+	usage, err := r.Billing.GetSystemDailyUsage(ctx, channel, d)
 	if err != nil {
 		return nil, err
 	}
@@ -2540,26 +2693,226 @@ func (r *queryResolver) UsageChart(ctx context.Context, days *int, projectID *st
 
 // ProviderStats is the resolver for the providerStats field.
 func (r *queryResolver) ProviderStats(ctx context.Context, projectID *string, channel *string) ([]*model.ProviderStats, error) {
-	usage, err := r.Billing.GetSystemUsageByProvider(ctx, nil, monthStart(), time.Now())
+	usage, err := r.Billing.GetSystemUsageByProvider(ctx, channel, monthStart(), time.Now())
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*model.ProviderStats, len(usage))
 	for i, u := range usage {
-		out[i] = &model.ProviderStats{ProviderName: u.ProviderName, Requests: int(u.Requests), Tokens: int(u.Tokens), TotalCost: u.Cost}
+		out[i] = &model.ProviderStats{
+			ProviderName: u.ProviderName, Requests: int(u.Requests),
+			Tokens: int(u.Tokens), TotalCost: u.Cost,
+			SuccessRate: u.SuccessRate, AvgLatencyMs: u.AvgLatency,
+		}
 	}
 	return out, nil
 }
 
 // ModelStats is the resolver for the modelStats field.
 func (r *queryResolver) ModelStats(ctx context.Context, projectID *string, channel *string) ([]*model.ModelStats, error) {
-	usage, err := r.Billing.GetSystemUsageByModel(ctx, nil, monthStart(), time.Now())
+	usage, err := r.Billing.GetSystemUsageByModel(ctx, channel, monthStart(), time.Now())
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*model.ModelStats, len(usage))
 	for i, u := range usage {
 		out[i] = &model.ModelStats{ModelName: u.ModelName, Requests: int(u.Requests), TotalCost: u.Cost}
+	}
+	return out, nil
+}
+
+// AdminDashboard is the resolver for the adminDashboard field.
+func (r *queryResolver) AdminDashboard(ctx context.Context) (*model.AdminDashboard, error) {
+	now := time.Now()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// User counts
+	var totalUsers int64
+	r.DB.WithContext(ctx).Model(&models.User{}).Count(&totalUsers)
+
+	activeUsersToday, _ := r.UserSvc.CountActiveUsers(ctx, todayStart)
+	activeUsersMonth, _ := r.UserSvc.CountActiveUsers(ctx, monthStart)
+
+	// Revenue
+	var totalRevenue, revenueMonth float64
+	r.DB.WithContext(ctx).Model(&models.Transaction{}).
+		Where("type = ?", "recharge").
+		Where("amount > 0").
+		Select("COALESCE(SUM(amount), 0)").Scan(&totalRevenue)
+	r.DB.WithContext(ctx).Model(&models.Transaction{}).
+		Where("type = ?", "recharge").
+		Where("amount > 0").
+		Where("created_at >= ?", monthStart).
+		Select("COALESCE(SUM(amount), 0)").Scan(&revenueMonth)
+
+	// System usage summary
+	sysSummary, _ := r.Billing.GetSystemUsageSummary(ctx, nil, monthStart, now)
+	totalReq, totalTokens, errorCount, mcpCalls, mcpErrors := 0, 0, 0, 0, 0
+	totalCost, successRate, avgLatency := 0.0, 0.0, 0.0
+	if sysSummary != nil {
+		totalReq = int(sysSummary.TotalRequests)
+		totalTokens = int(sysSummary.TotalTokens)
+		totalCost = sysSummary.TotalCost
+		successRate = sysSummary.SuccessRate
+		errorCount = int(sysSummary.ErrorCount)
+		mcpCalls = int(sysSummary.MCPCallCount)
+		mcpErrors = int(sysSummary.MCPErrorCount)
+		avgLatency = sysSummary.AvgLatency
+	}
+
+	// Today
+	todayReq, todayTokens := 0, 0
+	todayCost := 0.0
+	if ts, err := r.Billing.GetSystemUsageSummary(ctx, nil, todayStart, now); err == nil && ts != nil {
+		todayReq = int(ts.TotalRequests)
+		todayTokens = int(ts.TotalTokens)
+		todayCost = ts.TotalCost
+	}
+
+	// Infrastructure
+	var provTotal, provActive, proxyTotal, proxyActive, keyTotal, keyActive int64
+	r.DB.WithContext(ctx).Model(&models.Provider{}).Count(&provTotal)
+	r.DB.WithContext(ctx).Model(&models.Provider{}).Where("is_active = ?", true).Count(&provActive)
+	r.DB.WithContext(ctx).Model(&models.Proxy{}).Count(&proxyTotal)
+	r.DB.WithContext(ctx).Model(&models.Proxy{}).Where("is_active = ?", true).Count(&proxyActive)
+	r.DB.WithContext(ctx).Model(&models.APIKey{}).Count(&keyTotal)
+	r.DB.WithContext(ctx).Model(&models.APIKey{}).Where("is_active = ?", true).Count(&keyActive)
+
+	return &model.AdminDashboard{
+		TotalUsers:       int(totalUsers),
+		ActiveUsersToday: int(activeUsersToday),
+		ActiveUsersMonth: int(activeUsersMonth),
+		TotalRevenue:     totalRevenue,
+		RevenueThisMonth: revenueMonth,
+		TotalRequests:    totalReq,
+		RequestsToday:    todayReq,
+		TotalTokens:      totalTokens,
+		TokensToday:      todayTokens,
+		TotalCost:        totalCost,
+		CostToday:        todayCost,
+		SuccessRate:      successRate,
+		ErrorCount:       errorCount,
+		AvgLatencyMs:     avgLatency,
+		ActiveProviders:  int(provActive),
+		TotalProviders:   int(provTotal),
+		ActiveProxies:    int(proxyActive),
+		TotalProxies:     int(proxyTotal),
+		APIKeysTotal:     int(keyTotal),
+		APIKeysHealthy:   int(keyActive),
+		McpCallCount:     mcpCalls,
+		McpErrorCount:    mcpErrors,
+	}, nil
+}
+
+// AdminUsageByUser is the resolver for the adminUsageByUser field.
+func (r *queryResolver) AdminUsageByUser(ctx context.Context, days *int) ([]*model.AdminUsageByUser, error) {
+	d := valInt(days, 30)
+	since := time.Now().AddDate(0, 0, -d)
+
+	type row struct {
+		UserID   string
+		UserName string
+		Email    string
+		Requests int
+		Tokens   int
+		Cost     float64
+	}
+	var rows []row
+	err := r.DB.WithContext(ctx).
+		Table("usage_logs").
+		Select("usage_logs.user_id, users.name as user_name, users.email, COUNT(*) as requests, COALESCE(SUM(usage_logs.total_tokens), 0) as tokens, COALESCE(SUM(usage_logs.cost), 0) as cost").
+		Joins("LEFT JOIN users ON users.id = usage_logs.user_id").
+		Where("usage_logs.created_at >= ?", since).
+		Group("usage_logs.user_id, users.name, users.email").
+		Order("requests DESC").
+		Limit(50).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]*model.AdminUsageByUser, len(rows))
+	for i, row := range rows {
+		out[i] = &model.AdminUsageByUser{
+			UserID:   row.UserID,
+			UserName: row.UserName,
+			Email:    row.Email,
+			Requests: row.Requests,
+			Tokens:   row.Tokens,
+			Cost:     row.Cost,
+		}
+	}
+	return out, nil
+}
+
+// AdminRevenueChart is the resolver for the adminRevenueChart field.
+func (r *queryResolver) AdminRevenueChart(ctx context.Context, days *int) ([]*model.RevenueChartPoint, error) {
+	d := valInt(days, 30)
+	since := time.Now().AddDate(0, 0, -d)
+
+	type row struct {
+		Date         string
+		Revenue      float64
+		Transactions int
+	}
+	var rows []row
+	err := r.DB.WithContext(ctx).
+		Table("transactions").
+		Select("TO_CHAR(created_at, 'YYYY-MM-DD') as date, COALESCE(SUM(amount), 0) as revenue, COUNT(*) as transactions").
+		Where("type = ? AND amount > 0 AND created_at >= ?", "recharge", since).
+		Group("TO_CHAR(created_at, 'YYYY-MM-DD')").
+		Order("date ASC").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]*model.RevenueChartPoint, len(rows))
+	for i, row := range rows {
+		out[i] = &model.RevenueChartPoint{
+			Date:         row.Date,
+			Revenue:      row.Revenue,
+			Transactions: row.Transactions,
+		}
+	}
+	return out, nil
+}
+
+// AdminUserGrowth is the resolver for the adminUserGrowth field.
+func (r *queryResolver) AdminUserGrowth(ctx context.Context, days *int) ([]*model.UserGrowthPoint, error) {
+	d := valInt(days, 30)
+	since := time.Now().AddDate(0, 0, -d)
+
+	type row struct {
+		Date     string
+		NewUsers int
+	}
+	var rows []row
+	err := r.DB.WithContext(ctx).
+		Table("users").
+		Select("TO_CHAR(created_at, 'YYYY-MM-DD') as date, COUNT(*) as new_users").
+		Where("created_at >= ?", since).
+		Group("TO_CHAR(created_at, 'YYYY-MM-DD')").
+		Order("date ASC").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate cumulative total
+	var totalBefore int64
+	r.DB.WithContext(ctx).Model(&models.User{}).Where("created_at < ?", since).Count(&totalBefore)
+
+	out := make([]*model.UserGrowthPoint, len(rows))
+	running := int(totalBefore)
+	for i, row := range rows {
+		running += row.NewUsers
+		out[i] = &model.UserGrowthPoint{
+			Date:       row.Date,
+			NewUsers:   row.NewUsers,
+			TotalUsers: running,
+		}
 	}
 	return out, nil
 }

@@ -10,6 +10,40 @@ import (
 	"time"
 )
 
+type AdminDashboard struct {
+	TotalUsers       int     `json:"totalUsers"`
+	ActiveUsersToday int     `json:"activeUsersToday"`
+	ActiveUsersMonth int     `json:"activeUsersMonth"`
+	TotalRevenue     float64 `json:"totalRevenue"`
+	RevenueThisMonth float64 `json:"revenueThisMonth"`
+	TotalRequests    int     `json:"totalRequests"`
+	RequestsToday    int     `json:"requestsToday"`
+	TotalTokens      int     `json:"totalTokens"`
+	TokensToday      int     `json:"tokensToday"`
+	TotalCost        float64 `json:"totalCost"`
+	CostToday        float64 `json:"costToday"`
+	SuccessRate      float64 `json:"successRate"`
+	ErrorCount       int     `json:"errorCount"`
+	AvgLatencyMs     float64 `json:"avgLatencyMs"`
+	ActiveProviders  int     `json:"activeProviders"`
+	TotalProviders   int     `json:"totalProviders"`
+	ActiveProxies    int     `json:"activeProxies"`
+	TotalProxies     int     `json:"totalProxies"`
+	APIKeysTotal     int     `json:"apiKeysTotal"`
+	APIKeysHealthy   int     `json:"apiKeysHealthy"`
+	McpCallCount     int     `json:"mcpCallCount"`
+	McpErrorCount    int     `json:"mcpErrorCount"`
+}
+
+type AdminUsageByUser struct {
+	UserID   string  `json:"userId"`
+	UserName string  `json:"userName"`
+	Email    string  `json:"email"`
+	Requests int     `json:"requests"`
+	Tokens   int     `json:"tokens"`
+	Cost     float64 `json:"cost"`
+}
+
 type Alert struct {
 	ID             string     `json:"id"`
 	TargetType     string     `json:"targetType"`
@@ -109,6 +143,20 @@ type APIKeyHealth struct {
 	LastCheck    *time.Time `json:"lastCheck,omitempty"`
 	ResponseTime float64    `json:"responseTime"`
 	SuccessRate  float64    `json:"successRate"`
+}
+
+type APIKeyRateLimitStatus struct {
+	KeyID         string `json:"keyId"`
+	RpmCurrent    int    `json:"rpmCurrent"`
+	RpmLimit      int    `json:"rpmLimit"`
+	RpmExceeded   bool   `json:"rpmExceeded"`
+	TpmCurrent    int    `json:"tpmCurrent"`
+	TpmLimit      int    `json:"tpmLimit"`
+	TpmExceeded   bool   `json:"tpmExceeded"`
+	DailyCurrent  int    `json:"dailyCurrent"`
+	DailyLimit    int    `json:"dailyLimit"`
+	DailyExceeded bool   `json:"dailyExceeded"`
+	Status        string `json:"status"`
 }
 
 type APIKeyWithSecret struct {
@@ -910,6 +958,12 @@ type ResetPasswordInput struct {
 	NewPassword string `json:"newPassword"`
 }
 
+type RevenueChartPoint struct {
+	Date         string  `json:"date"`
+	Revenue      float64 `json:"revenue"`
+	Transactions int     `json:"transactions"`
+}
+
 type RoutingRule struct {
 	ID                 string    `json:"id"`
 	Name               string    `json:"name"`
@@ -1164,6 +1218,12 @@ type UserDetail struct {
 	UsageMonth        *UserMonthlyUsage `json:"usageMonth,omitempty"`
 }
 
+type UserGrowthPoint struct {
+	Date       string `json:"date"`
+	NewUsers   int    `json:"newUsers"`
+	TotalUsers int    `json:"totalUsers"`
+}
+
 type UserListItem struct {
 	ID          string     `json:"id"`
 	Email       string     `json:"email"`
@@ -1188,11 +1248,16 @@ type UserSubscription struct {
 	ID                 string    `json:"id"`
 	OrgID              string    `json:"orgId"`
 	PlanID             string    `json:"planId"`
+	PlanName           string    `json:"planName"`
 	Status             string    `json:"status"`
 	CurrentPeriodStart time.Time `json:"currentPeriodStart"`
 	CurrentPeriodEnd   time.Time `json:"currentPeriodEnd"`
 	CancelAtPeriodEnd  bool      `json:"cancelAtPeriodEnd"`
 	Plan               *Plan     `json:"plan"`
+	UsedTokens         int       `json:"usedTokens"`
+	TokenLimit         int       `json:"tokenLimit"`
+	QuotaPercentage    float64   `json:"quotaPercentage"`
+	IsQuotaExceeded    bool      `json:"isQuotaExceeded"`
 }
 
 type WebhookDelivery struct {

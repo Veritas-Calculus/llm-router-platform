@@ -71,6 +71,20 @@ type ApiKey {
   createdAt: DateTime!
 }
 
+type ApiKeyRateLimitStatus {
+  keyId: ID!
+  rpmCurrent: Int!
+  rpmLimit: Int!
+  rpmExceeded: Boolean!
+  tpmCurrent: Int!
+  tpmLimit: Int!
+  tpmExceeded: Boolean!
+  dailyCurrent: Int!
+  dailyLimit: Int!
+  dailyExceeded: Boolean!
+  status: String!
+}
+
 type ApiKeyWithSecret {
   id: ID!
   projectId: ID!

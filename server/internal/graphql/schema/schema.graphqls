@@ -20,6 +20,7 @@ type Query {
   identityProviders(orgId: ID!): [IdentityProvider!]! @auth
   myProjects(orgId: ID!): [Project!]! @auth
   myApiKeys(projectId: ID!): [ApiKey!]! @auth
+  apiKeyRateLimitStatus(keyId: ID!): ApiKeyRateLimitStatus! @auth
   myUsageSummary(orgId: ID, projectId: ID, channel: String): UsageSummary! @auth
   myDailyUsage(days: Int = 30, orgId: ID, projectId: ID, channel: String): [DailyStats!]! @auth
   myUsageByProvider(orgId: ID, projectId: ID, channel: String): [ProviderUsage!]! @auth
@@ -32,11 +33,17 @@ type Query {
   myAnomalyDetection: AnomalyResult! @auth
   myRedeemHistory: [RedeemRecord!]! @auth
 
-  # ── Dashboard ──
+  # -- Dashboard --
   dashboard(projectId: ID, channel: String): Dashboard! @auth
   usageChart(days: Int = 30, projectId: ID, channel: String): [UsageChartPoint!]! @auth
   providerStats(projectId: ID, channel: String): [ProviderStats!]! @auth
   modelStats(projectId: ID, channel: String): [ModelStats!]! @auth
+
+  # -- Admin Dashboard & Analytics --
+  adminDashboard: AdminDashboard! @auth(role: ADMIN)
+  adminUsageByUser(days: Int = 30): [AdminUsageByUser!]! @auth(role: ADMIN)
+  adminRevenueChart(days: Int = 30): [RevenueChartPoint!]! @auth(role: ADMIN)
+  adminUserGrowth(days: Int = 30): [UserGrowthPoint!]! @auth(role: ADMIN)
 
   # ── Plans（需要登录）──
   plans: [Plan!]! @auth
@@ -145,9 +152,7 @@ type Mutation {
   cancelTask(id: ID!): Task! @auth
 
   # ── Plans & Payments ──
-  createCheckoutSession(planId: ID!): CheckoutSession! @auth
-  createPortalSession: CheckoutSession! @auth
-  createRechargeSession(amount: Float!): CheckoutSession! @auth
+  changePlan(planId: ID!): UserSubscription! @auth
 
   # ── Redeem Codes ──
   redeemCode(code: String!): RedeemResult! @auth

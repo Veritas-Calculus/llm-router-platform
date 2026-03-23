@@ -140,7 +140,7 @@ function AdminPlansPage() {
                   <td className="px-4 py-3 font-medium">{plan.name}</td>
                   <td className="px-4 py-3 text-right">${plan.priceMonth.toFixed(2)}/mo</td>
                   <td className="px-4 py-3 text-right">{(plan.tokenLimit / 1000).toFixed(0)}K</td>
-                  <td className="px-4 py-3 text-right">{plan.rateLimit} req/s</td>
+                  <td className="px-4 py-3 text-right">{plan.rateLimit} req/min</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
                       plan.isActive ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>

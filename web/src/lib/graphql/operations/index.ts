@@ -1,6 +1,7 @@
 // Barrel exports for all GraphQL operations.
 export * from './auth';
 export * from './dashboard';
+export * from './adminDashboard';
 export * from './userDashboard';
 export * from './users';
 export * from './providers';
@@ -14,9 +15,7 @@ export {
   PLANS_QUERY,
   SET_BUDGET,
   DELETE_BUDGET,
-  CREATE_CHECKOUT_SESSION,
-  CREATE_RECHARGE_SESSION,
-  CREATE_PORTAL_SESSION,
+  CHANGE_PLAN,
   CREATE_PLAN,
   UPDATE_PLAN,
 } from './billing';

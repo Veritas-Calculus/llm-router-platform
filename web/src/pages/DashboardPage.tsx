@@ -1,75 +1,50 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
- 
-import { useState, useEffect } from 'react';
+
 import { motion } from 'framer-motion';
+import { useQuery } from '@apollo/client/react';
 import {
   ArrowTrendingUpIcon,
   CurrencyDollarIcon,
-  BoltIcon,
-  CheckCircleIcon,
   ClockIcon,
+  CheckCircleIcon,
   ExclamationCircleIcon,
   ServerStackIcon,
   KeyIcon,
   GlobeAltIcon,
   CommandLineIcon,
+  UsersIcon,
+  BanknotesIcon,
 } from '@heroicons/react/24/outline';
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { useAuthStore } from '@/stores/authStore';
-import { useDashboard } from '@/hooks/useDashboard';
+import { useTranslation } from '@/lib/i18n';
+import { ADMIN_DASHBOARD_QUERY } from '@/lib/graphql/operations/adminDashboard';
 
-/* ── Admin Dashboard ── */
+/* -- Helpers -- */
 
-interface StatCardProps {
-  title: string;
-  value: string | number;
-  subtitle?: string;
-  icon: React.ElementType;
-  color: 'blue' | 'green' | 'orange' | 'purple' | 'red';
-  trend?: { value: number; label: string };
-}
+const fmtNum = (v: number): string => {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+  return new Intl.NumberFormat('en-US').format(v);
+};
 
-function StatCard({ title, value, subtitle, icon: Icon, color, trend }: StatCardProps) {
-  const colorClasses = {
-    blue: 'bg-blue-50 text-blue-600',
-    green: 'bg-green-50 text-green-600',
-    orange: 'bg-orange-50 text-orange-600',
-    purple: 'bg-purple-50 text-purple-600',
-    red: 'bg-red-50 text-red-600',
-  };
+const fmtCurrency = (v: number): string =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="card"
-    >
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-apple-gray-500 mb-1">{title}</p>
-          <p className="text-2xl font-semibold text-apple-gray-900">{value}</p>
-          {subtitle && <p className="text-sm text-apple-gray-400 mt-1">{subtitle}</p>}
-          {trend && (
-            <p className={`text-xs mt-1 ${trend.value >= 0 ? 'text-apple-green' : 'text-apple-red'}`}>
-              {trend.value >= 0 ? '+' : '-'} {Math.abs(trend.value)}% {trend.label}
-            </p>
-          )}
-        </div>
-        <div className={`p-3 rounded-apple ${colorClasses[color]}`}>
-          <Icon className="w-6 h-6" />
-        </div>
-      </div>
-    </motion.div>
-  );
-}
+const fmtTokens = (v: number): string => {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+  return new Intl.NumberFormat('en-US').format(v);
+};
 
 const tooltipStyle = {
   backgroundColor: '#fff',
@@ -78,35 +53,79 @@ const tooltipStyle = {
   boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
 };
 
+const COLORS = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF3B30', '#5AC8FA'];
+
+/* -- Stat Card -- */
+
+interface StatCardProps {
+  title: string;
+  value: string | number;
+  subtitle?: string;
+  icon: React.ElementType;
+  color: 'blue' | 'green' | 'orange' | 'purple' | 'red' | 'indigo';
+}
+
+function StatCard({ title, value, subtitle, icon: Icon, color }: StatCardProps) {
+  const cls: Record<string, string> = {
+    blue: 'bg-blue-50 text-blue-600',
+    green: 'bg-green-50 text-green-600',
+    orange: 'bg-orange-50 text-orange-600',
+    purple: 'bg-purple-50 text-purple-600',
+    red: 'bg-red-50 text-red-600',
+    indigo: 'bg-indigo-50 text-indigo-600',
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm text-apple-gray-500 mb-1">{title}</p>
+          <p className="text-2xl font-semibold text-apple-gray-900">{value}</p>
+          {subtitle && <p className="text-sm text-apple-gray-400 mt-1">{subtitle}</p>}
+        </div>
+        <div className={`p-3 rounded-apple ${cls[color]}`}>
+          <Icon className="w-6 h-6" />
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+/* -- Health Badge -- */
+
+function HealthBadge({ healthy, total, icon: Icon, label }: { healthy: number; total: number; icon: React.ElementType; label: string }) {
+  const pct = total > 0 ? Math.round((healthy / total) * 100) : 0;
+  const color = pct >= 80 ? 'green' : pct >= 50 ? 'orange' : 'red';
+  const bg = color === 'green' ? 'bg-green-100 text-apple-green' : color === 'orange' ? 'bg-orange-100 text-apple-orange' : 'bg-red-100 text-apple-red';
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-apple-gray-50 rounded-apple"><Icon className="w-5 h-5 text-apple-gray-600" /></div>
+          <div>
+            <p className="text-sm text-apple-gray-500">{label}</p>
+            <p className="text-xl font-semibold text-apple-gray-900">{healthy} / {total}</p>
+          </div>
+        </div>
+        <div className={`px-2 py-1 rounded-full text-xs font-medium ${bg}`}>{pct}%</div>
+      </div>
+    </motion.div>
+  );
+}
+
+/* -- Admin Dashboard Page -- */
+
 function DashboardPage() {
-  const { user, adminView, isAdmin } = useAuthStore();
-  const showAdminDashboard = isAdmin && adminView;
-  const [channelFilter, setChannelFilter] = useState('');
-  const [debouncedChannel, setDebouncedChannel] = useState('');
+  const { t } = useTranslation();
+  const { data, loading } = useQuery<any>(ADMIN_DASHBOARD_QUERY, { pollInterval: 30_000 });
 
+  const d = data?.adminDashboard;
+  const chartData = data?.usageChart || [];
+  const providerStats = data?.providerStats || [];
+  const modelStats = data?.modelStats || [];
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedChannel(channelFilter);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [channelFilter]);
-
-  const {
-    stats,
-    chartData,
-    providerStats,
-    modelStats,
-    loading,
-    formatCurrency,
-    formatNumber,
-    formatTokens,
-    COLORS,
-  } = useDashboard({
-    channel: debouncedChannel || undefined
-  });
-
-  if (loading && !stats) {
+  if (loading && !d) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-apple-blue" />
@@ -116,230 +135,133 @@ function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-apple-gray-900">Dashboard</h1>
-          <p className="text-apple-gray-500 mt-1">Overview of your LLM usage and performance</p>
+          <h1 className="text-2xl font-semibold text-apple-gray-900">{t('admin.dashboard.title')}</h1>
+          <p className="text-apple-gray-500 mt-1">{t('admin.dashboard.subtitle')}</p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Filter by channel..."
-              value={channelFilter}
-              onChange={(e) => setChannelFilter(e.target.value)}
-              className="pl-3 pr-4 py-2 text-sm border border-apple-gray-200 rounded-apple-lg focus:outline-none focus:ring-2 focus:ring-apple-blue/50 focus:border-apple-blue transition-shadow bg-white w-48"
-            />
-          </div>
-          <div className="text-right whitespace-nowrap hidden sm:block">
-            <p className="text-sm text-apple-gray-500">Last updated</p>
-            <p className="text-sm font-medium text-apple-gray-700">
-              {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-            </p>
-          </div>
+        <div className="text-right hidden sm:block">
+          <p className="text-sm text-apple-gray-500">{t('admin.dashboard.last_updated')}</p>
+          <p className="text-sm font-medium text-apple-gray-700">
+            {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+          </p>
         </div>
       </div>
 
-
-
-      {/* Quota Warnings */}
-      {user && (user.monthly_budget_usd! > 0 || user.monthly_token_limit! > 0 || user.balance !== undefined) && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card bg-apple-gray-50 border border-apple-gray-200">
-            <div className="flex justify-between text-sm mb-2">
-              <span className="font-semibold text-apple-gray-900">Current Balance</span>
-              <span className="text-apple-blue font-bold">
-                {formatCurrency(user.balance || 0)}
-              </span>
-            </div>
-            <div className="text-xs text-apple-gray-500">Available for pay-as-you-go usage</div>
-          </motion.div>
-
-          {user.monthly_budget_usd! > 0 && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card bg-apple-gray-50 border border-apple-gray-200">
-              <div className="flex justify-between text-sm mb-2">
-                <span className="font-semibold text-apple-gray-900">Monthly Budget</span>
-                <span className="text-apple-gray-600 font-medium">
-                  {formatCurrency(stats?.total_cost || 0)} / {formatCurrency(user.monthly_budget_usd!)}
-                </span>
-              </div>
-              <div className="w-full bg-[var(--theme-bg-input)] rounded-full h-2.5 overflow-hidden border border-apple-gray-200">
-                <div
-                  className={`h-2.5 rounded-full ${((stats?.total_cost || 0) / user.monthly_budget_usd!) > 0.9 ? 'bg-apple-red' : ((stats?.total_cost || 0) / user.monthly_budget_usd!) > 0.75 ? 'bg-apple-orange' : 'bg-apple-blue'}`}
-                  style={{ width: `${Math.min(100, ((stats?.total_cost || 0) / user.monthly_budget_usd!) * 100)}%` }}
-                ></div>
-              </div>
-            </motion.div>
-          )}
-
-          {user.monthly_token_limit! > 0 && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card bg-apple-gray-50 border border-apple-gray-200">
-              <div className="flex justify-between text-sm mb-2">
-                <span className="font-semibold text-apple-gray-900">Monthly Token Limit</span>
-                <span className="text-apple-gray-600 font-medium">
-                  {formatTokens(stats?.total_tokens || 0)} / {formatTokens(user.monthly_token_limit!)}
-                </span>
-              </div>
-              <div className="w-full bg-[var(--theme-bg-input)] rounded-full h-2.5 overflow-hidden border border-apple-gray-200">
-                <div
-                  className={`h-2.5 rounded-full ${((stats?.total_tokens || 0) / user.monthly_token_limit!) > 0.9 ? 'bg-apple-red' : ((stats?.total_tokens || 0) / user.monthly_token_limit!) > 0.75 ? 'bg-apple-orange' : 'bg-apple-purple'}`}
-                  style={{ width: `${Math.min(100, ((stats?.total_tokens || 0) / user.monthly_token_limit!) * 100)}%` }}
-                ></div>
-              </div>
-            </motion.div>
-          )}
-        </div>
-      )}
-
-      {/* Main Stats Row */}
+      {/* Row 1: Platform KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Total Requests" value={formatNumber(stats?.total_requests || 0)} subtitle={`${formatNumber(stats?.requests_today || 0)} today`} icon={ArrowTrendingUpIcon} color="blue" />
-        <StatCard title="Total Tokens" value={formatTokens(stats?.total_tokens || 0)} subtitle={`${formatTokens(stats?.tokens_today || 0)} today`} icon={ClockIcon} color="purple" />
-        <StatCard title="Total Cost" value={formatCurrency(stats?.total_cost || 0)} subtitle={`${formatCurrency(stats?.cost_today || 0)} today`} icon={CurrencyDollarIcon} color="orange" />
+        <StatCard title={t('admin.dashboard.total_users')} value={fmtNum(d?.totalUsers || 0)} subtitle={`${d?.activeUsersToday || 0} ${t('admin.dashboard.active_today')}`} icon={UsersIcon} color="indigo" />
+        <StatCard title={t('admin.dashboard.active_users_month')} value={fmtNum(d?.activeUsersMonth || 0)} icon={UsersIcon} color="blue" />
+        <StatCard title={t('admin.dashboard.total_revenue')} value={fmtCurrency(d?.totalRevenue || 0)} icon={BanknotesIcon} color="green" />
+        <StatCard title={t('admin.dashboard.revenue_this_month')} value={fmtCurrency(d?.revenueThisMonth || 0)} icon={CurrencyDollarIcon} color="orange" />
+      </div>
+
+      {/* Row 2: Usage KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard title={t('admin.dashboard.total_requests')} value={fmtNum(d?.totalRequests || 0)} subtitle={`${fmtNum(d?.requestsToday || 0)} ${t('admin.dashboard.today')}`} icon={ArrowTrendingUpIcon} color="blue" />
+        <StatCard title={t('admin.dashboard.total_tokens')} value={fmtTokens(d?.totalTokens || 0)} subtitle={`${fmtTokens(d?.tokensToday || 0)} ${t('admin.dashboard.today')}`} icon={ClockIcon} color="purple" />
+        <StatCard title={t('admin.dashboard.total_cost')} value={fmtCurrency(d?.totalCost || 0)} subtitle={`${fmtCurrency(d?.costToday || 0)} ${t('admin.dashboard.today')}`} icon={CurrencyDollarIcon} color="orange" />
         <StatCard
-          title="Success Rate"
-          value={`${(stats?.success_rate || 0).toFixed(1)}%`}
-          subtitle={`${stats?.error_count || 0} errors`}
-          icon={stats?.success_rate && stats.success_rate >= 95 ? CheckCircleIcon : ExclamationCircleIcon}
-          color={stats?.success_rate && stats.success_rate >= 95 ? 'green' : 'red'}
+          title={t('admin.dashboard.success_rate')}
+          value={`${(d?.successRate || 0).toFixed(1)}%`}
+          subtitle={`${d?.errorCount || 0} ${t('admin.dashboard.errors')}`}
+          icon={d?.successRate >= 95 ? CheckCircleIcon : ExclamationCircleIcon}
+          color={d?.successRate >= 95 ? 'green' : 'red'}
         />
       </div>
 
-      {/* System Health Row — Admin view only */}
-      {showAdminDashboard && (
+      {/* Row 3: Infrastructure Health */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <HealthBadge healthy={d?.activeProviders || 0} total={d?.totalProviders || 0} icon={ServerStackIcon} label={t('admin.dashboard.providers')} />
+        <HealthBadge healthy={d?.activeProxies || 0} total={d?.totalProxies || 0} icon={GlobeAltIcon} label={t('admin.dashboard.proxies')} />
+        <HealthBadge healthy={d?.apiKeysHealthy || 0} total={d?.apiKeysTotal || 0} icon={KeyIcon} label={t('admin.dashboard.api_keys')} />
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-50 rounded-apple"><ServerStackIcon className="w-5 h-5 text-blue-600" /></div>
-              <div>
-                <p className="text-sm text-apple-gray-500">Active Providers</p>
-                <p className="text-xl font-semibold text-apple-gray-900">{stats?.active_providers || 0}</p>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="card">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-purple-50 rounded-apple"><CommandLineIcon className="w-5 h-5 text-purple-600" /></div>
               <div>
-                <p className="text-sm text-apple-gray-500">MCP Tool Calls</p>
-                <p className="text-xl font-semibold text-apple-gray-900">{stats?.mcp_call_count || 0}</p>
+                <p className="text-sm text-apple-gray-500">{t('admin.dashboard.mcp_calls')}</p>
+                <p className="text-xl font-semibold text-apple-gray-900">{fmtNum(d?.mcpCallCount || 0)}</p>
               </div>
             </div>
-            <div className={`px-2 py-1 rounded-full text-xs font-medium ${stats?.mcp_error_count === 0 ? 'bg-green-100 text-apple-green' : 'bg-red-100 text-apple-red'}`}>
-              {stats?.mcp_error_count || 0} errors
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-50 rounded-apple"><KeyIcon className="w-5 h-5 text-green-600" /></div>
-              <div>
-                <p className="text-sm text-apple-gray-500">API Keys Health</p>
-                <p className="text-xl font-semibold text-apple-gray-900">{stats?.api_keys?.healthy || 0} / {stats?.api_keys?.total || 0}</p>
-              </div>
-            </div>
-            <div className={`px-2 py-1 rounded-full text-xs font-medium ${(stats?.api_keys?.total && (stats?.api_keys?.healthy || 0) / stats.api_keys.total >= 0.8) ? 'bg-green-100 text-apple-green' : 'bg-orange-100 text-apple-orange'}`}>
-              {stats?.api_keys?.total ? Math.round((stats?.api_keys?.healthy || 0) / stats.api_keys.total * 100) : 0}%
-            </div>
-          </div>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="card">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-50 rounded-apple"><GlobeAltIcon className="w-5 h-5 text-purple-600" /></div>
-              <div>
-                <p className="text-sm text-apple-gray-500">Proxies Health</p>
-                <p className="text-xl font-semibold text-apple-gray-900">{stats?.proxies?.healthy || 0} / {stats?.proxies?.total || 0}</p>
-              </div>
-            </div>
-            <div className={`px-2 py-1 rounded-full text-xs font-medium ${(stats?.proxies?.total && (stats?.proxies?.healthy || 0) / stats.proxies.total >= 0.8) ? 'bg-green-100 text-apple-green' : 'bg-orange-100 text-apple-orange'}`}>
-              {stats?.proxies?.total ? Math.round((stats?.proxies?.healthy || 0) / stats.proxies.total * 100) : 0}%
+            <div className={`px-2 py-1 rounded-full text-xs font-medium ${(d?.mcpErrorCount || 0) === 0 ? 'bg-green-100 text-apple-green' : 'bg-red-100 text-apple-red'}`}>
+              {d?.mcpErrorCount || 0} errors
             </div>
           </div>
         </motion.div>
       </div>
-      )}
 
-      {/* Charts Row */}
+      {/* Charts Row 1: Request Trend + Cost Trend */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card">
-          <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Request Trend (7 Days)</h2>
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card">
+          <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">{t('admin.dashboard.request_trend')}</h2>
           <div className="h-64" style={{ minHeight: '256px' }}>
-            {(!chartData || chartData.length === 0) ? (
+            {chartData.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-apple-gray-400">
                 <ArrowTrendingUpIcon className="w-10 h-10 mb-2 opacity-50" />
-                <p className="text-sm font-medium">No request data yet</p>
-                <p className="text-xs mt-1">Data will appear once API requests are made</p>
+                <p className="text-sm font-medium">{t('admin.dashboard.no_data')}</p>
               </div>
             ) : (
-            <ResponsiveContainer width="100%" height="100%" minHeight={256}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
-                <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
-                <YAxis stroke="#8E8E93" fontSize={12} />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Line type="monotone" dataKey="requests" stroke="#007AFF" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+              <ResponsiveContainer width="100%" height="100%" minHeight={256}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
+                  <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
+                  <YAxis stroke="#8E8E93" fontSize={12} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Line type="monotone" dataKey="requests" stroke="#007AFF" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
             )}
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="card">
-          <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Cost Trend</h2>
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card">
+          <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">{t('admin.dashboard.cost_trend')}</h2>
           <div className="h-64" style={{ minHeight: '256px' }}>
-            {(!chartData || chartData.length === 0) ? (
+            {chartData.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-apple-gray-400">
                 <CurrencyDollarIcon className="w-10 h-10 mb-2 opacity-50" />
-                <p className="text-sm font-medium">No cost data yet</p>
-                <p className="text-xs mt-1">Costs will be tracked as usage grows</p>
+                <p className="text-sm font-medium">{t('admin.dashboard.no_data')}</p>
               </div>
             ) : (
-            <ResponsiveContainer width="100%" height="100%" minHeight={256}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
-                <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
-                <YAxis stroke="#8E8E93" fontSize={12} tickFormatter={(v) => `$${v.toFixed(2)}`} />
-                <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`$${Number(value).toFixed(4)}`, 'Cost']} />
-                <Line type="monotone" dataKey="cost" stroke="#FF9500" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+              <ResponsiveContainer width="100%" height="100%" minHeight={256}>
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
+                  <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
+                  <YAxis stroke="#8E8E93" fontSize={12} tickFormatter={(v) => `$${v.toFixed(2)}`} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`$${Number(value).toFixed(4)}`, 'Cost']} />
+                  <Bar dataKey="cost" fill="#FF9500" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             )}
           </div>
         </motion.div>
       </div>
 
-      {/* Provider & Model Stats — Admin view only */}
-      {showAdminDashboard && (
+      {/* Provider & Model Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="card">
-          <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Provider Usage</h2>
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card">
+          <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">{t('admin.dashboard.provider_usage')}</h2>
           {providerStats.length === 0 ? (
-            <div className="h-64 flex items-center justify-center text-apple-gray-400">
-              <div className="text-center"><ServerStackIcon className="w-12 h-12 mx-auto mb-2 opacity-50" /><p>No provider usage data yet</p></div>
+            <div className="h-48 flex items-center justify-center text-apple-gray-400">
+              <div className="text-center"><ServerStackIcon className="w-12 h-12 mx-auto mb-2 opacity-50" /><p>{t('admin.dashboard.no_data')}</p></div>
             </div>
           ) : (
             <div className="space-y-4">
-              {providerStats.slice(0, 5).map((provider: any, index: number) => (
-                <div key={provider.provider_id} className="flex items-center justify-between">
+              {providerStats.slice(0, 5).map((p: any, i: number) => (
+                <div key={p.providerName} className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                    <span className="font-medium text-apple-gray-900">{provider.provider_name}</span>
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                    <span className="font-medium text-apple-gray-900">{p.providerName}</span>
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <p className="text-sm font-medium text-apple-gray-900">{formatNumber(provider.requests)} req</p>
-                      <p className="text-xs text-apple-gray-500">{formatCurrency(provider.total_cost)}</p>
+                      <p className="text-sm font-medium text-apple-gray-900">{fmtNum(p.requests)} req</p>
+                      <p className="text-xs text-apple-gray-500">{fmtCurrency(p.totalCost)}</p>
                     </div>
-                    <div className={`px-2 py-0.5 rounded text-xs font-medium ${provider.success_rate >= 95 ? 'bg-green-100 text-apple-green' : provider.success_rate >= 80 ? 'bg-orange-100 text-apple-orange' : 'bg-red-100 text-apple-red'}`}>
-                      {provider.success_rate?.toFixed(0) || 0}%
+                    <div className={`px-2 py-0.5 rounded text-xs font-medium ${p.successRate >= 95 ? 'bg-green-100 text-apple-green' : p.successRate >= 80 ? 'bg-orange-100 text-apple-orange' : 'bg-red-100 text-apple-red'}`}>
+                      {p.successRate?.toFixed(0) || 0}%
                     </div>
                   </div>
                 </div>
@@ -348,26 +270,26 @@ function DashboardPage() {
           )}
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="card">
-          <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Top Models</h2>
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card">
+          <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">{t('admin.dashboard.top_models')}</h2>
           {modelStats.length === 0 ? (
-            <div className="h-64 flex items-center justify-center text-apple-gray-400">
-              <div className="text-center"><BoltIcon className="w-12 h-12 mx-auto mb-2 opacity-50" /><p>No model usage data yet</p></div>
+            <div className="h-48 flex items-center justify-center text-apple-gray-400">
+              <div className="text-center"><ClockIcon className="w-12 h-12 mx-auto mb-2 opacity-50" /><p>{t('admin.dashboard.no_data')}</p></div>
             </div>
           ) : (
             <div className="space-y-4">
-              {modelStats.slice(0, 5).map((model: any, index: number) => (
-                <div key={model.model_id} className="flex items-center justify-between">
+              {modelStats.slice(0, 5).map((m: any, i: number) => (
+                <div key={m.modelName} className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="w-6 h-6 bg-apple-gray-100 rounded-full flex items-center justify-center text-sm font-medium text-apple-gray-600">{index + 1}</span>
+                    <span className="w-6 h-6 bg-apple-gray-100 rounded-full flex items-center justify-center text-sm font-medium text-apple-gray-600">{i + 1}</span>
                     <div>
-                      <span className="font-medium text-apple-gray-900">{model.model_name}</span>
-                      <p className="text-xs text-apple-gray-500">{formatTokens(model.input_tokens)} in / {formatTokens(model.output_tokens)} out</p>
+                      <span className="font-medium text-apple-gray-900">{m.modelName}</span>
+                      <p className="text-xs text-apple-gray-500">{fmtTokens(m.inputTokens)} in / {fmtTokens(m.outputTokens)} out</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-medium text-apple-gray-900">{formatNumber(model.requests)} requests</p>
-                    <p className="text-xs text-apple-gray-500">{formatCurrency(model.total_cost)}</p>
+                    <p className="text-sm font-medium text-apple-gray-900">{fmtNum(m.requests)} req</p>
+                    <p className="text-xs text-apple-gray-500">{fmtCurrency(m.totalCost)}</p>
                   </div>
                 </div>
               ))}
@@ -375,31 +297,6 @@ function DashboardPage() {
           )}
         </motion.div>
       </div>
-      )}
-
-      {/* Token Usage Chart */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="card">
-        <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Token Usage Trend</h2>
-        <div className="h-64" style={{ minHeight: '256px' }}>
-          {(!chartData || chartData.length === 0) ? (
-            <div className="flex flex-col items-center justify-center h-full text-apple-gray-400">
-              <ClockIcon className="w-10 h-10 mb-2 opacity-50" />
-              <p className="text-sm font-medium">No token data yet</p>
-              <p className="text-xs mt-1">Token usage will be tracked per request</p>
-            </div>
-          ) : (
-          <ResponsiveContainer width="100%" height="100%" minHeight={256}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
-              <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
-              <YAxis stroke="#8E8E93" fontSize={12} tickFormatter={(v) => formatTokens(v)} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(value) => [formatTokens(Number(value)), 'Tokens']} />
-              <Line type="monotone" dataKey="tokens" stroke="#AF52DE" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-          )}
-        </div>
-      </motion.div>
     </div>
   );
 }

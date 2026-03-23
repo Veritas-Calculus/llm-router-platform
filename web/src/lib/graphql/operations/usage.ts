@@ -18,7 +18,7 @@ export const MY_DAILY_USAGE = gql`
 
 export const MY_USAGE_BY_PROVIDER = gql`
   query MyUsageByProvider($projectId: ID, $channel: String) {
-    myUsageByProvider(projectId: $projectId, channel: $channel) { providerName requests tokens totalCost }
+    myUsageByProvider(projectId: $projectId, channel: $channel) { providerName requests tokens cost }
   }
 `;
 

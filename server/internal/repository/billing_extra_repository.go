@@ -92,7 +92,9 @@ func (r *SubscriptionRepository) GetByStripeCustomerID(ctx context.Context, cust
 }
 
 func (r *SubscriptionRepository) Update(ctx context.Context, sub *models.Subscription) error {
-	return r.db.WithContext(ctx).Save(sub).Error
+	return r.db.WithContext(ctx).
+		Select("plan_id", "status", "current_period_start", "current_period_end", "cancel_at_period_end", "stripe_customer_id", "stripe_subscription_id", "updated_at").
+		Save(sub).Error
 }
 
 func (r *SubscriptionRepository) Delete(ctx context.Context, id uuid.UUID) error {

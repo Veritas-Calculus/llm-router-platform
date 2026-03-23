@@ -192,22 +192,31 @@ func (r *UsageLogRepository) AggregateDailyByTimeRange(ctx context.Context, orgI
 
 // ProviderUsageRow holds a single SQL-aggregated provider usage bucket.
 type ProviderUsageRow struct {
-	ProviderID uuid.UUID `json:"provider_id"`
-	Requests   int64     `json:"requests"`
-	Tokens     int64     `json:"tokens"`
-	Cost       float64   `json:"cost"`
+	ProviderID   uuid.UUID `json:"provider_id"`
+	ProviderName string    `json:"provider_name"`
+	Requests     int64     `json:"requests"`
+	Tokens       int64     `json:"tokens"`
+	Cost         float64   `json:"cost"`
+	SuccessRate  float64   `json:"success_rate"`
+	AvgLatency   float64   `json:"avg_latency"`
 }
 
 // AggregateByProviderByTimeRange returns usage grouped by provider (SQL GROUP BY).
 func (r *UsageLogRepository) AggregateByProviderByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) ([]ProviderUsageRow, error) {
 	var rows []ProviderUsageRow
 	query := r.db.WithContext(ctx).Model(&models.UsageLog{}).
+		Joins("LEFT JOIN providers ON usage_logs.provider_id = providers.id").
 		Select(`usage_logs.provider_id,
+				COALESCE(providers.name, '') AS provider_name,
 				COUNT(usage_logs.id) AS requests,
 				COALESCE(SUM(usage_logs.total_tokens), 0) AS tokens,
-				COALESCE(SUM(usage_logs.cost), 0) AS cost`).
+				COALESCE(SUM(usage_logs.cost), 0) AS cost,
+				CASE WHEN COUNT(usage_logs.id) > 0
+					THEN COALESCE(SUM(CASE WHEN usage_logs.status_code >= 200 AND usage_logs.status_code < 300 THEN 1 ELSE 0 END), 0) * 100.0 / COUNT(usage_logs.id)
+					ELSE 0 END AS success_rate,
+				COALESCE(AVG(usage_logs.latency), 0) AS avg_latency`).
 		Where("usage_logs.created_at >= ? AND usage_logs.created_at <= ?", start, end).
-		Group("usage_logs.provider_id")
+		Group("usage_logs.provider_id, providers.name")
 
 	if orgID != nil {
 		query = query.Joins("JOIN projects ON usage_logs.project_id = projects.id").Where("projects.org_id = ?", *orgID)
@@ -264,4 +273,32 @@ func (r *UsageLogRepository) AggregateByModelByTimeRange(ctx context.Context, or
 		return nil, err
 	}
 	return rows, nil
+}
+
+// CountByOrgOrProject counts total usage logs matching org/project in a time range (for pagination).
+func (r *UsageLogRepository) CountByOrgOrProject(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, start, end time.Time) (int64, error) {
+	var count int64
+	query := r.db.WithContext(ctx).Model(&models.UsageLog{}).
+		Where("usage_logs.created_at >= ? AND usage_logs.created_at <= ?", start, end)
+
+	if orgID != nil {
+		query = query.Joins("JOIN projects ON usage_logs.project_id = projects.id").Where("projects.org_id = ?", *orgID)
+	}
+	if projectID != nil {
+		query = query.Where("usage_logs.project_id = ?", *projectID)
+	}
+
+	if err := query.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// GetOrgIDByProjectID looks up the organization ID for a given project.
+func (r *UsageLogRepository) GetOrgIDByProjectID(ctx context.Context, projectID uuid.UUID) (uuid.UUID, error) {
+	var project models.Project
+	if err := r.db.WithContext(ctx).Select("org_id").Where("id = ?", projectID).First(&project).Error; err != nil {
+		return uuid.Nil, err
+	}
+	return project.OrgID, nil
 }

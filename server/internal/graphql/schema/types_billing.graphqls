@@ -18,11 +18,17 @@ type UserSubscription {
   id: ID!
   orgId: ID!
   planId: ID!
+  planName: String!
   status: String!
   currentPeriodStart: DateTime!
   currentPeriodEnd: DateTime!
   cancelAtPeriodEnd: Boolean!
   plan: Plan!
+  # Quota usage fields
+  usedTokens: Int!
+  tokenLimit: Int!
+  quotaPercentage: Float!
+  isQuotaExceeded: Boolean!
 }
 
 type Order {

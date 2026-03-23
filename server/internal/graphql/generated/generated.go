@@ -38,6 +38,40 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	AdminDashboard struct {
+		APIKeysHealthy   func(childComplexity int) int
+		APIKeysTotal     func(childComplexity int) int
+		ActiveProviders  func(childComplexity int) int
+		ActiveProxies    func(childComplexity int) int
+		ActiveUsersMonth func(childComplexity int) int
+		ActiveUsersToday func(childComplexity int) int
+		AvgLatencyMs     func(childComplexity int) int
+		CostToday        func(childComplexity int) int
+		ErrorCount       func(childComplexity int) int
+		McpCallCount     func(childComplexity int) int
+		McpErrorCount    func(childComplexity int) int
+		RequestsToday    func(childComplexity int) int
+		RevenueThisMonth func(childComplexity int) int
+		SuccessRate      func(childComplexity int) int
+		TokensToday      func(childComplexity int) int
+		TotalCost        func(childComplexity int) int
+		TotalProviders   func(childComplexity int) int
+		TotalProxies     func(childComplexity int) int
+		TotalRequests    func(childComplexity int) int
+		TotalRevenue     func(childComplexity int) int
+		TotalTokens      func(childComplexity int) int
+		TotalUsers       func(childComplexity int) int
+	}
+
+	AdminUsageByUser struct {
+		Cost     func(childComplexity int) int
+		Email    func(childComplexity int) int
+		Requests func(childComplexity int) int
+		Tokens   func(childComplexity int) int
+		UserID   func(childComplexity int) int
+		UserName func(childComplexity int) int
+	}
+
 	Alert struct {
 		AcknowledgedAt func(childComplexity int) int
 		AlertType      func(childComplexity int) int
@@ -114,6 +148,20 @@ type ComplexityRoot struct {
 		ProviderName func(childComplexity int) int
 		ResponseTime func(childComplexity int) int
 		SuccessRate  func(childComplexity int) int
+	}
+
+	ApiKeyRateLimitStatus struct {
+		DailyCurrent  func(childComplexity int) int
+		DailyExceeded func(childComplexity int) int
+		DailyLimit    func(childComplexity int) int
+		KeyID         func(childComplexity int) int
+		RpmCurrent    func(childComplexity int) int
+		RpmExceeded   func(childComplexity int) int
+		RpmLimit      func(childComplexity int) int
+		Status        func(childComplexity int) int
+		TpmCurrent    func(childComplexity int) int
+		TpmExceeded   func(childComplexity int) int
+		TpmLimit      func(childComplexity int) int
 	}
 
 	ApiKeyWithSecret struct {
@@ -459,6 +507,7 @@ type ComplexityRoot struct {
 		BatchCreateProxies           func(childComplexity int, input model.BatchProxyInput) int
 		CancelTask                   func(childComplexity int, id string) int
 		ChangePassword               func(childComplexity int, input model.ChangePasswordInput) int
+		ChangePlan                   func(childComplexity int, planID string) int
 		CheckAPIKeyHealth            func(childComplexity int, id string) int
 		CheckAllProviderHealth       func(childComplexity int) int
 		CheckProviderHealth          func(childComplexity int, id string) int
@@ -467,7 +516,6 @@ type ComplexityRoot struct {
 		ClearSemanticCache           func(childComplexity int, id string) int
 		CreateAPIKey                 func(childComplexity int, projectID string, name string, scopes *string, rateLimit *int, tokenLimit *int) int
 		CreateAnnouncement           func(childComplexity int, input model.AnnouncementInput) int
-		CreateCheckoutSession        func(childComplexity int, planID string) int
 		CreateCoupon                 func(childComplexity int, input model.CouponInput) int
 		CreateDocument               func(childComplexity int, input model.DocumentInput) int
 		CreateIdentityProvider       func(childComplexity int, input model.CreateIdentityProviderInput) int
@@ -476,12 +524,10 @@ type ComplexityRoot struct {
 		CreateModel                  func(childComplexity int, providerID string, input model.ModelInput) int
 		CreateNotificationChannel    func(childComplexity int, input model.NotificationChannelInput) int
 		CreatePlan                   func(childComplexity int, input model.PlanInput) int
-		CreatePortalSession          func(childComplexity int) int
 		CreatePromptTemplate         func(childComplexity int, input model.PromptTemplateInput) int
 		CreatePromptVersion          func(childComplexity int, input model.PromptVersionInput) int
 		CreateProviderAPIKey         func(childComplexity int, providerID string, input model.ProviderAPIKeyInput) int
 		CreateProxy                  func(childComplexity int, input model.ProxyInput) int
-		CreateRechargeSession        func(childComplexity int, amount float64) int
 		CreateRoutingRule            func(childComplexity int, input model.CreateRoutingRuleInput) int
 		CreateTask                   func(childComplexity int, input model.CreateTaskInput) int
 		CreateWebhookEndpoint        func(childComplexity int, input model.CreateWebhookEndpointInput) int
@@ -750,7 +796,12 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
+		APIKeyRateLimitStatus  func(childComplexity int, keyID string) int
 		ActiveAnnouncements    func(childComplexity int) int
+		AdminDashboard         func(childComplexity int) int
+		AdminRevenueChart      func(childComplexity int, days *int) int
+		AdminUsageByUser       func(childComplexity int, days *int) int
+		AdminUserGrowth        func(childComplexity int, days *int) int
 		AlertConfig            func(childComplexity int, targetType string, targetID string) int
 		Alerts                 func(childComplexity int, status *string) int
 		Announcements          func(childComplexity int) int
@@ -872,6 +923,12 @@ type ComplexityRoot struct {
 	RegistrationMode struct {
 		InviteCodeRequired func(childComplexity int) int
 		Mode               func(childComplexity int) int
+	}
+
+	RevenueChartPoint struct {
+		Date         func(childComplexity int) int
+		Revenue      func(childComplexity int) int
+		Transactions func(childComplexity int) int
 	}
 
 	RoutingRule struct {
@@ -1050,6 +1107,12 @@ type ComplexityRoot struct {
 		UsageMonth        func(childComplexity int) int
 	}
 
+	UserGrowthPoint struct {
+		Date       func(childComplexity int) int
+		NewUsers   func(childComplexity int) int
+		TotalUsers func(childComplexity int) int
+	}
+
 	UserListItem struct {
 		APIKeyCount func(childComplexity int) int
 		CreatedAt   func(childComplexity int) int
@@ -1075,10 +1138,15 @@ type ComplexityRoot struct {
 		CurrentPeriodEnd   func(childComplexity int) int
 		CurrentPeriodStart func(childComplexity int) int
 		ID                 func(childComplexity int) int
+		IsQuotaExceeded    func(childComplexity int) int
 		OrgID              func(childComplexity int) int
 		Plan               func(childComplexity int) int
 		PlanID             func(childComplexity int) int
+		PlanName           func(childComplexity int) int
+		QuotaPercentage    func(childComplexity int) int
 		Status             func(childComplexity int) int
+		TokenLimit         func(childComplexity int) int
+		UsedTokens         func(childComplexity int) int
 	}
 
 	WebhookDelivery struct {
@@ -1137,9 +1205,7 @@ type MutationResolver interface {
 	ExportUsageCSV(ctx context.Context) (string, error)
 	CreateTask(ctx context.Context, input model.CreateTaskInput) (*model.Task, error)
 	CancelTask(ctx context.Context, id string) (*model.Task, error)
-	CreateCheckoutSession(ctx context.Context, planID string) (*model.CheckoutSession, error)
-	CreatePortalSession(ctx context.Context) (*model.CheckoutSession, error)
-	CreateRechargeSession(ctx context.Context, amount float64) (*model.CheckoutSession, error)
+	ChangePlan(ctx context.Context, planID string) (*model.UserSubscription, error)
 	RedeemCode(ctx context.Context, code string) (*model.RedeemResult, error)
 	ToggleUser(ctx context.Context, id string) (*model.User, error)
 	UpdateUserRole(ctx context.Context, id string, role string) (*model.User, error)
@@ -1222,6 +1288,7 @@ type QueryResolver interface {
 	IdentityProviders(ctx context.Context, orgID string) ([]*model.IdentityProvider, error)
 	MyProjects(ctx context.Context, orgID string) ([]*model.Project, error)
 	MyAPIKeys(ctx context.Context, projectID string) ([]*model.APIKey, error)
+	APIKeyRateLimitStatus(ctx context.Context, keyID string) (*model.APIKeyRateLimitStatus, error)
 	MyUsageSummary(ctx context.Context, orgID *string, projectID *string, channel *string) (*model.UsageSummary, error)
 	MyDailyUsage(ctx context.Context, days *int, orgID *string, projectID *string, channel *string) ([]*model.DailyStats, error)
 	MyUsageByProvider(ctx context.Context, orgID *string, projectID *string, channel *string) ([]*model.ProviderUsage, error)
@@ -1237,6 +1304,10 @@ type QueryResolver interface {
 	UsageChart(ctx context.Context, days *int, projectID *string, channel *string) ([]*model.UsageChartPoint, error)
 	ProviderStats(ctx context.Context, projectID *string, channel *string) ([]*model.ProviderStats, error)
 	ModelStats(ctx context.Context, projectID *string, channel *string) ([]*model.ModelStats, error)
+	AdminDashboard(ctx context.Context) (*model.AdminDashboard, error)
+	AdminUsageByUser(ctx context.Context, days *int) ([]*model.AdminUsageByUser, error)
+	AdminRevenueChart(ctx context.Context, days *int) ([]*model.RevenueChartPoint, error)
+	AdminUserGrowth(ctx context.Context, days *int) ([]*model.UserGrowthPoint, error)
 	Plans(ctx context.Context) ([]*model.Plan, error)
 	Users(ctx context.Context, q *string, page *int, pageSize *int) (*model.UserConnection, error)
 	User(ctx context.Context, id string) (*model.UserDetail, error)
@@ -1303,6 +1374,176 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	ec := newExecutionContext(nil, e, nil)
 	_ = ec
 	switch typeName + "." + field {
+
+	case "AdminDashboard.apiKeysHealthy":
+		if e.ComplexityRoot.AdminDashboard.APIKeysHealthy == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.APIKeysHealthy(childComplexity), true
+	case "AdminDashboard.apiKeysTotal":
+		if e.ComplexityRoot.AdminDashboard.APIKeysTotal == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.APIKeysTotal(childComplexity), true
+	case "AdminDashboard.activeProviders":
+		if e.ComplexityRoot.AdminDashboard.ActiveProviders == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.ActiveProviders(childComplexity), true
+	case "AdminDashboard.activeProxies":
+		if e.ComplexityRoot.AdminDashboard.ActiveProxies == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.ActiveProxies(childComplexity), true
+	case "AdminDashboard.activeUsersMonth":
+		if e.ComplexityRoot.AdminDashboard.ActiveUsersMonth == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.ActiveUsersMonth(childComplexity), true
+	case "AdminDashboard.activeUsersToday":
+		if e.ComplexityRoot.AdminDashboard.ActiveUsersToday == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.ActiveUsersToday(childComplexity), true
+	case "AdminDashboard.avgLatencyMs":
+		if e.ComplexityRoot.AdminDashboard.AvgLatencyMs == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.AvgLatencyMs(childComplexity), true
+	case "AdminDashboard.costToday":
+		if e.ComplexityRoot.AdminDashboard.CostToday == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.CostToday(childComplexity), true
+	case "AdminDashboard.errorCount":
+		if e.ComplexityRoot.AdminDashboard.ErrorCount == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.ErrorCount(childComplexity), true
+	case "AdminDashboard.mcpCallCount":
+		if e.ComplexityRoot.AdminDashboard.McpCallCount == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.McpCallCount(childComplexity), true
+	case "AdminDashboard.mcpErrorCount":
+		if e.ComplexityRoot.AdminDashboard.McpErrorCount == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.McpErrorCount(childComplexity), true
+	case "AdminDashboard.requestsToday":
+		if e.ComplexityRoot.AdminDashboard.RequestsToday == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.RequestsToday(childComplexity), true
+	case "AdminDashboard.revenueThisMonth":
+		if e.ComplexityRoot.AdminDashboard.RevenueThisMonth == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.RevenueThisMonth(childComplexity), true
+	case "AdminDashboard.successRate":
+		if e.ComplexityRoot.AdminDashboard.SuccessRate == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.SuccessRate(childComplexity), true
+	case "AdminDashboard.tokensToday":
+		if e.ComplexityRoot.AdminDashboard.TokensToday == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.TokensToday(childComplexity), true
+	case "AdminDashboard.totalCost":
+		if e.ComplexityRoot.AdminDashboard.TotalCost == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.TotalCost(childComplexity), true
+	case "AdminDashboard.totalProviders":
+		if e.ComplexityRoot.AdminDashboard.TotalProviders == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.TotalProviders(childComplexity), true
+	case "AdminDashboard.totalProxies":
+		if e.ComplexityRoot.AdminDashboard.TotalProxies == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.TotalProxies(childComplexity), true
+	case "AdminDashboard.totalRequests":
+		if e.ComplexityRoot.AdminDashboard.TotalRequests == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.TotalRequests(childComplexity), true
+	case "AdminDashboard.totalRevenue":
+		if e.ComplexityRoot.AdminDashboard.TotalRevenue == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.TotalRevenue(childComplexity), true
+	case "AdminDashboard.totalTokens":
+		if e.ComplexityRoot.AdminDashboard.TotalTokens == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.TotalTokens(childComplexity), true
+	case "AdminDashboard.totalUsers":
+		if e.ComplexityRoot.AdminDashboard.TotalUsers == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminDashboard.TotalUsers(childComplexity), true
+
+	case "AdminUsageByUser.cost":
+		if e.ComplexityRoot.AdminUsageByUser.Cost == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminUsageByUser.Cost(childComplexity), true
+	case "AdminUsageByUser.email":
+		if e.ComplexityRoot.AdminUsageByUser.Email == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminUsageByUser.Email(childComplexity), true
+	case "AdminUsageByUser.requests":
+		if e.ComplexityRoot.AdminUsageByUser.Requests == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminUsageByUser.Requests(childComplexity), true
+	case "AdminUsageByUser.tokens":
+		if e.ComplexityRoot.AdminUsageByUser.Tokens == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminUsageByUser.Tokens(childComplexity), true
+	case "AdminUsageByUser.userId":
+		if e.ComplexityRoot.AdminUsageByUser.UserID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminUsageByUser.UserID(childComplexity), true
+	case "AdminUsageByUser.userName":
+		if e.ComplexityRoot.AdminUsageByUser.UserName == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AdminUsageByUser.UserName(childComplexity), true
 
 	case "Alert.acknowledgedAt":
 		if e.ComplexityRoot.Alert.AcknowledgedAt == nil {
@@ -1652,6 +1893,73 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ApiKeyHealth.SuccessRate(childComplexity), true
+
+	case "ApiKeyRateLimitStatus.dailyCurrent":
+		if e.ComplexityRoot.ApiKeyRateLimitStatus.DailyCurrent == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyRateLimitStatus.DailyCurrent(childComplexity), true
+	case "ApiKeyRateLimitStatus.dailyExceeded":
+		if e.ComplexityRoot.ApiKeyRateLimitStatus.DailyExceeded == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyRateLimitStatus.DailyExceeded(childComplexity), true
+	case "ApiKeyRateLimitStatus.dailyLimit":
+		if e.ComplexityRoot.ApiKeyRateLimitStatus.DailyLimit == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyRateLimitStatus.DailyLimit(childComplexity), true
+	case "ApiKeyRateLimitStatus.keyId":
+		if e.ComplexityRoot.ApiKeyRateLimitStatus.KeyID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyRateLimitStatus.KeyID(childComplexity), true
+	case "ApiKeyRateLimitStatus.rpmCurrent":
+		if e.ComplexityRoot.ApiKeyRateLimitStatus.RpmCurrent == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyRateLimitStatus.RpmCurrent(childComplexity), true
+	case "ApiKeyRateLimitStatus.rpmExceeded":
+		if e.ComplexityRoot.ApiKeyRateLimitStatus.RpmExceeded == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyRateLimitStatus.RpmExceeded(childComplexity), true
+	case "ApiKeyRateLimitStatus.rpmLimit":
+		if e.ComplexityRoot.ApiKeyRateLimitStatus.RpmLimit == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyRateLimitStatus.RpmLimit(childComplexity), true
+	case "ApiKeyRateLimitStatus.status":
+		if e.ComplexityRoot.ApiKeyRateLimitStatus.Status == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyRateLimitStatus.Status(childComplexity), true
+	case "ApiKeyRateLimitStatus.tpmCurrent":
+		if e.ComplexityRoot.ApiKeyRateLimitStatus.TpmCurrent == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyRateLimitStatus.TpmCurrent(childComplexity), true
+	case "ApiKeyRateLimitStatus.tpmExceeded":
+		if e.ComplexityRoot.ApiKeyRateLimitStatus.TpmExceeded == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyRateLimitStatus.TpmExceeded(childComplexity), true
+	case "ApiKeyRateLimitStatus.tpmLimit":
+		if e.ComplexityRoot.ApiKeyRateLimitStatus.TpmLimit == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyRateLimitStatus.TpmLimit(childComplexity), true
 
 	case "ApiKeyWithSecret.channel":
 		if e.ComplexityRoot.ApiKeyWithSecret.Channel == nil {
@@ -3152,6 +3460,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.ChangePassword(childComplexity, args["input"].(model.ChangePasswordInput)), true
+	case "Mutation.changePlan":
+		if e.ComplexityRoot.Mutation.ChangePlan == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_changePlan_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.ChangePlan(childComplexity, args["planId"].(string)), true
 	case "Mutation.checkApiKeyHealth":
 		if e.ComplexityRoot.Mutation.CheckAPIKeyHealth == nil {
 			break
@@ -3230,17 +3549,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.CreateAnnouncement(childComplexity, args["input"].(model.AnnouncementInput)), true
-	case "Mutation.createCheckoutSession":
-		if e.ComplexityRoot.Mutation.CreateCheckoutSession == nil {
-			break
-		}
-
-		args, err := ec.field_Mutation_createCheckoutSession_args(ctx, rawArgs)
-		if err != nil {
-			return 0, false
-		}
-
-		return e.ComplexityRoot.Mutation.CreateCheckoutSession(childComplexity, args["planId"].(string)), true
 	case "Mutation.createCoupon":
 		if e.ComplexityRoot.Mutation.CreateCoupon == nil {
 			break
@@ -3329,12 +3637,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.CreatePlan(childComplexity, args["input"].(model.PlanInput)), true
-	case "Mutation.createPortalSession":
-		if e.ComplexityRoot.Mutation.CreatePortalSession == nil {
-			break
-		}
-
-		return e.ComplexityRoot.Mutation.CreatePortalSession(childComplexity), true
 	case "Mutation.createPromptTemplate":
 		if e.ComplexityRoot.Mutation.CreatePromptTemplate == nil {
 			break
@@ -3379,17 +3681,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.CreateProxy(childComplexity, args["input"].(model.ProxyInput)), true
-	case "Mutation.createRechargeSession":
-		if e.ComplexityRoot.Mutation.CreateRechargeSession == nil {
-			break
-		}
-
-		args, err := ec.field_Mutation_createRechargeSession_args(ctx, rawArgs)
-		if err != nil {
-			return 0, false
-		}
-
-		return e.ComplexityRoot.Mutation.CreateRechargeSession(childComplexity, args["amount"].(float64)), true
 	case "Mutation.createRoutingRule":
 		if e.ComplexityRoot.Mutation.CreateRoutingRule == nil {
 			break
@@ -5020,12 +5311,62 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.ProxyTestResult.URL(childComplexity), true
 
+	case "Query.apiKeyRateLimitStatus":
+		if e.ComplexityRoot.Query.APIKeyRateLimitStatus == nil {
+			break
+		}
+
+		args, err := ec.field_Query_apiKeyRateLimitStatus_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.APIKeyRateLimitStatus(childComplexity, args["keyId"].(string)), true
 	case "Query.activeAnnouncements":
 		if e.ComplexityRoot.Query.ActiveAnnouncements == nil {
 			break
 		}
 
 		return e.ComplexityRoot.Query.ActiveAnnouncements(childComplexity), true
+	case "Query.adminDashboard":
+		if e.ComplexityRoot.Query.AdminDashboard == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.AdminDashboard(childComplexity), true
+	case "Query.adminRevenueChart":
+		if e.ComplexityRoot.Query.AdminRevenueChart == nil {
+			break
+		}
+
+		args, err := ec.field_Query_adminRevenueChart_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.AdminRevenueChart(childComplexity, args["days"].(*int)), true
+	case "Query.adminUsageByUser":
+		if e.ComplexityRoot.Query.AdminUsageByUser == nil {
+			break
+		}
+
+		args, err := ec.field_Query_adminUsageByUser_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.AdminUsageByUser(childComplexity, args["days"].(*int)), true
+	case "Query.adminUserGrowth":
+		if e.ComplexityRoot.Query.AdminUserGrowth == nil {
+			break
+		}
+
+		args, err := ec.field_Query_adminUserGrowth_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.AdminUserGrowth(childComplexity, args["days"].(*int)), true
 	case "Query.alertConfig":
 		if e.ComplexityRoot.Query.AlertConfig == nil {
 			break
@@ -5857,6 +6198,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.RegistrationMode.Mode(childComplexity), true
 
+	case "RevenueChartPoint.date":
+		if e.ComplexityRoot.RevenueChartPoint.Date == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RevenueChartPoint.Date(childComplexity), true
+	case "RevenueChartPoint.revenue":
+		if e.ComplexityRoot.RevenueChartPoint.Revenue == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RevenueChartPoint.Revenue(childComplexity), true
+	case "RevenueChartPoint.transactions":
+		if e.ComplexityRoot.RevenueChartPoint.Transactions == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RevenueChartPoint.Transactions(childComplexity), true
+
 	case "RoutingRule.createdAt":
 		if e.ComplexityRoot.RoutingRule.CreatedAt == nil {
 			break
@@ -6590,6 +6950,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.UserDetail.UsageMonth(childComplexity), true
 
+	case "UserGrowthPoint.date":
+		if e.ComplexityRoot.UserGrowthPoint.Date == nil {
+			break
+		}
+
+		return e.ComplexityRoot.UserGrowthPoint.Date(childComplexity), true
+	case "UserGrowthPoint.newUsers":
+		if e.ComplexityRoot.UserGrowthPoint.NewUsers == nil {
+			break
+		}
+
+		return e.ComplexityRoot.UserGrowthPoint.NewUsers(childComplexity), true
+	case "UserGrowthPoint.totalUsers":
+		if e.ComplexityRoot.UserGrowthPoint.TotalUsers == nil {
+			break
+		}
+
+		return e.ComplexityRoot.UserGrowthPoint.TotalUsers(childComplexity), true
+
 	case "UserListItem.apiKeyCount":
 		if e.ComplexityRoot.UserListItem.APIKeyCount == nil {
 			break
@@ -6700,6 +7079,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.UserSubscription.ID(childComplexity), true
+	case "UserSubscription.isQuotaExceeded":
+		if e.ComplexityRoot.UserSubscription.IsQuotaExceeded == nil {
+			break
+		}
+
+		return e.ComplexityRoot.UserSubscription.IsQuotaExceeded(childComplexity), true
 	case "UserSubscription.orgId":
 		if e.ComplexityRoot.UserSubscription.OrgID == nil {
 			break
@@ -6718,12 +7103,36 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.UserSubscription.PlanID(childComplexity), true
+	case "UserSubscription.planName":
+		if e.ComplexityRoot.UserSubscription.PlanName == nil {
+			break
+		}
+
+		return e.ComplexityRoot.UserSubscription.PlanName(childComplexity), true
+	case "UserSubscription.quotaPercentage":
+		if e.ComplexityRoot.UserSubscription.QuotaPercentage == nil {
+			break
+		}
+
+		return e.ComplexityRoot.UserSubscription.QuotaPercentage(childComplexity), true
 	case "UserSubscription.status":
 		if e.ComplexityRoot.UserSubscription.Status == nil {
 			break
 		}
 
 		return e.ComplexityRoot.UserSubscription.Status(childComplexity), true
+	case "UserSubscription.tokenLimit":
+		if e.ComplexityRoot.UserSubscription.TokenLimit == nil {
+			break
+		}
+
+		return e.ComplexityRoot.UserSubscription.TokenLimit(childComplexity), true
+	case "UserSubscription.usedTokens":
+		if e.ComplexityRoot.UserSubscription.UsedTokens == nil {
+			break
+		}
+
+		return e.ComplexityRoot.UserSubscription.UsedTokens(childComplexity), true
 
 	case "WebhookDelivery.createdAt":
 		if e.ComplexityRoot.WebhookDelivery.CreatedAt == nil {
@@ -6991,6 +7400,7 @@ type Query {
   identityProviders(orgId: ID!): [IdentityProvider!]! @auth
   myProjects(orgId: ID!): [Project!]! @auth
   myApiKeys(projectId: ID!): [ApiKey!]! @auth
+  apiKeyRateLimitStatus(keyId: ID!): ApiKeyRateLimitStatus! @auth
   myUsageSummary(orgId: ID, projectId: ID, channel: String): UsageSummary! @auth
   myDailyUsage(days: Int = 30, orgId: ID, projectId: ID, channel: String): [DailyStats!]! @auth
   myUsageByProvider(orgId: ID, projectId: ID, channel: String): [ProviderUsage!]! @auth
@@ -7003,11 +7413,17 @@ type Query {
   myAnomalyDetection: AnomalyResult! @auth
   myRedeemHistory: [RedeemRecord!]! @auth
 
-  # ── Dashboard ──
+  # -- Dashboard --
   dashboard(projectId: ID, channel: String): Dashboard! @auth
   usageChart(days: Int = 30, projectId: ID, channel: String): [UsageChartPoint!]! @auth
   providerStats(projectId: ID, channel: String): [ProviderStats!]! @auth
   modelStats(projectId: ID, channel: String): [ModelStats!]! @auth
+
+  # -- Admin Dashboard & Analytics --
+  adminDashboard: AdminDashboard! @auth(role: ADMIN)
+  adminUsageByUser(days: Int = 30): [AdminUsageByUser!]! @auth(role: ADMIN)
+  adminRevenueChart(days: Int = 30): [RevenueChartPoint!]! @auth(role: ADMIN)
+  adminUserGrowth(days: Int = 30): [UserGrowthPoint!]! @auth(role: ADMIN)
 
   # ── Plans（需要登录）──
   plans: [Plan!]! @auth
@@ -7116,9 +7532,7 @@ type Mutation {
   cancelTask(id: ID!): Task! @auth
 
   # ── Plans & Payments ──
-  createCheckoutSession(planId: ID!): CheckoutSession! @auth
-  createPortalSession: CheckoutSession! @auth
-  createRechargeSession(amount: Float!): CheckoutSession! @auth
+  changePlan(planId: ID!): UserSubscription! @auth
 
   # ── Redeem Codes ──
   redeemCode(code: String!): RedeemResult! @auth
@@ -7323,11 +7737,17 @@ type UserSubscription {
   id: ID!
   orgId: ID!
   planId: ID!
+  planName: String!
   status: String!
   currentPeriodStart: DateTime!
   currentPeriodEnd: DateTime!
   cancelAtPeriodEnd: Boolean!
   plan: Plan!
+  # Quota usage fields
+  usedTokens: Int!
+  tokenLimit: Int!
+  quotaPercentage: Float!
+  isQuotaExceeded: Boolean!
 }
 
 type Order {
@@ -7488,6 +7908,57 @@ type ApiKeysSummary {
 type ProxiesSummary {
   total: Int!
   healthy: Int!
+}
+
+# ── Admin-specific dashboard types ──
+
+type AdminDashboard {
+  # Platform KPIs
+  totalUsers: Int!
+  activeUsersToday: Int!
+  activeUsersMonth: Int!
+  totalRevenue: Float!
+  revenueThisMonth: Float!
+  # Request aggregates (system-wide)
+  totalRequests: Int!
+  requestsToday: Int!
+  totalTokens: Int!
+  tokensToday: Int!
+  totalCost: Float!
+  costToday: Float!
+  successRate: Float!
+  errorCount: Int!
+  avgLatencyMs: Float!
+  # Infrastructure health
+  activeProviders: Int!
+  totalProviders: Int!
+  activeProxies: Int!
+  totalProxies: Int!
+  apiKeysTotal: Int!
+  apiKeysHealthy: Int!
+  mcpCallCount: Int!
+  mcpErrorCount: Int!
+}
+
+type AdminUsageByUser {
+  userId: ID!
+  userName: String!
+  email: String!
+  requests: Int!
+  tokens: Int!
+  cost: Float!
+}
+
+type RevenueChartPoint {
+  date: String!
+  revenue: Float!
+  transactions: Int!
+}
+
+type UserGrowthPoint {
+  date: String!
+  newUsers: Int!
+  totalUsers: Int!
 }
 
 type UsageChartPoint {
@@ -8445,6 +8916,20 @@ type ApiKey {
   createdAt: DateTime!
 }
 
+type ApiKeyRateLimitStatus {
+  keyId: ID!
+  rpmCurrent: Int!
+  rpmLimit: Int!
+  rpmExceeded: Boolean!
+  tpmCurrent: Int!
+  tpmLimit: Int!
+  tpmExceeded: Boolean!
+  dailyCurrent: Int!
+  dailyLimit: Int!
+  dailyExceeded: Boolean!
+  status: String!
+}
+
 type ApiKeyWithSecret {
   id: ID!
   projectId: ID!
@@ -8670,6 +9155,17 @@ func (ec *executionContext) field_Mutation_changePassword_args(ctx context.Conte
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_changePlan_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "planId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["planId"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_checkApiKeyHealth_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -8753,17 +9249,6 @@ func (ec *executionContext) field_Mutation_createApiKey_args(ctx context.Context
 		return nil, err
 	}
 	args["tokenLimit"] = arg4
-	return args, nil
-}
-
-func (ec *executionContext) field_Mutation_createCheckoutSession_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
-	var err error
-	args := map[string]any{}
-	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "planId", ec.unmarshalNID2string)
-	if err != nil {
-		return nil, err
-	}
-	args["planId"] = arg0
 	return args, nil
 }
 
@@ -8906,17 +9391,6 @@ func (ec *executionContext) field_Mutation_createProxy_args(ctx context.Context,
 		return nil, err
 	}
 	args["input"] = arg0
-	return args, nil
-}
-
-func (ec *executionContext) field_Mutation_createRechargeSession_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
-	var err error
-	args := map[string]any{}
-	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "amount", ec.unmarshalNFloat2float64)
-	if err != nil {
-		return nil, err
-	}
-	args["amount"] = arg0
 	return args, nil
 }
 
@@ -9860,6 +10334,39 @@ func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_adminRevenueChart_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "days", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["days"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_adminUsageByUser_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "days", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["days"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_adminUserGrowth_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "days", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["days"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_alertConfig_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -9884,6 +10391,17 @@ func (ec *executionContext) field_Query_alerts_args(ctx context.Context, rawArgs
 		return nil, err
 	}
 	args["status"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_apiKeyRateLimitStatus_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "keyId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["keyId"] = arg0
 	return args, nil
 }
 
@@ -10502,6 +11020,818 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _AdminDashboard_totalUsers(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_totalUsers,
+		func(ctx context.Context) (any, error) {
+			return obj.TotalUsers, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_totalUsers(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_activeUsersToday(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_activeUsersToday,
+		func(ctx context.Context) (any, error) {
+			return obj.ActiveUsersToday, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_activeUsersToday(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_activeUsersMonth(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_activeUsersMonth,
+		func(ctx context.Context) (any, error) {
+			return obj.ActiveUsersMonth, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_activeUsersMonth(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_totalRevenue(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_totalRevenue,
+		func(ctx context.Context) (any, error) {
+			return obj.TotalRevenue, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_totalRevenue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_revenueThisMonth(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_revenueThisMonth,
+		func(ctx context.Context) (any, error) {
+			return obj.RevenueThisMonth, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_revenueThisMonth(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_totalRequests(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_totalRequests,
+		func(ctx context.Context) (any, error) {
+			return obj.TotalRequests, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_totalRequests(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_requestsToday(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_requestsToday,
+		func(ctx context.Context) (any, error) {
+			return obj.RequestsToday, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_requestsToday(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_totalTokens(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_totalTokens,
+		func(ctx context.Context) (any, error) {
+			return obj.TotalTokens, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_totalTokens(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_tokensToday(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_tokensToday,
+		func(ctx context.Context) (any, error) {
+			return obj.TokensToday, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_tokensToday(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_totalCost(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_totalCost,
+		func(ctx context.Context) (any, error) {
+			return obj.TotalCost, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_totalCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_costToday(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_costToday,
+		func(ctx context.Context) (any, error) {
+			return obj.CostToday, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_costToday(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_successRate(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_successRate,
+		func(ctx context.Context) (any, error) {
+			return obj.SuccessRate, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_successRate(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_errorCount(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_errorCount,
+		func(ctx context.Context) (any, error) {
+			return obj.ErrorCount, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_errorCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_avgLatencyMs(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_avgLatencyMs,
+		func(ctx context.Context) (any, error) {
+			return obj.AvgLatencyMs, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_avgLatencyMs(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_activeProviders(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_activeProviders,
+		func(ctx context.Context) (any, error) {
+			return obj.ActiveProviders, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_activeProviders(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_totalProviders(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_totalProviders,
+		func(ctx context.Context) (any, error) {
+			return obj.TotalProviders, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_totalProviders(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_activeProxies(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_activeProxies,
+		func(ctx context.Context) (any, error) {
+			return obj.ActiveProxies, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_activeProxies(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_totalProxies(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_totalProxies,
+		func(ctx context.Context) (any, error) {
+			return obj.TotalProxies, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_totalProxies(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_apiKeysTotal(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_apiKeysTotal,
+		func(ctx context.Context) (any, error) {
+			return obj.APIKeysTotal, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_apiKeysTotal(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_apiKeysHealthy(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_apiKeysHealthy,
+		func(ctx context.Context) (any, error) {
+			return obj.APIKeysHealthy, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_apiKeysHealthy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_mcpCallCount(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_mcpCallCount,
+		func(ctx context.Context) (any, error) {
+			return obj.McpCallCount, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_mcpCallCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminDashboard_mcpErrorCount(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminDashboard_mcpErrorCount,
+		func(ctx context.Context) (any, error) {
+			return obj.McpErrorCount, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminDashboard_mcpErrorCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminDashboard",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminUsageByUser_userId(ctx context.Context, field graphql.CollectedField, obj *model.AdminUsageByUser) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminUsageByUser_userId,
+		func(ctx context.Context) (any, error) {
+			return obj.UserID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminUsageByUser_userId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminUsageByUser",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminUsageByUser_userName(ctx context.Context, field graphql.CollectedField, obj *model.AdminUsageByUser) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminUsageByUser_userName,
+		func(ctx context.Context) (any, error) {
+			return obj.UserName, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminUsageByUser_userName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminUsageByUser",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminUsageByUser_email(ctx context.Context, field graphql.CollectedField, obj *model.AdminUsageByUser) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminUsageByUser_email,
+		func(ctx context.Context) (any, error) {
+			return obj.Email, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminUsageByUser_email(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminUsageByUser",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminUsageByUser_requests(ctx context.Context, field graphql.CollectedField, obj *model.AdminUsageByUser) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminUsageByUser_requests,
+		func(ctx context.Context) (any, error) {
+			return obj.Requests, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminUsageByUser_requests(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminUsageByUser",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminUsageByUser_tokens(ctx context.Context, field graphql.CollectedField, obj *model.AdminUsageByUser) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminUsageByUser_tokens,
+		func(ctx context.Context) (any, error) {
+			return obj.Tokens, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminUsageByUser_tokens(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminUsageByUser",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _AdminUsageByUser_cost(ctx context.Context, field graphql.CollectedField, obj *model.AdminUsageByUser) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_AdminUsageByUser_cost,
+		func(ctx context.Context) (any, error) {
+			return obj.Cost, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_AdminUsageByUser_cost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "AdminUsageByUser",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
 
 func (ec *executionContext) _Alert_id(ctx context.Context, field graphql.CollectedField, obj *model.Alert) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
@@ -12171,6 +13501,325 @@ func (ec *executionContext) fieldContext_ApiKeyHealth_successRate(_ context.Cont
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus_keyId(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyRateLimitStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ApiKeyRateLimitStatus_keyId,
+		func(ctx context.Context) (any, error) {
+			return obj.KeyID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_keyId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ApiKeyRateLimitStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus_rpmCurrent(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyRateLimitStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ApiKeyRateLimitStatus_rpmCurrent,
+		func(ctx context.Context) (any, error) {
+			return obj.RpmCurrent, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_rpmCurrent(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ApiKeyRateLimitStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus_rpmLimit(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyRateLimitStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ApiKeyRateLimitStatus_rpmLimit,
+		func(ctx context.Context) (any, error) {
+			return obj.RpmLimit, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_rpmLimit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ApiKeyRateLimitStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus_rpmExceeded(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyRateLimitStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ApiKeyRateLimitStatus_rpmExceeded,
+		func(ctx context.Context) (any, error) {
+			return obj.RpmExceeded, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_rpmExceeded(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ApiKeyRateLimitStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus_tpmCurrent(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyRateLimitStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ApiKeyRateLimitStatus_tpmCurrent,
+		func(ctx context.Context) (any, error) {
+			return obj.TpmCurrent, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_tpmCurrent(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ApiKeyRateLimitStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus_tpmLimit(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyRateLimitStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ApiKeyRateLimitStatus_tpmLimit,
+		func(ctx context.Context) (any, error) {
+			return obj.TpmLimit, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_tpmLimit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ApiKeyRateLimitStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus_tpmExceeded(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyRateLimitStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ApiKeyRateLimitStatus_tpmExceeded,
+		func(ctx context.Context) (any, error) {
+			return obj.TpmExceeded, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_tpmExceeded(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ApiKeyRateLimitStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus_dailyCurrent(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyRateLimitStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ApiKeyRateLimitStatus_dailyCurrent,
+		func(ctx context.Context) (any, error) {
+			return obj.DailyCurrent, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_dailyCurrent(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ApiKeyRateLimitStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus_dailyLimit(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyRateLimitStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ApiKeyRateLimitStatus_dailyLimit,
+		func(ctx context.Context) (any, error) {
+			return obj.DailyLimit, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_dailyLimit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ApiKeyRateLimitStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus_dailyExceeded(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyRateLimitStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ApiKeyRateLimitStatus_dailyExceeded,
+		func(ctx context.Context) (any, error) {
+			return obj.DailyExceeded, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_dailyExceeded(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ApiKeyRateLimitStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus_status(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyRateLimitStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ApiKeyRateLimitStatus_status,
+		func(ctx context.Context) (any, error) {
+			return obj.Status, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ApiKeyRateLimitStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -21080,15 +22729,15 @@ func (ec *executionContext) fieldContext_Mutation_cancelTask(ctx context.Context
 	return fc, nil
 }
 
-func (ec *executionContext) _Mutation_createCheckoutSession(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+func (ec *executionContext) _Mutation_changePlan(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
-		ec.fieldContext_Mutation_createCheckoutSession,
+		ec.fieldContext_Mutation_changePlan,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Mutation().CreateCheckoutSession(ctx, fc.Args["planId"].(string))
+			return ec.Resolvers.Mutation().ChangePlan(ctx, fc.Args["planId"].(string))
 		},
 		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
 			directive0 := next
@@ -21096,11 +22745,11 @@ func (ec *executionContext) _Mutation_createCheckoutSession(ctx context.Context,
 			directive1 := func(ctx context.Context) (any, error) {
 				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "USER")
 				if err != nil {
-					var zeroVal *model.CheckoutSession
+					var zeroVal *model.UserSubscription
 					return zeroVal, err
 				}
 				if ec.Directives.Auth == nil {
-					var zeroVal *model.CheckoutSession
+					var zeroVal *model.UserSubscription
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
 				return ec.Directives.Auth(ctx, nil, directive0, role)
@@ -21109,13 +22758,13 @@ func (ec *executionContext) _Mutation_createCheckoutSession(ctx context.Context,
 			next = directive1
 			return next
 		},
-		ec.marshalNCheckoutSession2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCheckoutSession,
+		ec.marshalNUserSubscription2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐUserSubscription,
 		true,
 		true,
 	)
 }
 
-func (ec *executionContext) fieldContext_Mutation_createCheckoutSession(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_Mutation_changePlan(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Mutation",
 		Field:      field,
@@ -21123,10 +22772,34 @@ func (ec *executionContext) fieldContext_Mutation_createCheckoutSession(ctx cont
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
-			case "url":
-				return ec.fieldContext_CheckoutSession_url(ctx, field)
+			case "id":
+				return ec.fieldContext_UserSubscription_id(ctx, field)
+			case "orgId":
+				return ec.fieldContext_UserSubscription_orgId(ctx, field)
+			case "planId":
+				return ec.fieldContext_UserSubscription_planId(ctx, field)
+			case "planName":
+				return ec.fieldContext_UserSubscription_planName(ctx, field)
+			case "status":
+				return ec.fieldContext_UserSubscription_status(ctx, field)
+			case "currentPeriodStart":
+				return ec.fieldContext_UserSubscription_currentPeriodStart(ctx, field)
+			case "currentPeriodEnd":
+				return ec.fieldContext_UserSubscription_currentPeriodEnd(ctx, field)
+			case "cancelAtPeriodEnd":
+				return ec.fieldContext_UserSubscription_cancelAtPeriodEnd(ctx, field)
+			case "plan":
+				return ec.fieldContext_UserSubscription_plan(ctx, field)
+			case "usedTokens":
+				return ec.fieldContext_UserSubscription_usedTokens(ctx, field)
+			case "tokenLimit":
+				return ec.fieldContext_UserSubscription_tokenLimit(ctx, field)
+			case "quotaPercentage":
+				return ec.fieldContext_UserSubscription_quotaPercentage(ctx, field)
+			case "isQuotaExceeded":
+				return ec.fieldContext_UserSubscription_isQuotaExceeded(ctx, field)
 			}
-			return nil, fmt.Errorf("no field named %q was found under type CheckoutSession", field.Name)
+			return nil, fmt.Errorf("no field named %q was found under type UserSubscription", field.Name)
 		},
 	}
 	defer func() {
@@ -21136,121 +22809,7 @@ func (ec *executionContext) fieldContext_Mutation_createCheckoutSession(ctx cont
 		}
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_Mutation_createCheckoutSession_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
-		ec.Error(ctx, err)
-		return fc, err
-	}
-	return fc, nil
-}
-
-func (ec *executionContext) _Mutation_createPortalSession(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		ec.fieldContext_Mutation_createPortalSession,
-		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Mutation().CreatePortalSession(ctx)
-		},
-		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
-			directive0 := next
-
-			directive1 := func(ctx context.Context) (any, error) {
-				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "USER")
-				if err != nil {
-					var zeroVal *model.CheckoutSession
-					return zeroVal, err
-				}
-				if ec.Directives.Auth == nil {
-					var zeroVal *model.CheckoutSession
-					return zeroVal, errors.New("directive auth is not implemented")
-				}
-				return ec.Directives.Auth(ctx, nil, directive0, role)
-			}
-
-			next = directive1
-			return next
-		},
-		ec.marshalNCheckoutSession2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCheckoutSession,
-		true,
-		true,
-	)
-}
-
-func (ec *executionContext) fieldContext_Mutation_createPortalSession(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	fc = &graphql.FieldContext{
-		Object:     "Mutation",
-		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
-		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			switch field.Name {
-			case "url":
-				return ec.fieldContext_CheckoutSession_url(ctx, field)
-			}
-			return nil, fmt.Errorf("no field named %q was found under type CheckoutSession", field.Name)
-		},
-	}
-	return fc, nil
-}
-
-func (ec *executionContext) _Mutation_createRechargeSession(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		ec.fieldContext_Mutation_createRechargeSession,
-		func(ctx context.Context) (any, error) {
-			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Mutation().CreateRechargeSession(ctx, fc.Args["amount"].(float64))
-		},
-		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
-			directive0 := next
-
-			directive1 := func(ctx context.Context) (any, error) {
-				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "USER")
-				if err != nil {
-					var zeroVal *model.CheckoutSession
-					return zeroVal, err
-				}
-				if ec.Directives.Auth == nil {
-					var zeroVal *model.CheckoutSession
-					return zeroVal, errors.New("directive auth is not implemented")
-				}
-				return ec.Directives.Auth(ctx, nil, directive0, role)
-			}
-
-			next = directive1
-			return next
-		},
-		ec.marshalNCheckoutSession2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCheckoutSession,
-		true,
-		true,
-	)
-}
-
-func (ec *executionContext) fieldContext_Mutation_createRechargeSession(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	fc = &graphql.FieldContext{
-		Object:     "Mutation",
-		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
-		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			switch field.Name {
-			case "url":
-				return ec.fieldContext_CheckoutSession_url(ctx, field)
-			}
-			return nil, fmt.Errorf("no field named %q was found under type CheckoutSession", field.Name)
-		},
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			err = ec.Recover(ctx, r)
-			ec.Error(ctx, err)
-		}
-	}()
-	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_Mutation_createRechargeSession_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+	if fc.Args, err = ec.field_Mutation_changePlan_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -31153,6 +32712,89 @@ func (ec *executionContext) fieldContext_Query_myApiKeys(ctx context.Context, fi
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_apiKeyRateLimitStatus(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_apiKeyRateLimitStatus,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().APIKeyRateLimitStatus(ctx, fc.Args["keyId"].(string))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "USER")
+				if err != nil {
+					var zeroVal *model.APIKeyRateLimitStatus
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.APIKeyRateLimitStatus
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNApiKeyRateLimitStatus2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAPIKeyRateLimitStatus,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_apiKeyRateLimitStatus(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "keyId":
+				return ec.fieldContext_ApiKeyRateLimitStatus_keyId(ctx, field)
+			case "rpmCurrent":
+				return ec.fieldContext_ApiKeyRateLimitStatus_rpmCurrent(ctx, field)
+			case "rpmLimit":
+				return ec.fieldContext_ApiKeyRateLimitStatus_rpmLimit(ctx, field)
+			case "rpmExceeded":
+				return ec.fieldContext_ApiKeyRateLimitStatus_rpmExceeded(ctx, field)
+			case "tpmCurrent":
+				return ec.fieldContext_ApiKeyRateLimitStatus_tpmCurrent(ctx, field)
+			case "tpmLimit":
+				return ec.fieldContext_ApiKeyRateLimitStatus_tpmLimit(ctx, field)
+			case "tpmExceeded":
+				return ec.fieldContext_ApiKeyRateLimitStatus_tpmExceeded(ctx, field)
+			case "dailyCurrent":
+				return ec.fieldContext_ApiKeyRateLimitStatus_dailyCurrent(ctx, field)
+			case "dailyLimit":
+				return ec.fieldContext_ApiKeyRateLimitStatus_dailyLimit(ctx, field)
+			case "dailyExceeded":
+				return ec.fieldContext_ApiKeyRateLimitStatus_dailyExceeded(ctx, field)
+			case "status":
+				return ec.fieldContext_ApiKeyRateLimitStatus_status(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ApiKeyRateLimitStatus", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_apiKeyRateLimitStatus_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_myUsageSummary(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -31624,6 +33266,8 @@ func (ec *executionContext) fieldContext_Query_mySubscription(ctx context.Contex
 				return ec.fieldContext_UserSubscription_orgId(ctx, field)
 			case "planId":
 				return ec.fieldContext_UserSubscription_planId(ctx, field)
+			case "planName":
+				return ec.fieldContext_UserSubscription_planName(ctx, field)
 			case "status":
 				return ec.fieldContext_UserSubscription_status(ctx, field)
 			case "currentPeriodStart":
@@ -31634,6 +33278,14 @@ func (ec *executionContext) fieldContext_Query_mySubscription(ctx context.Contex
 				return ec.fieldContext_UserSubscription_cancelAtPeriodEnd(ctx, field)
 			case "plan":
 				return ec.fieldContext_UserSubscription_plan(ctx, field)
+			case "usedTokens":
+				return ec.fieldContext_UserSubscription_usedTokens(ctx, field)
+			case "tokenLimit":
+				return ec.fieldContext_UserSubscription_tokenLimit(ctx, field)
+			case "quotaPercentage":
+				return ec.fieldContext_UserSubscription_quotaPercentage(ctx, field)
+			case "isQuotaExceeded":
+				return ec.fieldContext_UserSubscription_isQuotaExceeded(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type UserSubscription", field.Name)
 		},
@@ -32212,6 +33864,306 @@ func (ec *executionContext) fieldContext_Query_modelStats(ctx context.Context, f
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_modelStats_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_adminDashboard(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_adminDashboard,
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().AdminDashboard(ctx)
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "ADMIN")
+				if err != nil {
+					var zeroVal *model.AdminDashboard
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.AdminDashboard
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNAdminDashboard2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAdminDashboard,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_adminDashboard(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "totalUsers":
+				return ec.fieldContext_AdminDashboard_totalUsers(ctx, field)
+			case "activeUsersToday":
+				return ec.fieldContext_AdminDashboard_activeUsersToday(ctx, field)
+			case "activeUsersMonth":
+				return ec.fieldContext_AdminDashboard_activeUsersMonth(ctx, field)
+			case "totalRevenue":
+				return ec.fieldContext_AdminDashboard_totalRevenue(ctx, field)
+			case "revenueThisMonth":
+				return ec.fieldContext_AdminDashboard_revenueThisMonth(ctx, field)
+			case "totalRequests":
+				return ec.fieldContext_AdminDashboard_totalRequests(ctx, field)
+			case "requestsToday":
+				return ec.fieldContext_AdminDashboard_requestsToday(ctx, field)
+			case "totalTokens":
+				return ec.fieldContext_AdminDashboard_totalTokens(ctx, field)
+			case "tokensToday":
+				return ec.fieldContext_AdminDashboard_tokensToday(ctx, field)
+			case "totalCost":
+				return ec.fieldContext_AdminDashboard_totalCost(ctx, field)
+			case "costToday":
+				return ec.fieldContext_AdminDashboard_costToday(ctx, field)
+			case "successRate":
+				return ec.fieldContext_AdminDashboard_successRate(ctx, field)
+			case "errorCount":
+				return ec.fieldContext_AdminDashboard_errorCount(ctx, field)
+			case "avgLatencyMs":
+				return ec.fieldContext_AdminDashboard_avgLatencyMs(ctx, field)
+			case "activeProviders":
+				return ec.fieldContext_AdminDashboard_activeProviders(ctx, field)
+			case "totalProviders":
+				return ec.fieldContext_AdminDashboard_totalProviders(ctx, field)
+			case "activeProxies":
+				return ec.fieldContext_AdminDashboard_activeProxies(ctx, field)
+			case "totalProxies":
+				return ec.fieldContext_AdminDashboard_totalProxies(ctx, field)
+			case "apiKeysTotal":
+				return ec.fieldContext_AdminDashboard_apiKeysTotal(ctx, field)
+			case "apiKeysHealthy":
+				return ec.fieldContext_AdminDashboard_apiKeysHealthy(ctx, field)
+			case "mcpCallCount":
+				return ec.fieldContext_AdminDashboard_mcpCallCount(ctx, field)
+			case "mcpErrorCount":
+				return ec.fieldContext_AdminDashboard_mcpErrorCount(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminDashboard", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_adminUsageByUser(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_adminUsageByUser,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().AdminUsageByUser(ctx, fc.Args["days"].(*int))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "ADMIN")
+				if err != nil {
+					var zeroVal []*model.AdminUsageByUser
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal []*model.AdminUsageByUser
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNAdminUsageByUser2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAdminUsageByUserᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_adminUsageByUser(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "userId":
+				return ec.fieldContext_AdminUsageByUser_userId(ctx, field)
+			case "userName":
+				return ec.fieldContext_AdminUsageByUser_userName(ctx, field)
+			case "email":
+				return ec.fieldContext_AdminUsageByUser_email(ctx, field)
+			case "requests":
+				return ec.fieldContext_AdminUsageByUser_requests(ctx, field)
+			case "tokens":
+				return ec.fieldContext_AdminUsageByUser_tokens(ctx, field)
+			case "cost":
+				return ec.fieldContext_AdminUsageByUser_cost(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type AdminUsageByUser", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_adminUsageByUser_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_adminRevenueChart(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_adminRevenueChart,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().AdminRevenueChart(ctx, fc.Args["days"].(*int))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "ADMIN")
+				if err != nil {
+					var zeroVal []*model.RevenueChartPoint
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal []*model.RevenueChartPoint
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNRevenueChartPoint2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRevenueChartPointᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_adminRevenueChart(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "date":
+				return ec.fieldContext_RevenueChartPoint_date(ctx, field)
+			case "revenue":
+				return ec.fieldContext_RevenueChartPoint_revenue(ctx, field)
+			case "transactions":
+				return ec.fieldContext_RevenueChartPoint_transactions(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type RevenueChartPoint", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_adminRevenueChart_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_adminUserGrowth(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_adminUserGrowth,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().AdminUserGrowth(ctx, fc.Args["days"].(*int))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "ADMIN")
+				if err != nil {
+					var zeroVal []*model.UserGrowthPoint
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal []*model.UserGrowthPoint
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNUserGrowthPoint2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐUserGrowthPointᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_adminUserGrowth(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "date":
+				return ec.fieldContext_UserGrowthPoint_date(ctx, field)
+			case "newUsers":
+				return ec.fieldContext_UserGrowthPoint_newUsers(ctx, field)
+			case "totalUsers":
+				return ec.fieldContext_UserGrowthPoint_totalUsers(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type UserGrowthPoint", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_adminUserGrowth_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -36829,6 +38781,93 @@ func (ec *executionContext) fieldContext_RegistrationMode_inviteCodeRequired(_ c
 	return fc, nil
 }
 
+func (ec *executionContext) _RevenueChartPoint_date(ctx context.Context, field graphql.CollectedField, obj *model.RevenueChartPoint) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RevenueChartPoint_date,
+		func(ctx context.Context) (any, error) {
+			return obj.Date, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RevenueChartPoint_date(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RevenueChartPoint",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RevenueChartPoint_revenue(ctx context.Context, field graphql.CollectedField, obj *model.RevenueChartPoint) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RevenueChartPoint_revenue,
+		func(ctx context.Context) (any, error) {
+			return obj.Revenue, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RevenueChartPoint_revenue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RevenueChartPoint",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _RevenueChartPoint_transactions(ctx context.Context, field graphql.CollectedField, obj *model.RevenueChartPoint) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_RevenueChartPoint_transactions,
+		func(ctx context.Context) (any, error) {
+			return obj.Transactions, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_RevenueChartPoint_transactions(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "RevenueChartPoint",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _RoutingRule_id(ctx context.Context, field graphql.CollectedField, obj *model.RoutingRule) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -40514,6 +42553,93 @@ func (ec *executionContext) fieldContext_UserDetail_usageMonth(_ context.Context
 	return fc, nil
 }
 
+func (ec *executionContext) _UserGrowthPoint_date(ctx context.Context, field graphql.CollectedField, obj *model.UserGrowthPoint) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserGrowthPoint_date,
+		func(ctx context.Context) (any, error) {
+			return obj.Date, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_UserGrowthPoint_date(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UserGrowthPoint",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UserGrowthPoint_newUsers(ctx context.Context, field graphql.CollectedField, obj *model.UserGrowthPoint) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserGrowthPoint_newUsers,
+		func(ctx context.Context) (any, error) {
+			return obj.NewUsers, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_UserGrowthPoint_newUsers(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UserGrowthPoint",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UserGrowthPoint_totalUsers(ctx context.Context, field graphql.CollectedField, obj *model.UserGrowthPoint) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserGrowthPoint_totalUsers,
+		func(ctx context.Context) (any, error) {
+			return obj.TotalUsers, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_UserGrowthPoint_totalUsers(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UserGrowthPoint",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _UserListItem_id(ctx context.Context, field graphql.CollectedField, obj *model.UserListItem) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -41007,6 +43133,35 @@ func (ec *executionContext) fieldContext_UserSubscription_planId(_ context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _UserSubscription_planName(ctx context.Context, field graphql.CollectedField, obj *model.UserSubscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserSubscription_planName,
+		func(ctx context.Context) (any, error) {
+			return obj.PlanName, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_UserSubscription_planName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UserSubscription",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _UserSubscription_status(ctx context.Context, field graphql.CollectedField, obj *model.UserSubscription) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -41167,6 +43322,122 @@ func (ec *executionContext) fieldContext_UserSubscription_plan(_ context.Context
 				return ec.fieldContext_Plan_features(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Plan", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UserSubscription_usedTokens(ctx context.Context, field graphql.CollectedField, obj *model.UserSubscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserSubscription_usedTokens,
+		func(ctx context.Context) (any, error) {
+			return obj.UsedTokens, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_UserSubscription_usedTokens(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UserSubscription",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UserSubscription_tokenLimit(ctx context.Context, field graphql.CollectedField, obj *model.UserSubscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserSubscription_tokenLimit,
+		func(ctx context.Context) (any, error) {
+			return obj.TokenLimit, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_UserSubscription_tokenLimit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UserSubscription",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UserSubscription_quotaPercentage(ctx context.Context, field graphql.CollectedField, obj *model.UserSubscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserSubscription_quotaPercentage,
+		func(ctx context.Context) (any, error) {
+			return obj.QuotaPercentage, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_UserSubscription_quotaPercentage(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UserSubscription",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _UserSubscription_isQuotaExceeded(ctx context.Context, field graphql.CollectedField, obj *model.UserSubscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_UserSubscription_isQuotaExceeded,
+		func(ctx context.Context) (any, error) {
+			return obj.IsQuotaExceeded, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_UserSubscription_isQuotaExceeded(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "UserSubscription",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
 		},
 	}
 	return fc, nil
@@ -45517,6 +47788,214 @@ func (ec *executionContext) unmarshalInputUpdateWebhookEndpointInput(ctx context
 
 // region    **************************** object.gotpl ****************************
 
+var adminDashboardImplementors = []string{"AdminDashboard"}
+
+func (ec *executionContext) _AdminDashboard(ctx context.Context, sel ast.SelectionSet, obj *model.AdminDashboard) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminDashboardImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminDashboard")
+		case "totalUsers":
+			out.Values[i] = ec._AdminDashboard_totalUsers(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "activeUsersToday":
+			out.Values[i] = ec._AdminDashboard_activeUsersToday(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "activeUsersMonth":
+			out.Values[i] = ec._AdminDashboard_activeUsersMonth(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalRevenue":
+			out.Values[i] = ec._AdminDashboard_totalRevenue(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revenueThisMonth":
+			out.Values[i] = ec._AdminDashboard_revenueThisMonth(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalRequests":
+			out.Values[i] = ec._AdminDashboard_totalRequests(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "requestsToday":
+			out.Values[i] = ec._AdminDashboard_requestsToday(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalTokens":
+			out.Values[i] = ec._AdminDashboard_totalTokens(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tokensToday":
+			out.Values[i] = ec._AdminDashboard_tokensToday(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalCost":
+			out.Values[i] = ec._AdminDashboard_totalCost(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "costToday":
+			out.Values[i] = ec._AdminDashboard_costToday(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "successRate":
+			out.Values[i] = ec._AdminDashboard_successRate(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "errorCount":
+			out.Values[i] = ec._AdminDashboard_errorCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "avgLatencyMs":
+			out.Values[i] = ec._AdminDashboard_avgLatencyMs(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "activeProviders":
+			out.Values[i] = ec._AdminDashboard_activeProviders(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalProviders":
+			out.Values[i] = ec._AdminDashboard_totalProviders(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "activeProxies":
+			out.Values[i] = ec._AdminDashboard_activeProxies(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalProxies":
+			out.Values[i] = ec._AdminDashboard_totalProxies(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "apiKeysTotal":
+			out.Values[i] = ec._AdminDashboard_apiKeysTotal(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "apiKeysHealthy":
+			out.Values[i] = ec._AdminDashboard_apiKeysHealthy(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "mcpCallCount":
+			out.Values[i] = ec._AdminDashboard_mcpCallCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "mcpErrorCount":
+			out.Values[i] = ec._AdminDashboard_mcpErrorCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var adminUsageByUserImplementors = []string{"AdminUsageByUser"}
+
+func (ec *executionContext) _AdminUsageByUser(ctx context.Context, sel ast.SelectionSet, obj *model.AdminUsageByUser) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, adminUsageByUserImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AdminUsageByUser")
+		case "userId":
+			out.Values[i] = ec._AdminUsageByUser_userId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "userName":
+			out.Values[i] = ec._AdminUsageByUser_userName(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "email":
+			out.Values[i] = ec._AdminUsageByUser_email(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "requests":
+			out.Values[i] = ec._AdminUsageByUser_requests(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tokens":
+			out.Values[i] = ec._AdminUsageByUser_tokens(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "cost":
+			out.Values[i] = ec._AdminUsageByUser_cost(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var alertImplementors = []string{"Alert"}
 
 func (ec *executionContext) _Alert(ctx context.Context, sel ast.SelectionSet, obj *model.Alert) graphql.Marshaler {
@@ -45978,6 +48457,95 @@ func (ec *executionContext) _ApiKeyHealth(ctx context.Context, sel ast.Selection
 			}
 		case "successRate":
 			out.Values[i] = ec._ApiKeyHealth_successRate(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var apiKeyRateLimitStatusImplementors = []string{"ApiKeyRateLimitStatus"}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus(ctx context.Context, sel ast.SelectionSet, obj *model.APIKeyRateLimitStatus) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, apiKeyRateLimitStatusImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ApiKeyRateLimitStatus")
+		case "keyId":
+			out.Values[i] = ec._ApiKeyRateLimitStatus_keyId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "rpmCurrent":
+			out.Values[i] = ec._ApiKeyRateLimitStatus_rpmCurrent(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "rpmLimit":
+			out.Values[i] = ec._ApiKeyRateLimitStatus_rpmLimit(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "rpmExceeded":
+			out.Values[i] = ec._ApiKeyRateLimitStatus_rpmExceeded(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tpmCurrent":
+			out.Values[i] = ec._ApiKeyRateLimitStatus_tpmCurrent(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tpmLimit":
+			out.Values[i] = ec._ApiKeyRateLimitStatus_tpmLimit(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tpmExceeded":
+			out.Values[i] = ec._ApiKeyRateLimitStatus_tpmExceeded(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "dailyCurrent":
+			out.Values[i] = ec._ApiKeyRateLimitStatus_dailyCurrent(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "dailyLimit":
+			out.Values[i] = ec._ApiKeyRateLimitStatus_dailyLimit(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "dailyExceeded":
+			out.Values[i] = ec._ApiKeyRateLimitStatus_dailyExceeded(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "status":
+			out.Values[i] = ec._ApiKeyRateLimitStatus_status(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -48454,23 +51022,9 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
-		case "createCheckoutSession":
+		case "changePlan":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
-				return ec._Mutation_createCheckoutSession(ctx, field)
-			})
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
-		case "createPortalSession":
-			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
-				return ec._Mutation_createPortalSession(ctx, field)
-			})
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
-		case "createRechargeSession":
-			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
-				return ec._Mutation_createRechargeSession(ctx, field)
+				return ec._Mutation_changePlan(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -50395,6 +52949,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "apiKeyRateLimitStatus":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_apiKeyRateLimitStatus(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "myUsageSummary":
 			field := field
 
@@ -50704,6 +53280,94 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_modelStats(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "adminDashboard":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_adminDashboard(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "adminUsageByUser":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_adminUsageByUser(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "adminRevenueChart":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_adminRevenueChart(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "adminUserGrowth":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_adminUserGrowth(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -52206,6 +54870,55 @@ func (ec *executionContext) _RegistrationMode(ctx context.Context, sel ast.Selec
 	return out
 }
 
+var revenueChartPointImplementors = []string{"RevenueChartPoint"}
+
+func (ec *executionContext) _RevenueChartPoint(ctx context.Context, sel ast.SelectionSet, obj *model.RevenueChartPoint) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, revenueChartPointImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RevenueChartPoint")
+		case "date":
+			out.Values[i] = ec._RevenueChartPoint_date(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "revenue":
+			out.Values[i] = ec._RevenueChartPoint_revenue(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "transactions":
+			out.Values[i] = ec._RevenueChartPoint_transactions(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var routingRuleImplementors = []string{"RoutingRule"}
 
 func (ec *executionContext) _RoutingRule(ctx context.Context, sel ast.SelectionSet, obj *model.RoutingRule) graphql.Marshaler {
@@ -53375,6 +56088,55 @@ func (ec *executionContext) _UserDetail(ctx context.Context, sel ast.SelectionSe
 	return out
 }
 
+var userGrowthPointImplementors = []string{"UserGrowthPoint"}
+
+func (ec *executionContext) _UserGrowthPoint(ctx context.Context, sel ast.SelectionSet, obj *model.UserGrowthPoint) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, userGrowthPointImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("UserGrowthPoint")
+		case "date":
+			out.Values[i] = ec._UserGrowthPoint_date(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "newUsers":
+			out.Values[i] = ec._UserGrowthPoint_newUsers(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalUsers":
+			out.Values[i] = ec._UserGrowthPoint_totalUsers(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var userListItemImplementors = []string{"UserListItem"}
 
 func (ec *executionContext) _UserListItem(ctx context.Context, sel ast.SelectionSet, obj *model.UserListItem) graphql.Marshaler {
@@ -53536,6 +56298,11 @@ func (ec *executionContext) _UserSubscription(ctx context.Context, sel ast.Selec
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "planName":
+			out.Values[i] = ec._UserSubscription_planName(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "status":
 			out.Values[i] = ec._UserSubscription_status(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -53558,6 +56325,26 @@ func (ec *executionContext) _UserSubscription(ctx context.Context, sel ast.Selec
 			}
 		case "plan":
 			out.Values[i] = ec._UserSubscription_plan(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "usedTokens":
+			out.Values[i] = ec._UserSubscription_usedTokens(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tokenLimit":
+			out.Values[i] = ec._UserSubscription_tokenLimit(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "quotaPercentage":
+			out.Values[i] = ec._UserSubscription_quotaPercentage(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "isQuotaExceeded":
+			out.Values[i] = ec._UserSubscription_isQuotaExceeded(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -54075,6 +56862,46 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 
 // region    ***************************** type.gotpl *****************************
 
+func (ec *executionContext) marshalNAdminDashboard2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAdminDashboard(ctx context.Context, sel ast.SelectionSet, v model.AdminDashboard) graphql.Marshaler {
+	return ec._AdminDashboard(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAdminDashboard2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAdminDashboard(ctx context.Context, sel ast.SelectionSet, v *model.AdminDashboard) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AdminDashboard(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAdminUsageByUser2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAdminUsageByUserᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.AdminUsageByUser) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNAdminUsageByUser2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAdminUsageByUser(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNAdminUsageByUser2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAdminUsageByUser(ctx context.Context, sel ast.SelectionSet, v *model.AdminUsageByUser) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AdminUsageByUser(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNAlert2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAlert(ctx context.Context, sel ast.SelectionSet, v model.Alert) graphql.Marshaler {
 	return ec._Alert(ctx, sel, &v)
 }
@@ -54245,6 +57072,20 @@ func (ec *executionContext) marshalNApiKeyHealth2ᚖllmᚑrouterᚑplatformᚋin
 		return graphql.Null
 	}
 	return ec._ApiKeyHealth(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNApiKeyRateLimitStatus2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAPIKeyRateLimitStatus(ctx context.Context, sel ast.SelectionSet, v model.APIKeyRateLimitStatus) graphql.Marshaler {
+	return ec._ApiKeyRateLimitStatus(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNApiKeyRateLimitStatus2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAPIKeyRateLimitStatus(ctx context.Context, sel ast.SelectionSet, v *model.APIKeyRateLimitStatus) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ApiKeyRateLimitStatus(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNApiKeyWithSecret2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAPIKeyWithSecret(ctx context.Context, sel ast.SelectionSet, v model.APIKeyWithSecret) graphql.Marshaler {
@@ -54475,20 +57316,6 @@ func (ec *executionContext) marshalNCacheStats2ᚖllmᚑrouterᚑplatformᚋinte
 func (ec *executionContext) unmarshalNChangePasswordInput2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐChangePasswordInput(ctx context.Context, v any) (model.ChangePasswordInput, error) {
 	res, err := ec.unmarshalInputChangePasswordInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
-}
-
-func (ec *executionContext) marshalNCheckoutSession2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCheckoutSession(ctx context.Context, sel ast.SelectionSet, v model.CheckoutSession) graphql.Marshaler {
-	return ec._CheckoutSession(ctx, sel, &v)
-}
-
-func (ec *executionContext) marshalNCheckoutSession2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCheckoutSession(ctx context.Context, sel ast.SelectionSet, v *model.CheckoutSession) graphql.Marshaler {
-	if v == nil {
-		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
-		}
-		return graphql.Null
-	}
-	return ec._CheckoutSession(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNCoupon2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCoupon(ctx context.Context, sel ast.SelectionSet, v model.Coupon) graphql.Marshaler {
@@ -55753,6 +58580,32 @@ func (ec *executionContext) unmarshalNResetPasswordInput2llmᚑrouterᚑplatform
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) marshalNRevenueChartPoint2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRevenueChartPointᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.RevenueChartPoint) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNRevenueChartPoint2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRevenueChartPoint(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNRevenueChartPoint2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRevenueChartPoint(ctx context.Context, sel ast.SelectionSet, v *model.RevenueChartPoint) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._RevenueChartPoint(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNRoutingRule2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRoutingRule(ctx context.Context, sel ast.SelectionSet, v model.RoutingRule) graphql.Marshaler {
 	return ec._RoutingRule(ctx, sel, &v)
 }
@@ -56171,6 +59024,32 @@ func (ec *executionContext) marshalNUserDetail2ᚖllmᚑrouterᚑplatformᚋinte
 	return ec._UserDetail(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNUserGrowthPoint2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐUserGrowthPointᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.UserGrowthPoint) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNUserGrowthPoint2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐUserGrowthPoint(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNUserGrowthPoint2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐUserGrowthPoint(ctx context.Context, sel ast.SelectionSet, v *model.UserGrowthPoint) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._UserGrowthPoint(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNUserListItem2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐUserListItemᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.UserListItem) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
@@ -56195,6 +59074,20 @@ func (ec *executionContext) marshalNUserListItem2ᚖllmᚑrouterᚑplatformᚋin
 		return graphql.Null
 	}
 	return ec._UserListItem(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNUserSubscription2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐUserSubscription(ctx context.Context, sel ast.SelectionSet, v model.UserSubscription) graphql.Marshaler {
+	return ec._UserSubscription(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNUserSubscription2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐUserSubscription(ctx context.Context, sel ast.SelectionSet, v *model.UserSubscription) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._UserSubscription(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNWebhookDelivery2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐWebhookDeliveryᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.WebhookDelivery) graphql.Marshaler {
