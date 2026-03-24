@@ -99,6 +99,7 @@ type Query {
 
   # ── Public (unauthenticated) ──
   registrationMode: RegistrationMode!
+  siteConfig: SiteConfig!
 }
 
 type RegistrationMode {

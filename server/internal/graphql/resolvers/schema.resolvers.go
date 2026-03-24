@@ -4146,6 +4146,43 @@ func (r *queryResolver) RegistrationMode(ctx context.Context) (*model.Registrati
 	}, nil
 }
 
+// SiteConfig is the resolver for the siteConfig field.
+func (r *queryResolver) SiteConfig(ctx context.Context) (*model.SiteConfig, error) {
+	result := &model.SiteConfig{
+		SiteName:   "Router",
+		Subtitle:   "",
+		LogoURL:    "",
+		FaviconURL: "",
+	}
+
+	all, err := r.SystemConfig.GetAllSettings(ctx)
+	if err != nil {
+		return result, nil
+	}
+
+	siteJSON, ok := all["site"]
+	if !ok {
+		return result, nil
+	}
+
+	var parsed struct {
+		SiteName   string `json:"siteName"`
+		Subtitle   string `json:"subtitle"`
+		LogoUrl    string `json:"logoUrl"`
+		FaviconUrl string `json:"faviconUrl"`
+	}
+	if json.Unmarshal([]byte(siteJSON), &parsed) == nil {
+		if parsed.SiteName != "" {
+			result.SiteName = parsed.SiteName
+		}
+		result.Subtitle = parsed.Subtitle
+		result.LogoURL = parsed.LogoUrl
+		result.FaviconURL = parsed.FaviconUrl
+	}
+
+	return result, nil
+}
+
 // Mutation returns generated.MutationResolver implementation.
 func (r *Resolver) Mutation() generated.MutationResolver { return &mutationResolver{r} }
 
@@ -4154,3 +4191,53 @@ func (r *Resolver) Query() generated.QueryResolver { return &queryResolver{r} }
 
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
+
+// !!! WARNING !!!
+// The code below was going to be deleted when updating resolvers. It has been copied here so you have
+// one last chance to move it out of harms way if you want. There are two reasons this happens:
+//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
+//    it when you're done.
+//  - You have helper methods in this file. Move them out to keep these resolver files clean.
+/*
+	func (r *mutationResolver) verifyCaptcha(ctx context.Context, captchaToken *string) error {
+	ip, _ := clientInfo(ctx)
+	token := ""
+	if captchaToken != nil {
+		token = *captchaToken
+	}
+	return r.TurnstileSvc.Verify(ctx, token, ip)
+}
+func (r *mutationResolver) consumeInviteCode(ctx context.Context, code string) error {
+	return r.DB().Transaction(func(tx *gorm.DB) error {
+		var ic models.InviteCode
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("code = ?", code).First(&ic).Error; err != nil {
+			return fmt.Errorf("invalid invite code")
+		}
+		if !ic.IsValid() {
+			return fmt.Errorf("invite code is expired or exhausted")
+		}
+		return tx.Model(&ic).UpdateColumn("use_count", gorm.Expr("use_count + 1")).Error
+	})
+}
+func (r *mutationResolver) checkWelcomeCreditEligibility(ctx context.Context) bool {
+	if r.RedisClient() == nil {
+		return true
+	}
+	ip, _ := clientInfo(ctx)
+	creditKey := fmt.Sprintf("reg_credit:%s", ip)
+	cnt, redisErr := r.RedisClient().Incr(ctx, creditKey).Result()
+	if redisErr != nil {
+		return true
+	}
+	if cnt == 1 {
+		r.RedisClient().Expire(ctx, creditKey, 24*time.Hour)
+	}
+	if cnt > 3 {
+		r.Logger.Warn("welcome credit denied: IP throttle exceeded",
+			zap.String("ip", sanitize.LogValue(ip)), zap.Int64("count", cnt))
+		return false
+	}
+	return true
+}
+*/

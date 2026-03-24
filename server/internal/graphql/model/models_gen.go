@@ -1030,6 +1030,13 @@ type ServiceLoad struct {
 	ErrorRate         float64 `json:"errorRate"`
 }
 
+type SiteConfig struct {
+	SiteName   string `json:"siteName"`
+	Subtitle   string `json:"subtitle"`
+	LogoURL    string `json:"logoUrl"`
+	FaviconURL string `json:"faviconUrl"`
+}
+
 type SystemLoad struct {
 	Service  *ServiceLoad  `json:"service"`
 	Database *DatabaseLoad `json:"database"`

@@ -146,6 +146,13 @@ type UsageRecord {
   createdAt: DateTime!
 }
 
+type SiteConfig {
+  siteName: String!
+  subtitle: String!
+  logoUrl: String!
+  faviconUrl: String!
+}
+
 type AnomalyResult {
   hasAnomaly: Boolean!
   message: String

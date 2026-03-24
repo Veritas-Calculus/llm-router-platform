@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
 import { useMutation } from '@apollo/client/react';
-import { CHANGE_PASSWORD, GENERATE_MFA_SECRET, VERIFY_AND_ENABLE_MFA, DISABLE_MFA } from '@/lib/graphql/operations';
+import { CHANGE_PASSWORD, GENERATE_MFA_SECRET, VERIFY_AND_ENABLE_MFA, DISABLE_MFA, UPDATE_PROFILE } from '@/lib/graphql/operations';
 import { ShieldCheckIcon, ShieldExclamationIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -15,6 +15,7 @@ function SettingsPage() {
   const [generateMfaSecret] = useMutation<any>(GENERATE_MFA_SECRET);
   const [verifyAndEnableMfa] = useMutation<any>(VERIFY_AND_ENABLE_MFA);
   const [disableMfaMut] = useMutation<any>(DISABLE_MFA);
+  const [updateProfile] = useMutation<any>(UPDATE_PROFILE);
 
   // MFA Setup State
   const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);
@@ -36,7 +37,12 @@ function SettingsPage() {
   const handleSaveProfile = async () => {
     setSaving(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const { data: result } = await updateProfile({
+        variables: { input: { name: formData.name } },
+      });
+      if (result?.updateProfile && user) {
+        updateUser({ ...user, name: result.updateProfile.name });
+      }
       toast.success('Profile updated');
     } catch {
       toast.error('Failed to update profile');

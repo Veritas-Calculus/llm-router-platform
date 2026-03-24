@@ -65,3 +65,14 @@ export const MY_SETTINGS_QUERY = gql`
     myAnomalyDetection { hasAnomaly message }
   }
 `;
+
+export const SITE_CONFIG_QUERY = gql`
+  query SiteConfig {
+    siteConfig {
+      siteName
+      subtitle
+      logoUrl
+      faviconUrl
+    }
+  }
+`;

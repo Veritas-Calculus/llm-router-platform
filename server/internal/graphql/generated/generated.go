@@ -873,6 +873,7 @@ type ComplexityRoot struct {
 		RegistrationMode       func(childComplexity int) int
 		RoutingRules           func(childComplexity int, page *int, pageSize *int) int
 		SemanticCaches         func(childComplexity int, limit *int, offset *int) int
+		SiteConfig             func(childComplexity int) int
 		SystemAnomalyDetection func(childComplexity int) int
 		SystemLoad             func(childComplexity int) int
 		SystemSLA              func(childComplexity int, hours *int) int
@@ -998,6 +999,13 @@ type ComplexityRoot struct {
 		P95LatencyMs      func(childComplexity int) int
 		RequestsInFlight  func(childComplexity int) int
 		RequestsPerSecond func(childComplexity int) int
+	}
+
+	SiteConfig struct {
+		FaviconURL func(childComplexity int) int
+		LogoURL    func(childComplexity int) int
+		SiteName   func(childComplexity int) int
+		Subtitle   func(childComplexity int) int
 	}
 
 	SystemLoad struct {
@@ -1369,6 +1377,7 @@ type QueryResolver interface {
 	PublishedDocuments(ctx context.Context) ([]*model.Document, error)
 	Document(ctx context.Context, id string) (*model.Document, error)
 	RegistrationMode(ctx context.Context) (*model.RegistrationMode, error)
+	SiteConfig(ctx context.Context) (*model.SiteConfig, error)
 	SemanticCaches(ctx context.Context, limit *int, offset *int) ([]*model.SemanticCache, error)
 	CacheStats(ctx context.Context) (*model.CacheStats, error)
 	CacheConfig(ctx context.Context) (*model.CacheConfig, error)
@@ -5971,6 +5980,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.SemanticCaches(childComplexity, args["limit"].(*int), args["offset"].(*int)), true
+	case "Query.siteConfig":
+		if e.ComplexityRoot.Query.SiteConfig == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.SiteConfig(childComplexity), true
 	case "Query.systemAnomalyDetection":
 		if e.ComplexityRoot.Query.SystemAnomalyDetection == nil {
 			break
@@ -6545,6 +6560,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServiceLoad.RequestsPerSecond(childComplexity), true
+
+	case "SiteConfig.faviconUrl":
+		if e.ComplexityRoot.SiteConfig.FaviconURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SiteConfig.FaviconURL(childComplexity), true
+	case "SiteConfig.logoUrl":
+		if e.ComplexityRoot.SiteConfig.LogoURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SiteConfig.LogoURL(childComplexity), true
+	case "SiteConfig.siteName":
+		if e.ComplexityRoot.SiteConfig.SiteName == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SiteConfig.SiteName(childComplexity), true
+	case "SiteConfig.subtitle":
+		if e.ComplexityRoot.SiteConfig.Subtitle == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SiteConfig.Subtitle(childComplexity), true
 
 	case "SystemLoad.database":
 		if e.ComplexityRoot.SystemLoad.Database == nil {
@@ -7580,6 +7620,7 @@ type Query {
 
   # ── Public (unauthenticated) ──
   registrationMode: RegistrationMode!
+  siteConfig: SiteConfig!
 }
 
 type RegistrationMode {
@@ -8129,6 +8170,13 @@ type UsageRecord {
   latencyMs: Int!
   isSuccess: Boolean!
   createdAt: DateTime!
+}
+
+type SiteConfig {
+  siteName: String!
+  subtitle: String!
+  logoUrl: String!
+  faviconUrl: String!
 }
 
 type AnomalyResult {
@@ -37883,6 +37931,45 @@ func (ec *executionContext) fieldContext_Query_registrationMode(_ context.Contex
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_siteConfig(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_siteConfig,
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().SiteConfig(ctx)
+		},
+		nil,
+		ec.marshalNSiteConfig2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐSiteConfig,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_siteConfig(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "siteName":
+				return ec.fieldContext_SiteConfig_siteName(ctx, field)
+			case "subtitle":
+				return ec.fieldContext_SiteConfig_subtitle(ctx, field)
+			case "logoUrl":
+				return ec.fieldContext_SiteConfig_logoUrl(ctx, field)
+			case "faviconUrl":
+				return ec.fieldContext_SiteConfig_faviconUrl(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type SiteConfig", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_semanticCaches(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -40834,6 +40921,122 @@ func (ec *executionContext) fieldContext_ServiceLoad_errorRate(_ context.Context
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SiteConfig_siteName(ctx context.Context, field graphql.CollectedField, obj *model.SiteConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SiteConfig_siteName,
+		func(ctx context.Context) (any, error) {
+			return obj.SiteName, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SiteConfig_siteName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SiteConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SiteConfig_subtitle(ctx context.Context, field graphql.CollectedField, obj *model.SiteConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SiteConfig_subtitle,
+		func(ctx context.Context) (any, error) {
+			return obj.Subtitle, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SiteConfig_subtitle(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SiteConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SiteConfig_logoUrl(ctx context.Context, field graphql.CollectedField, obj *model.SiteConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SiteConfig_logoUrl,
+		func(ctx context.Context) (any, error) {
+			return obj.LogoURL, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SiteConfig_logoUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SiteConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _SiteConfig_faviconUrl(ctx context.Context, field graphql.CollectedField, obj *model.SiteConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_SiteConfig_faviconUrl,
+		func(ctx context.Context) (any, error) {
+			return obj.FaviconURL, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_SiteConfig_faviconUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "SiteConfig",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -55244,6 +55447,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "siteConfig":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_siteConfig(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "semanticCaches":
 			field := field
 
@@ -56221,6 +56446,60 @@ func (ec *executionContext) _ServiceLoad(ctx context.Context, sel ast.SelectionS
 			}
 		case "errorRate":
 			out.Values[i] = ec._ServiceLoad_errorRate(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var siteConfigImplementors = []string{"SiteConfig"}
+
+func (ec *executionContext) _SiteConfig(ctx context.Context, sel ast.SelectionSet, obj *model.SiteConfig) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, siteConfigImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SiteConfig")
+		case "siteName":
+			out.Values[i] = ec._SiteConfig_siteName(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "subtitle":
+			out.Values[i] = ec._SiteConfig_subtitle(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "logoUrl":
+			out.Values[i] = ec._SiteConfig_logoUrl(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "faviconUrl":
+			out.Values[i] = ec._SiteConfig_faviconUrl(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -59696,6 +59975,20 @@ func (ec *executionContext) marshalNServiceLoad2ᚖllmᚑrouterᚑplatformᚋint
 		return graphql.Null
 	}
 	return ec._ServiceLoad(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNSiteConfig2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐSiteConfig(ctx context.Context, sel ast.SelectionSet, v model.SiteConfig) graphql.Marshaler {
+	return ec._SiteConfig(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNSiteConfig2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐSiteConfig(ctx context.Context, sel ast.SelectionSet, v *model.SiteConfig) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SiteConfig(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {

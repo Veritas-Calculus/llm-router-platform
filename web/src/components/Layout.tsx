@@ -1,9 +1,9 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
- 
 import { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
+import { useQuery } from '@apollo/client/react';
+import { SITE_CONFIG_QUERY } from '@/lib/graphql/operations';
 import {
   KeyIcon,
   ChartBarIcon,
@@ -170,6 +170,11 @@ function Layout() {
   });
   const userMenuRef = useRef<HTMLDivElement>(null);
 
+  // Load site config
+  const { data: siteData } = useQuery<any>(SITE_CONFIG_QUERY);
+  const siteName = siteData?.siteConfig?.siteName || 'Router';
+  const siteInitial = siteName.charAt(0).toUpperCase();
+
   const showAdminNav = isAdmin && adminView;
 
   const handleLogout = () => {
@@ -198,6 +203,11 @@ function Layout() {
   useEffect(() => {
     setIsSidebarOpen(false);
   }, [location.pathname]);
+
+  // Update document title from site config
+  useEffect(() => {
+    document.title = siteName;
+  }, [siteName]);
 
   // If admin switches to user view while on an admin-only page, redirect
   // If admin switches to admin view while on a user page, redirect to admin dashboard
@@ -246,10 +256,10 @@ function Layout() {
         <div className="flex flex-col h-full">
           <div className="p-6 pb-3 flex items-center gap-3">
             <div className="w-9 h-9 bg-apple-blue rounded-xl flex items-center justify-center shadow-apple-blue">
-              <span className="text-white font-bold text-lg">R</span>
+              <span className="text-white font-bold text-lg">{siteInitial}</span>
             </div>
             <span className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-apple-gray-900 to-apple-gray-600">
-              Router
+              {siteName}
             </span>
           </div>
 
