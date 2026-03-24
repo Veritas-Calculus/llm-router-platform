@@ -13,6 +13,7 @@ import (
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/pkg/sanitize"
+	"llm-router-platform/pkg/tokencount"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -82,11 +83,11 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 	// Record usage after streaming completes (success or partial failure)
 	// If provider didn't return usage in stream chunks, estimate tokens from text
 	if promptTokens == 0 && completionTokens == 0 && fullText != "" {
-		// Estimate output tokens from accumulated text (~4 chars per token)
-		completionTokens = estimateTokenCount(fullText)
+		// Use precise tiktoken-based counting instead of crude estimation
+		completionTokens = tokencount.CountTokens(fullText, req.Model)
 		// Estimate input tokens from request messages
 		for _, m := range req.Messages {
-			promptTokens += estimateTokenCount(m.Content.Text)
+			promptTokens += tokencount.CountTokens(m.Content.Text, req.Model)
 		}
 	}
 	gen.End(fullText, promptTokens, completionTokens)

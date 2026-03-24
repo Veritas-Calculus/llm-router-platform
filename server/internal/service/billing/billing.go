@@ -13,6 +13,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // Service handles billing and usage tracking.
@@ -83,6 +84,87 @@ func (s *Service) RecordUsage(ctx context.Context, log *models.UsageLog) error {
 	err := s.usageRepo.Create(ctx, log)
 
 	// Refresh redis cache — use org-scoped key matching GetUsageSummary read path
+	if s.redis != nil && err == nil {
+		s.incrUsageCache(ctx, log)
+	}
+
+	return err
+}
+
+// RecordUsageAndDeduct atomically records API usage and deducts the cost from
+// the user's balance in a single database transaction. This prevents the race
+// condition where usage is recorded but balance deduction fails (or vice versa)
+// due to a process crash between the two operations.
+//
+// If balanceSvc is nil or cost is zero, it behaves identically to RecordUsage.
+func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog, balanceSvc *BalanceService, userID uuid.UUID, description string) error {
+	// Calculate cost first (outside transaction — read-only)
+	if log.ModelID != uuid.Nil {
+		model, err := s.modelRepo.GetByID(ctx, log.ModelID)
+		if err == nil {
+			log.Cost = s.calculateCost(model, log.RequestTokens, log.ResponseTokens)
+		}
+	}
+
+	// If no balance service or zero cost, fall back to simple insert
+	if balanceSvc == nil || log.Cost <= 0 {
+		err := s.usageRepo.Create(ctx, log)
+		if s.redis != nil && err == nil {
+			s.incrUsageCache(ctx, log)
+		}
+		return err
+	}
+
+	// Atomic transaction: insert usage log + deduct balance
+	err := balanceSvc.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. Insert usage log within the transaction
+		if err := tx.Create(log).Error; err != nil {
+			return err
+		}
+
+		// 2. Lock user row and deduct balance
+		var user models.User
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, "id = ?", userID).Error; err != nil {
+			return err
+		}
+
+		user.Balance -= log.Cost
+		if err := tx.Save(&user).Error; err != nil {
+			return err
+		}
+
+		// 3. Record the transaction
+		transaction := &models.Transaction{
+			OrgID:       userID,
+			UserID:      userID,
+			Type:        "deduction",
+			Amount:      -log.Cost,
+			Balance:     user.Balance,
+			Description: description,
+			ReferenceID: log.ID.String(),
+		}
+		if err := tx.Create(transaction).Error; err != nil {
+			return err
+		}
+
+		// 4. Low balance alert (async, non-transactional)
+		if balanceSvc.redis != nil && balanceSvc.emailSvc != nil && user.Balance < 1.0 {
+			cacheKey := fmt.Sprintf("quota_warn:balance:%s", userID.String())
+			if err := balanceSvc.redis.Get(ctx, cacheKey).Err(); err == redis.Nil {
+				balanceSvc.logger.Info("sending low balance warning email", zap.String("userID", userID.String()), zap.Float64("balance", user.Balance))
+				go func(to, name string, currentBalance float64) {
+					if err := balanceSvc.emailSvc.SendQuotaWarningEmail(to, name, fmt.Sprintf("$%.2f", currentBalance), "$1.00"); err != nil {
+						balanceSvc.logger.Error("failed to send quota warning email", zap.Error(err))
+					}
+				}(user.Email, user.Name, user.Balance)
+				balanceSvc.redis.Set(ctx, cacheKey, "1", 24*time.Hour)
+			}
+		}
+
+		return nil
+	})
+
+	// Refresh redis cache outside transaction
 	if s.redis != nil && err == nil {
 		s.incrUsageCache(ctx, log)
 	}

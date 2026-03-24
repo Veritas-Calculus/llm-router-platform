@@ -15,6 +15,7 @@ import (
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/router"
+	"llm-router-platform/internal/service/safety"
 	"llm-router-platform/internal/service/tracking"
 	router_errs "llm-router-platform/internal/errors"
 	"llm-router-platform/pkg/sanitize"
@@ -41,10 +42,14 @@ type ChatHandler struct {
 	dispatcher *tracking.Dispatcher
 	cache      *semantic.SemanticCacheService
 	redis      *redis.Client
+	safety     safety.Classifier
 }
 
 // NewChatHandler creates a new chat handler.
-func NewChatHandler(r *router.Router, b *billing.Service, m *memory.Service, sub *billing.SubscriptionService, bal *billing.BalanceService, obs observability.Service, db *gorm.DB, cacheService *semantic.SemanticCacheService, redisClient *redis.Client, logger *zap.Logger) *ChatHandler {
+func NewChatHandler(r *router.Router, b *billing.Service, m *memory.Service, sub *billing.SubscriptionService, bal *billing.BalanceService, obs observability.Service, db *gorm.DB, cacheService *semantic.SemanticCacheService, redisClient *redis.Client, safetyClassifier safety.Classifier, logger *zap.Logger) *ChatHandler {
+	if safetyClassifier == nil {
+		safetyClassifier = &safety.NoopClassifier{}
+	}
 	return &ChatHandler{
 		router:     r,
 		billing:    b,
@@ -57,6 +62,7 @@ func NewChatHandler(r *router.Router, b *billing.Service, m *memory.Service, sub
 		dispatcher: tracking.NewDispatcher(db, logger),
 		cache:      cacheService,
 		redis:      redisClient,
+		safety:     safetyClassifier,
 	}
 }
 
@@ -297,10 +303,7 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 		ResponseTokens: resp.Usage.CompletionTokens,
 		TotalTokens:    resp.Usage.TotalTokens,
 	}
-	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
-	if h.balance != nil && usageLog.Cost > 0 {
-		_ = h.balance.DeductBalance(c.Request.Context(), projectObj.ID, usageLog.Cost, "Anthropic API: "+anthroReq.Model, usageLog.ID.String())
-	}
+	_ = h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, projectObj.ID, "Anthropic API: "+anthroReq.Model)
 
 	c.JSON(http.StatusOK, anthroResp)
 }
@@ -440,6 +443,29 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 				_ = json.Unmarshal([]byte(scrubbedStr), &newContent)
 				messages[i].Content = newContent
 			}
+		}
+	}
+
+	// === Content Safety Classification ===
+	if h.safety != nil {
+		result, err := h.safety.Classify(c.Request.Context(), messages)
+		if err != nil {
+			h.logger.Error("safety classification failed", zap.Error(err))
+			// Fail open: if the safety service is down, allow the request through
+		} else if !result.Safe {
+			h.logger.Warn("request blocked by safety classifier",
+				zap.String("category", result.Category),
+				zap.Float64("score", result.Score),
+				zap.String("model", sanitize.LogValue(req.Model)),
+			)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": gin.H{
+					"message": "Your request was flagged by our content safety system. Please revise your input.",
+					"type":    "invalid_request_error",
+					"code":    "content_policy_violation",
+				},
+			})
+			return
 		}
 	}
 
@@ -677,12 +703,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		MCPCallCount:   result.MCPCallCount,
 		MCPErrorCount:  result.MCPErrorCount,
 	}
-	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
-
-	// Deduct balance
-	if h.balance != nil && usageLog.Cost > 0 {
-		_ = h.balance.DeductBalance(c.Request.Context(), projectObj.ID, usageLog.Cost, "LLM Request: "+req.Model, usageLog.ID.String())
-	}
+	_ = h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, projectObj.ID, "LLM Request: "+req.Model)
 
 	// Save Semantic Cache (Async)
 	if promptHash != "" && len(resp.Choices) > 0 {

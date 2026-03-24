@@ -171,6 +171,22 @@ jobs:
         working-directory: server
         run: govulncheck ./...
 
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec (SAST)
+        working-directory: server
+        run: gosec -tests=false -exclude=G104 -fmt=json -out=gosec-results.json ./... || true
+
+      - name: Display gosec results
+        if: always()
+        working-directory: server
+        run: |
+          if [ -f gosec-results.json ]; then
+            echo "=== gosec findings ==="
+            cat gosec-results.json | python3 -m json.tool 2>/dev/null || cat gosec-results.json
+          fi
+
       - name: Build Docker image for scanning
         run: docker build -t llm-router-server:scan ./server
 

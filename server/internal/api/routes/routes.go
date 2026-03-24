@@ -264,7 +264,7 @@ func Setup(
 	// All management operations are now served via /graphql (Apollo Client).
 	// Only LLM proxy endpoints and payment webhooks remain under /api/v1.
 
-	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Subscription, services.Balance, services.Observability, services.DB, services.SemanticCache, services.RedisClient, logger)
+	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Subscription, services.Balance, services.Observability, services.DB, services.SemanticCache, services.RedisClient, nil, logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)
 	paymentHandler := handlers.NewPaymentHandler(services.Payment, logger)
 	auditExportHandler := handlers.NewAuditHandler(services.AuditService, logger)
