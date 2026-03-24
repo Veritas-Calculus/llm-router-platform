@@ -19,20 +19,25 @@ import (
 
 // Service manages async task lifecycle and webhook notifications.
 type Service struct {
-	repo   repository.TaskRepo
-	logger *zap.Logger
+	repo                 repository.TaskRepo
+	logger               *zap.Logger
+	allowLocalProviders  bool
 }
 
 // NewService creates a new task service.
-func NewService(repo repository.TaskRepo, logger *zap.Logger) *Service {
-	return &Service{repo: repo, logger: logger}
+func NewService(repo repository.TaskRepo, logger *zap.Logger, allowLocalProviders ...bool) *Service {
+	allow := false
+	if len(allowLocalProviders) > 0 {
+		allow = allowLocalProviders[0]
+	}
+	return &Service{repo: repo, logger: logger, allowLocalProviders: allow}
 }
 
 // CreateTask creates a new async task.
 func (s *Service) CreateTask(ctx context.Context, projectID uuid.UUID, taskType, input, webhookURL string) (*models.AsyncTask, error) {
 	// Validate webhook URL against SSRF before persisting
 	if webhookURL != "" {
-		if err := sanitize.ValidateWebhookURL(webhookURL, false); err != nil {
+		if err := sanitize.ValidateWebhookURL(webhookURL, false, s.allowLocalProviders); err != nil {
 			return nil, fmt.Errorf("invalid webhook URL: %w", err)
 		}
 	}

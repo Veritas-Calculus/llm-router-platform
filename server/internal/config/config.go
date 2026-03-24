@@ -31,6 +31,7 @@ type Config struct {
 	Stripe        StripeConfig
 	OAuth2        OAuth2Config
 	Turnstile     TurnstileConfig
+	Cleanup       CleanupConfig
 }
 
 // SecurityConfig holds API and Gateway security environment settings.
@@ -57,16 +58,22 @@ type ServerConfig struct {
 	CORSOrigins                 []string // Allowed CORS origins; empty or ["*"] = allow all
 	PprofEnabled                bool     // Opt-in pprof endpoints; default false
 	MetricsAllowUnauthenticated bool     // Expose /internal/metrics without auth for Prometheus scraping
+	ReadTimeoutSeconds          int      // HTTP server read timeout (default: 30)
+	WriteTimeoutSeconds         int      // HTTP server write timeout; must be large for LLM streaming (default: 600)
+	AllowLocalProviders         bool     // Allow provider URLs pointing to private/reserved IPs (default: false)
 }
 
 // DatabaseConfig holds database connection configuration.
 type DatabaseConfig struct {
-	Host     string
-	Port     string
-	User     string
-	Password string // #nosec G101 -- internal config, never serialized to API responses
-	Name     string
-	SSLMode  string
+	Host                   string
+	Port                   string
+	User                   string
+	Password               string // #nosec G101 -- internal config, never serialized to API responses
+	Name                   string
+	SSLMode                string
+	MaxOpenConns           int    // Maximum number of open connections to the database
+	MaxIdleConns           int    // Maximum number of idle connections in the pool
+	ConnMaxLifetimeMinutes int    // Maximum lifetime of a connection in minutes
 }
 
 // RedisConfig holds Redis connection configuration.
@@ -181,6 +188,13 @@ type RegistrationConfig struct {
 	InviteCode string // Required when Mode == "invite"
 }
 
+// CleanupConfig holds data retention settings for periodic cleanup jobs.
+type CleanupConfig struct {
+	HealthRetentionDays int // Days to retain health check history (default: 30)
+	AlertRetentionDays  int // Days to retain resolved alerts (default: 90)
+	AuditRetentionDays  int // Days to retain audit log entries (default: 90)
+}
+
 // ObservabilityConfig holds observability configuration (e.g. Langfuse, Sentry).
 type ObservabilityConfig struct {
 	LangfuseEnabled   bool
@@ -223,19 +237,25 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		Server: ServerConfig{
-			Port:         viper.GetString("SERVER_PORT"),
-			Mode:         viper.GetString("GIN_MODE"),
-			CORSOrigins:  corsOrigins,
+			Port:                        viper.GetString("SERVER_PORT"),
+			Mode:                        viper.GetString("GIN_MODE"),
+			CORSOrigins:                 corsOrigins,
 			PprofEnabled:                viper.GetBool("PPROF_ENABLED"),
 			MetricsAllowUnauthenticated: viper.GetBool("METRICS_ALLOW_UNAUTHENTICATED"),
+			ReadTimeoutSeconds:          viper.GetInt("SERVER_READ_TIMEOUT_SECONDS"),
+			WriteTimeoutSeconds:         viper.GetInt("SERVER_WRITE_TIMEOUT_SECONDS"),
+			AllowLocalProviders:         viper.GetBool("ALLOW_LOCAL_PROVIDERS"),
 		},
 		Database: DatabaseConfig{
-			Host:     viper.GetString("DB_HOST"),
-			Port:     viper.GetString("DB_PORT"),
-			User:     viper.GetString("DB_USER"),
-			Password: viper.GetString("DB_PASSWORD"),
-			Name:     viper.GetString("DB_NAME"),
-			SSLMode:  viper.GetString("DB_SSL_MODE"),
+			Host:                   viper.GetString("DB_HOST"),
+			Port:                   viper.GetString("DB_PORT"),
+			User:                   viper.GetString("DB_USER"),
+			Password:               viper.GetString("DB_PASSWORD"),
+			Name:                   viper.GetString("DB_NAME"),
+			SSLMode:                viper.GetString("DB_SSL_MODE"),
+			MaxOpenConns:           viper.GetInt("DB_MAX_OPEN_CONNS"),
+			MaxIdleConns:           viper.GetInt("DB_MAX_IDLE_CONNS"),
+			ConnMaxLifetimeMinutes: viper.GetInt("DB_CONN_MAX_LIFETIME_MINUTES"),
 		},
 		Redis: RedisConfig{
 			Host:       viper.GetString("REDIS_HOST"),
@@ -332,6 +352,11 @@ func Load() (*Config, error) {
 			SecretKey: viper.GetString("TURNSTILE_SECRET_KEY"),
 			SiteKey:   viper.GetString("TURNSTILE_SITE_KEY"),
 		},
+		Cleanup: CleanupConfig{
+			HealthRetentionDays: viper.GetInt("CLEANUP_HEALTH_RETENTION_DAYS"),
+			AlertRetentionDays:  viper.GetInt("CLEANUP_ALERT_RETENTION_DAYS"),
+			AuditRetentionDays:  viper.GetInt("CLEANUP_AUDIT_RETENTION_DAYS"),
+		},
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -419,11 +444,16 @@ func (c *Config) Validate() error {
 // setDefaults sets default values for configuration.
 func setDefaults() {
 	viper.SetDefault("SERVER_PORT", "8080")
+	viper.SetDefault("SERVER_READ_TIMEOUT_SECONDS", 30)
+	viper.SetDefault("SERVER_WRITE_TIMEOUT_SECONDS", 600) // Large to support LLM streaming
 	viper.SetDefault("GIN_MODE", "release")
 	viper.SetDefault("CORS_ORIGINS", "") // Empty = deny by default in production; set to "*" or specific origins
 	viper.SetDefault("DB_HOST", "localhost")
 	viper.SetDefault("DB_PORT", "5432")
 	viper.SetDefault("DB_SSL_MODE", "require") // Production default; override to "disable" for local dev
+	viper.SetDefault("DB_MAX_OPEN_CONNS", 100)
+	viper.SetDefault("DB_MAX_IDLE_CONNS", 10)
+	viper.SetDefault("DB_CONN_MAX_LIFETIME_MINUTES", 60)
 	viper.SetDefault("REDIS_HOST", "localhost")
 	viper.SetDefault("REDIS_PORT", "6379")
 	viper.SetDefault("REDIS_DB", 0)
@@ -448,8 +478,11 @@ func setDefaults() {
 	viper.SetDefault("LOG_FORMAT", "json")
 	viper.SetDefault("ADMIN_NAME", "Administrator")
 	viper.SetDefault("ADMIN_IP_WHITELIST", "")      // Empty = deny by default in strict mode, or open if explicitly handled
-	viper.SetDefault("REGISTRATION_MODE", "closed") // closed by default; set to "open" or "invite" as needed
-	viper.SetDefault("INVITE_CODE", "")            // required when mode=invite
+	viper.SetDefault("REGISTRATION_MODE", "open") // open by default; set to "invite" or "closed" as needed
+	viper.SetDefault("INVITE_CODE", "")           // required when mode=invite
+	viper.SetDefault("CLEANUP_HEALTH_RETENTION_DAYS", 30)
+	viper.SetDefault("CLEANUP_ALERT_RETENTION_DAYS", 90)
+	viper.SetDefault("CLEANUP_AUDIT_RETENTION_DAYS", 90)
 	viper.SetDefault("LANGFUSE_ENABLED", false)
 	viper.SetDefault("LANGFUSE_HOST", "https://cloud.langfuse.com")
 	viper.SetDefault("SENTRY_ENABLED", false)

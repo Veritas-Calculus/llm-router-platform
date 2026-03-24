@@ -76,7 +76,7 @@ func (r *mutationResolver) Login(ctx context.Context, input model.LoginInput) (*
 // Register is the resolver for the register field.
 func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInput) (*model.AuthPayload, error) {
 	// ── Registration mode enforcement ──
-	mode := r.Config.Registration.Mode
+	mode := r.Config().Registration.Mode
 	if mode == "" {
 		mode = "closed"
 	}
@@ -98,7 +98,7 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 			return nil, err
 		}
 		// Validate + consume invite code atomically with SELECT FOR UPDATE
-		if err := r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := r.DB().Transaction(func(tx *gorm.DB) error {
 			var ic models.InviteCode
 			if err := tx.Set("gorm:query_option", "FOR UPDATE").
 				Where("code = ?", *input.InviteCode).First(&ic).Error; err != nil {
@@ -130,13 +130,13 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 
 	// ── Onboard: create Org + Project + optional Welcome Credit ──
 	grantCredit := true
-	if r.RedisClient != nil {
+	if r.RedisClient() != nil {
 		ip, _ := clientInfo(ctx)
 		creditKey := fmt.Sprintf("reg_credit:%s", ip)
-		cnt, redisErr := r.RedisClient.Incr(ctx, creditKey).Result()
+		cnt, redisErr := r.RedisClient().Incr(ctx, creditKey).Result()
 		if redisErr == nil {
 			if cnt == 1 {
-				r.RedisClient.Expire(ctx, creditKey, 24*time.Hour)
+				r.RedisClient().Expire(ctx, creditKey, 24*time.Hour)
 			}
 			if cnt > 3 {
 				grantCredit = false
@@ -146,7 +146,7 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 		}
 	}
 
-	if err := user.OnboardAccount(ctx, r.DB, u, user.OnboardAccountParams{
+	if err := user.OnboardAccount(ctx, r.DB(), u, user.OnboardAccountParams{
 		GrantWelcomeCredit: grantCredit,
 	}, r.Logger); err != nil {
 		r.Logger.Error("failed to onboard new user", zap.Error(err), zap.String("user_id", u.ID.String()))
@@ -392,7 +392,7 @@ func (r *mutationResolver) DisableMfa(ctx context.Context, code string) (bool, e
 // CreateAPIKey is the resolver for the createApiKey field.
 func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, name string, scopes *string, rateLimit *int, tokenLimit *int) (*model.APIKeyWithSecret, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	if err := r.RequireProjectRole(ctx, uid, projectID, "admin", "member"); err != nil {
+	if err := r.UserSvc.RequireProjectRole(ctx, uid, projectID, "admin", "member"); err != nil {
 		r.Logger.Error("RequireProjectRole failed in CreateAPIKey", zap.Error(err), zap.String("uid", sanitize.LogValue(uid)), zap.String("projectID", sanitize.LogValue(projectID)))
 		return nil, err
 	}
@@ -470,7 +470,7 @@ func (r *mutationResolver) UpdateAPIKey(ctx context.Context, id string, name *st
 // RevokeAPIKey is the resolver for the revokeApiKey field.
 func (r *mutationResolver) RevokeAPIKey(ctx context.Context, projectID string, id string) (*model.APIKey, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	if err := r.RequireProjectRole(ctx, uid, projectID, "admin", "member"); err != nil {
+	if err := r.UserSvc.RequireProjectRole(ctx, uid, projectID, "admin", "member"); err != nil {
 		return nil, err
 	}
 
@@ -488,7 +488,7 @@ func (r *mutationResolver) RevokeAPIKey(ctx context.Context, projectID string, i
 // DeleteAPIKey is the resolver for the deleteApiKey field.
 func (r *mutationResolver) DeleteAPIKey(ctx context.Context, projectID string, id string) (bool, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	if err := r.RequireProjectRole(ctx, uid, projectID, "admin"); err != nil {
+	if err := r.UserSvc.RequireProjectRole(ctx, uid, projectID, "admin"); err != nil {
 		return false, err
 	}
 
@@ -513,12 +513,12 @@ func (r *mutationResolver) UpdateProject(ctx context.Context, id string, input m
 
 	// Fetch existing project to determine orgID for authorization
 	var existing models.Project
-	if err := r.DB.Where("id = ?", projectID).First(&existing).Error; err != nil {
+	if err := r.DB().Where("id = ?", projectID).First(&existing).Error; err != nil {
 		return nil, fmt.Errorf("project not found")
 	}
 
 	// Must be OWNER or ADMIN of the org
-	if err := r.RequireOrgRole(ctx, uid, existing.OrgID.String(), "OWNER", "ADMIN"); err != nil {
+	if err := r.UserSvc.RequireOrgRole(ctx, uid, existing.OrgID.String(), "OWNER", "ADMIN"); err != nil {
 		return nil, err
 	}
 
@@ -547,17 +547,17 @@ func (r *mutationResolver) UpdateProject(ctx context.Context, id string, input m
 // AddOrganizationMember is the resolver for the addOrganizationMember field.
 func (r *mutationResolver) AddOrganizationMember(ctx context.Context, orgID string, email string, role string) (*model.OrganizationMember, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	if err := r.RequireOrgRole(ctx, uid, orgID, "OWNER", "ADMIN"); err != nil {
+	if err := r.UserSvc.RequireOrgRole(ctx, uid, orgID, "OWNER", "ADMIN"); err != nil {
 		return nil, err
 	}
 
 	var targetUser models.User
-	if err := r.DB.Where("email = ?", email).First(&targetUser).Error; err != nil {
+	if err := r.DB().Where("email = ?", email).First(&targetUser).Error; err != nil {
 		return nil, fmt.Errorf("user not found")
 	}
 
 	var existing models.OrganizationMember
-	if err := r.DB.Where("org_id = ? AND user_id = ?", orgID, targetUser.ID).First(&existing).Error; err == nil {
+	if err := r.DB().Where("org_id = ? AND user_id = ?", orgID, targetUser.ID).First(&existing).Error; err == nil {
 		return nil, fmt.Errorf("user is already a member")
 	}
 
@@ -566,7 +566,7 @@ func (r *mutationResolver) AddOrganizationMember(ctx context.Context, orgID stri
 		UserID: targetUser.ID,
 		Role:   role,
 	}
-	if err := r.DB.Create(&newMember).Error; err != nil {
+	if err := r.DB().Create(&newMember).Error; err != nil {
 		return nil, err
 	}
 
@@ -593,7 +593,7 @@ func (r *mutationResolver) AddOrganizationMember(ctx context.Context, orgID stri
 // UpdateOrganizationMemberRole is the resolver for the updateOrganizationMemberRole field.
 func (r *mutationResolver) UpdateOrganizationMemberRole(ctx context.Context, orgID string, userID string, role string) (*model.OrganizationMember, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	if err := r.RequireOrgRole(ctx, uid, orgID, "OWNER"); err != nil {
+	if err := r.UserSvc.RequireOrgRole(ctx, uid, orgID, "OWNER"); err != nil {
 		return nil, err // Only OWNERs can change roles
 	}
 
@@ -602,11 +602,11 @@ func (r *mutationResolver) UpdateOrganizationMemberRole(ctx context.Context, org
 	}
 
 	var member models.OrganizationMember
-	if err := r.DB.Preload("User").Where("org_id = ? AND user_id = ?", orgID, userID).First(&member).Error; err != nil {
+	if err := r.DB().Preload("User").Where("org_id = ? AND user_id = ?", orgID, userID).First(&member).Error; err != nil {
 		return nil, fmt.Errorf("member not found")
 	}
 
-	if err := r.DB.Model(&member).Where("org_id = ? AND user_id = ?", orgID, userID).Update("role", role).Error; err != nil {
+	if err := r.DB().Model(&member).Where("org_id = ? AND user_id = ?", orgID, userID).Update("role", role).Error; err != nil {
 		return nil, err
 	}
 
@@ -633,7 +633,7 @@ func (r *mutationResolver) UpdateOrganizationMemberRole(ctx context.Context, org
 // RemoveOrganizationMember is the resolver for the removeOrganizationMember field.
 func (r *mutationResolver) RemoveOrganizationMember(ctx context.Context, orgID string, userID string) (bool, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	if err := r.RequireOrgRole(ctx, uid, orgID, "OWNER", "ADMIN"); err != nil {
+	if err := r.UserSvc.RequireOrgRole(ctx, uid, orgID, "OWNER", "ADMIN"); err != nil {
 		return false, err
 	}
 
@@ -643,7 +643,7 @@ func (r *mutationResolver) RemoveOrganizationMember(ctx context.Context, orgID s
 
 	// Verify member exists and isn't owner if deleter is just an admin
 	var member models.OrganizationMember
-	if err := r.DB.Where("org_id = ? AND user_id = ?", orgID, userID).First(&member).Error; err != nil {
+	if err := r.DB().Where("org_id = ? AND user_id = ?", orgID, userID).First(&member).Error; err != nil {
 		return false, fmt.Errorf("member not found")
 	}
 
@@ -651,7 +651,7 @@ func (r *mutationResolver) RemoveOrganizationMember(ctx context.Context, orgID s
 		return false, fmt.Errorf("cannot remove an organization owner")
 	}
 
-	if err := r.DB.Where("org_id = ? AND user_id = ?", orgID, userID).Delete(&models.OrganizationMember{}).Error; err != nil {
+	if err := r.DB().Where("org_id = ? AND user_id = ?", orgID, userID).Delete(&models.OrganizationMember{}).Error; err != nil {
 		return false, err
 	}
 
@@ -663,7 +663,7 @@ func (r *mutationResolver) RemoveOrganizationMember(ctx context.Context, orgID s
 
 // CreateIdentityProvider is the resolver for the createIdentityProvider field.
 func (r *mutationResolver) CreateIdentityProvider(ctx context.Context, input model.CreateIdentityProviderInput) (*model.IdentityProvider, error) {
-	if err := r.RequireOrgRole(ctx, input.OrgID, "OWNER", "ADMIN"); err != nil {
+	if err := r.UserSvc.RequireOrgRole(ctx, input.OrgID, "OWNER", "ADMIN"); err != nil {
 		return nil, err
 	}
 	orgID, _ := uuid.Parse(input.OrgID)
@@ -708,11 +708,11 @@ func (r *mutationResolver) CreateIdentityProvider(ctx context.Context, input mod
 		idp.GroupRoleMapping = *input.GroupRoleMapping
 	}
 
-	if err := r.DB.Create(idp).Error; err != nil {
+	if err := r.DB().Create(idp).Error; err != nil {
 		return nil, fmt.Errorf("failed to create identity provider: %w", err)
 	}
 
-	r.DB.Preload("Organization").First(idp, "id = ?", idp.ID)
+	r.DB().Preload("Organization").First(idp, "id = ?", idp.ID)
 	return mapIdentityProviderToGraphQL(idp), nil
 }
 
@@ -724,11 +724,11 @@ func (r *mutationResolver) UpdateIdentityProvider(ctx context.Context, id string
 	}
 
 	var idp models.IdentityProvider
-	if err := r.DB.First(&idp, "id = ?", idpID).Error; err != nil {
+	if err := r.DB().First(&idp, "id = ?", idpID).Error; err != nil {
 		return nil, fmt.Errorf("identity provider not found")
 	}
 
-	if err := r.RequireOrgRole(ctx, idp.OrgID.String(), "OWNER", "ADMIN"); err != nil {
+	if err := r.UserSvc.RequireOrgRole(ctx, idp.OrgID.String(), "OWNER", "ADMIN"); err != nil {
 		return nil, err
 	}
 
@@ -769,11 +769,11 @@ func (r *mutationResolver) UpdateIdentityProvider(ctx context.Context, id string
 		idp.GroupRoleMapping = *input.GroupRoleMapping
 	}
 
-	if err := r.DB.Save(&idp).Error; err != nil {
+	if err := r.DB().Save(&idp).Error; err != nil {
 		return nil, fmt.Errorf("failed to update identity provider: %w", err)
 	}
 
-	r.DB.Preload("Organization").First(&idp, "id = ?", idp.ID)
+	r.DB().Preload("Organization").First(&idp, "id = ?", idp.ID)
 	return mapIdentityProviderToGraphQL(&idp), nil
 }
 
@@ -785,15 +785,15 @@ func (r *mutationResolver) DeleteIdentityProvider(ctx context.Context, id string
 	}
 
 	var idp models.IdentityProvider
-	if err := r.DB.First(&idp, "id = ?", idpID).Error; err != nil {
+	if err := r.DB().First(&idp, "id = ?", idpID).Error; err != nil {
 		return false, fmt.Errorf("identity provider not found")
 	}
 
-	if err := r.RequireOrgRole(ctx, idp.OrgID.String(), "OWNER", "ADMIN"); err != nil {
+	if err := r.UserSvc.RequireOrgRole(ctx, idp.OrgID.String(), "OWNER", "ADMIN"); err != nil {
 		return false, err
 	}
 
-	if err := r.DB.Delete(&idp).Error; err != nil {
+	if err := r.DB().Delete(&idp).Error; err != nil {
 		return false, fmt.Errorf("failed to delete identity provider: %w", err)
 	}
 
@@ -829,7 +829,7 @@ func (r *mutationResolver) ExportUsageCSV(ctx context.Context) (string, error) {
 
 	var logs []models.UsageLog
 	since := time.Now().AddDate(0, 0, -30)
-	if err := r.DB.Where("user_id = ? AND created_at >= ?", userID, since).
+	if err := r.DB().Where("user_id = ? AND created_at >= ?", userID, since).
 		Order("created_at DESC").Limit(10000).Find(&logs).Error; err != nil {
 		return "", fmt.Errorf("failed to query usage: %w", err)
 	}
@@ -1004,7 +1004,7 @@ func (r *mutationResolver) UpdateProvider(ctx context.Context, id string, input 
 	if input.BaseURL != nil {
 		// SSRF protection: validate the URL is not pointing to internal/private IPs
 		// Allow HTTP since some local providers (Ollama, vLLM) use it
-		if err := sanitize.ValidateWebhookURL(*input.BaseURL, true); err != nil {
+		if err := sanitize.ValidateWebhookURL(*input.BaseURL, true, r.Config().Server.AllowLocalProviders); err != nil {
 			return nil, fmt.Errorf("invalid base URL: %w", err)
 		}
 		p.BaseURL = *input.BaseURL
@@ -1172,7 +1172,7 @@ func (r *mutationResolver) CreateModel(ctx context.Context, providerID string, i
 	if input.PricePerMinute != nil {
 		m.PricePerMinute = *input.PricePerMinute
 	}
-	if err := r.DB.Create(&m).Error; err != nil {
+	if err := r.DB().Create(&m).Error; err != nil {
 		return nil, fmt.Errorf("failed to create model: %w", err)
 	}
 	return modelToGQL(&m), nil
@@ -1185,7 +1185,7 @@ func (r *mutationResolver) UpdateModel(ctx context.Context, id string, input mod
 		return nil, fmt.Errorf("invalid model id")
 	}
 	var m models.Model
-	if err := r.DB.First(&m, "id = ?", mid).Error; err != nil {
+	if err := r.DB().First(&m, "id = ?", mid).Error; err != nil {
 		return nil, fmt.Errorf("model not found")
 	}
 	m.Name = input.Name
@@ -1213,7 +1213,7 @@ func (r *mutationResolver) UpdateModel(ctx context.Context, id string, input mod
 	if input.PricePerMinute != nil {
 		m.PricePerMinute = *input.PricePerMinute
 	}
-	if err := r.DB.Save(&m).Error; err != nil {
+	if err := r.DB().Save(&m).Error; err != nil {
 		return nil, fmt.Errorf("failed to update model: %w", err)
 	}
 	return modelToGQL(&m), nil
@@ -1225,7 +1225,7 @@ func (r *mutationResolver) DeleteModel(ctx context.Context, id string) (bool, er
 	if err != nil {
 		return false, fmt.Errorf("invalid model id")
 	}
-	if err := r.DB.Delete(&models.Model{}, "id = ?", mid).Error; err != nil {
+	if err := r.DB().Delete(&models.Model{}, "id = ?", mid).Error; err != nil {
 		return false, fmt.Errorf("failed to delete model: %w", err)
 	}
 	return true, nil
@@ -1238,11 +1238,11 @@ func (r *mutationResolver) ToggleModel(ctx context.Context, id string) (*model.M
 		return nil, fmt.Errorf("invalid model id")
 	}
 	var m models.Model
-	if err := r.DB.First(&m, "id = ?", mid).Error; err != nil {
+	if err := r.DB().First(&m, "id = ?", mid).Error; err != nil {
 		return nil, fmt.Errorf("model not found")
 	}
 	m.IsActive = !m.IsActive
-	if err := r.DB.Save(&m).Error; err != nil {
+	if err := r.DB().Save(&m).Error; err != nil {
 		return nil, fmt.Errorf("failed to toggle model: %w", err)
 	}
 	return modelToGQL(&m), nil
@@ -1256,7 +1256,7 @@ func (r *mutationResolver) SyncProviderModels(ctx context.Context, providerID st
 	}
 	// Get provider from DB
 	var prov models.Provider
-	if err := r.DB.Preload("Models").First(&prov, "id = ?", pid).Error; err != nil {
+	if err := r.DB().Preload("Models").First(&prov, "id = ?", pid).Error; err != nil {
 		return nil, fmt.Errorf("provider not found")
 	}
 
@@ -1264,7 +1264,7 @@ func (r *mutationResolver) SyncProviderModels(ctx context.Context, providerID st
 	// Use SafeTransport to prevent SSRF via admin-controlled BaseURL
 	client := &http.Client{
 		Timeout:   15 * time.Second,
-		Transport: sanitize.SafeTransport(),
+		Transport: sanitize.SafeTransport(r.Config().Server.AllowLocalProviders),
 	}
 	reqURL := strings.TrimRight(prov.BaseURL, "/") + "/v1/models"
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
@@ -1274,7 +1274,7 @@ func (r *mutationResolver) SyncProviderModels(ctx context.Context, providerID st
 
 	// Try to get the first active API key for auth
 	var apiKey models.ProviderAPIKey
-	if err := r.DB.Where("provider_id = ? AND is_active = ?", pid, true).Order("priority ASC").First(&apiKey).Error; err == nil {
+	if err := r.DB().Where("provider_id = ? AND is_active = ?", pid, true).Order("priority ASC").First(&apiKey).Error; err == nil {
 		if decrypted, err := crypto.Decrypt(apiKey.EncryptedAPIKey); err == nil {
 			req.Header.Set("Authorization", "Bearer "+decrypted)
 		}
@@ -1317,12 +1317,12 @@ func (r *mutationResolver) SyncProviderModels(ctx context.Context, providerID st
 			IsActive:    true,
 			MaxTokens:   4096,
 		}
-		r.DB.Create(&m)
+		r.DB().Create(&m)
 	}
 
 	// Return full model list
 	var allModels []models.Model
-	r.DB.Where("provider_id = ?", pid).Order("name ASC").Find(&allModels)
+	r.DB().Where("provider_id = ?", pid).Order("name ASC").Find(&allModels)
 	out := make([]*model.Model, len(allModels))
 	for i := range allModels {
 		out[i] = modelToGQL(&allModels[i])
@@ -1502,7 +1502,7 @@ func (r *mutationResolver) CheckAllProviderHealth(ctx context.Context) ([]*model
 // UpdateIntegration is the resolver for the updateIntegration field.
 func (r *mutationResolver) UpdateIntegration(ctx context.Context, name string, input model.UpdateIntegrationInput) (*model.IntegrationConfig, error) {
 	var conf models.IntegrationConfig
-	if err := r.DB.Where("name = ?", name).First(&conf).Error; err != nil {
+	if err := r.DB().Where("name = ?", name).First(&conf).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			conf = models.IntegrationConfig{
 				ID:      uuid.New(),
@@ -1510,7 +1510,7 @@ func (r *mutationResolver) UpdateIntegration(ctx context.Context, name string, i
 				Enabled: input.Enabled,
 				Config:  []byte(input.Config),
 			}
-			if e := r.DB.Create(&conf).Error; e != nil {
+			if e := r.DB().Create(&conf).Error; e != nil {
 				return nil, e
 			}
 		} else {
@@ -1519,7 +1519,7 @@ func (r *mutationResolver) UpdateIntegration(ctx context.Context, name string, i
 	} else {
 		conf.Enabled = input.Enabled
 		conf.Config = []byte(input.Config)
-		if e := r.DB.Save(&conf).Error; e != nil {
+		if e := r.DB().Save(&conf).Error; e != nil {
 			return nil, e
 		}
 	}
@@ -1536,7 +1536,7 @@ func (r *mutationResolver) UpdateIntegration(ctx context.Context, name string, i
 // TestLangfuseConnection is the resolver for the testLangfuseConnection field.
 func (r *mutationResolver) TestLangfuseConnection(ctx context.Context, publicKey string, secretKey string, host string) (bool, error) {
 	// SSRF protection: validate host URL before making request
-	if err := sanitize.ValidateWebhookURL(host, false); err != nil {
+	if err := sanitize.ValidateWebhookURL(host, false, r.Config().Server.AllowLocalProviders); err != nil {
 		return false, fmt.Errorf("invalid host URL: %w", err)
 	}
 
@@ -1570,7 +1570,7 @@ func (r *mutationResolver) TestLangfuseConnection(ctx context.Context, publicKey
 
 	client := &http.Client{
 		Timeout:   10 * time.Second,
-		Transport: sanitize.SafeTransport(),
+		Transport: sanitize.SafeTransport(r.Config().Server.AllowLocalProviders),
 	}
 	resp, err := client.Do(req) // CodeQL: URL is constructed from validated scheme + host, not raw user input
 	if err != nil {
@@ -1591,7 +1591,7 @@ func (r *mutationResolver) AcknowledgeAlert(ctx context.Context, id string) (*mo
 		return nil, err
 	}
 	var alert models.Alert
-	if err := r.DB.First(&alert, "id = ?", aid).Error; err != nil {
+	if err := r.DB().First(&alert, "id = ?", aid).Error; err != nil {
 		return nil, err
 	}
 	return alertToGQL(&alert), nil
@@ -1604,7 +1604,7 @@ func (r *mutationResolver) ResolveAlert(ctx context.Context, id string) (*model.
 		return nil, err
 	}
 	var alert models.Alert
-	if err := r.DB.First(&alert, "id = ?", aid).Error; err != nil {
+	if err := r.DB().First(&alert, "id = ?", aid).Error; err != nil {
 		return nil, err
 	}
 	return alertToGQL(&alert), nil
@@ -1614,7 +1614,7 @@ func (r *mutationResolver) ResolveAlert(ctx context.Context, id string) (*model.
 func (r *mutationResolver) UpdateAlertConfig(ctx context.Context, input model.AlertConfigInput) (*model.AlertConfig, error) {
 	targetID, _ := uuid.Parse(input.TargetID)
 	if input.WebhookURL != nil {
-		if err := sanitize.ValidateWebhookURL(*input.WebhookURL, false); err != nil {
+		if err := sanitize.ValidateWebhookURL(*input.WebhookURL, false, r.Config().Server.AllowLocalProviders); err != nil {
 			return nil, fmt.Errorf("invalid webhook URL: %w", err)
 		}
 	}
@@ -1744,7 +1744,7 @@ func (r *mutationResolver) CreatePromptTemplate(ctx context.Context, input model
 	if input.IsActive != nil {
 		t.IsActive = *input.IsActive
 	}
-	if err := r.DB.WithContext(ctx).Create(t).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Create(t).Error; err != nil {
 		return nil, err
 	}
 	return promptTemplateToGQL(t, 0), nil
@@ -1754,7 +1754,7 @@ func (r *mutationResolver) CreatePromptTemplate(ctx context.Context, input model
 func (r *mutationResolver) UpdatePromptTemplate(ctx context.Context, id string, input model.PromptTemplateInput) (*model.PromptTemplate, error) {
 	tid, _ := uuid.Parse(id)
 	var t models.PromptTemplate
-	if err := r.DB.WithContext(ctx).First(&t, "id = ?", tid).Error; err != nil {
+	if err := r.DB().WithContext(ctx).First(&t, "id = ?", tid).Error; err != nil {
 		return nil, err
 	}
 	t.Name = input.Name
@@ -1768,18 +1768,18 @@ func (r *mutationResolver) UpdatePromptTemplate(ctx context.Context, id string, 
 	if input.IsActive != nil {
 		t.IsActive = *input.IsActive
 	}
-	if err := r.DB.WithContext(ctx).Save(&t).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Save(&t).Error; err != nil {
 		return nil, err
 	}
 	var count int64
-	r.DB.WithContext(ctx).Model(&models.PromptVersion{}).Where("template_id = ?", tid).Count(&count)
+	r.DB().WithContext(ctx).Model(&models.PromptVersion{}).Where("template_id = ?", tid).Count(&count)
 	return promptTemplateToGQL(&t, int(count)), nil
 }
 
 // DeletePromptTemplate is the resolver for the deletePromptTemplate field.
 func (r *mutationResolver) DeletePromptTemplate(ctx context.Context, id string) (bool, error) {
 	tid, _ := uuid.Parse(id)
-	if err := r.DB.WithContext(ctx).Delete(&models.PromptTemplate{}, "id = ?", tid).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Delete(&models.PromptTemplate{}, "id = ?", tid).Error; err != nil {
 		return false, err
 	}
 	return true, nil
@@ -1790,7 +1790,7 @@ func (r *mutationResolver) CreatePromptVersion(ctx context.Context, input model.
 	tmplID, _ := uuid.Parse(input.TemplateID)
 	// Get max version number
 	var maxVersion int
-	r.DB.WithContext(ctx).Model(&models.PromptVersion{}).Where("template_id = ?", tmplID).
+	r.DB().WithContext(ctx).Model(&models.PromptVersion{}).Where("template_id = ?", tmplID).
 		Select("COALESCE(MAX(version), 0)").Scan(&maxVersion)
 
 	v := &models.PromptVersion{
@@ -1807,7 +1807,7 @@ func (r *mutationResolver) CreatePromptVersion(ctx context.Context, input model.
 	if input.ChangeLog != nil {
 		v.ChangeLog = *input.ChangeLog
 	}
-	if err := r.DB.WithContext(ctx).Create(v).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Create(v).Error; err != nil {
 		return nil, err
 	}
 	return promptVersionToGQL(v), nil
@@ -1817,21 +1817,21 @@ func (r *mutationResolver) CreatePromptVersion(ctx context.Context, input model.
 func (r *mutationResolver) SetActivePromptVersion(ctx context.Context, templateID string, versionID string) (*model.PromptTemplate, error) {
 	tid, _ := uuid.Parse(templateID)
 	vid, _ := uuid.Parse(versionID)
-	if err := r.DB.WithContext(ctx).Model(&models.PromptTemplate{}).Where("id = ?", tid).
+	if err := r.DB().WithContext(ctx).Model(&models.PromptTemplate{}).Where("id = ?", tid).
 		Update("active_version_id", vid).Error; err != nil {
 		return nil, err
 	}
 	var t models.PromptTemplate
-	if err := r.DB.WithContext(ctx).First(&t, "id = ?", tid).Error; err != nil {
+	if err := r.DB().WithContext(ctx).First(&t, "id = ?", tid).Error; err != nil {
 		return nil, err
 	}
 	var count int64
-	r.DB.WithContext(ctx).Model(&models.PromptVersion{}).Where("template_id = ?", tid).Count(&count)
+	r.DB().WithContext(ctx).Model(&models.PromptVersion{}).Where("template_id = ?", tid).Count(&count)
 	result := promptTemplateToGQL(&t, int(count))
 	// Attach active version details
 	if t.ActiveVersionID != nil {
 		var av models.PromptVersion
-		if err := r.DB.WithContext(ctx).First(&av, "id = ?", *t.ActiveVersionID).Error; err == nil {
+		if err := r.DB().WithContext(ctx).First(&av, "id = ?", *t.ActiveVersionID).Error; err == nil {
 			gqlV := promptVersionToGQL(&av)
 			result.ActiveVersion = gqlV
 		}
@@ -1857,7 +1857,7 @@ func (r *mutationResolver) CreatePlan(ctx context.Context, input model.PlanInput
 	if input.Features != nil {
 		plan.Features = *input.Features
 	}
-	if err := r.DB.WithContext(ctx).Create(plan).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Create(plan).Error; err != nil {
 		return nil, err
 	}
 	var features *string
@@ -1875,7 +1875,7 @@ func (r *mutationResolver) CreatePlan(ctx context.Context, input model.PlanInput
 func (r *mutationResolver) UpdatePlan(ctx context.Context, id string, input model.PlanInput) (*model.Plan, error) {
 	pid, _ := uuid.Parse(id)
 	var plan models.Plan
-	if err := r.DB.WithContext(ctx).First(&plan, "id = ?", pid).Error; err != nil {
+	if err := r.DB().WithContext(ctx).First(&plan, "id = ?", pid).Error; err != nil {
 		return nil, fmt.Errorf("plan not found")
 	}
 	plan.Name = input.Name
@@ -1894,7 +1894,7 @@ func (r *mutationResolver) UpdatePlan(ctx context.Context, id string, input mode
 	if input.Features != nil {
 		plan.Features = *input.Features
 	}
-	if err := r.DB.WithContext(ctx).Save(&plan).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Save(&plan).Error; err != nil {
 		return nil, err
 	}
 	var features *string
@@ -1918,7 +1918,7 @@ func (r *mutationResolver) UpdateSystemSettings(ctx context.Context, input model
 	if err != nil {
 		return nil, err
 	}
-	return buildSystemSettings(r.Config.Registration.Mode, all), nil
+	return buildSystemSettings(r.Config().Registration.Mode, all), nil
 }
 
 // SendTestEmail is the resolver for the sendTestEmail field.
@@ -2019,12 +2019,12 @@ func (r *mutationResolver) TriggerBackup(ctx context.Context) (bool, error) {
 		Destination: fmt.Sprintf("s3://%s/backup-%s.sql.gz", backupCfg.S3Bucket, now.Format("20060102-150405")),
 	}
 
-	if err := r.DB.WithContext(ctx).Create(&record).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Create(&record).Error; err != nil {
 		return false, fmt.Errorf("failed to create backup record: %w", err)
 	}
 
 	// Execute pg_dump in a background goroutine
-	dbCfg := r.Config.Database
+	dbCfg := r.Config().Database
 	go func(recordID uuid.UUID) {
 		// Build pg_dump command: pipe through gzip
 		pgDumpArgs := []string{
@@ -2070,7 +2070,7 @@ func (r *mutationResolver) TriggerBackup(ctx context.Context) (bool, error) {
 			// then os.Remove(dumpFile) after successful upload
 		}
 
-		r.DB.Model(&models.BackupRecord{}).Where("id = ?", recordID).Updates(updates)
+		r.DB().Model(&models.BackupRecord{}).Where("id = ?", recordID).Updates(updates)
 	}(record.ID)
 
 	r.Logger.Info("manual backup triggered (async)",
@@ -2092,7 +2092,7 @@ func (r *mutationResolver) CreateInviteCode(ctx context.Context, input model.Inv
 	adminID, _ := directives.UserIDFromContext(ctx)
 	aid, _ := uuid.Parse(adminID)
 	ic := models.InviteCode{Code: code, CreatedBy: aid, MaxUses: maxUses, ExpiresAt: input.ExpiresAt, IsActive: true}
-	if err := r.DB.Create(&ic).Error; err != nil {
+	if err := r.DB().Create(&ic).Error; err != nil {
 		return nil, err
 	}
 	return &model.InviteCode{
@@ -2112,7 +2112,7 @@ func (r *mutationResolver) ExportSystemUsageCSV(ctx context.Context) (string, er
 
 	since := time.Now().AddDate(0, 0, -30)
 	var logs []logWithUser
-	if err := r.DB.Table("usage_logs").
+	if err := r.DB().Table("usage_logs").
 		Select("usage_logs.*, users.email as user_email, providers.name as provider_name").
 		Joins("LEFT JOIN users ON users.id = usage_logs.user_id").
 		Joins("LEFT JOIN providers ON providers.id = usage_logs.provider_id").
@@ -2376,7 +2376,7 @@ func (r *mutationResolver) CreateRoutingRule(ctx context.Context, input model.Cr
 		IsEnabled:          input.IsEnabled,
 	}
 
-	repo := repository.NewRoutingRuleRepository(r.DB)
+	repo := repository.NewRoutingRuleRepository(r.DB())
 	if err := repo.Create(ctx, rule); err != nil {
 		return nil, err
 	}
@@ -2391,7 +2391,7 @@ func (r *mutationResolver) UpdateRoutingRule(ctx context.Context, id string, inp
 		return nil, fmt.Errorf("invalid routing rule id")
 	}
 
-	repo := repository.NewRoutingRuleRepository(r.DB)
+	repo := repository.NewRoutingRuleRepository(r.DB())
 	rule, err := repo.GetByID(ctx, ruleID)
 	if err != nil {
 		return nil, err
@@ -2441,7 +2441,7 @@ func (r *mutationResolver) DeleteRoutingRule(ctx context.Context, id string) (bo
 		return false, fmt.Errorf("invalid routing rule id")
 	}
 
-	repo := repository.NewRoutingRuleRepository(r.DB)
+	repo := repository.NewRoutingRuleRepository(r.DB())
 	if err := repo.Delete(ctx, ruleID); err != nil {
 		return false, err
 	}
@@ -2470,7 +2470,7 @@ func (r *queryResolver) MyOrganizations(ctx context.Context) ([]*model.Organizat
 	}
 
 	var memberships []models.OrganizationMember
-	if err := r.DB.WithContext(ctx).
+	if err := r.DB().WithContext(ctx).
 		Preload("Organization").
 		Where("user_id = ?", uid).
 		Find(&memberships).Error; err != nil {
@@ -2487,12 +2487,12 @@ func (r *queryResolver) MyOrganizations(ctx context.Context) ([]*model.Organizat
 // OrganizationMembers is the resolver for the organizationMembers field.
 func (r *queryResolver) OrganizationMembers(ctx context.Context, orgID string) ([]*model.OrganizationMember, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	if err := r.RequireOrgRole(ctx, uid, orgID, "OWNER", "ADMIN", "MEMBER", "READONLY"); err != nil {
+	if err := r.UserSvc.RequireOrgRole(ctx, uid, orgID, "OWNER", "ADMIN", "MEMBER", "READONLY"); err != nil {
 		return nil, err
 	}
 
 	var members []models.OrganizationMember
-	if err := r.DB.Preload("User").Where("org_id = ?", orgID).Find(&members).Error; err != nil {
+	if err := r.DB().Preload("User").Where("org_id = ?", orgID).Find(&members).Error; err != nil {
 		return nil, err
 	}
 
@@ -2500,7 +2500,7 @@ func (r *queryResolver) OrganizationMembers(ctx context.Context, orgID string) (
 	for _, m := range members {
 		// Get API Key Count (fast count query)
 		var keyCount int64
-		r.DB.Model(&models.APIKey{}).
+		r.DB().Model(&models.APIKey{}).
 			Joins("JOIN projects ON process.id = api_keys.project_id"). // Wait, maybe too complex. Lets simplify.
 			Where("projects.org_id = ?", orgID).Count(&keyCount)        // Not exact, let's just use 0 or skip join for now.
 
@@ -2525,13 +2525,13 @@ func (r *queryResolver) OrganizationMembers(ctx context.Context, orgID string) (
 
 // IdentityProviders is the resolver for the identityProviders field.
 func (r *queryResolver) IdentityProviders(ctx context.Context, orgID string) ([]*model.IdentityProvider, error) {
-	if err := r.RequireOrgRole(ctx, orgID, "OWNER", "ADMIN", "MEMBER", "READONLY"); err != nil {
+	if err := r.UserSvc.RequireOrgRole(ctx, orgID, "OWNER", "ADMIN", "MEMBER", "READONLY"); err != nil {
 		return nil, err
 	}
 
 	orgUUID, _ := uuid.Parse(orgID)
 	var list []models.IdentityProvider
-	if err := r.DB.Preload("Organization").Where("org_id = ?", orgUUID).Find(&list).Error; err != nil {
+	if err := r.DB().Preload("Organization").Where("org_id = ?", orgUUID).Find(&list).Error; err != nil {
 		return nil, fmt.Errorf("failed to fetch identity providers: %w", err)
 	}
 
@@ -2545,12 +2545,12 @@ func (r *queryResolver) IdentityProviders(ctx context.Context, orgID string) ([]
 // MyProjects is the resolver for the myProjects field.
 func (r *queryResolver) MyProjects(ctx context.Context, orgID string) ([]*model.Project, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	if err := r.RequireOrgRole(ctx, uid, orgID, "OWNER", "ADMIN", "MEMBER", "READONLY"); err != nil {
+	if err := r.UserSvc.RequireOrgRole(ctx, uid, orgID, "OWNER", "ADMIN", "MEMBER", "READONLY"); err != nil {
 		return nil, err
 	}
 
 	var projects []models.Project
-	if err := r.DB.WithContext(ctx).Where("org_id = ?", orgID).Order("created_at DESC").Find(&projects).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Where("org_id = ?", orgID).Order("created_at DESC").Find(&projects).Error; err != nil {
 		return nil, fmt.Errorf("failed to fetch projects: %w", err)
 	}
 
@@ -2564,7 +2564,7 @@ func (r *queryResolver) MyProjects(ctx context.Context, orgID string) ([]*model.
 // MyAPIKeys is the resolver for the myApiKeys field.
 func (r *queryResolver) MyAPIKeys(ctx context.Context, projectID string) ([]*model.APIKey, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	if err := r.RequireProjectRole(ctx, uid, projectID, "admin", "member"); err != nil {
+	if err := r.UserSvc.RequireProjectRole(ctx, uid, projectID, "admin", "member"); err != nil {
 		return nil, err
 	}
 
@@ -2587,7 +2587,7 @@ func (r *queryResolver) MyAPIKeys(ctx context.Context, projectID string) ([]*mod
 func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string) (*model.APIKeyRateLimitStatus, error) {
 	// Look up API key to get its configured limits
 	var apiKey models.APIKey
-	if err := r.DB.Where("id = ?", keyID).First(&apiKey).Error; err != nil {
+	if err := r.DB().Where("id = ?", keyID).First(&apiKey).Error; err != nil {
 		return nil, fmt.Errorf("API key not found")
 	}
 
@@ -2599,7 +2599,7 @@ func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string)
 		Status:     "ok",
 	}
 
-	if r.RedisClient == nil {
+	if r.RedisClient() == nil {
 		return result, nil
 	}
 
@@ -2609,14 +2609,14 @@ func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string)
 	// 1. RPM — per-key sliding window sorted set (nanosecond timestamps)
 	rpmKey := fmt.Sprintf("rl:key:%s:m", keyID)
 	windowStartNano := now.Add(-time.Minute)
-	rpmCount, _ := r.RedisClient.ZCount(rctx, rpmKey,
+	rpmCount, _ := r.RedisClient().ZCount(rctx, rpmKey,
 		strconv.FormatInt(windowStartNano.UnixNano(), 10),
 		strconv.FormatInt(now.UnixNano(), 10)).Result()
 
 	// Also check global rate limiter sorted set (millisecond timestamps)
 	globalKey := fmt.Sprintf("ratelimit:%s", keyID)
 	windowStartMs := now.Add(-time.Minute).UnixMilli()
-	globalCount, _ := r.RedisClient.ZCount(rctx, globalKey,
+	globalCount, _ := r.RedisClient().ZCount(rctx, globalKey,
 		strconv.FormatInt(windowStartMs, 10),
 		strconv.FormatInt(now.UnixMilli(), 10)).Result()
 
@@ -2633,7 +2633,7 @@ func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string)
 
 	// 2. TPM — simple counter keyed by minute
 	tpmKey := fmt.Sprintf("rl:tpm:%s:%d", keyID, now.Unix()/60)
-	tpmStr, _ := r.RedisClient.Get(rctx, tpmKey).Result()
+	tpmStr, _ := r.RedisClient().Get(rctx, tpmKey).Result()
 	tpmVal, _ := strconv.ParseInt(tpmStr, 10, 32)
 	result.TpmCurrent = int(tpmVal)
 	if apiKey.TokenLimit > 0 && tpmVal >= apiKey.TokenLimit {
@@ -2643,7 +2643,7 @@ func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string)
 	// 3. Daily — simple counter keyed by date
 	today := now.Format("2006-01-02")
 	dailyKey := fmt.Sprintf("rl:key:%s:d:%s", keyID, today)
-	dailyCount, _ := r.RedisClient.Get(rctx, dailyKey).Result()
+	dailyCount, _ := r.RedisClient().Get(rctx, dailyKey).Result()
 	dVal, _ := strconv.ParseInt(dailyCount, 10, 32)
 	result.DailyCurrent = int(dVal)
 	if apiKey.DailyLimit > 0 && dVal >= int64(apiKey.DailyLimit) {
@@ -2673,7 +2673,7 @@ func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string)
 	// Check subscription plan quota (project -> org -> subscription)
 	if r.SubscriptionSvc != nil {
 		var proj struct{ OrgID uuid.UUID }
-		if err := r.DB.Table("projects").Select("org_id").Where("id = ?", apiKey.ProjectID).First(&proj).Error; err == nil {
+		if err := r.DB().Table("projects").Select("org_id").Where("id = ?", apiKey.ProjectID).First(&proj).Error; err == nil {
 			if allowed, _, _ := r.SubscriptionSvc.CheckQuota(ctx, proj.OrgID); !allowed {
 				result.Status = "quota_exceeded"
 			}
@@ -2942,18 +2942,18 @@ func (r *queryResolver) Dashboard(ctx context.Context, projectID *string, channe
 
 	// Provider count from DB
 	var provTotal, provActive int64
-	r.DB.WithContext(ctx).Model(&models.Provider{}).Count(&provTotal)
-	r.DB.WithContext(ctx).Model(&models.Provider{}).Where("is_active = ?", true).Count(&provActive)
+	r.DB().WithContext(ctx).Model(&models.Provider{}).Count(&provTotal)
+	r.DB().WithContext(ctx).Model(&models.Provider{}).Where("is_active = ?", true).Count(&provActive)
 
 	// Proxy count
 	var proxyTotal, proxyActive int64
-	r.DB.WithContext(ctx).Model(&models.Proxy{}).Count(&proxyTotal)
-	r.DB.WithContext(ctx).Model(&models.Proxy{}).Where("is_active = ?", true).Count(&proxyActive)
+	r.DB().WithContext(ctx).Model(&models.Proxy{}).Count(&proxyTotal)
+	r.DB().WithContext(ctx).Model(&models.Proxy{}).Where("is_active = ?", true).Count(&proxyActive)
 
 	// API Key count
 	var keyTotal, keyActive int64
-	r.DB.WithContext(ctx).Model(&models.APIKey{}).Count(&keyTotal)
-	r.DB.WithContext(ctx).Model(&models.APIKey{}).Where("is_active = ?", true).Count(&keyActive)
+	r.DB().WithContext(ctx).Model(&models.APIKey{}).Count(&keyTotal)
+	r.DB().WithContext(ctx).Model(&models.APIKey{}).Where("is_active = ?", true).Count(&keyActive)
 
 	return &model.Dashboard{
 		TotalRequests: totalReq, SuccessRate: successRate,
@@ -3024,18 +3024,18 @@ func (r *queryResolver) AdminDashboard(ctx context.Context) (*model.AdminDashboa
 
 	// User counts
 	var totalUsers int64
-	r.DB.WithContext(ctx).Model(&models.User{}).Count(&totalUsers)
+	r.DB().WithContext(ctx).Model(&models.User{}).Count(&totalUsers)
 
 	activeUsersToday, _ := r.UserSvc.CountActiveUsers(ctx, todayStart)
 	activeUsersMonth, _ := r.UserSvc.CountActiveUsers(ctx, monthStart)
 
 	// Revenue
 	var totalRevenue, revenueMonth float64
-	r.DB.WithContext(ctx).Model(&models.Transaction{}).
+	r.DB().WithContext(ctx).Model(&models.Transaction{}).
 		Where("type = ?", "recharge").
 		Where("amount > 0").
 		Select("COALESCE(SUM(amount), 0)").Scan(&totalRevenue)
-	r.DB.WithContext(ctx).Model(&models.Transaction{}).
+	r.DB().WithContext(ctx).Model(&models.Transaction{}).
 		Where("type = ?", "recharge").
 		Where("amount > 0").
 		Where("created_at >= ?", monthStart).
@@ -3067,12 +3067,12 @@ func (r *queryResolver) AdminDashboard(ctx context.Context) (*model.AdminDashboa
 
 	// Infrastructure
 	var provTotal, provActive, proxyTotal, proxyActive, keyTotal, keyActive int64
-	r.DB.WithContext(ctx).Model(&models.Provider{}).Count(&provTotal)
-	r.DB.WithContext(ctx).Model(&models.Provider{}).Where("is_active = ?", true).Count(&provActive)
-	r.DB.WithContext(ctx).Model(&models.Proxy{}).Count(&proxyTotal)
-	r.DB.WithContext(ctx).Model(&models.Proxy{}).Where("is_active = ?", true).Count(&proxyActive)
-	r.DB.WithContext(ctx).Model(&models.APIKey{}).Count(&keyTotal)
-	r.DB.WithContext(ctx).Model(&models.APIKey{}).Where("is_active = ?", true).Count(&keyActive)
+	r.DB().WithContext(ctx).Model(&models.Provider{}).Count(&provTotal)
+	r.DB().WithContext(ctx).Model(&models.Provider{}).Where("is_active = ?", true).Count(&provActive)
+	r.DB().WithContext(ctx).Model(&models.Proxy{}).Count(&proxyTotal)
+	r.DB().WithContext(ctx).Model(&models.Proxy{}).Where("is_active = ?", true).Count(&proxyActive)
+	r.DB().WithContext(ctx).Model(&models.APIKey{}).Count(&keyTotal)
+	r.DB().WithContext(ctx).Model(&models.APIKey{}).Where("is_active = ?", true).Count(&keyActive)
 
 	return &model.AdminDashboard{
 		TotalUsers:       int(totalUsers),
@@ -3114,7 +3114,7 @@ func (r *queryResolver) AdminUsageByUser(ctx context.Context, days *int) ([]*mod
 		Cost     float64
 	}
 	var rows []row
-	err := r.DB.WithContext(ctx).
+	err := r.DB().WithContext(ctx).
 		Table("usage_logs").
 		Select("usage_logs.user_id, users.name as user_name, users.email, COUNT(*) as requests, COALESCE(SUM(usage_logs.total_tokens), 0) as tokens, COALESCE(SUM(usage_logs.cost), 0) as cost").
 		Joins("LEFT JOIN users ON users.id = usage_logs.user_id").
@@ -3152,7 +3152,7 @@ func (r *queryResolver) AdminRevenueChart(ctx context.Context, days *int) ([]*mo
 		Transactions int
 	}
 	var rows []row
-	err := r.DB.WithContext(ctx).
+	err := r.DB().WithContext(ctx).
 		Table("transactions").
 		Select("TO_CHAR(created_at, 'YYYY-MM-DD') as date, COALESCE(SUM(amount), 0) as revenue, COUNT(*) as transactions").
 		Where("type = ? AND amount > 0 AND created_at >= ?", "recharge", since).
@@ -3184,7 +3184,7 @@ func (r *queryResolver) AdminUserGrowth(ctx context.Context, days *int) ([]*mode
 		NewUsers int
 	}
 	var rows []row
-	err := r.DB.WithContext(ctx).
+	err := r.DB().WithContext(ctx).
 		Table("users").
 		Select("TO_CHAR(created_at, 'YYYY-MM-DD') as date, COUNT(*) as new_users").
 		Where("created_at >= ?", since).
@@ -3197,7 +3197,7 @@ func (r *queryResolver) AdminUserGrowth(ctx context.Context, days *int) ([]*mode
 
 	// Calculate cumulative total
 	var totalBefore int64
-	r.DB.WithContext(ctx).Model(&models.User{}).Where("created_at < ?", since).Count(&totalBefore)
+	r.DB().WithContext(ctx).Model(&models.User{}).Where("created_at < ?", since).Count(&totalBefore)
 
 	out := make([]*model.UserGrowthPoint, len(rows))
 	running := int(totalBefore)
@@ -3350,7 +3350,7 @@ func (r *queryResolver) Models(ctx context.Context, providerID string) ([]*model
 		return nil, fmt.Errorf("invalid provider id")
 	}
 	var dbModels []models.Model
-	if err := r.DB.Where("provider_id = ?", pid).Order("name ASC").Find(&dbModels).Error; err != nil {
+	if err := r.DB().Where("provider_id = ?", pid).Order("name ASC").Find(&dbModels).Error; err != nil {
 		return nil, fmt.Errorf("failed to query models: %w", err)
 	}
 	out := make([]*model.Model, len(dbModels))
@@ -3640,7 +3640,7 @@ func (r *queryResolver) BackupStatus(ctx context.Context) (*model.BackupStatus, 
 
 	// Fetch recent backup records (last 20)
 	var dbRecords []models.BackupRecord
-	if err := r.DB.WithContext(ctx).Order("started_at DESC").Limit(20).Find(&dbRecords).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Order("started_at DESC").Limit(20).Find(&dbRecords).Error; err != nil {
 		r.Logger.Warn("failed to fetch backup records", zap.Error(err))
 		return result, nil
 	}
@@ -3715,15 +3715,15 @@ func (r *queryResolver) McpResources(ctx context.Context) ([]*model.McpResource,
 func (r *queryResolver) SystemSettings(ctx context.Context) (*model.SystemSettings, error) {
 	all, err := r.SystemConfig.GetAllSettingsDecrypted(ctx)
 	if err != nil {
-		return &model.SystemSettings{RegistrationMode: r.Config.Registration.Mode}, nil
+		return &model.SystemSettings{RegistrationMode: r.Config().Registration.Mode}, nil
 	}
-	return buildSystemSettings(r.Config.Registration.Mode, all), nil
+	return buildSystemSettings(r.Config().Registration.Mode, all), nil
 }
 
 // InviteCodes is the resolver for the inviteCodes field.
 func (r *queryResolver) InviteCodes(ctx context.Context) ([]*model.InviteCode, error) {
 	var codes []models.InviteCode
-	if err := r.DB.Order("created_at DESC").Find(&codes).Error; err != nil {
+	if err := r.DB().Order("created_at DESC").Find(&codes).Error; err != nil {
 		return nil, err
 	}
 	out := make([]*model.InviteCode, len(codes))
@@ -3776,7 +3776,7 @@ func (r *queryResolver) RedeemCodes(ctx context.Context, page *int, pageSize *in
 func (r *queryResolver) AuditLogs(ctx context.Context, page *int, pageSize *int, action *string) (*model.AuditLogConnection, error) {
 	p, ps := valInt(page, 1), valInt(pageSize, 20)
 
-	query := r.DB.Model(&models.AuditLog{})
+	query := r.DB().Model(&models.AuditLog{})
 	if action != nil && *action != "" {
 		query = query.Where("action = ?", *action)
 	}
@@ -3829,12 +3829,12 @@ func (r *queryResolver) ErrorLogs(ctx context.Context, page *int, pageSize *int)
 	}
 
 	var total int64
-	if err := r.DB.Model(&models.ErrorLog{}).Count(&total).Error; err != nil {
+	if err := r.DB().Model(&models.ErrorLog{}).Count(&total).Error; err != nil {
 		return nil, err
 	}
 
 	var list []models.ErrorLog
-	if err := r.DB.Order("created_at desc").Offset((p - 1) * ps).Limit(ps).Find(&list).Error; err != nil {
+	if err := r.DB().Order("created_at desc").Offset((p - 1) * ps).Limit(ps).Find(&list).Error; err != nil {
 		return nil, err
 	}
 
@@ -3864,7 +3864,7 @@ func (r *queryResolver) ErrorLogs(ctx context.Context, page *int, pageSize *int)
 // Integrations is the resolver for the integrations field.
 func (r *queryResolver) Integrations(ctx context.Context) ([]*model.IntegrationConfig, error) {
 	var list []models.IntegrationConfig
-	if err := r.DB.Find(&list).Error; err != nil {
+	if err := r.DB().Find(&list).Error; err != nil {
 		return nil, err
 	}
 
@@ -3881,7 +3881,7 @@ func (r *queryResolver) Integrations(ctx context.Context) ([]*model.IntegrationC
 				Enabled: false,
 				Config:  []byte("{}"),
 			}
-			r.DB.Create(&c)
+			r.DB().Create(&c)
 			list = append(list, c)
 		}
 	}
@@ -3907,7 +3907,7 @@ func (r *queryResolver) RoutingRules(ctx context.Context, page *int, pageSize *i
 	var rules []models.RoutingRule
 	var total int64
 
-	q := r.DB.WithContext(ctx).Model(&models.RoutingRule{})
+	q := r.DB().WithContext(ctx).Model(&models.RoutingRule{})
 	if err := q.Count(&total).Error; err != nil {
 		return nil, err
 	}
@@ -3934,13 +3934,13 @@ func (r *queryResolver) RoutingRules(ctx context.Context, page *int, pageSize *i
 // PromptTemplates is the resolver for the promptTemplates field.
 func (r *queryResolver) PromptTemplates(ctx context.Context) (*model.PromptTemplateConnection, error) {
 	var templates []models.PromptTemplate
-	if err := r.DB.WithContext(ctx).Order("created_at DESC").Find(&templates).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Order("created_at DESC").Find(&templates).Error; err != nil {
 		return nil, err
 	}
 	out := make([]*model.PromptTemplate, len(templates))
 	for i, t := range templates {
 		var count int64
-		r.DB.WithContext(ctx).Model(&models.PromptVersion{}).Where("template_id = ?", t.ID).Count(&count)
+		r.DB().WithContext(ctx).Model(&models.PromptVersion{}).Where("template_id = ?", t.ID).Count(&count)
 		out[i] = promptTemplateToGQL(&t, int(count))
 	}
 	return &model.PromptTemplateConnection{Data: out, Total: len(out)}, nil
@@ -3950,15 +3950,15 @@ func (r *queryResolver) PromptTemplates(ctx context.Context) (*model.PromptTempl
 func (r *queryResolver) PromptTemplate(ctx context.Context, id string) (*model.PromptTemplate, error) {
 	tid, _ := uuid.Parse(id)
 	var t models.PromptTemplate
-	if err := r.DB.WithContext(ctx).First(&t, "id = ?", tid).Error; err != nil {
+	if err := r.DB().WithContext(ctx).First(&t, "id = ?", tid).Error; err != nil {
 		return nil, err
 	}
 	var count int64
-	r.DB.WithContext(ctx).Model(&models.PromptVersion{}).Where("template_id = ?", tid).Count(&count)
+	r.DB().WithContext(ctx).Model(&models.PromptVersion{}).Where("template_id = ?", tid).Count(&count)
 	result := promptTemplateToGQL(&t, int(count))
 	if t.ActiveVersionID != nil {
 		var av models.PromptVersion
-		if err := r.DB.WithContext(ctx).First(&av, "id = ?", *t.ActiveVersionID).Error; err == nil {
+		if err := r.DB().WithContext(ctx).First(&av, "id = ?", *t.ActiveVersionID).Error; err == nil {
 			result.ActiveVersion = promptVersionToGQL(&av)
 		}
 	}
@@ -3969,7 +3969,7 @@ func (r *queryResolver) PromptTemplate(ctx context.Context, id string) (*model.P
 func (r *queryResolver) PromptVersions(ctx context.Context, templateID string) ([]*model.PromptVersion, error) {
 	tid, _ := uuid.Parse(templateID)
 	var versions []models.PromptVersion
-	if err := r.DB.WithContext(ctx).Where("template_id = ?", tid).Order("version DESC").Find(&versions).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Where("template_id = ?", tid).Order("version DESC").Find(&versions).Error; err != nil {
 		return nil, err
 	}
 	out := make([]*model.PromptVersion, len(versions))
@@ -3988,10 +3988,10 @@ func (r *queryResolver) SystemSLA(ctx context.Context, hours *int) (*model.Syste
 	cutoff := time.Now().Add(-time.Duration(h) * time.Hour)
 
 	var totalRequests int64
-	r.DB.Model(&models.UsageLog{}).Where("created_at >= ?", cutoff).Count(&totalRequests)
+	r.DB().Model(&models.UsageLog{}).Where("created_at >= ?", cutoff).Count(&totalRequests)
 
 	var failedRequests int64
-	r.DB.Model(&models.UsageLog{}).Where("created_at >= ? AND status_code >= ?", cutoff, 400).Count(&failedRequests)
+	r.DB().Model(&models.UsageLog{}).Where("created_at >= ? AND status_code >= ?", cutoff, 400).Count(&failedRequests)
 
 	failureRate := 0.0
 	if totalRequests > 0 {
@@ -3999,14 +3999,14 @@ func (r *queryResolver) SystemSLA(ctx context.Context, hours *int) (*model.Syste
 	}
 
 	var avgLatency float64
-	r.DB.Model(&models.UsageLog{}).Where("created_at >= ? AND latency > 0", cutoff).Select("COALESCE(AVG(latency), 0)").Scan(&avgLatency)
+	r.DB().Model(&models.UsageLog{}).Where("created_at >= ? AND latency > 0", cutoff).Select("COALESCE(AVG(latency), 0)").Scan(&avgLatency)
 
 	var p95, p99 float64
-	if r.DB.Name() == "postgres" {
-		_ = r.DB.Raw("SELECT COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency), 0), COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY latency), 0) FROM usage_logs WHERE created_at >= ? AND latency > 0", cutoff).Row().Scan(&p95, &p99)
+	if r.DB().Name() == "postgres" {
+		_ = r.DB().Raw("SELECT COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency), 0), COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY latency), 0) FROM usage_logs WHERE created_at >= ? AND latency > 0", cutoff).Row().Scan(&p95, &p99)
 	} else {
 		var latencies []float64
-		r.DB.Model(&models.UsageLog{}).Where("created_at >= ? AND latency > 0", cutoff).Order("latency asc").Pluck("latency", &latencies)
+		r.DB().Model(&models.UsageLog{}).Where("created_at >= ? AND latency > 0", cutoff).Order("latency asc").Pluck("latency", &latencies)
 		if len(latencies) > 0 {
 			p95Idx := int(float64(len(latencies)-1) * 0.95)
 			p99Idx := int(float64(len(latencies)-1) * 0.99)
@@ -4016,7 +4016,7 @@ func (r *queryResolver) SystemSLA(ctx context.Context, hours *int) (*model.Syste
 	}
 
 	var activeProviders int64
-	r.DB.Model(&models.Provider{}).Where("is_active = ?", true).Count(&activeProviders)
+	r.DB().Model(&models.Provider{}).Where("is_active = ?", true).Count(&activeProviders)
 
 	healthyProviders := 0
 	healths, err := r.Health.GetProvidersHealth(ctx)
@@ -4127,7 +4127,7 @@ func (r *queryResolver) Document(ctx context.Context, id string) (*model.Documen
 // RegistrationMode is the resolver for the registrationMode field.
 // This is a public query (no @auth directive) so the login page can adapt.
 func (r *queryResolver) RegistrationMode(ctx context.Context) (*model.RegistrationMode, error) {
-	mode := r.Config.Registration.Mode
+	mode := r.Config().Registration.Mode
 	if mode == "" {
 		mode = "closed"
 	}

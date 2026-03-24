@@ -28,7 +28,7 @@ func (r *mutationResolver) CreateNotificationChannel(ctx context.Context, input 
 		IsEnabled: isEnabled,
 		Config:    input.Config,
 	}
-	if err := r.DB.WithContext(ctx).Create(&ch).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Create(&ch).Error; err != nil {
 		return nil, fmt.Errorf("failed to create notification channel: %w", err)
 	}
 	return notifChannelToGQL(&ch), nil
@@ -38,7 +38,7 @@ func (r *mutationResolver) CreateNotificationChannel(ctx context.Context, input 
 func (r *mutationResolver) UpdateNotificationChannel(ctx context.Context, id string, input model.UpdateNotificationChannelInput) (*model.NotificationChannel, error) {
 	uid, _ := uuid.Parse(id)
 	var ch models.NotificationChannel
-	if err := r.DB.WithContext(ctx).First(&ch, "id = ?", uid).Error; err != nil {
+	if err := r.DB().WithContext(ctx).First(&ch, "id = ?", uid).Error; err != nil {
 		return nil, fmt.Errorf("channel not found")
 	}
 	if input.Name != nil {
@@ -50,7 +50,7 @@ func (r *mutationResolver) UpdateNotificationChannel(ctx context.Context, id str
 	if input.Config != nil {
 		ch.Config = *input.Config
 	}
-	if err := r.DB.WithContext(ctx).Save(&ch).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Save(&ch).Error; err != nil {
 		return nil, fmt.Errorf("failed to update channel: %w", err)
 	}
 	return notifChannelToGQL(&ch), nil
@@ -59,7 +59,7 @@ func (r *mutationResolver) UpdateNotificationChannel(ctx context.Context, id str
 // DeleteNotificationChannel is the resolver for the deleteNotificationChannel field.
 func (r *mutationResolver) DeleteNotificationChannel(ctx context.Context, id string) (bool, error) {
 	uid, _ := uuid.Parse(id)
-	if err := r.DB.WithContext(ctx).Delete(&models.NotificationChannel{}, "id = ?", uid).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Delete(&models.NotificationChannel{}, "id = ?", uid).Error; err != nil {
 		return false, fmt.Errorf("failed to delete channel: %w", err)
 	}
 	return true, nil
@@ -69,7 +69,7 @@ func (r *mutationResolver) DeleteNotificationChannel(ctx context.Context, id str
 func (r *mutationResolver) TestNotificationChannel(ctx context.Context, id string) (bool, error) {
 	uid, _ := uuid.Parse(id)
 	var ch models.NotificationChannel
-	if err := r.DB.WithContext(ctx).First(&ch, "id = ?", uid).Error; err != nil {
+	if err := r.DB().WithContext(ctx).First(&ch, "id = ?", uid).Error; err != nil {
 		return false, fmt.Errorf("channel not found")
 	}
 
@@ -141,7 +141,7 @@ func (r *mutationResolver) TestNotificationChannel(ctx context.Context, id strin
 // NotificationChannels is the resolver for the notificationChannels field.
 func (r *queryResolver) NotificationChannels(ctx context.Context) ([]*model.NotificationChannel, error) {
 	var channels []models.NotificationChannel
-	if err := r.DB.WithContext(ctx).Order("created_at DESC").Find(&channels).Error; err != nil {
+	if err := r.DB().WithContext(ctx).Order("created_at DESC").Find(&channels).Error; err != nil {
 		return nil, fmt.Errorf("failed to fetch channels: %w", err)
 	}
 	out := make([]*model.NotificationChannel, len(channels))

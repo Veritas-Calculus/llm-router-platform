@@ -26,7 +26,7 @@ func clientInfo(ctx context.Context) (ip, userAgent string) {
 // ── JWT helpers ──────────────────────────────────────────────────────
 
 func (r *mutationResolver) generateJWT(u *models.User) (string, error) {
-	ttl := r.Config.JWT.ExpiresIn
+	ttl := r.Config().JWT.ExpiresIn
 	if ttl <= 0 {
 		ttl = time.Hour // Default: 1 hour (prefer short-lived access tokens)
 	}
@@ -37,11 +37,11 @@ func (r *mutationResolver) generateJWT(u *models.User) (string, error) {
 		"iat":  time.Now().Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(r.Config.JWT.Secret))
+	return token.SignedString([]byte(r.Config().JWT.Secret))
 }
 
 func (r *mutationResolver) generateRefreshJWT(u *models.User) (string, error) {
-	ttl := r.Config.JWT.RefreshExpiresIn
+	ttl := r.Config().JWT.RefreshExpiresIn
 	if ttl <= 0 {
 		ttl = 7 * 24 * time.Hour // Default: 7 days
 	}
@@ -52,7 +52,7 @@ func (r *mutationResolver) generateRefreshJWT(u *models.User) (string, error) {
 		"iat":  time.Now().Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(r.Config.JWT.Secret))
+	return token.SignedString([]byte(r.Config().JWT.Secret))
 }
 
 func (r *mutationResolver) validateRefreshJWT(tokenStr string) (*jwt.RegisteredClaims, error) {
@@ -60,7 +60,7 @@ func (r *mutationResolver) validateRefreshJWT(tokenStr string) (*jwt.RegisteredC
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
-		return []byte(r.Config.JWT.Secret), nil
+		return []byte(r.Config().JWT.Secret), nil
 	})
 	if err != nil || !token.Valid {
 		return nil, fmt.Errorf("invalid token")

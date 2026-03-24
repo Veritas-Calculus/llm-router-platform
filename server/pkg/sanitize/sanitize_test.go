@@ -42,7 +42,7 @@ func TestValidateWebhookURLBlocksPrivateIPs(t *testing.T) {
 
 	for _, u := range blockedURLs {
 		t.Run(u, func(t *testing.T) {
-			err := ValidateWebhookURL(u, true) // allowHTTP=true to isolate IP check
+			err := ValidateWebhookURL(u, true, false) // allowHTTP=true, allowLocal=false to isolate IP check
 			require.Error(t, err, "should block private IP URL: %s", u)
 			assert.Contains(t, err.Error(), "private")
 		})
@@ -50,19 +50,19 @@ func TestValidateWebhookURLBlocksPrivateIPs(t *testing.T) {
 }
 
 func TestValidateWebhookURLRequiresHTTPS(t *testing.T) {
-	err := ValidateWebhookURL("http://example.com/callback", false)
+	err := ValidateWebhookURL("http://example.com/callback", false, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTPS")
 }
 
 func TestValidateWebhookURLAllowsHTTPWhenConfigured(t *testing.T) {
 	// Public IPs with HTTP allowed — should pass
-	err := ValidateWebhookURL("http://example.com/callback", true)
+	err := ValidateWebhookURL("http://example.com/callback", true, false)
 	assert.NoError(t, err)
 }
 
 func TestValidateWebhookURLAllowsHTTPS(t *testing.T) {
-	err := ValidateWebhookURL("https://example.com/callback", false)
+	err := ValidateWebhookURL("https://example.com/callback", false, false)
 	assert.NoError(t, err)
 }
 
@@ -75,7 +75,7 @@ func TestValidateWebhookURLRejectsInvalidSchemes(t *testing.T) {
 
 	for _, u := range schemes {
 		t.Run(u, func(t *testing.T) {
-			err := ValidateWebhookURL(u, true)
+			err := ValidateWebhookURL(u, true, false)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "not allowed")
 		})
@@ -83,12 +83,18 @@ func TestValidateWebhookURLRejectsInvalidSchemes(t *testing.T) {
 }
 
 func TestValidateWebhookURLAllowsEmpty(t *testing.T) {
-	err := ValidateWebhookURL("", false)
+	err := ValidateWebhookURL("", false, false)
 	assert.NoError(t, err, "empty URL should be valid (optional field)")
 }
 
 func TestValidateWebhookURLRejectsNoHost(t *testing.T) {
-	err := ValidateWebhookURL("https://", false)
+	err := ValidateWebhookURL("https://", false, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "hostname")
+}
+
+func TestValidateWebhookURLAllowsPrivateIPsWhenAllowLocal(t *testing.T) {
+	// With allowLocal=true, private IPs should be allowed
+	err := ValidateWebhookURL("http://127.0.0.1/callback", true, true)
+	assert.NoError(t, err, "should allow private IP when allowLocal=true")
 }

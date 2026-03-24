@@ -164,3 +164,28 @@ func (r *ModelRepository) GetByProvider(ctx context.Context, providerID uuid.UUI
 	}
 	return modelsList, nil
 }
+
+// GetByProviderSorted retrieves all models for a provider ordered by name.
+func (r *ModelRepository) GetByProviderSorted(ctx context.Context, providerID uuid.UUID) ([]models.Model, error) {
+	var modelsList []models.Model
+	if err := r.db.WithContext(ctx).Where("provider_id = ?", providerID).Order("name ASC").Find(&modelsList).Error; err != nil {
+		return nil, err
+	}
+	return modelsList, nil
+}
+
+// Create inserts a new model.
+func (r *ModelRepository) Create(ctx context.Context, m *models.Model) error {
+	return r.db.WithContext(ctx).Create(m).Error
+}
+
+// Update saves a model.
+func (r *ModelRepository) Update(ctx context.Context, m *models.Model) error {
+	return r.db.WithContext(ctx).Save(m).Error
+}
+
+// Delete removes a model by ID.
+func (r *ModelRepository) Delete(ctx context.Context, id uuid.UUID) error {
+	return r.db.WithContext(ctx).Delete(&models.Model{}, "id = ?", id).Error
+}
+

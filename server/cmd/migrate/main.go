@@ -31,7 +31,7 @@ func main() {
 	logger, _ := zap.NewProduction()
 	defer func() { _ = logger.Sync() }()
 
-	db, err := database.New(&cfg.Database, logger)
+	db, err := database.New(&cfg.Database, cfg.Server.Mode, logger)
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}

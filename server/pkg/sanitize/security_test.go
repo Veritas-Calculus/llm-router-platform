@@ -46,7 +46,7 @@ func TestIsPrivateIPAllowsPublicIPs(t *testing.T) {
 }
 
 func TestSafeTransportReturnsTransport(t *testing.T) {
-	transport := SafeTransport()
+	transport := SafeTransport(false)
 	assert.NotNil(t, transport)
 	assert.NotNil(t, transport.DialContext, "SafeTransport must have a custom DialContext")
 }
@@ -54,7 +54,8 @@ func TestSafeTransportReturnsTransport(t *testing.T) {
 func TestSafeDialContextBlocksPrivateIPs(t *testing.T) {
 	// Test that dialing 127.0.0.1 directly is blocked
 	ctx := t.Context()
-	_, err := safeDialContext(ctx, "tcp", "127.0.0.1:80")
+	dialFn := newSafeDialContext(false)
+	_, err := dialFn(ctx, "tcp", "127.0.0.1:80")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "private/reserved IP")
 }
@@ -62,7 +63,18 @@ func TestSafeDialContextBlocksPrivateIPs(t *testing.T) {
 func TestSafeDialContextBlocksLoopbackHostname(t *testing.T) {
 	// "localhost" resolves to 127.0.0.1, should be blocked
 	ctx := t.Context()
-	_, err := safeDialContext(ctx, "tcp", "localhost:80")
+	dialFn := newSafeDialContext(false)
+	_, err := dialFn(ctx, "tcp", "localhost:80")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "private/reserved IP")
+}
+
+func TestSafeDialContextAllowsPrivateWhenAllowLocal(t *testing.T) {
+	// With allowLocal=true, should attempt to connect (will fail on connect, not on IP check)
+	ctx := t.Context()
+	dialFn := newSafeDialContext(true)
+	_, err := dialFn(ctx, "tcp", "127.0.0.1:1") // port 1 won't connect, but shouldn't fail on IP check
+	if err != nil {
+		assert.NotContains(t, err.Error(), "private/reserved IP", "should not block private IP when allowLocal=true")
+	}
 }

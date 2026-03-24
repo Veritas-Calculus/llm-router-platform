@@ -24,12 +24,12 @@ func (r *mutationResolver) UpdateDlpConfig(ctx context.Context, input model.Upda
 	if err != nil {
 		return nil, fmt.Errorf("unauthorized")
 	}
-	if err = r.RequireProjectRole(ctx, userID, input.ProjectID, "OWNER", "ADMIN"); err != nil {
+	if err = r.UserSvc.RequireProjectRole(ctx, userID, input.ProjectID, "OWNER", "ADMIN"); err != nil {
 		return nil, err
 	}
 
 	var dlpConfig gdbModels.DlpConfig
-	err = r.DB.Where("project_id = ?", input.ProjectID).First(&dlpConfig).Error
+	err = r.DB().Where("project_id = ?", input.ProjectID).First(&dlpConfig).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Create a new one
@@ -75,7 +75,7 @@ func (r *mutationResolver) UpdateDlpConfig(ctx context.Context, input model.Upda
 		dlpConfig.CustomRegex = input.CustomRegex
 	}
 
-	if err := r.DB.Save(&dlpConfig).Error; err != nil {
+	if err := r.DB().Save(&dlpConfig).Error; err != nil {
 		return nil, fmt.Errorf("failed to update dlp config: %v", err)
 	}
 
@@ -88,12 +88,12 @@ func (r *queryResolver) GetDlpConfig(ctx context.Context, projectID string) (*mo
 	if err != nil {
 		return nil, fmt.Errorf("unauthorized")
 	}
-	if err = r.RequireProjectRole(ctx, userID, projectID, "OWNER", "ADMIN", "MEMBER"); err != nil {
+	if err = r.UserSvc.RequireProjectRole(ctx, userID, projectID, "OWNER", "ADMIN", "MEMBER"); err != nil {
 		return nil, err
 	}
 
 	var dlpConfig gdbModels.DlpConfig
-	err = r.DB.Where("project_id = ?", projectID).First(&dlpConfig).Error
+	err = r.DB().Where("project_id = ?", projectID).First(&dlpConfig).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Return a default config mapping, without saving to DB yet to save space
@@ -124,12 +124,12 @@ func (r *queryResolver) TestDlpRedaction(ctx context.Context, projectID string, 
 	if !ok {
 		return nil, fmt.Errorf("unauthorized")
 	}
-	if err := r.RequireProjectRole(ctx, userID, projectID, "OWNER", "ADMIN", "MEMBER"); err != nil {
+	if err := r.UserSvc.RequireProjectRole(ctx, userID, projectID, "OWNER", "ADMIN", "MEMBER"); err != nil {
 		return nil, err
 	}
 
 	var dlpConfig gdbModels.DlpConfig
-	err := r.DB.Where("project_id = ?", projectID).First(&dlpConfig).Error
+	err := r.DB().Where("project_id = ?", projectID).First(&dlpConfig).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Pseudo config

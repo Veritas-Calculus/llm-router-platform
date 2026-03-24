@@ -13,6 +13,7 @@ import (
 	"llm-router-platform/internal/graphql/dataloaders"
 	gqlhandler "llm-router-platform/internal/graphql/handler"
 	"llm-router-platform/internal/graphql/resolvers"
+	"llm-router-platform/internal/service/admin"
 	announcementSvc "llm-router-platform/internal/service/announcement"
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/billing"
@@ -55,29 +56,39 @@ var (
 
 // Services holds all service dependencies.
 type Services struct {
-	User          *user.Service
-	Router        *router.Router
-	Billing       *billing.Service
-	BudgetService *billing.BudgetService
-	Subscription  *billing.SubscriptionService
-	Payment       *billing.PaymentService
-	Balance       *billing.BalanceService
-	SystemConfig  *configService.Service
-	Health        *health.Service
-	Memory        *memory.Service
-	MCP           *mcp.Service
-	Observability observability.Service
-	Proxy         *proxy.Service
-	Provider      *provider.Registry
-	TaskService   *task.Service
-	AuditService  *audit.Service
-	RedeemSvc     *redeem.Service
-	AnnouncementSvc *announcementSvc.Service
-	CouponSvc     *couponSvc.Service
-	DocumentSvc   *documentSvc.Service
-	Webhook       webhook.Service
-	RedisClient   *redis.Client // For rate limiting
-	DB            *gorm.DB      // For operational health checks only
+	User             *user.Service
+	PasswordResetSvc *user.PasswordResetService
+	EmailVerifySvc   *user.EmailVerificationService
+	LoginLimiter     *user.LoginLimiter
+	Router           *router.Router
+	Billing          *billing.Service
+	BudgetService    *billing.BudgetService
+	Subscription     *billing.SubscriptionService
+	Payment          *billing.PaymentService
+	Balance          *billing.BalanceService
+	SystemConfig     *configService.Service
+	Health           *health.Service
+	Memory           *memory.Service
+	MCP              *mcp.Service
+	Observability    observability.Service
+	Proxy            *proxy.Service
+	Provider         *provider.Registry
+	TaskService      *task.Service
+	AuditService     *audit.Service
+	EmailService     *email.Service
+	RedeemSvc        *redeem.Service
+	AnnouncementSvc  *announcementSvc.Service
+	CouponSvc        *couponSvc.Service
+	DocumentSvc      *documentSvc.Service
+	Webhook          webhook.Service
+	MonitoringSvc    *monitoring.Collector
+	TurnstileSvc     *turnstile.Service
+	SemanticCache    *semantic.SemanticCacheService
+	RedisClient      *redis.Client // For rate limiting middleware
+	DB               *gorm.DB      // For operational health checks
+	Config           *config.Config
+	AdminSvc         *admin.Service
+	Logger           *zap.Logger
 }
 
 // Setup configures all API routes.
@@ -141,56 +152,37 @@ func Setup(
 	}
 
 	// ─── GraphQL Endpoint ────────────────────────────────────────────
-	emailSvcForGql := email.NewService(cfg.Email, cfg.Frontend.URL)
-
-	// Instantiate Semantic Cache Service (defaults threshold to 0.05)
-	cacheSvc := semantic.NewSemanticCacheService(services.DB, logger, 0.05)
-
-	// Instantiate System Monitoring Collector
-	monitoringCollector := monitoring.NewCollector(
-		services.DB,
-		services.RedisClient,
-		monitoring.BuildInfo{Version: Version, GitCommit: GitCommit, BuildTime: BuildTime},
-		cfg.Server.Mode,
-		logger,
-	)
-
-	// Instantiate Turnstile CAPTCHA verification service
-	turnstileSvc := turnstile.New(logger, cfg.Turnstile.Enabled, cfg.Turnstile.SecretKey)
-
 	gqlResolver := &resolvers.Resolver{
-		UserSvc:         services.User,
-		PasswordResetSvc: user.NewPasswordResetService(services.DB),
-		EmailVerifySvc:   user.NewEmailVerificationService(services.DB),
-		LoginLimiter:     user.NewLoginLimiter(services.RedisClient, logger),
-		Router:          services.Router,
-		Billing:         services.Billing,
-		BudgetService:   services.BudgetService,
-		SubscriptionSvc: services.Subscription,
-		Payment:         services.Payment,
-		Balance:         services.Balance,
-		SystemConfig:    services.SystemConfig,
-		Health:          services.Health,
-		Memory:          services.Memory,
-		MCP:             services.MCP,
-		Observability:   services.Observability,
-		Proxy:           services.Proxy,
-		Provider:        services.Provider,
-		TaskService:     services.TaskService,
-		AuditService:    services.AuditService,
-		EmailService:    emailSvcForGql,
-		RedeemSvc:       services.RedeemSvc,
-		AnnouncementSvc: services.AnnouncementSvc,
-		CouponSvc:       services.CouponSvc,
-		DocumentSvc:     services.DocumentSvc,
-		WebhookSvc:      services.Webhook,
-		MonitoringSvc:   monitoringCollector,
-		TurnstileSvc:    turnstileSvc,
-		RedisClient:     services.RedisClient,
-		DB:              services.DB,
-		Config:          cfg,
-		Logger:          logger,
-		SemanticCache:   cacheSvc,
+		UserSvc:          services.User,
+		PasswordResetSvc: services.PasswordResetSvc,
+		EmailVerifySvc:   services.EmailVerifySvc,
+		LoginLimiter:     services.LoginLimiter,
+		Router:           services.Router,
+		Billing:          services.Billing,
+		BudgetService:    services.BudgetService,
+		SubscriptionSvc:  services.Subscription,
+		Payment:          services.Payment,
+		Balance:          services.Balance,
+		SystemConfig:     services.SystemConfig,
+		Health:           services.Health,
+		Memory:           services.Memory,
+		MCP:              services.MCP,
+		Observability:    services.Observability,
+		Proxy:            services.Proxy,
+		Provider:         services.Provider,
+		TaskService:      services.TaskService,
+		AuditService:     services.AuditService,
+		EmailService:     services.EmailService,
+		RedeemSvc:        services.RedeemSvc,
+		AnnouncementSvc:  services.AnnouncementSvc,
+		CouponSvc:        services.CouponSvc,
+		DocumentSvc:      services.DocumentSvc,
+		WebhookSvc:       services.Webhook,
+		MonitoringSvc:    services.MonitoringSvc,
+		TurnstileSvc:     services.TurnstileSvc,
+		AdminSvc:         services.AdminSvc,
+		Logger:           services.Logger,
+		SemanticCache:    services.SemanticCache,
 	}
 	graphqlHandler := gqlhandler.NewHandler(gqlResolver, cfg, logger)
 
@@ -272,7 +264,7 @@ func Setup(
 	// All management operations are now served via /graphql (Apollo Client).
 	// Only LLM proxy endpoints and payment webhooks remain under /api/v1.
 
-	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Subscription, services.Balance, services.Observability, services.DB, cacheSvc, services.RedisClient, logger)
+	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Subscription, services.Balance, services.Observability, services.DB, services.SemanticCache, services.RedisClient, logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)
 	paymentHandler := handlers.NewPaymentHandler(services.Payment, logger)
 	auditExportHandler := handlers.NewAuditHandler(services.AuditService, logger)

@@ -1,4 +1,4 @@
-.PHONY: all build test clean run dev docker-build docker-up docker-down lint
+.PHONY: all build test clean run dev docker-build docker-up docker-down lint setup helm-lint
 
 # Variables
 BINARY_NAME=llm-router-server
@@ -60,6 +60,23 @@ web-dev:
 	@echo "Running web dev server..."
 	cd web && npm run dev
 
+# One-click project setup for new developers
+setup:
+	@echo "=== LLM Router Platform — Initial Setup ==="
+	@test -f server/.env || (cp server/.env.example server/.env && echo "✓ Created server/.env from .env.example")
+	@echo "→ Installing backend dependencies..."
+	cd server && go mod download
+	@echo "→ Installing frontend dependencies..."
+	cd web && npm install
+	@echo "→ Starting infrastructure (Postgres + Redis)..."
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
+	@echo "→ Waiting for Postgres to accept connections..."
+	@sleep 3
+	@echo "→ Running migrations and seeding data..."
+	cd server && go run ./cmd/migrate seed
+	@echo ""
+	@echo "✅ Setup complete! Run 'make dev' to start developing."
+
 # Docker
 docker-build:
 	@echo "Building Docker images..."
@@ -92,6 +109,10 @@ lint:
 	@echo "Running linter..."
 	cd server && golangci-lint run ./...
 
+helm-lint:
+	@echo "Linting Helm chart..."
+	helm lint deploy/helm/llm-router
+
 # Database
 migrate-up:
 	@echo "Running migrations..."
@@ -107,6 +128,10 @@ migrate-version:
 migrate-status:
 	cd server && go run ./cmd/migrate status
 
+check-schema:
+	@echo "Checking GORM/SQL migration schema consistency (requires Docker)..."
+	./scripts/check-schema.sh
+
 # Help
 help:
 	@echo "Available targets:"
@@ -117,18 +142,19 @@ help:
 	@echo "  clean             - Clean build artifacts"
 	@echo "  run               - Run the server"
 	@echo "  dev               - Run in development mode"
+	@echo "  setup             - One-click project init (new developers)"
 	@echo "  web-install       - Install web dependencies"
 	@echo "  web-build         - Build web frontend"
 	@echo "  web-dev           - Run web dev server"
 	@echo "  docker-build      - Build Docker images"
 	@echo "  docker-up         - Start Docker containers"
 	@echo "  docker-down       - Stop Docker containers"
+	@echo "  docker-logs       - Show Docker logs"
 	@echo "  migrate-up        - Run SQL migrations"
 	@echo "  migrate-down      - Rollback last migration"
 	@echo "  migrate-version   - Show current migration version"
 	@echo "  migrate-status    - Check DB connection and migration status"
 	@echo "  lint              - Run linters"
-
-	@echo "  docker-logs    - Show Docker logs"
-	@echo "  lint           - Run linter"
-	@echo "  help           - Show this help"
+	@echo "  helm-lint         - Lint Helm chart"
+	@echo "  check-schema      - Verify GORM/SQL migration consistency (Docker)"
+	@echo "  help              - Show this help"

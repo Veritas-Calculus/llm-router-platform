@@ -77,6 +77,10 @@ type ModelRepo interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Model, error)
 	GetByName(ctx context.Context, name string) (*models.Model, error)
 	GetByProvider(ctx context.Context, providerID uuid.UUID) ([]models.Model, error)
+	GetByProviderSorted(ctx context.Context, providerID uuid.UUID) ([]models.Model, error)
+	Create(ctx context.Context, m *models.Model) error
+	Update(ctx context.Context, m *models.Model) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 // ProxyRepo defines the interface for proxy data access.

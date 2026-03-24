@@ -6,9 +6,6 @@ services:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
       POSTGRES_DB: ${DB_NAME:-llm_router}
-    ports:
-      - "5432:5432"
-    # Removed ports mapping for production security
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -37,7 +34,6 @@ services:
     container_name: llm-router-redis
     command: >
       redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set} --maxmemory 256mb --maxmemory-policy allkeys-lru
-    # Removed ports mapping for production security
     volumes:
       - redis_data:/data
     networks:
@@ -68,7 +64,7 @@ services:
     # Server port is now internal-only, proxied by web container
     environment:
       - SERVER_PORT=8080
-      - GIN_MODE=debug
+      - GIN_MODE=release
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=${DB_USER:-postgres}

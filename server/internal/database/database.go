@@ -21,9 +21,16 @@ type Database struct {
 }
 
 // New creates a new database connection.
-func New(cfg *config.DatabaseConfig, log *zap.Logger) (*Database, error) {
+// serverMode controls GORM's SQL log level: "release" = Silent, otherwise = Warn (logs slow queries).
+func New(cfg *config.DatabaseConfig, serverMode string, log *zap.Logger) (*Database, error) {
+	// In release mode, silence SQL logging.  In dev/test, use Warn level
+	// so that GORM logs slow queries (>200ms) which aids diagnosis.
+	logLevel := logger.Warn
+	if serverMode == "release" {
+		logLevel = logger.Silent
+	}
 	gormConfig := &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
+		Logger: logger.Default.LogMode(logLevel),
 	}
 
 	db, err := gorm.Open(postgres.Open(cfg.GetDSN()), gormConfig)
@@ -36,9 +43,9 @@ func New(cfg *config.DatabaseConfig, log *zap.Logger) (*Database, error) {
 		return nil, err
 	}
 
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetMaxOpenConns(100)
-	sqlDB.SetConnMaxLifetime(time.Hour)
+	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
+	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
+	sqlDB.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetimeMinutes) * time.Minute)
 
 	return &Database{
 		DB:     db,
@@ -254,6 +261,49 @@ func (d *Database) SeedDefaultModels() error {
 		}
 	}
 
+	return nil
+}
+
+// SeedDefaultAdminOnly creates the default admin user if it does not already
+// exist.  Unlike SeedDefaultAdmin it never overwrites an existing password,
+// which is the correct behaviour for production (release) mode — operators
+// may have changed the password at runtime and a restart should not reset it.
+func (d *Database) SeedDefaultAdminOnly(cfg *config.AdminConfig) error {
+	if cfg.Email == "" || cfg.Password == "" {
+		d.logger.Info("admin seeding skipped: ADMIN_EMAIL or ADMIN_PASSWORD not set")
+		return nil
+	}
+
+	var existing models.User
+	if d.DB.Where("email = ?", cfg.Email).First(&existing).Error == nil {
+		d.logger.Info("admin user already exists, skipping seed (release mode)", zap.String("email", cfg.Email))
+		d.ensureDefaultOrgProject(&existing)
+		return nil
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(cfg.Password), bcrypt.DefaultCost)
+	if err != nil {
+		d.logger.Error("failed to hash admin password", zap.Error(err))
+		return err
+	}
+
+	admin := &models.User{
+		Email:                 cfg.Email,
+		PasswordHash:          string(hashedPassword),
+		Name:                  cfg.Name,
+		Role:                  "admin",
+		IsActive:              true,
+		EmailVerified:         true,
+		RequirePasswordChange: false,
+	}
+
+	if err := d.DB.Create(admin).Error; err != nil {
+		d.logger.Error("failed to create admin user", zap.Error(err))
+		return err
+	}
+
+	d.ensureDefaultOrgProject(admin)
+	d.logger.Info("default admin user created (release mode)", zap.String("email", cfg.Email))
 	return nil
 }
 

@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 )
@@ -73,11 +72,15 @@ func IsPrivateIP(ip net.IP) bool {
 // ValidateWebhookURL validates a URL is safe to use as a webhook callback target.
 // It prevents SSRF by rejecting:
 //   - Non-HTTPS schemes (unless allowHTTP is true for dev/testing)
-//   - URLs pointing to private/reserved IP ranges
+//   - URLs pointing to private/reserved IP ranges (unless allowLocal is true)
 //   - URLs with no host or malformed structure
 //
+// When allowLocal is true (typically set via ALLOW_LOCAL_PROVIDERS config),
+// private/reserved IP ranges are permitted—useful for Docker-compose setups
+// where providers run on the same host.
+//
 // Returns an error describing the validation failure, or nil if valid.
-func ValidateWebhookURL(rawURL string, allowHTTP bool) error {
+func ValidateWebhookURL(rawURL string, allowHTTP bool, allowLocal bool) error {
 	if rawURL == "" {
 		return nil // Empty URL is valid (optional field)
 	}
@@ -111,7 +114,6 @@ func ValidateWebhookURL(rawURL string, allowHTTP bool) error {
 		return fmt.Errorf("cannot resolve webhook URL hostname %q: %w", host, err)
 	}
 
-	allowLocal := os.Getenv("ALLOW_LOCAL_PROVIDERS") == "true"
 	if !allowLocal {
 		// Check that ALL resolved IPs are public (not private/reserved)
 		for _, ip := range ips {
@@ -129,57 +131,61 @@ func ValidateWebhookURL(rawURL string, allowHTTP bool) error {
 // SafeTransport returns an *http.Transport that re-validates resolved IPs
 // at connection time, preventing DNS rebinding attacks (M6).
 //
+// When allowLocal is true, connections to private/reserved IP ranges are
+// permitted (useful for development with local provider endpoints).
+//
 // DNS rebinding: an attacker's domain initially resolves to a public IP
 // (passing ValidateWebhookURL), then switches its DNS to a private IP
 // (e.g. 169.254.169.254) by the time the HTTP client actually connects.
 // SafeTransport blocks this by checking the resolved IP inside the dialer.
-func SafeTransport() *http.Transport {
+func SafeTransport(allowLocal bool) *http.Transport {
 	return &http.Transport{
-		DialContext: safeDialContext,
+		DialContext: newSafeDialContext(allowLocal),
 	}
 }
 
-// safeDialContext is a custom DialContext that resolves the hostname and
-// validates all IPs are public before establishing the connection.
-func safeDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
-	host, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid address %q: %w", addr, err)
-	}
+// newSafeDialContext returns a custom DialContext function that resolves the
+// hostname and validates all IPs are public before establishing the connection.
+func newSafeDialContext(allowLocal bool) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid address %q: %w", addr, err)
+		}
 
-	// Resolve hostname to IPs
-	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-	if err != nil {
-		return nil, fmt.Errorf("cannot resolve %q: %w", host, err)
-	}
+		// Resolve hostname to IPs
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("cannot resolve %q: %w", host, err)
+		}
 
-	allowLocal := os.Getenv("ALLOW_LOCAL_PROVIDERS") == "true"
-	if !allowLocal {
-		// Validate ALL resolved IPs are public
-		for _, ipAddr := range ips {
-			if IsPrivateIP(ipAddr.IP) {
-				return nil, fmt.Errorf("connection to %q blocked: resolves to private/reserved IP. Set ALLOW_LOCAL_PROVIDERS=true to allow", host)
+		if !allowLocal {
+			// Validate ALL resolved IPs are public
+			for _, ipAddr := range ips {
+				if IsPrivateIP(ipAddr.IP) {
+					return nil, fmt.Errorf("connection to %q blocked: resolves to private/reserved IP. Set ALLOW_LOCAL_PROVIDERS=true to allow", host)
+				}
 			}
 		}
-	}
 
-	// Connect to the first valid IP
-	dialer := &net.Dialer{
-		Timeout:   10 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}
-
-	// Try each resolved IP in order
-	var lastErr error
-	for _, ipAddr := range ips {
-		target := net.JoinHostPort(ipAddr.IP.String(), port)
-		conn, err := dialer.DialContext(ctx, network, target)
-		if err != nil {
-			lastErr = err
-			continue
+		// Connect to the first valid IP
+		dialer := &net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
 		}
-		return conn, nil
-	}
 
-	return nil, fmt.Errorf("failed to connect to %q: %w", host, lastErr)
+		// Try each resolved IP in order
+		var lastErr error
+		for _, ipAddr := range ips {
+			target := net.JoinHostPort(ipAddr.IP.String(), port)
+			conn, err := dialer.DialContext(ctx, network, target)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			return conn, nil
+		}
+
+		return nil, fmt.Errorf("failed to connect to %q: %w", host, lastErr)
+	}
 }

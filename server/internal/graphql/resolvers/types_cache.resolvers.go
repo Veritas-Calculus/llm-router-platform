@@ -26,7 +26,7 @@ func (r *mutationResolver) ClearAllSemanticCaches(ctx context.Context) (bool, er
 // UpdateCacheConfig is the resolver for the updateCacheConfig field.
 func (r *mutationResolver) UpdateCacheConfig(ctx context.Context, input model.CacheConfigInput) (*model.CacheConfig, error) {
 	var cfg models.CacheConfig
-	if err := r.DB.WithContext(ctx).First(&cfg).Error; err != nil {
+	if err := r.DB().WithContext(ctx).First(&cfg).Error; err != nil {
 		// Create new config
 		cfg = models.CacheConfig{
 			IsEnabled:           input.IsEnabled,
@@ -35,7 +35,7 @@ func (r *mutationResolver) UpdateCacheConfig(ctx context.Context, input model.Ca
 			EmbeddingModel:      input.EmbeddingModel,
 			MaxCacheSize:        input.MaxCacheSize,
 		}
-		if err := r.DB.WithContext(ctx).Create(&cfg).Error; err != nil {
+		if err := r.DB().WithContext(ctx).Create(&cfg).Error; err != nil {
 			return nil, err
 		}
 	} else {
@@ -44,7 +44,7 @@ func (r *mutationResolver) UpdateCacheConfig(ctx context.Context, input model.Ca
 		cfg.DefaultTTLMinutes = input.DefaultTTLMinutes
 		cfg.EmbeddingModel = input.EmbeddingModel
 		cfg.MaxCacheSize = input.MaxCacheSize
-		if err := r.DB.WithContext(ctx).Save(&cfg).Error; err != nil {
+		if err := r.DB().WithContext(ctx).Save(&cfg).Error; err != nil {
 			return nil, err
 		}
 	}
@@ -96,7 +96,7 @@ func (r *queryResolver) CacheStats(ctx context.Context) (*model.CacheStats, erro
 // CacheConfig is the resolver for the cacheConfig field.
 func (r *queryResolver) CacheConfig(ctx context.Context) (*model.CacheConfig, error) {
 	var cfg models.CacheConfig
-	if err := r.DB.WithContext(ctx).First(&cfg).Error; err != nil {
+	if err := r.DB().WithContext(ctx).First(&cfg).Error; err != nil {
 		// Return defaults
 		return &model.CacheConfig{
 			ID:                  "default",

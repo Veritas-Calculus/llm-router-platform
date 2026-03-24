@@ -19,6 +19,11 @@ func NewOrganizationRepository(db *gorm.DB) *OrganizationRepository {
 	return &OrganizationRepository{db: db}
 }
 
+// DB returns the underlying database connection for advanced queries.
+func (r *OrganizationRepository) DB() *gorm.DB {
+	return r.db
+}
+
 // Create inserts a new organization.
 func (r *OrganizationRepository) Create(ctx context.Context, org *models.Organization) error {
 	return r.db.WithContext(ctx).Create(org).Error

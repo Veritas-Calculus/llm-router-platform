@@ -30,9 +30,11 @@ import (
 	"llm-router-platform/internal/database"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/internal/service/admin"
 	"llm-router-platform/internal/service/announcement"
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/billing"
+	semantic "llm-router-platform/internal/service/cache"
 	configService "llm-router-platform/internal/service/config"
 	"llm-router-platform/internal/service/coupon"
 	"llm-router-platform/internal/service/document"
@@ -40,12 +42,14 @@ import (
 	"llm-router-platform/internal/service/health"
 	"llm-router-platform/internal/service/mcp"
 	"llm-router-platform/internal/service/memory"
+	"llm-router-platform/internal/service/monitoring"
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/proxy"
 	"llm-router-platform/internal/service/redeem"
 	"llm-router-platform/internal/service/router"
 	"llm-router-platform/internal/service/task"
+	"llm-router-platform/internal/service/turnstile"
 	"llm-router-platform/internal/service/user"
 	"llm-router-platform/internal/service/webhook"
 
@@ -61,18 +65,75 @@ func main() {
 	}
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Application — top-level lifecycle container.
+//
+// Lifecycle:   NewApplication → InitInfrastructure → InitServices → Start
+//              (wait for signal)
+//              Shutdown
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Application holds all runtime state for the server.  Each lifecycle phase
+// populates a different subset of fields, keeping responsibilities clear.
+type Application struct {
+	cfg    *config.Config
+	logger *zap.Logger
+
+	// Infrastructure (populated by InitInfrastructure)
+	db          *database.Database
+	redisClient *redis.Client
+
+	// Business layer (populated by InitServices)
+	repos    *Repositories
+	services *routes.Services
+
+	// HTTP (populated by Start)
+	server          *http.Server
+	lifecycleCancel context.CancelFunc
+}
+
+// run orchestrates the full server lifecycle.
 func run() error {
-	cfg, err := config.Load()
+	app, err := NewApplication()
 	if err != nil {
 		return err
 	}
+	defer func() { _ = app.logger.Sync() }()
 
-	logger, _ := zap.NewProduction()
-	defer func() { _ = logger.Sync() }()
+	if err := app.InitInfrastructure(); err != nil {
+		return err
+	}
+
+	app.InitServices()
+
+	app.Start()
+
+	// Block until termination signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	return app.Shutdown()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 1 — Configuration & Validation
+// ─────────────────────────────────────────────────────────────────────────────
+
+// NewApplication loads configuration, builds the logger, and runs all startup
+// pre-checks (encryption key, JWT secret length, admin password strength).
+func NewApplication() (*Application, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+
+	logger, err := buildLogger(cfg.Log)
+	if err != nil {
+		log.Fatalf("failed to build logger: %v", err)
+	}
 
 	// Initialize encryption — mandatory in production.
-	// Refuse to start without a valid encryption key to prevent
-	// silent plaintext storage of provider API keys.
 	if cfg.Encryption.Key == "" {
 		logger.Fatal("ENCRYPTION_KEY is required — refusing to start without encryption")
 	}
@@ -86,8 +147,7 @@ func run() error {
 		logger.Fatal("JWT_SECRET must be at least 32 characters")
 	}
 
-	// Warn if admin password does not meet complexity requirements
-	// L5: In non-debug mode, refuse to start with a weak admin password
+	// Validate admin password complexity
 	if cfg.Admin.Password != "" && !isStrongPassword(cfg.Admin.Password) {
 		if cfg.Server.Mode == "debug" {
 			logger.Warn("ADMIN_PASSWORD does not meet complexity requirements (min 8 chars, upper+lower+digit). Consider updating it.")
@@ -96,176 +156,269 @@ func run() error {
 		}
 	}
 
-	// R7: Warn if CORS allows all origins in non-debug mode
+	// CORS safety warning
 	if len(cfg.Server.CORSOrigins) > 0 && cfg.Server.CORSOrigins[0] == "*" && cfg.Log.Level != "debug" {
 		logger.Warn("CORS_ORIGINS is set to '*' — this allows any origin. Consider restricting to specific domains in production.")
 	}
 
-	db, err := database.New(&cfg.Database, logger)
+	return &Application{cfg: cfg, logger: logger}, nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2 — Infrastructure (Database + Redis)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// InitInfrastructure connects to PostgreSQL and Redis, runs migrations, and
+// seeds default data (respecting release-mode guards).
+func (app *Application) InitInfrastructure() error {
+	// ── Database ─────────────────────────────────────────────────────────
+	db, err := database.New(&app.cfg.Database, app.cfg.Server.Mode, app.logger)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = db.Close() }()
+	app.db = db
 
-	// Run database migrations.
-	// In release mode, AutoMigrate is bypassed to prevent accidental schema changes.
-	// Use 'cmd/migrate' or explicit SQL migrations for production deployments.
-	if cfg.Server.Mode == "release" {
-		logger.Info("Bypassing AutoMigrate in release mode. Please ensure database migrations are already applied.")
+	// Migrations
+	if app.cfg.Server.Mode == "release" {
+		app.logger.Info("Bypassing AutoMigrate in release mode. Please ensure database migrations are already applied.")
 	} else {
 		if err := db.Migrate(); err != nil {
 			return err
 		}
 	}
 
-	_ = db.SeedDefaultProviders()
-	_ = db.SeedDefaultModels()
-	_ = db.SeedDefaultAdmin(&cfg.Admin)
-	seedDefaultPlans(db.DB)
+	// Seed data
+	app.seedData()
 
-	gormDB := db.DB
-	repos := initRepositories(db, cfg)
+	// ── Redis ────────────────────────────────────────────────────────────
+	app.redisClient = app.connectRedis()
 
-	// Initialize Redis client for rate limiting
-	redisOpts := &redis.Options{
-		Addr:     cfg.Redis.GetRedisAddr(),
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
-	}
-	// H2: Enable TLS for Redis connection when configured
-	if cfg.Redis.TLSEnabled {
-		redisOpts.TLSConfig = &tls.Config{
-			MinVersion: tls.VersionTLS12,
+	return nil
+}
+
+// seedData populates default data.  In release mode only the admin account is
+// ensured (without overwriting a runtime-changed password).  Development mode
+// additionally seeds providers, models, and plans.
+func (app *Application) seedData() {
+	if app.cfg.Server.Mode == "release" {
+		if err := app.db.SeedDefaultAdminOnly(&app.cfg.Admin); err != nil {
+			app.logger.Error("failed to seed admin user", zap.Error(err))
 		}
-		logger.Info("redis TLS enabled")
-	}
-	redisClient := redis.NewClient(redisOpts)
-	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		logger.Warn("redis connection failed, rate limiting will be disabled", zap.Error(err))
-		redisClient = nil
+		app.logger.Info("release mode: skipping provider/model/plan seed data")
 	} else {
-		logger.Info("redis connected for rate limiting")
+		if err := app.db.SeedDefaultProviders(); err != nil {
+			app.logger.Error("failed to seed default providers", zap.Error(err))
+		}
+		if err := app.db.SeedDefaultModels(); err != nil {
+			app.logger.Error("failed to seed default models", zap.Error(err))
+		}
+		if err := app.db.SeedDefaultAdmin(&app.cfg.Admin); err != nil {
+			app.logger.Error("failed to seed admin user", zap.Error(err))
+		}
+		seedDefaultPlans(app.db.DB)
+	}
+}
+
+// connectRedis creates and tests a Redis connection.  Returns nil (with a
+// warning) if the connection fails — downstream code treats nil as "disabled".
+func (app *Application) connectRedis() *redis.Client {
+	opts := &redis.Options{
+		Addr:     app.cfg.Redis.GetRedisAddr(),
+		Password: app.cfg.Redis.Password,
+		DB:       app.cfg.Redis.DB,
+	}
+	if app.cfg.Redis.TLSEnabled {
+		opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		app.logger.Info("redis TLS enabled")
 	}
 
-	services := initServices(repos, cfg, logger, redisClient, gormDB)
+	client := redis.NewClient(opts)
+	if err := client.Ping(context.Background()).Err(); err != nil {
+		app.logger.Warn("redis connection failed, rate limiting will be disabled", zap.Error(err))
+		return nil
+	}
+	app.logger.Info("redis connected for rate limiting")
+	return client
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 3 — Service Layer
+// ─────────────────────────────────────────────────────────────────────────────
+
+// InitServices creates all repositories and services, wiring them together.
+func (app *Application) InitServices() {
+	gormDB := app.db.DB
+	app.repos = initRepositories(app.db, app.cfg)
+	app.services = initServices(app.repos, app.cfg, app.logger, app.redisClient, gormDB)
 
 	// Initialize MCP Service
-	if err := services.MCP.Initialize(context.Background()); err != nil {
-		logger.Error("failed to initialize MCP service", zap.Error(err))
+	if err := app.services.MCP.Initialize(context.Background()); err != nil {
+		app.logger.Error("failed to initialize MCP service", zap.Error(err))
 	}
+}
 
-	gin.SetMode(cfg.Server.Mode)
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 4 — HTTP Server & Background Jobs
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Start configures the Gin engine, registers routes, launches the HTTP server,
+// and starts all background goroutines (health checks, webhooks, cleanup).
+func (app *Application) Start() {
+	gin.SetMode(app.cfg.Server.Mode)
 	engine := gin.New()
 
 	// Sentry must be initialized before middleware registration
-	if err := observability.InitSentry(cfg.Observability, logger); err != nil {
-		logger.Error("sentry init failed (non-fatal)", zap.Error(err))
+	if err := observability.InitSentry(app.cfg.Observability, app.logger); err != nil {
+		app.logger.Error("sentry init failed (non-fatal)", zap.Error(err))
 	}
-	defer observability.ShutdownSentry(logger)
-
-	// Register Sentry panic capture BEFORE Recovery so panics are reported
 	engine.Use(middleware.SentryMiddleware())
 	engine.Use(middleware.SentryUserContext())
 
-	routes.Setup(engine, cfg, services, logger)
+	routes.Setup(engine, app.cfg, app.services, app.logger)
 
-	server := &http.Server{
-		Addr:              ":" + cfg.Server.Port,
+	app.server = &http.Server{
+		Addr:              ":" + app.cfg.Server.Port,
 		Handler:           engine,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      600 * time.Second, // LLM streaming responses can take minutes
+		ReadTimeout:       time.Duration(app.cfg.Server.ReadTimeoutSeconds) * time.Second,
+		WriteTimeout:      time.Duration(app.cfg.Server.WriteTimeoutSeconds) * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
-		logger.Info("starting server", zap.String("port", cfg.Server.Port))
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("server error", zap.Error(err))
+		app.logger.Info("starting server", zap.String("port", app.cfg.Server.Port))
+		if err := app.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			app.logger.Fatal("server error", zap.Error(err))
 		}
 	}()
 
-	// Lifecycle context: cancelled when shutdown signal is received.
-	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
+	app.startBackgroundJobs()
+}
 
-	if cfg.HealthCheck.Enabled {
-		alertNotifier := health.NewAlertNotifier(repos.Alert, repos.AlertConfig, logger)
-		scheduler := health.NewScheduler(services.Health, alertNotifier, cfg.HealthCheck.Interval, logger)
+// startBackgroundJobs launches health scheduler, task worker pool, webhook
+// dispatcher, and data cleanup goroutines — all governed by a shared lifecycle
+// context that is cancelled during Shutdown.
+func (app *Application) startBackgroundJobs() {
+	lifecycleCtx, cancel := context.WithCancel(context.Background())
+	app.lifecycleCancel = cancel
+
+	// Health check scheduler
+	if app.cfg.HealthCheck.Enabled {
+		alertNotifier := health.NewAlertNotifier(app.repos.Alert, app.repos.AlertConfig, app.logger)
+		scheduler := health.NewScheduler(app.services.Health, alertNotifier, app.cfg.HealthCheck.Interval, app.logger)
 		go scheduler.Start(lifecycleCtx)
 	}
 
-	// Start async task worker pool
-	workerPool := task.NewWorkerPool(services.TaskService, repos.Task, task.DefaultWorkerPoolConfig(), logger)
-	task.RegisterDefaultExecutors(workerPool, services.Router, logger)
+	// Async task worker pool
+	workerPool := task.NewWorkerPool(app.services.TaskService, app.repos.Task, task.DefaultWorkerPoolConfig(), app.logger)
+	task.RegisterDefaultExecutors(workerPool, app.services.Router, app.logger)
 	go workerPool.Start(lifecycleCtx)
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
-	// Periodic Webhook dispatcher (runs every 5 seconds)
+	// Periodic webhook dispatcher (every 5s)
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				services.Webhook.ProcessPendingDeliveries(context.Background())
+				app.services.Webhook.ProcessPendingDeliveries(context.Background())
 			case <-lifecycleCtx.Done():
 				return
 			}
 		}
 	}()
 
-	// Periodic data cleanup (runs daily)
+	// Periodic data cleanup (daily)
 	go func() {
 		ticker := time.NewTicker(24 * time.Hour)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				_, _ = db.CleanupOldHealthHistory(30) // 30-day retention
-				_, _ = db.CleanupOldAlerts(90)        // 90-day retention for resolved alerts
-				_, _ = services.AuditService.PurgeOlderThan(context.Background(), 90*24*time.Hour) // 90-day retention for audit logs
+				app.runDataCleanup()
 			case <-lifecycleCtx.Done():
 				return
 			}
 		}
 	}()
+}
 
-	<-quit
+// runDataCleanup purges old health history, alerts, and audit logs based on
+// configurable retention periods.
+func (app *Application) runDataCleanup() {
+	if n, err := app.db.CleanupOldHealthHistory(app.cfg.Cleanup.HealthRetentionDays); err != nil {
+		app.logger.Error("health history cleanup failed", zap.Error(err))
+	} else if n > 0 {
+		app.logger.Info("health history cleanup completed", zap.Int64("deleted", n))
+	}
+	if n, err := app.db.CleanupOldAlerts(app.cfg.Cleanup.AlertRetentionDays); err != nil {
+		app.logger.Error("alert cleanup failed", zap.Error(err))
+	} else if n > 0 {
+		app.logger.Info("alert cleanup completed", zap.Int64("deleted", n))
+	}
+	retention := time.Duration(app.cfg.Cleanup.AuditRetentionDays) * 24 * time.Hour
+	if n, err := app.services.AuditService.PurgeOlderThan(context.Background(), retention); err != nil {
+		app.logger.Error("audit log cleanup failed", zap.Error(err))
+	} else if n > 0 {
+		app.logger.Info("audit log cleanup completed", zap.Int64("deleted", n))
+	}
+}
 
-	logger.Info("shutting down server — draining connections…")
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 5 — Shutdown
+// ─────────────────────────────────────────────────────────────────────────────
 
-	// 1. Cancel background goroutines (health scheduler, cleanup ticker)
-	lifecycleCancel()
+// Shutdown performs an ordered teardown: cancel background goroutines, drain
+// HTTP connections, flush observability, and close infrastructure connections.
+func (app *Application) Shutdown() error {
+	app.logger.Info("shutting down server — draining connections…")
+
+	// 1. Cancel background goroutines
+	if app.lifecycleCancel != nil {
+		app.lifecycleCancel()
+	}
 
 	// 2. Shutdown HTTP server with deadline
 	shutdownTimeout := 15 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
-	if err := server.Shutdown(ctx); err != nil {
-		logger.Error("server shutdown error", zap.Error(err))
+	if err := app.server.Shutdown(ctx); err != nil {
+		app.logger.Error("server shutdown error", zap.Error(err))
 		return err
 	}
-	logger.Info("http server stopped")
+	app.logger.Info("http server stopped")
 
 	// 3. Shutdown observability (flush traces)
-	if err := services.Observability.Shutdown(ctx); err != nil {
-		logger.Error("observability shutdown error", zap.Error(err))
+	if err := app.services.Observability.Shutdown(ctx); err != nil {
+		app.logger.Error("observability shutdown error", zap.Error(err))
 	}
 
-	// 4. Close Redis connection
-	if redisClient != nil {
-		if err := redisClient.Close(); err != nil {
-			logger.Error("redis close error", zap.Error(err))
+	// 4. Flush Sentry events
+	observability.ShutdownSentry(app.logger)
+
+	// 5. Close Redis
+	if app.redisClient != nil {
+		if err := app.redisClient.Close(); err != nil {
+			app.logger.Error("redis close error", zap.Error(err))
 		}
-		logger.Info("redis connection closed")
+		app.logger.Info("redis connection closed")
 	}
 
-	logger.Info("shutdown complete")
+	// 6. Close database
+	if app.db != nil {
+		if err := app.db.Close(); err != nil {
+			app.logger.Error("database close error", zap.Error(err))
+		}
+	}
+
+	app.logger.Info("shutdown complete")
 	return nil
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Repository & Service Wiring
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Repositories holds all repository instances.
 type Repositories struct {
@@ -326,11 +479,10 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	userService := user.NewService(repos.User, repos.APIKey, repos.Project, repos.Organization, logger)
 
 	// Provider registry - clients are created dynamically based on database configuration
-	// API keys are stored encrypted in the database and configured via Web UI
 	providerRegistry := provider.NewRegistry(logger)
 
 	mcpService := mcp.NewService(repos.MCP, logger)
-	configService := configService.NewService(repos.Config, logger)
+	cfgService := configService.NewService(repos.Config, logger)
 
 	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, repos.RoutingRule, providerRegistry, mcpService, logger)
 	if redisClient != nil {
@@ -339,14 +491,14 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	billingService := billing.NewService(repos.UsageLog, repos.Model, redisClient, logger)
 	budgetService := billing.NewBudgetService(repos.UsageLog, repos.Budget, logger)
 	subscriptionService := billing.NewSubscriptionService(repos.Plan, repos.Subscription, repos.UsageLog, logger)
-	
+
 	emailSvc := email.NewService(cfg.Email, cfg.Frontend.URL)
 	balanceService := billing.NewBalanceService(gormDB, repos.User, repos.Transaction, redisClient, emailSvc, logger)
-	
+
 	// Dynamically get Stripe config from DB if available
-	stripeCfg := configService.GetStripeConfig(context.Background(), cfg.Stripe)
+	stripeCfg := cfgService.GetStripeConfig(context.Background(), cfg.Stripe)
 	paymentService := billing.NewPaymentService(stripeCfg, cfg.Frontend.URL, repos.Plan, repos.Subscription, repos.Transaction, logger)
-	
+
 	memoryService := memory.NewService(repos.Memory, redisClient, logger)
 	proxyService := proxy.NewService(repos.Proxy, logger)
 	obsService := observability.NewCompositeService(
@@ -357,70 +509,82 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 
 	alertNotifier := health.NewAlertNotifier(repos.Alert, repos.AlertConfig, logger)
 	healthService := health.NewService(
-		repos.APIKey,
-		repos.ProviderAPIKey,
-		repos.Proxy,
-		repos.Provider,
-		repos.HealthHistory,
-		alertNotifier,
-		providerRegistry,
-		proxyService,
-		logger,
+		repos.APIKey, repos.ProviderAPIKey, repos.Proxy, repos.Provider,
+		repos.HealthHistory, alertNotifier, providerRegistry, proxyService, logger,
 	)
 
-	taskService := task.NewService(repos.Task, logger)
+	taskService := task.NewService(repos.Task, logger, cfg.Server.AllowLocalProviders)
 	redeemService := redeem.NewService(gormDB, logger)
 	announcementService := announcement.NewService(gormDB, logger)
 	couponService := coupon.NewService(gormDB, logger)
 	documentService := document.NewService(gormDB, logger)
 	webhookService := webhook.NewWebhookService(repos.Webhook, logger)
 
+	// Services previously created inside routes.Setup() — consolidated here
+	passwordResetSvc := user.NewPasswordResetService(gormDB)
+	emailVerifySvc := user.NewEmailVerificationService(gormDB)
+	loginLimiter := user.NewLoginLimiter(redisClient, logger)
+	cacheSvc := semantic.NewSemanticCacheService(gormDB, logger, 0.05)
+	turnstileSvc := turnstile.New(logger, cfg.Turnstile.Enabled, cfg.Turnstile.SecretKey)
+	monitoringSvc := monitoring.NewCollector(
+		gormDB, redisClient,
+		monitoring.BuildInfo{Version: routes.Version, GitCommit: routes.GitCommit, BuildTime: routes.BuildTime},
+		cfg.Server.Mode, logger,
+	)
+	adminSvc := admin.NewService(gormDB, redisClient, cfg, logger)
+
 	return &routes.Services{
-		User:          userService,
-		Router:        routerService,
-		Billing:       billingService,
-		BudgetService: budgetService,
-		Subscription:  subscriptionService,
-		Payment:       paymentService,
-		Balance:       balanceService,
-		SystemConfig:  configService,
-		Health:        healthService,
-		Memory:        memoryService,
-		Observability: obsService,
-		Proxy:         proxyService,
-		Provider:      providerRegistry,
-		TaskService:   taskService,
-		AuditService:  auditService,
-		RedeemSvc:     redeemService,
-		AnnouncementSvc: announcementService,
-		CouponSvc:     couponService,
-		DocumentSvc:   documentService,
-		Webhook:       webhookService,
-		MCP:           mcpService,
-		RedisClient:   redisClient,
-		DB:            gormDB, // For health checks (operational handler)
+		User:             userService,
+		PasswordResetSvc: passwordResetSvc,
+		EmailVerifySvc:   emailVerifySvc,
+		LoginLimiter:     loginLimiter,
+		Router:           routerService,
+		Billing:          billingService,
+		BudgetService:    budgetService,
+		Subscription:     subscriptionService,
+		Payment:          paymentService,
+		Balance:          balanceService,
+		SystemConfig:     cfgService,
+		Health:           healthService,
+		Memory:           memoryService,
+		Observability:    obsService,
+		Proxy:            proxyService,
+		Provider:         providerRegistry,
+		TaskService:      taskService,
+		AuditService:     auditService,
+		EmailService:     emailSvc,
+		RedeemSvc:        redeemService,
+		AnnouncementSvc:  announcementService,
+		CouponSvc:        couponService,
+		DocumentSvc:      documentService,
+		Webhook:          webhookService,
+		MonitoringSvc:    monitoringSvc,
+		TurnstileSvc:     turnstileSvc,
+		SemanticCache:    cacheSvc,
+		MCP:              mcpService,
+		RedisClient:      redisClient,
+		DB:               gormDB,
+		Config:           cfg,
+		AdminSvc:         adminSvc,
+		Logger:           logger,
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
 func seedDefaultPlans(db *gorm.DB) {
 	plans := []models.Plan{
 		{
-			Name:         "Free",
-			Description:  "Perfect for trying out the platform",
-			PriceMonth:   0,
-			TokenLimit:   100000,
-			RateLimit:    5,
-			SupportLevel: "standard",
-			Features:     "Basic models access, 100K tokens/month, 5 RPM",
+			Name: "Free", Description: "Perfect for trying out the platform",
+			PriceMonth: 0, TokenLimit: 100000, RateLimit: 5,
+			SupportLevel: "standard", Features: "Basic models access, 100K tokens/month, 5 RPM",
 		},
 		{
-			Name:         "Pro",
-			Description:  "For individuals and small teams",
-			PriceMonth:   20,
-			TokenLimit:   5000000,
-			RateLimit:    50,
-			SupportLevel: "priority",
-			Features:     "All models access, MCP support, 5M tokens/month, 50 RPM",
+			Name: "Pro", Description: "For individuals and small teams",
+			PriceMonth: 20, TokenLimit: 5000000, RateLimit: 50,
+			SupportLevel: "priority", Features: "All models access, MCP support, 5M tokens/month, 50 RPM",
 		},
 	}
 
@@ -430,6 +594,39 @@ func seedDefaultPlans(db *gorm.DB) {
 			db.Create(&p)
 		}
 	}
+}
+
+// buildLogger creates a zap.Logger that respects the LOG_LEVEL and LOG_FORMAT
+// configuration values.
+func buildLogger(logCfg config.LogConfig) (*zap.Logger, error) {
+	var level zap.AtomicLevel
+	switch logCfg.Level {
+	case "debug":
+		level = zap.NewAtomicLevelAt(zap.DebugLevel)
+	case "warn":
+		level = zap.NewAtomicLevelAt(zap.WarnLevel)
+	case "error":
+		level = zap.NewAtomicLevelAt(zap.ErrorLevel)
+	case "fatal":
+		level = zap.NewAtomicLevelAt(zap.FatalLevel)
+	default: // "info" or unrecognised
+		level = zap.NewAtomicLevelAt(zap.InfoLevel)
+	}
+
+	encoding := "json"
+	if logCfg.Format == "console" || logCfg.Format == "text" {
+		encoding = "console"
+	}
+
+	zapCfg := zap.Config{
+		Level:            level,
+		Encoding:         encoding,
+		OutputPaths:      []string{"stdout"},
+		ErrorOutputPaths: []string{"stderr"},
+		EncoderConfig:    zap.NewProductionEncoderConfig(),
+	}
+
+	return zapCfg.Build()
 }
 
 // isStrongPassword checks if a password contains at least 8 chars,

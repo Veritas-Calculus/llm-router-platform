@@ -38,7 +38,7 @@ func (h *OperationalHandler) Liveness(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-// DeepHealth checks PG + Redis connectivity.
+// DeepHealth checks PG + Redis connectivity and migration status.
 // GET /healthz
 func (h *OperationalHandler) DeepHealth(c *gin.Context) {
 	checks := gin.H{}
@@ -58,6 +58,18 @@ func (h *OperationalHandler) DeepHealth(c *gin.Context) {
 				healthy = false
 			} else {
 				checks["postgres"] = gin.H{"status": "ok"}
+			}
+
+			// Report migration version (best-effort; does not affect health status)
+			var version int
+			var dirty bool
+			row := sqlDB.QueryRowContext(ctx, "SELECT version, dirty FROM schema_migrations LIMIT 1")
+			if err := row.Scan(&version, &dirty); err == nil {
+				migrationStatus := "ok"
+				if dirty {
+					migrationStatus = "dirty"
+				}
+				checks["migration"] = gin.H{"status": migrationStatus, "version": version, "dirty": dirty}
 			}
 		}
 	}

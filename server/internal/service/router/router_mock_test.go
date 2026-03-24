@@ -137,6 +137,12 @@ func (m *mockModelRepo) GetByName(_ context.Context, name string) (*models.Model
 func (m *mockModelRepo) GetByProvider(_ context.Context, providerID uuid.UUID) ([]models.Model, error) {
 	return m.models[providerID], nil
 }
+func (m *mockModelRepo) GetByProviderSorted(_ context.Context, providerID uuid.UUID) ([]models.Model, error) {
+	return m.models[providerID], nil
+}
+func (m *mockModelRepo) Create(_ context.Context, _ *models.Model) error  { return nil }
+func (m *mockModelRepo) Update(_ context.Context, _ *models.Model) error  { return nil }
+func (m *mockModelRepo) Delete(_ context.Context, _ uuid.UUID) error      { return nil }
 
 type mockRoutingRuleRepo struct {
 	rules []models.RoutingRule

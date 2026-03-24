@@ -601,6 +601,121 @@ func (r *Router) GetModelByID(ctx context.Context, id uuid.UUID) (*models.Model,
 	return r.modelRepo.GetByID(ctx, id)
 }
 
+// CreateModel creates a new model for a provider.
+func (r *Router) CreateModel(ctx context.Context, m *models.Model) error {
+	return r.modelRepo.Create(ctx, m)
+}
+
+// UpdateModel updates an existing model.
+func (r *Router) UpdateModel(ctx context.Context, m *models.Model) error {
+	return r.modelRepo.Update(ctx, m)
+}
+
+// DeleteModel deletes a model by ID.
+func (r *Router) DeleteModel(ctx context.Context, id uuid.UUID) error {
+	return r.modelRepo.Delete(ctx, id)
+}
+
+// ToggleModel toggles a model's active status.
+func (r *Router) ToggleModel(ctx context.Context, id uuid.UUID) (*models.Model, error) {
+	m, err := r.modelRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	m.IsActive = !m.IsActive
+	if err := r.modelRepo.Update(ctx, m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// GetModelsByProvider returns all models for a provider, sorted by name.
+func (r *Router) GetModelsByProvider(ctx context.Context, providerID uuid.UUID) ([]models.Model, error) {
+	return r.modelRepo.GetByProviderSorted(ctx, providerID)
+}
+
+// SyncModelsResult contains the result of a SyncProviderModels call.
+type SyncModelsResult struct {
+	NewModels []models.Model
+	Total     int
+}
+
+// SyncProviderModels discovers models from a provider's upstream /v1/models endpoint
+// and upserts any new ones. Returns all models for the provider.
+func (r *Router) SyncProviderModels(ctx context.Context, providerID uuid.UUID, httpClient *http.Client) ([]models.Model, error) {
+	prov, err := r.providerRepo.GetByID(ctx, providerID)
+	if err != nil {
+		return nil, errors.New("provider not found")
+	}
+
+	// Load existing models
+	existingModels, err := r.modelRepo.GetByProvider(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get first active API key for auth
+	apiKeys, err := r.providerKeyRepo.GetActiveByProvider(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+
+	reqURL := strings.TrimRight(prov.BaseURL, "/") + "/v1/models"
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return nil, errors.New("failed to build request")
+	}
+
+	if len(apiKeys) > 0 {
+		if decrypted, err := crypto.Decrypt(apiKeys[0].EncryptedAPIKey); err == nil {
+			req.Header.Set("Authorization", "Bearer "+decrypted)
+		}
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, errors.New("failed to reach provider")
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 200 {
+		return nil, errors.New("provider returned non-200 status")
+	}
+
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, errors.New("failed to parse model list")
+	}
+
+	// Build existing model map
+	existing := make(map[string]bool)
+	for _, m := range existingModels {
+		existing[m.Name] = true
+	}
+
+	// Upsert discovered models
+	for _, upstream := range result.Data {
+		if existing[upstream.ID] {
+			continue
+		}
+		m := models.Model{
+			ProviderID:  providerID,
+			Name:        upstream.ID,
+			DisplayName: upstream.ID,
+			IsActive:    true,
+			MaxTokens:   4096,
+		}
+		_ = r.modelRepo.Create(ctx, &m)
+	}
+
+	// Return full model list
+	return r.modelRepo.GetByProviderSorted(ctx, providerID)
+}
+
 // UpdateProvider updates a provider.
 func (r *Router) UpdateProvider(ctx context.Context, provider *models.Provider) error {
 	return r.providerRepo.Update(ctx, provider)
