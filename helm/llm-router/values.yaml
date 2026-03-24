@@ -28,7 +28,7 @@ server:
     REGISTRATION_MODE: "open"         # open | invite | closed
     JWT_EXPIRES_IN: "24h"
     ADMIN_NAME: "Administrator"
-    DB_SSL_MODE: "disable"            # disable | require | verify-full
+    DB_SSL_MODE: "prefer"             # prefer | require | verify-full
 
 # ─── Web (React Frontend) ────────────────────────────────────
 web:

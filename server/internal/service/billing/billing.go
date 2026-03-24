@@ -12,8 +12,29 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+)
+
+// ─── Prometheus Billing Metrics ─────────────────────────────────────────
+var (
+	billingRecordErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "llm_router",
+			Name:      "billing_record_errors_total",
+			Help:      "Total number of billing usage recording failures.",
+		},
+		[]string{"operation"}, // "record_usage", "record_usage_and_deduct"
+	)
+	billingDeductErrorsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "llm_router",
+			Name:      "billing_deduct_errors_total",
+			Help:      "Total number of balance deduction failures.",
+		},
+	)
 )
 
 // Service handles billing and usage tracking.
@@ -86,6 +107,9 @@ func (s *Service) RecordUsage(ctx context.Context, log *models.UsageLog) error {
 	// Refresh redis cache — use org-scoped key matching GetUsageSummary read path
 	if s.redis != nil && err == nil {
 		s.incrUsageCache(ctx, log)
+	}
+	if err != nil {
+		billingRecordErrorsTotal.WithLabelValues("record_usage").Inc()
 	}
 
 	return err
@@ -167,6 +191,9 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 	// Refresh redis cache outside transaction
 	if s.redis != nil && err == nil {
 		s.incrUsageCache(ctx, log)
+	}
+	if err != nil {
+		billingRecordErrorsTotal.WithLabelValues("record_usage_and_deduct").Inc()
 	}
 
 	return err

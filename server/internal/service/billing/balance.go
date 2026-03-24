@@ -51,7 +51,7 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 		return nil
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user models.User
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, "id = ?", userID).Error; err != nil {
 			return err
@@ -97,6 +97,10 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 
 		return nil
 	})
+	if err != nil {
+		billingDeductErrorsTotal.Inc()
+	}
+	return err
 }
 
 // AddBalance adds credits to the user's balance (recharge or refund).

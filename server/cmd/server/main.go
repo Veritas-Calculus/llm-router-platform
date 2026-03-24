@@ -137,10 +137,29 @@ func NewApplication() (*Application, error) {
 	if cfg.Encryption.Key == "" {
 		logger.Fatal("ENCRYPTION_KEY is required — refusing to start without encryption")
 	}
-	if err := crypto.Initialize(cfg.Encryption.Key); err != nil {
-		logger.Fatal("encryption initialization failed", zap.Error(err))
+
+	// Vault Transit Engine or local AES-256-GCM
+	if cfg.Vault.Addr != "" {
+		if cfg.Vault.Token == "" {
+			logger.Fatal("VAULT_TOKEN is required when VAULT_ADDR is set")
+		}
+		transitKey := cfg.Vault.TransitKey
+		if transitKey == "" {
+			transitKey = "llm-router"
+		}
+		if err := crypto.InitializeVault(cfg.Encryption.Key, cfg.Vault.Addr, cfg.Vault.Token, transitKey); err != nil {
+			logger.Fatal("vault encryption initialization failed", zap.Error(err))
+		}
+		logger.Info("encryption initialized via Vault Transit Engine",
+			zap.String("vault_addr", cfg.Vault.Addr),
+			zap.String("transit_key", transitKey),
+		)
+	} else {
+		if err := crypto.Initialize(cfg.Encryption.Key); err != nil {
+			logger.Fatal("encryption initialization failed", zap.Error(err))
+		}
+		logger.Info("encryption initialized with local AES-256-GCM")
 	}
-	logger.Info("encryption initialized successfully")
 
 	// Enforce minimum JWT secret length
 	if len(cfg.JWT.Secret) < 32 {

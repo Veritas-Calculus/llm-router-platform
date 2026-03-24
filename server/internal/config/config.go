@@ -16,6 +16,7 @@ type Config struct {
 	Database      DatabaseConfig
 	Redis         RedisConfig
 	Encryption    EncryptionConfig
+	Vault         VaultConfig
 	ProxyPool     ProxyPoolConfig
 	HealthCheck   HealthCheckConfig
 	Alert         AlertConfig
@@ -88,6 +89,14 @@ type RedisConfig struct {
 // EncryptionConfig holds encryption configuration for sensitive data.
 type EncryptionConfig struct {
 	Key string // #nosec G101 -- 32-byte key for AES-256 encryption, internal config only
+}
+
+// VaultConfig holds HashiCorp Vault configuration for centralized secret management.
+// When Addr is set, the server uses Vault Transit Engine for encryption instead of local AES.
+type VaultConfig struct {
+	Addr       string // Vault server address, e.g. "http://vault:8200"
+	Token      string // Vault auth token (or use RoleID+SecretID for AppRole)
+	TransitKey string // Transit engine key name, e.g. "llm-router"
 }
 
 // ProviderConfig holds single provider configuration.
@@ -266,6 +275,11 @@ func Load() (*Config, error) {
 		},
 		Encryption: EncryptionConfig{
 			Key: viper.GetString("ENCRYPTION_KEY"),
+		},
+		Vault: VaultConfig{
+			Addr:       viper.GetString("VAULT_ADDR"),
+			Token:      viper.GetString("VAULT_TOKEN"),
+			TransitKey: viper.GetString("VAULT_TRANSIT_KEY"),
 		},
 		ProxyPool: ProxyPoolConfig{
 			Enabled: viper.GetBool("PROXY_POOL_ENABLED"),

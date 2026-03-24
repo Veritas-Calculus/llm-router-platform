@@ -23,18 +23,27 @@ var (
 	ErrNotInitialized = errors.New("encryption not initialized: ENCRYPTION_KEY is required")
 )
 
-// Encryptor handles encryption and decryption of sensitive data.
+// EncryptorInterface defines the interface for encryption/decryption backends.
+// Implementations include local AES-256-GCM (Encryptor) and HashiCorp Vault
+// Transit Engine (VaultEncryptor).
+type EncryptorInterface interface {
+	Encrypt(plaintext string) (string, error)
+	Decrypt(ciphertext string) (string, error)
+}
+
+// Encryptor handles encryption and decryption of sensitive data using local AES-256-GCM.
 type Encryptor struct {
 	key []byte
 	mu  sync.RWMutex
 }
 
 var (
-	defaultEncryptor *Encryptor
+	defaultEncryptor EncryptorInterface
+	localEncryptor   *Encryptor // kept for HMACHash which needs direct key access
 	once             sync.Once
 )
 
-// Initialize sets up the default encryptor with the given key.
+// Initialize sets up the default encryptor with a local AES-256-GCM backend.
 // The key must be exactly 32 bytes for AES-256.
 func Initialize(key string) error {
 	if len(key) != 32 {
@@ -42,9 +51,26 @@ func Initialize(key string) error {
 	}
 
 	once.Do(func() {
-		defaultEncryptor = &Encryptor{
+		enc := &Encryptor{
 			key: []byte(key),
 		}
+		localEncryptor = enc
+		defaultEncryptor = enc
+	})
+
+	return nil
+}
+
+// InitializeVault sets up the default encryptor with a Vault Transit Engine backend.
+// The local AES encryptor is still initialized for HMACHash operations.
+func InitializeVault(localKey string, vaultAddr, vaultToken, transitKey string) error {
+	if len(localKey) != 32 {
+		return ErrInvalidKey
+	}
+
+	once.Do(func() {
+		localEncryptor = &Encryptor{key: []byte(localKey)}
+		defaultEncryptor = NewVaultEncryptor(vaultAddr, vaultToken, transitKey)
 	})
 
 	return nil
@@ -59,7 +85,7 @@ func MustInitialize(key string) {
 }
 
 // GetEncryptor returns the default encryptor instance.
-func GetEncryptor() *Encryptor {
+func GetEncryptor() EncryptorInterface {
 	return defaultEncryptor
 }
 
@@ -131,26 +157,33 @@ func (e *Encryptor) Decrypt(ciphertext string) (string, error) {
 
 // Encrypt encrypts using the default encryptor.
 func Encrypt(plaintext string) (string, error) {
+	if defaultEncryptor == nil {
+		return "", ErrNotInitialized
+	}
 	return defaultEncryptor.Encrypt(plaintext)
 }
 
 // Decrypt decrypts using the default encryptor.
 func Decrypt(ciphertext string) (string, error) {
+	if defaultEncryptor == nil {
+		return "", ErrNotInitialized
+	}
 	return defaultEncryptor.Decrypt(ciphertext)
 }
 
 // IsInitialized returns true if the encryptor has been initialized.
 func IsInitialized() bool {
-	return defaultEncryptor != nil && len(defaultEncryptor.key) > 0
+	return defaultEncryptor != nil
 }
 
 // HMACHash computes HMAC-SHA256 of data using the encryption key as salt.
 // The key never leaves this package — callers only get the hash result.
+// This always uses the local AES key, even when Vault is the primary encryptor.
 func HMACHash(data []byte) []byte {
-	if defaultEncryptor == nil || len(defaultEncryptor.key) == 0 {
+	if localEncryptor == nil || len(localEncryptor.key) == 0 {
 		return nil
 	}
-	h := hmac.New(sha256.New, defaultEncryptor.key)
+	h := hmac.New(sha256.New, localEncryptor.key)
 	h.Write(data)
 	return h.Sum(nil)
 }
