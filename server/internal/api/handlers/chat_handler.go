@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"llm-router-platform/internal/service/tracking"
 	router_errs "llm-router-platform/internal/errors"
 	"llm-router-platform/pkg/sanitize"
+	"llm-router-platform/pkg/tokencount"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -376,7 +378,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 	// Fetch conversation history if provided
 	var historyMessages []provider.Message
 	if req.ConversationID != "" && h.memory != nil {
-		history, err := h.memory.GetConversationWithLimit(c.Request.Context(), projectObj.ID, req.ConversationID, 20)
+		history, err := h.memory.GetConversationWithLimit(c.Request.Context(), projectObj.ID, &userAPIKey.ID, req.ConversationID, 20)
 		if err == nil {
 			for _, hm := range history {
 				historyMessages = append(historyMessages, provider.Message{Role: hm.Role, Content: provider.StringContent(hm.Content)})
@@ -556,11 +558,11 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 				ModelName:      req.Model,
 				Latency:        1,
 				StatusCode:     http.StatusOK,
-				RequestTokens:  0,
+				RequestTokens:  tokencount.CountTokens(req.Model, string(msgBytes)),
 				ResponseTokens: 0,
-				TotalTokens:    0,
+				TotalTokens:    tokencount.CountTokens(req.Model, string(msgBytes)),
 			}
-			_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+			_ = h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, userAPIKey.UserID, fmt.Sprintf("Cache hit: %s", req.Model))
 
 			if req.Stream {
 				c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -681,10 +683,10 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			if content == "" && len(m.ToolCalls) > 0 {
 				content = "[Tool Call]"
 			}
-			_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, req.ConversationID, m.Role, content, 0)
+			_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, &userAPIKey.ID, req.ConversationID, m.Role, content, 0)
 		}
 		// Final assistant response
-		_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, req.ConversationID, "assistant", outText, resp.Usage.CompletionTokens)
+		_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, &userAPIKey.ID, req.ConversationID, "assistant", outText, resp.Usage.CompletionTokens)
 	}
 
 	latency := time.Since(start)

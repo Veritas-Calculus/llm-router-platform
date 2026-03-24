@@ -507,6 +507,7 @@ func setDefaults() {
 	viper.SetDefault("OTEL_ENDPOINT", "")
 	viper.SetDefault("OTEL_SERVICE_NAME", "llm-router-platform")
 	viper.SetDefault("TURNSTILE_ENABLED", false)
+	viper.SetDefault("CACHE_HIT_COST_RATIO", 0.1) // Cache hits billed at 10% of model price
 }
 
 // GetDSN returns the database connection string with proper escaping.

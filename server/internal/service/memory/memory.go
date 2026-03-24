@@ -47,8 +47,8 @@ type Message struct {
 
 // AddMessage adds a message to conversation memory.
 // L4: Content is encrypted at rest using AES-256-GCM.
-func (s *Service) AddMessage(ctx context.Context, projectID uuid.UUID, conversationID, role, content string, tokenCount int) error {
-	sequence, err := s.getNextSequence(ctx, projectID, conversationID)
+func (s *Service) AddMessage(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID, role, content string, tokenCount int) error {
+	sequence, err := s.getNextSequence(ctx, projectID, apiKeyID, conversationID)
 	if err != nil {
 		return err
 	}
@@ -69,6 +69,7 @@ func (s *Service) AddMessage(ctx context.Context, projectID uuid.UUID, conversat
 
 	memory := &models.ConversationMemory{
 		ProjectID:      projectID,
+		APIKeyID:       apiKeyID,
 		ConversationID: conversationID,
 		Role:           role,
 		Content:        encryptedContent,
@@ -80,18 +81,18 @@ func (s *Service) AddMessage(ctx context.Context, projectID uuid.UUID, conversat
 		return err
 	}
 
-	return s.updateCache(ctx, projectID, conversationID)
+	return s.updateCache(ctx, projectID, apiKeyID, conversationID)
 }
 
 // GetConversation retrieves conversation messages.
 // L4: Content is decrypted on read.
-func (s *Service) GetConversation(ctx context.Context, projectID uuid.UUID, conversationID string) ([]Message, error) {
-	cached, err := s.getFromCache(ctx, projectID, conversationID)
+func (s *Service) GetConversation(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) ([]Message, error) {
+	cached, err := s.getFromCache(ctx, projectID, apiKeyID, conversationID)
 	if err == nil && cached != nil {
 		return cached, nil
 	}
 
-	memories, err := s.memoryRepo.GetByConversation(ctx, projectID, conversationID)
+	memories, err := s.memoryRepo.GetByConversation(ctx, projectID, apiKeyID, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -112,14 +113,14 @@ func (s *Service) GetConversation(ctx context.Context, projectID uuid.UUID, conv
 		}
 	}
 
-	_ = s.setCache(ctx, projectID, conversationID, messages)
+	_ = s.setCache(ctx, projectID, apiKeyID, conversationID, messages)
 
 	return messages, nil
 }
 
 // GetConversationWithLimit retrieves last N messages.
-func (s *Service) GetConversationWithLimit(ctx context.Context, projectID uuid.UUID, conversationID string, limit int) ([]Message, error) {
-	messages, err := s.GetConversation(ctx, projectID, conversationID)
+func (s *Service) GetConversationWithLimit(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string, limit int) ([]Message, error) {
+	messages, err := s.GetConversation(ctx, projectID, apiKeyID, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -132,17 +133,17 @@ func (s *Service) GetConversationWithLimit(ctx context.Context, projectID uuid.U
 }
 
 // ClearConversation deletes all messages in a conversation.
-func (s *Service) ClearConversation(ctx context.Context, projectID uuid.UUID, conversationID string) error {
-	if err := s.memoryRepo.DeleteByConversation(ctx, projectID, conversationID); err != nil {
+func (s *Service) ClearConversation(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) error {
+	if err := s.memoryRepo.DeleteByConversation(ctx, projectID, apiKeyID, conversationID); err != nil {
 		return err
 	}
 
-	return s.deleteCache(ctx, projectID, conversationID)
+	return s.deleteCache(ctx, projectID, apiKeyID, conversationID)
 }
 
 // GetConversationTokenCount returns total tokens in conversation.
-func (s *Service) GetConversationTokenCount(ctx context.Context, projectID uuid.UUID, conversationID string) (int, error) {
-	messages, err := s.GetConversation(ctx, projectID, conversationID)
+func (s *Service) GetConversationTokenCount(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) (int, error) {
+	messages, err := s.GetConversation(ctx, projectID, apiKeyID, conversationID)
 	if err != nil {
 		return 0, err
 	}
@@ -156,8 +157,8 @@ func (s *Service) GetConversationTokenCount(ctx context.Context, projectID uuid.
 }
 
 // TruncateConversation removes oldest messages to fit token limit.
-func (s *Service) TruncateConversation(ctx context.Context, projectID uuid.UUID, conversationID string, maxTokens int) error {
-	messages, err := s.GetConversation(ctx, projectID, conversationID)
+func (s *Service) TruncateConversation(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string, maxTokens int) error {
+	messages, err := s.GetConversation(ctx, projectID, apiKeyID, conversationID)
 	if err != nil {
 		return err
 	}
@@ -183,35 +184,40 @@ func (s *Service) TruncateConversation(ctx context.Context, projectID uuid.UUID,
 
 	// Delete the oldest messages from the database
 	if messagesToDelete > 0 {
-		if err := s.memoryRepo.DeleteOldestByConversation(ctx, projectID, conversationID, messagesToDelete); err != nil {
+		if err := s.memoryRepo.DeleteOldestByConversation(ctx, projectID, apiKeyID, conversationID, messagesToDelete); err != nil {
 			return err
 		}
 	}
 
-	return s.updateCache(ctx, projectID, conversationID)
+	return s.updateCache(ctx, projectID, apiKeyID, conversationID)
 }
 
 // getNextSequence returns the next sequence number.
-func (s *Service) getNextSequence(ctx context.Context, projectID uuid.UUID, conversationID string) (int, error) {
-	messages, err := s.memoryRepo.GetByConversation(ctx, projectID, conversationID)
+func (s *Service) getNextSequence(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) (int, error) {
+	messages, err := s.memoryRepo.GetByConversation(ctx, projectID, apiKeyID, conversationID)
 	if err != nil {
 		return 1, nil
 	}
 	return len(messages) + 1, nil
 }
 
-// cacheKey generates a cache key.
-func (s *Service) cacheKey(projectID uuid.UUID, conversationID string) string {
-	return "conversation:" + projectID.String() + ":" + conversationID
+// cacheKey generates a cache key — includes apiKeyID when present for namespace isolation.
+func (s *Service) cacheKey(projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) string {
+	key := "conversation:" + projectID.String() + ":"
+	if apiKeyID != nil {
+		key += apiKeyID.String() + ":"
+	}
+	key += conversationID
+	return key
 }
 
 // getFromCache retrieves messages from Redis cache.
-func (s *Service) getFromCache(ctx context.Context, projectID uuid.UUID, conversationID string) ([]Message, error) {
+func (s *Service) getFromCache(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) ([]Message, error) {
 	if s.redis == nil {
 		return nil, nil
 	}
 
-	key := s.cacheKey(projectID, conversationID)
+	key := s.cacheKey(projectID, apiKeyID, conversationID)
 	data, err := s.redis.Get(ctx, key).Bytes()
 	if err != nil {
 		return nil, err
@@ -226,12 +232,12 @@ func (s *Service) getFromCache(ctx context.Context, projectID uuid.UUID, convers
 }
 
 // setCache stores messages in Redis cache.
-func (s *Service) setCache(ctx context.Context, projectID uuid.UUID, conversationID string, messages []Message) error {
+func (s *Service) setCache(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string, messages []Message) error {
 	if s.redis == nil {
 		return nil
 	}
 
-	key := s.cacheKey(projectID, conversationID)
+	key := s.cacheKey(projectID, apiKeyID, conversationID)
 	data, err := json.Marshal(messages)
 	if err != nil {
 		return err
@@ -241,8 +247,8 @@ func (s *Service) setCache(ctx context.Context, projectID uuid.UUID, conversatio
 }
 
 // updateCache refreshes the cache from database.
-func (s *Service) updateCache(ctx context.Context, projectID uuid.UUID, conversationID string) error {
-	memories, err := s.memoryRepo.GetByConversation(ctx, projectID, conversationID)
+func (s *Service) updateCache(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) error {
+	memories, err := s.memoryRepo.GetByConversation(ctx, projectID, apiKeyID, conversationID)
 	if err != nil {
 		return err
 	}
@@ -263,32 +269,30 @@ func (s *Service) updateCache(ctx context.Context, projectID uuid.UUID, conversa
 		}
 	}
 
-	return s.setCache(ctx, projectID, conversationID, messages)
+	return s.setCache(ctx, projectID, apiKeyID, conversationID, messages)
 }
 
 // deleteCache removes conversation from cache.
-func (s *Service) deleteCache(ctx context.Context, projectID uuid.UUID, conversationID string) error {
+func (s *Service) deleteCache(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) error {
 	if s.redis == nil {
 		return nil
 	}
 
-	key := s.cacheKey(projectID, conversationID)
+	key := s.cacheKey(projectID, apiKeyID, conversationID)
 	return s.redis.Del(ctx, key).Err()
 }
 
 // CompressConversation replaces older messages with a summary to reduce token usage.
-// It keeps the last `keepRecent` messages intact and compresses everything before them
-// into a single "system" summary message. The summarizer function is provided by the caller
-// (typically uses an LLM to generate the summary).
 func (s *Service) CompressConversation(
 	ctx context.Context,
 	projectID uuid.UUID,
+	apiKeyID *uuid.UUID,
 	conversationID string,
 	maxTokens int,
 	keepRecent int,
 	summarizer func(messages []Message) (string, int, error),
 ) error {
-	messages, err := s.GetConversation(ctx, projectID, conversationID)
+	messages, err := s.GetConversation(ctx, projectID, apiKeyID, conversationID)
 	if err != nil {
 		return err
 	}
@@ -306,7 +310,6 @@ func (s *Service) CompressConversation(
 	// Split into old (to summarize) and recent (to keep)
 	splitIdx := len(messages) - keepRecent
 	oldMessages := messages[:splitIdx]
-	// recentMessages := messages[splitIdx:]
 
 	// Generate summary of old messages
 	summary, summaryTokens, err := summarizer(oldMessages)
@@ -316,17 +319,18 @@ func (s *Service) CompressConversation(
 			zap.String("conversation_id", sanitize.LogValue(conversationID)),
 		)
 		// Fallback: just truncate
-		return s.TruncateConversation(ctx, projectID, conversationID, maxTokens)
+		return s.TruncateConversation(ctx, projectID, apiKeyID, conversationID, maxTokens)
 	}
 
 	// Delete old messages from DB
-	if err := s.memoryRepo.DeleteOldestByConversation(ctx, projectID, conversationID, splitIdx); err != nil {
+	if err := s.memoryRepo.DeleteOldestByConversation(ctx, projectID, apiKeyID, conversationID, splitIdx); err != nil {
 		return err
 	}
 
 	// Insert summary as a system message at the beginning
 	summaryMemory := &models.ConversationMemory{
 		ProjectID:      projectID,
+		APIKeyID:       apiKeyID,
 		ConversationID: conversationID,
 		Role:           "system",
 		Content:        "[Conversation Summary]\n" + summary,
@@ -346,11 +350,10 @@ func (s *Service) CompressConversation(
 		zap.Int("summary_tokens", summaryTokens),
 	)
 
-	return s.updateCache(ctx, projectID, conversationID)
+	return s.updateCache(ctx, projectID, apiKeyID, conversationID)
 }
 
 // SummarizeMessages builds a plain-text summary of a list of messages.
-// This is a simple extractive summarizer — for production use, wire this to an LLM call.
 func SummarizeMessages(messages []Message) string {
 	if len(messages) == 0 {
 		return ""
@@ -370,7 +373,7 @@ func SummarizeMessages(messages []Message) string {
 	return summary
 }
 
-// ListConversations returns all conversation IDs for a project.
-func (s *Service) ListConversations(ctx context.Context, projectID uuid.UUID) ([]string, error) {
-	return s.memoryRepo.ListConversationIDs(ctx, projectID)
+// ListConversations returns all conversation IDs for a project, scoped to API key.
+func (s *Service) ListConversations(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID) ([]string, error) {
+	return s.memoryRepo.ListConversationIDs(ctx, projectID, apiKeyID)
 }

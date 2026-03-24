@@ -120,10 +120,10 @@ type HealthHistoryRepo interface {
 // ConversationMemoryRepo defines the interface for conversation memory data access.
 type ConversationMemoryRepo interface {
 	Create(ctx context.Context, memory *models.ConversationMemory) error
-	GetByConversation(ctx context.Context, projectID uuid.UUID, conversationID string) ([]models.ConversationMemory, error)
-	DeleteByConversation(ctx context.Context, projectID uuid.UUID, conversationID string) error
-	DeleteOldestByConversation(ctx context.Context, projectID uuid.UUID, conversationID string, count int) error
-	ListConversationIDs(ctx context.Context, projectID uuid.UUID) ([]string, error)
+	GetByConversation(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) ([]models.ConversationMemory, error)
+	DeleteByConversation(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) error
+	DeleteOldestByConversation(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string, count int) error
+	ListConversationIDs(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID) ([]string, error)
 }
 
 // AlertRepo interface

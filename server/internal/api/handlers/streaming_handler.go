@@ -103,9 +103,9 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 
 	if conversationID != "" && h.memory != nil {
 		for _, m := range originalMessages {
-			_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, conversationID, m.Role, m.Content.Text, 0)
+			_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, &userAPIKey.ID, conversationID, m.Role, m.Content.Text, 0)
 		}
-		_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, conversationID, "assistant", fullText, completionTokens)
+		_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, &userAPIKey.ID, conversationID, "assistant", fullText, completionTokens)
 	}
 
 	if h.cache != nil && promptHash != "" && fullText != "" {

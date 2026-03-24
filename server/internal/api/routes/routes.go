@@ -31,6 +31,7 @@ import (
 	"llm-router-platform/internal/service/proxy"
 	"llm-router-platform/internal/service/redeem"
 	"llm-router-platform/internal/service/router"
+	"llm-router-platform/internal/service/safety"
 	"llm-router-platform/internal/service/task"
 	"llm-router-platform/internal/service/turnstile"
 	"llm-router-platform/internal/service/user"
@@ -264,7 +265,7 @@ func Setup(
 	// All management operations are now served via /graphql (Apollo Client).
 	// Only LLM proxy endpoints and payment webhooks remain under /api/v1.
 
-	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Subscription, services.Balance, services.Observability, services.DB, services.SemanticCache, services.RedisClient, nil, logger)
+	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Subscription, services.Balance, services.Observability, services.DB, services.SemanticCache, services.RedisClient, safety.NewRuleEngine(), logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)
 	paymentHandler := handlers.NewPaymentHandler(services.Payment, logger)
 	auditExportHandler := handlers.NewAuditHandler(services.AuditService, logger)

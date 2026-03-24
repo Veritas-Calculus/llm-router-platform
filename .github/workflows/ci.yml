@@ -198,3 +198,23 @@ jobs:
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
+
+      - name: Run Semgrep (OWASP Top 10 + Go rules)
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/owasp-top-ten
+            p/golang
+        env:
+          SEMGREP_RULES: "p/owasp-top-ten p/golang"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run npm audit (frontend)
+        working-directory: web
+        run: |
+          npm ci --ignore-scripts
+          npm audit --audit-level=high || true

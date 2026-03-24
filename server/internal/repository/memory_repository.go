@@ -24,11 +24,19 @@ func (r *ConversationMemoryRepository) Create(ctx context.Context, memory *model
 	return r.db.WithContext(ctx).Create(memory).Error
 }
 
-// GetByConversation retrieves messages for a conversation.
-func (r *ConversationMemoryRepository) GetByConversation(ctx context.Context, projectID uuid.UUID, conversationID string) ([]models.ConversationMemory, error) {
+// scopeQuery builds a query scoped to project, conversation, and optionally API key.
+func (r *ConversationMemoryRepository) scopeQuery(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) *gorm.DB {
+	q := r.db.WithContext(ctx).Where("project_id = ? AND conversation_id = ?", projectID, conversationID)
+	if apiKeyID != nil {
+		q = q.Where("api_key_id = ?", *apiKeyID)
+	}
+	return q
+}
+
+// GetByConversation retrieves messages for a conversation, scoped to API key.
+func (r *ConversationMemoryRepository) GetByConversation(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) ([]models.ConversationMemory, error) {
 	var memories []models.ConversationMemory
-	if err := r.db.WithContext(ctx).
-		Where("project_id = ? AND conversation_id = ?", projectID, conversationID).
+	if err := r.scopeQuery(ctx, projectID, apiKeyID, conversationID).
 		Order("sequence ASC").
 		Find(&memories).Error; err != nil {
 		return nil, err
@@ -37,19 +45,18 @@ func (r *ConversationMemoryRepository) GetByConversation(ctx context.Context, pr
 }
 
 // DeleteByConversation permanently removes all messages in a conversation.
-func (r *ConversationMemoryRepository) DeleteByConversation(ctx context.Context, projectID uuid.UUID, conversationID string) error {
-	return r.db.WithContext(ctx).Unscoped().
-		Where("project_id = ? AND conversation_id = ?", projectID, conversationID).
+func (r *ConversationMemoryRepository) DeleteByConversation(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string) error {
+	return r.scopeQuery(ctx, projectID, apiKeyID, conversationID).
+		Unscoped().
 		Delete(&models.ConversationMemory{}).Error
 }
 
 // DeleteOldestByConversation deletes the oldest N messages from a conversation.
-func (r *ConversationMemoryRepository) DeleteOldestByConversation(ctx context.Context, projectID uuid.UUID, conversationID string, count int) error {
+func (r *ConversationMemoryRepository) DeleteOldestByConversation(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID, conversationID string, count int) error {
 	// Find the oldest N message IDs
 	var ids []uuid.UUID
-	if err := r.db.WithContext(ctx).
+	if err := r.scopeQuery(ctx, projectID, apiKeyID, conversationID).
 		Model(&models.ConversationMemory{}).
-		Where("project_id = ? AND conversation_id = ?", projectID, conversationID).
 		Order("sequence ASC").
 		Limit(count).
 		Pluck("id", &ids).Error; err != nil {
@@ -65,13 +72,16 @@ func (r *ConversationMemoryRepository) DeleteOldestByConversation(ctx context.Co
 		Delete(&models.ConversationMemory{}).Error
 }
 
-// ListConversationIDs returns all conversation IDs for a user.
-func (r *ConversationMemoryRepository) ListConversationIDs(ctx context.Context, projectID uuid.UUID) ([]string, error) {
+// ListConversationIDs returns all conversation IDs for a project scoped to API key.
+func (r *ConversationMemoryRepository) ListConversationIDs(ctx context.Context, projectID uuid.UUID, apiKeyID *uuid.UUID) ([]string, error) {
 	var ids []string
-	if err := r.db.WithContext(ctx).
+	q := r.db.WithContext(ctx).
 		Model(&models.ConversationMemory{}).
-		Where("project_id = ?", projectID).
-		Distinct("conversation_id").
+		Where("project_id = ?", projectID)
+	if apiKeyID != nil {
+		q = q.Where("api_key_id = ?", *apiKeyID)
+	}
+	if err := q.Distinct("conversation_id").
 		Pluck("conversation_id", &ids).Error; err != nil {
 		return nil, err
 	}

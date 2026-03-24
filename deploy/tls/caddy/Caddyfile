@@ -1,0 +1,32 @@
+{$DOMAIN} {
+    # Automatic HTTPS via Let's Encrypt
+    # TLS 1.2+ enforced by default
+
+    reverse_proxy localhost:8080 {
+        # Health-check the upstream
+        health_uri  /health
+        health_interval 30s
+
+        # Timeout tuning for LLM streaming
+        transport http {
+            response_header_timeout 120s
+            dial_timeout 10s
+        }
+    }
+
+    # Security headers (supplement Go server's own headers)
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Rate limit (optional, requires caddy-ratelimit plugin)
+    # rate_limit {remote_host} 100r/m
+
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+}
