@@ -100,8 +100,7 @@ func run() error {
 	}
 	defer func() { _ = app.logger.Sync() }()
 
-	// Log all feature gate states for audit trail
-	app.cfg.FeatureGates.LogGates(app.logger)
+	// Feature gate audit logging happens after DB merge in initServices → cfgService.InitFeatureGates
 
 	if err := app.InitInfrastructure(); err != nil {
 		return err
@@ -506,7 +505,8 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 
 	mcpService := mcp.NewService(repos.MCP, logger)
 	cfgService := configService.NewService(repos.Config, logger)
-
+	cfgService.InitFeatureGates(cfg.FeatureGates)
+	cfg.FeatureGates.LogGates(logger)
 	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, repos.RoutingRule, providerRegistry, mcpService, logger)
 	if redisClient != nil {
 		routerService.SetRedisClient(redisClient)

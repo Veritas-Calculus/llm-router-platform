@@ -477,6 +477,8 @@ type FeatureGate struct {
 	Category    string `json:"category"`
 	Description string `json:"description"`
 	EnvVar      string `json:"envVar"`
+	Source      string `json:"source"`
+	Locked      bool   `json:"locked"`
 }
 
 type GenerateRedeemCodesInput struct {

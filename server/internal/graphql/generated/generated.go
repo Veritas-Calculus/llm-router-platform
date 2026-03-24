@@ -390,7 +390,9 @@ type ComplexityRoot struct {
 		Description func(childComplexity int) int
 		Enabled     func(childComplexity int) int
 		EnvVar      func(childComplexity int) int
+		Locked      func(childComplexity int) int
 		Name        func(childComplexity int) int
+		Source      func(childComplexity int) int
 	}
 
 	GenerateRedeemCodesResult struct {
@@ -596,6 +598,7 @@ type ComplexityRoot struct {
 		UpdateCoupon                 func(childComplexity int, id string, input model.CouponInput) int
 		UpdateDlpConfig              func(childComplexity int, input model.UpdateDlpConfigInput) int
 		UpdateDocument               func(childComplexity int, id string, input model.DocumentInput) int
+		UpdateFeatureGate            func(childComplexity int, name string, enabled bool) int
 		UpdateIdentityProvider       func(childComplexity int, id string, input model.UpdateIdentityProviderInput) int
 		UpdateIntegration            func(childComplexity int, name string, input model.UpdateIntegrationInput) int
 		UpdateMcpServer              func(childComplexity int, id string, input model.McpServerInput) int
@@ -1288,6 +1291,7 @@ type MutationResolver interface {
 	ClearAllSemanticCaches(ctx context.Context) (bool, error)
 	UpdateCacheConfig(ctx context.Context, input model.CacheConfigInput) (*model.CacheConfig, error)
 	UpdateDlpConfig(ctx context.Context, input model.UpdateDlpConfigInput) (*model.DlpConfig, error)
+	UpdateFeatureGate(ctx context.Context, name string, enabled bool) (*model.FeatureGate, error)
 	CreateNotificationChannel(ctx context.Context, input model.NotificationChannelInput) (*model.NotificationChannel, error)
 	UpdateNotificationChannel(ctx context.Context, id string, input model.UpdateNotificationChannelInput) (*model.NotificationChannel, error)
 	DeleteNotificationChannel(ctx context.Context, id string) (bool, error)
@@ -2937,12 +2941,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.FeatureGate.EnvVar(childComplexity), true
+	case "FeatureGate.locked":
+		if e.ComplexityRoot.FeatureGate.Locked == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FeatureGate.Locked(childComplexity), true
 	case "FeatureGate.name":
 		if e.ComplexityRoot.FeatureGate.Name == nil {
 			break
 		}
 
 		return e.ComplexityRoot.FeatureGate.Name(childComplexity), true
+	case "FeatureGate.source":
+		if e.ComplexityRoot.FeatureGate.Source == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FeatureGate.Source(childComplexity), true
 
 	case "GenerateRedeemCodesResult.codes":
 		if e.ComplexityRoot.GenerateRedeemCodesResult.Codes == nil {
@@ -4344,6 +4360,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.UpdateDocument(childComplexity, args["id"].(string), args["input"].(model.DocumentInput)), true
+	case "Mutation.updateFeatureGate":
+		if e.ComplexityRoot.Mutation.UpdateFeatureGate == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_updateFeatureGate_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.UpdateFeatureGate(childComplexity, args["name"].(string), args["enabled"].(bool)), true
 	case "Mutation.updateIdentityProvider":
 		if e.ComplexityRoot.Mutation.UpdateIdentityProvider == nil {
 			break
@@ -8260,10 +8287,16 @@ type FeatureGate {
   category: String!
   description: String!
   envVar: String!
+  source: String!
+  locked: Boolean!
 }
 
 extend type Query {
   featureGates: [FeatureGate!]! @auth(role: ADMIN)
+}
+
+extend type Mutation {
+  updateFeatureGate(name: String!, enabled: Boolean!): FeatureGate! @auth(role: ADMIN)
 }
 `, BuiltIn: false},
 	{Name: "../schema/types_health.graphqls", Input: `# ──────────────────────────────────────────────────
@@ -10142,6 +10175,22 @@ func (ec *executionContext) field_Mutation_updateDocument_args(ctx context.Conte
 		return nil, err
 	}
 	args["input"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_updateFeatureGate_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "name", ec.unmarshalNString2string)
+	if err != nil {
+		return nil, err
+	}
+	args["name"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "enabled", ec.unmarshalNBoolean2bool)
+	if err != nil {
+		return nil, err
+	}
+	args["enabled"] = arg1
 	return args, nil
 }
 
@@ -18669,6 +18718,64 @@ func (ec *executionContext) fieldContext_FeatureGate_envVar(_ context.Context, f
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _FeatureGate_source(ctx context.Context, field graphql.CollectedField, obj *model.FeatureGate) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_FeatureGate_source,
+		func(ctx context.Context) (any, error) {
+			return obj.Source, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_FeatureGate_source(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "FeatureGate",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _FeatureGate_locked(ctx context.Context, field graphql.CollectedField, obj *model.FeatureGate) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_FeatureGate_locked,
+		func(ctx context.Context) (any, error) {
+			return obj.Locked, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_FeatureGate_locked(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "FeatureGate",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
 		},
 	}
 	return fc, nil
@@ -28366,6 +28473,81 @@ func (ec *executionContext) fieldContext_Mutation_updateDlpConfig(ctx context.Co
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_updateDlpConfig_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_updateFeatureGate(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_updateFeatureGate,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().UpdateFeatureGate(ctx, fc.Args["name"].(string), fc.Args["enabled"].(bool))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "ADMIN")
+				if err != nil {
+					var zeroVal *model.FeatureGate
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.FeatureGate
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNFeatureGate2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐFeatureGate,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_updateFeatureGate(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "name":
+				return ec.fieldContext_FeatureGate_name(ctx, field)
+			case "enabled":
+				return ec.fieldContext_FeatureGate_enabled(ctx, field)
+			case "category":
+				return ec.fieldContext_FeatureGate_category(ctx, field)
+			case "description":
+				return ec.fieldContext_FeatureGate_description(ctx, field)
+			case "envVar":
+				return ec.fieldContext_FeatureGate_envVar(ctx, field)
+			case "source":
+				return ec.fieldContext_FeatureGate_source(ctx, field)
+			case "locked":
+				return ec.fieldContext_FeatureGate_locked(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type FeatureGate", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updateFeatureGate_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -38172,6 +38354,10 @@ func (ec *executionContext) fieldContext_Query_featureGates(_ context.Context, f
 				return ec.fieldContext_FeatureGate_description(ctx, field)
 			case "envVar":
 				return ec.fieldContext_FeatureGate_envVar(ctx, field)
+			case "source":
+				return ec.fieldContext_FeatureGate_source(ctx, field)
+			case "locked":
+				return ec.fieldContext_FeatureGate_locked(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type FeatureGate", field.Name)
 		},
@@ -50841,6 +51027,16 @@ func (ec *executionContext) _FeatureGate(ctx context.Context, sel ast.SelectionS
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "source":
+			out.Values[i] = ec._FeatureGate_source(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "locked":
+			out.Values[i] = ec._FeatureGate_locked(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -52297,6 +52493,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "updateDlpConfig":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_updateDlpConfig(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updateFeatureGate":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updateFeatureGate(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -58427,6 +58630,10 @@ func (ec *executionContext) marshalNErrorLogConnection2ᚖllmᚑrouterᚑplatfor
 		return graphql.Null
 	}
 	return ec._ErrorLogConnection(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNFeatureGate2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐFeatureGate(ctx context.Context, sel ast.SelectionSet, v model.FeatureGate) graphql.Marshaler {
+	return ec._FeatureGate(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNFeatureGate2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐFeatureGateᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.FeatureGate) graphql.Marshaler {

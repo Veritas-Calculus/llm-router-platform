@@ -8,8 +8,14 @@ type FeatureGate {
   category: String!
   description: String!
   envVar: String!
+  source: String!
+  locked: Boolean!
 }
 
 extend type Query {
   featureGates: [FeatureGate!]! @auth(role: ADMIN)
+}
+
+extend type Mutation {
+  updateFeatureGate(name: String!, enabled: Boolean!): FeatureGate! @auth(role: ADMIN)
 }

@@ -7,8 +7,56 @@ package resolvers
 
 import (
 	"context"
+	"fmt"
+
 	"llm-router-platform/internal/graphql/model"
+	"llm-router-platform/pkg/sanitize"
+
+	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
+
+// UpdateFeatureGate is the resolver for the updateFeatureGate field.
+func (r *mutationResolver) UpdateFeatureGate(ctx context.Context, name string, enabled bool) (*model.FeatureGate, error) {
+	cfg := r.Config()
+
+	// Persist to DB + update runtime (env override check inside)
+	if err := r.SystemConfig.SetFeatureGate(cfg.FeatureGates, name, enabled); err != nil {
+		return nil, fmt.Errorf("failed to update feature gate: %w", err)
+	}
+
+	// Audit log
+	userIDStr, _ := ctx.Value("user_id").(string)
+	actorID, _ := uuid.Parse(userIDStr)
+	if r.AuditService != nil {
+		r.AuditService.Log(ctx, "feature_gate.update", actorID, uuid.Nil, "", "", map[string]interface{}{
+			"gate":    name,
+			"enabled": enabled,
+		})
+	}
+	r.Logger.Info("feature gate updated via admin API",
+		zap.String("gate", sanitize.LogValue(name)),
+		zap.Bool("enabled", enabled),
+		zap.String("actor", userIDStr),
+	)
+
+	// Return updated gate info
+	gates := cfg.FeatureGates.ListGates()
+	for _, g := range gates {
+		if g.Name == name {
+			return &model.FeatureGate{
+				Name:        g.Name,
+				Enabled:     g.Enabled,
+				Category:    g.Category,
+				Description: g.Description,
+				EnvVar:      g.EnvVar,
+				Source:      g.Source,
+				Locked:      g.Locked,
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("gate %s not found after update", name)
+}
 
 // FeatureGates is the resolver for the featureGates field.
 func (r *queryResolver) FeatureGates(ctx context.Context) ([]*model.FeatureGate, error) {
@@ -23,6 +71,8 @@ func (r *queryResolver) FeatureGates(ctx context.Context) ([]*model.FeatureGate,
 			Category:    g.Category,
 			Description: g.Description,
 			EnvVar:      g.EnvVar,
+			Source:      g.Source,
+			Locked:      g.Locked,
 		}
 	}
 	return result, nil

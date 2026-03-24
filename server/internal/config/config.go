@@ -33,7 +33,7 @@ type Config struct {
 	OAuth2        OAuth2Config
 	Turnstile     TurnstileConfig
 	Cleanup       CleanupConfig
-	FeatureGates  FeatureGates
+	FeatureGates  *FeatureGates
 }
 
 // SecurityConfig holds API and Gateway security environment settings.

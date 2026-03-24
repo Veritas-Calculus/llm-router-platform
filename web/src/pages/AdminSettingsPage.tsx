@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
+import { useQuery as useApolloQuery, useMutation as useApolloMutation } from '@apollo/client/react';
+import { FEATURE_GATES_QUERY, UPDATE_FEATURE_GATE } from '@/lib/graphql/operations/featuregates';
 import {
   GlobeAltIcon,
   ShieldCheckIcon,
@@ -35,6 +37,7 @@ const settingsTabs = [
   { key: 'payment', icon: CreditCardIcon, labelKey: 'admin_settings.tabs.payment' },
   { key: 'sso', icon: KeyIcon, labelKey: 'admin_settings.tabs.sso' },
   { key: 'integrations', icon: CloudIcon, labelKey: 'admin_settings.tabs.integrations' },
+  { key: 'featuregates', icon: SignalIcon, labelKey: 'Feature Gates' },
 ] as const;
 
 type TabKey = typeof settingsTabs[number]['key'];
@@ -421,6 +424,121 @@ function SsoSettingsTab({ data, onChange }: { data: any; onChange: (d: any) => v
   );
 }
 
+/* -- Feature Gates tab -- */
+
+interface FeatureGateItem {
+  name: string;
+  enabled: boolean;
+  category: string;
+  description: string;
+  envVar: string;
+  source: string;
+  locked: boolean;
+}
+
+const categoryOrder = ['security', 'auth', 'feature', 'observability'];
+const categoryLabels: Record<string, string> = {
+  security: 'Security',
+  auth: 'Authentication',
+  feature: 'Features',
+  observability: 'Observability',
+};
+
+function FeatureGatesSettingsTab() {
+  const { data, loading, refetch } = useApolloQuery<{ featureGates: FeatureGateItem[] }>(FEATURE_GATES_QUERY, {
+    fetchPolicy: 'network-only',
+  });
+  const [updateGate] = useApolloMutation(UPDATE_FEATURE_GATE);
+
+  const gates = data?.featureGates || [];
+
+  const grouped = categoryOrder.reduce<Record<string, FeatureGateItem[]>>((acc, cat) => {
+    acc[cat] = gates.filter((g) => g.category === cat);
+    return acc;
+  }, {});
+
+  const handleToggle = async (name: string, currentValue: boolean) => {
+    try {
+      await updateGate({ variables: { name, enabled: !currentValue } });
+      toast.success(`${name} ${!currentValue ? 'enabled' : 'disabled'}`);
+      refetch();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to update gate');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-apple-blue" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      <p className="text-sm text-apple-gray-500">
+        Toggle platform capabilities at runtime. Gates locked by environment variables cannot be modified here.
+      </p>
+      {categoryOrder.map((cat) => {
+        const items = grouped[cat];
+        if (!items || items.length === 0) return null;
+        return (
+          <div key={cat} className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-apple-gray-400">
+              {categoryLabels[cat]}
+            </h3>
+            <div className="border border-apple-gray-200 rounded-xl divide-y divide-apple-gray-100">
+              {items.map((gate) => (
+                <div key={gate.name} className="flex items-center justify-between px-5 py-3.5">
+                  <div className="flex-1 min-w-0 pr-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-apple-gray-900">{gate.name}</span>
+                      {gate.locked && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                          ENV Override
+                        </span>
+                      )}
+                      {gate.source === 'database' && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-200">
+                          DB
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-apple-gray-500 mt-0.5 truncate">{gate.description}</p>
+                    <p className="text-[10px] text-apple-gray-400 font-mono mt-0.5">{gate.envVar}</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={gate.enabled}
+                    disabled={gate.locked}
+                    onClick={() => handleToggle(gate.name, gate.enabled)}
+                    className={clsx(
+                      'relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 flex-shrink-0',
+                      gate.locked
+                        ? 'opacity-40 cursor-not-allowed'
+                        : 'cursor-pointer',
+                      gate.enabled ? 'bg-apple-blue' : 'bg-apple-gray-300'
+                    )}
+                  >
+                    <span
+                      className={clsx(
+                        'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200',
+                        gate.enabled ? 'translate-x-6' : 'translate-x-1'
+                      )}
+                    />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function IntegrationsSettingsTab() {
   const { data, loading, refetch } = useQuery<any>(GET_INTEGRATIONS, { fetchPolicy: 'cache-and-network' });
@@ -657,7 +775,7 @@ function AdminSettingsPage() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabKey>('site');
   const [formData, setFormData] = useState<Record<TabKey, any>>({
-    site: {}, security: {}, defaults: {}, email: {}, backup: {}, payment: {}, sso: {}, integrations: {},
+    site: {}, security: {}, defaults: {}, email: {}, backup: {}, payment: {}, sso: {}, integrations: {}, featuregates: {},
   });
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -669,7 +787,7 @@ function AdminSettingsPage() {
   useEffect(() => {
     if (data?.systemSettings) {
       const s = data.systemSettings;
-      const parsed: Record<TabKey, any> = { site: {}, security: {}, defaults: {}, email: {}, backup: {}, payment: {}, sso: {}, integrations: {} };
+      const parsed: Record<TabKey, any> = { site: {}, security: {}, defaults: {}, email: {}, backup: {}, payment: {}, sso: {}, integrations: {}, featuregates: {} };
       for (const key of Object.keys(parsed) as TabKey[]) {
         try {
           if (s[key]) parsed[key] = JSON.parse(s[key]);
@@ -715,6 +833,7 @@ function AdminSettingsPage() {
       case 'payment': return <PaymentSettingsTab {...props} />;
       case 'sso': return <SsoSettingsTab {...props} />;
       case 'integrations': return <IntegrationsSettingsTab />;
+      case 'featuregates': return <FeatureGatesSettingsTab />;
     }
   };
 

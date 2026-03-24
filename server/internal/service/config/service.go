@@ -83,13 +83,102 @@ func (s *Service) GetStripeConfig(ctx context.Context, env config.StripeConfig) 
 
 // ValidCategories lists the allowed settings categories.
 var ValidCategories = map[string]bool{
-	"site":     true,
-	"security": true,
-	"defaults": true,
-	"email":    true,
-	"backup":   true,
-	"payment":  true,
-	"oauth":    true,
+	"site":        true,
+	"security":    true,
+	"defaults":    true,
+	"email":       true,
+	"backup":      true,
+	"payment":     true,
+	"oauth":       true,
+	"featuregate": true,
+}
+
+// ─── Feature Gate persistence ───────────────────────────────────────
+
+// InitFeatureGates loads all feature gate values from DB and merges them
+// into the runtime FeatureGates struct. Called once during server startup
+// after the database is ready.
+func (s *Service) InitFeatureGates(fg *config.FeatureGates) {
+	dbGates, err := s.LoadFeatureGates()
+	if err != nil {
+		s.logger.Warn("failed to load feature gates from DB, using defaults/env", zap.Error(err))
+		return
+	}
+	if len(dbGates) > 0 {
+		fg.MergeFromDB(dbGates)
+		s.logger.Info("feature gates merged from database", zap.Int("count", len(dbGates)))
+	}
+}
+
+// LoadFeatureGates reads all feature gate records from system_configs
+// (category = "featuregate") and returns a map of field name -> bool.
+func (s *Service) LoadFeatureGates() (map[string]bool, error) {
+	configs, err := s.repo.GetByCategory(context.Background(), "featuregate")
+	if err != nil {
+		return nil, err
+	}
+
+	// Use a temporary FeatureGates to resolve DB keys back to field names
+	tmp := &config.FeatureGates{}
+	tmp.InitMeta()
+
+	result := make(map[string]bool, len(configs))
+	for _, c := range configs {
+		fieldName := tmp.FieldNameFromDBKey(c.Key)
+		if fieldName == "" {
+			continue // skip stale or unknown keys
+		}
+		result[fieldName] = c.Value == "true"
+	}
+	return result, nil
+}
+
+// SetFeatureGate persists a single feature gate value to the database
+// and updates the runtime FeatureGates struct.
+func (s *Service) SetFeatureGate(fg *config.FeatureGates, name string, enabled bool) error {
+	// Validate and update runtime (checks env override lock)
+	if err := fg.Set(name, enabled); err != nil {
+		return err
+	}
+
+	// Persist to DB
+	dbKey := config.DBKey(name)
+	val := "false"
+	if enabled {
+		val = "true"
+	}
+
+	gates := fg.ListGates()
+	desc := ""
+	for _, g := range gates {
+		if g.Name == name {
+			desc = g.Description
+			break
+		}
+	}
+
+	cfg := &models.SystemConfig{
+		Key:         dbKey,
+		Value:       val,
+		Description: desc,
+		Category:    "featuregate",
+		IsSecret:    false,
+	}
+	if err := s.repo.Set(context.Background(), cfg); err != nil {
+		s.logger.Error("failed to persist feature gate to DB",
+			zap.String("gate", name),
+			zap.Bool("enabled", enabled),
+			zap.Error(err),
+		)
+		return err
+	}
+
+	s.logger.Info("feature gate updated",
+		zap.String("gate", name),
+		zap.Bool("enabled", enabled),
+		zap.String("db_key", dbKey),
+	)
+	return nil
 }
 
 // GetAllSettings returns all settings grouped by category.
