@@ -30,6 +30,46 @@ func LogValue(s string) string {
 	return logReplacer.Replace(s)
 }
 
+// MaskEmail replaces the local part of an email address for log privacy.
+// "user@example.com" -> "u***@example.com"
+// Non-email strings are returned with generic masking.
+func MaskEmail(email string) string {
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) != 2 || parts[0] == "" {
+		return "***"
+	}
+	return string(parts[0][0]) + "***@" + parts[1]
+}
+
+// MaskIP replaces the last octet/segment of an IP address.
+// "192.168.1.42" -> "192.168.1.***"
+// "2001:db8::1" -> "2001:db8::***"
+func MaskIP(ip string) string {
+	if ip == "" {
+		return ""
+	}
+	if idx := strings.LastIndex(ip, "."); idx >= 0 {
+		return ip[:idx] + ".***"
+	}
+	if idx := strings.LastIndex(ip, ":"); idx >= 0 {
+		return ip[:idx] + ":***"
+	}
+	return "***"
+}
+
+// MaskAPIKey shows only the first 8 characters of an API key.
+// "sk-abc123def456..." -> "sk-abc12***"
+func MaskAPIKey(key string) string {
+	if len(key) <= 4 {
+		return "***"
+	}
+	visible := 8
+	if len(key) < visible {
+		visible = len(key) / 2
+	}
+	return key[:visible] + "***"
+}
+
 // ─── SSRF Validation ────────────────────────────────────────────────────
 
 // privateRanges contains CIDR ranges that should be blocked for SSRF prevention.

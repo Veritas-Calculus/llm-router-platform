@@ -183,7 +183,9 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 			Latency:    0,
 			StatusCode: http.StatusProcessing,
 		}
-		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+			h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", anthroReq.Model))
+		}
 
 		streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
 		if err != nil {
@@ -305,7 +307,9 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 		ResponseTokens: resp.Usage.CompletionTokens,
 		TotalTokens:    resp.Usage.TotalTokens,
 	}
-	_ = h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, projectObj.ID, "Anthropic API: "+anthroReq.Model)
+	if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, projectObj.ID, "Anthropic API: "+anthroReq.Model); err != nil {
+		h.logger.Warn("billing deduction failed", zap.Error(err), zap.String("model", anthroReq.Model))
+	}
 
 	c.JSON(http.StatusOK, anthroResp)
 }
@@ -608,7 +612,9 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			Latency:    0,
 			StatusCode: http.StatusProcessing, // Temporary status
 		}
-		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+			h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", req.Model))
+		}
 
 		// ExecuteStreamChat retries key rotation before the stream is established
 		streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
@@ -655,7 +661,9 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		if err != nil {
 			usageLog.ErrorMessage = sanitize.TruncateErrorMessage(err.Error())
 		}
-		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+			h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", req.Model))
+		}
 
 		h.logger.Error("provider request failed",
 			zap.String("model", sanitize.LogValue(req.Model)),
@@ -705,7 +713,9 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		MCPCallCount:   result.MCPCallCount,
 		MCPErrorCount:  result.MCPErrorCount,
 	}
-	_ = h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, projectObj.ID, "LLM Request: "+req.Model)
+	if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, projectObj.ID, "LLM Request: "+req.Model); err != nil {
+		h.logger.Warn("billing deduction failed", zap.Error(err), zap.String("model", req.Model))
+	}
 
 	// Save Semantic Cache (Async)
 	if promptHash != "" && len(resp.Choices) > 0 {

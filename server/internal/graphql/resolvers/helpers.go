@@ -389,13 +389,22 @@ func routingRuleToGQL(rule *models.RoutingRule) *model.RoutingRule {
 }
 
 func (r *Resolver) resolveOrgID(ctx context.Context, providedOrgID *string) (uuid.UUID, error) {
-	if providedOrgID != nil && *providedOrgID != "" {
-		return uuid.Parse(*providedOrgID)
-	}
 	uidStr, _ := directives.UserIDFromContext(ctx)
 	userID, err := uuid.Parse(uidStr)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("invalid user ID in context")
+	}
+
+	if providedOrgID != nil && *providedOrgID != "" {
+		orgID, err := uuid.Parse(*providedOrgID)
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("invalid org ID")
+		}
+		// Validate the user actually belongs to this org (IDOR prevention)
+		if err := r.UserSvc.RequireOrgRole(ctx, uidStr, *providedOrgID, "OWNER", "ADMIN", "MEMBER", "READONLY"); err != nil {
+			return uuid.Nil, fmt.Errorf("forbidden: access denied")
+		}
+		return orgID, nil
 	}
 
 	orgs, err := r.UserSvc.GetOrganizations(ctx, userID)

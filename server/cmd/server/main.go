@@ -507,6 +507,12 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	cfgService := configService.NewService(repos.Config, logger)
 	cfgService.InitFeatureGates(cfg.FeatureGates)
 	cfg.FeatureGates.LogGates(logger)
+
+	// Wire Redis for FG distributed sync (Pub/Sub propagation across instances)
+	if redisClient != nil {
+		cfgService.SetRedis(redisClient)
+		cfgService.StartFGSubscriber(context.Background(), cfg.FeatureGates)
+	}
 	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, repos.RoutingRule, providerRegistry, mcpService, logger)
 	if redisClient != nil {
 		routerService.SetRedisClient(redisClient)

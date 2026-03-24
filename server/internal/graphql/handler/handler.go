@@ -3,6 +3,7 @@ package gqlhandler
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -55,6 +56,25 @@ var (
 			Name:      "depth_rejected_total",
 			Help:      "Number of queries rejected due to depth limits.",
 		},
+	)
+
+	graphqlAliasRejected = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: "llm_router",
+			Subsystem: "graphql",
+			Name:      "alias_rejected_total",
+			Help:      "Number of queries rejected due to alias count limits.",
+		},
+	)
+
+	graphqlErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "llm_router",
+			Subsystem: "graphql",
+			Name:      "errors_total",
+			Help:      "GraphQL errors by type (client vs internal).",
+		},
+		[]string{"type"},
 	)
 )
 
@@ -109,6 +129,22 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 		return next(ctx)
 	})
 
+	// ── Alias Count Limiting ──
+	// Prevent alias-based amplification attacks
+	const maxAliases = 20
+	srv.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
+		oc := graphql.GetOperationContext(ctx)
+		if oc.Operation != nil {
+			count := countAliases(oc.Operation.SelectionSet)
+			if count > maxAliases {
+				graphqlAliasRejected.Inc()
+				return graphql.OneShot(graphql.ErrorResponse(ctx,
+					"query contains %d aliases, maximum allowed is %d", count, maxAliases))
+			}
+		}
+		return next(ctx)
+	})
+
 	// ── Introspection control ──
 	// Block introspection queries when the gate is off
 	if !cfg.FeatureGates.GraphQLIntrospection {
@@ -156,34 +192,49 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 	// ── Error Masking ──
 	if cfg.Server.Mode == "release" {
 		srv.SetErrorPresenter(func(ctx context.Context, err error) *gqlerror.Error {
-			// In production, don't leak internal error details
 			gqlErr := graphql.DefaultErrorPresenter(ctx, err)
 			msg := gqlErr.Message
-			// Allow auth/access errors through (users need to know why access failed)
-			switch msg {
-			case "unauthorized: authentication required",
-				"forbidden: admin access required",
-				"invalid credentials",
-				"invalid email or password",
-				"account is disabled",
-				"email already registered",
-				"invalid or expired token",
-				"invalid or expired reset token",
-				"insufficient balance",
-				"rate limit exceeded",
-				"rate limit exceeded: try again later":
+
+			// Client errors: allow through so callers get actionable feedback
+			clientErrors := map[string]bool{
+				"unauthorized: authentication required": true,
+				"forbidden: admin access required":      true,
+				"forbidden: IP not inside admin whitelist": true,
+				"invalid credentials":                   true,
+				"invalid email or password":              true,
+				"account is disabled":                    true,
+				"email already registered":               true,
+				"invalid or expired token":               true,
+				"invalid or expired reset token":         true,
+				"insufficient balance":                   true,
+				"rate limit exceeded":                    true,
+				"rate limit exceeded: try again later":   true,
+				"forbidden: access denied":               true,
+			}
+			if clientErrors[msg] {
+				graphqlErrorsTotal.WithLabelValues("client").Inc()
 				return gqlErr
 			}
-			// Allow password validation errors through
-			if strings.HasPrefix(msg, "password ") {
+			// Allow password validation + depth/alias errors through
+			if strings.HasPrefix(msg, "password ") ||
+				strings.HasPrefix(msg, "query depth") ||
+				strings.HasPrefix(msg, "query contains") {
+				graphqlErrorsTotal.WithLabelValues("client").Inc()
 				return gqlErr
 			}
-			// Mask everything else (prevents info leakage for:
-			// - plan existence probing ("plan not available")
-			// - coupon code enumeration ("coupon expired or invalid")
-			// - redeem code enumeration ("invalid redeem code", "redeem code already used")
-			// - internal DB/service errors)
-			gqlErr.Message = "internal error"
+
+			// Everything else: mask and log with correlation ID
+			graphqlErrorsTotal.WithLabelValues("internal").Inc()
+			requestID := ""
+			if gc, gcErr := directives.GinContextFromContext(ctx); gcErr == nil {
+				requestID = gc.GetHeader("X-Request-ID")
+			}
+			logger.Warn("graphql internal error masked",
+				zap.String("original_error", msg),
+				zap.String("request_id", requestID),
+			)
+			gqlErr.Message = fmt.Sprintf("internal error [%s]", requestID)
+			gqlErr.Extensions = map[string]interface{}{"request_id": requestID}
 			return gqlErr
 		})
 	}
@@ -215,6 +266,24 @@ func selectionDepth(ss ast.SelectionSet) int {
 		}
 	}
 	return max
+}
+
+// countAliases recursively counts the total number of aliased fields in a
+// selection set. Used to prevent alias-based amplification DoS attacks.
+func countAliases(ss ast.SelectionSet) int {
+	count := 0
+	for _, sel := range ss {
+		switch s := sel.(type) {
+		case *ast.Field:
+			if s.Alias != "" && s.Alias != s.Name {
+				count++
+			}
+			count += countAliases(s.SelectionSet)
+		case *ast.InlineFragment:
+			count += countAliases(s.SelectionSet)
+		}
+	}
+	return count
 }
 
 // ServeGraphQL returns a Gin handler for the GraphQL endpoint.

@@ -13,6 +13,7 @@ import (
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 	"github.com/google/uuid"
 )
 
@@ -119,7 +120,9 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 		} else {
 			usageLog.ErrorMessage = "all API keys failed"
 		}
-		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+		h.logger.Warn("billing record failed", zap.Error(err))
+	}
 
 		if err == provider.ErrNotImplemented {
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "audio transcription not supported by this provider"})
@@ -142,7 +145,9 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 		Latency:    latency.Milliseconds(),
 		StatusCode: http.StatusOK,
 	}
-	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+	if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+		h.logger.Warn("billing record failed", zap.Error(err))
+	}
 
 	// In OpenAI's API, the text format requests return plain text string directly.
 	// The client provider wrapper handles format translation into the unified struct.

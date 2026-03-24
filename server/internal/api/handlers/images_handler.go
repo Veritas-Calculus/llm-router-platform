@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // GenerateImage handles image generation requests.
@@ -99,7 +100,9 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 		} else {
 			usageLog.ErrorMessage = "all API keys failed"
 		}
-		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+		h.logger.Warn("billing record failed", zap.Error(err))
+	}
 
 		if err == provider.ErrNotImplemented {
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "image generation not supported by this provider"})
@@ -121,7 +124,9 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 		Latency:    latency.Milliseconds(),
 		StatusCode: http.StatusOK,
 	}
-	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+	if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+		h.logger.Warn("billing record failed", zap.Error(err))
+	}
 
 	c.JSON(http.StatusOK, result.Response)
 }

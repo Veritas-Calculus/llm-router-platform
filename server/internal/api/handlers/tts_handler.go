@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // SpeechSynthesisRequest represents a text-to-speech request from the user.
@@ -103,7 +104,9 @@ func (h *ChatHandler) SynthesizeSpeech(c *gin.Context) {
 		} else {
 			usageLog.ErrorMessage = "all API keys failed"
 		}
-		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+		h.logger.Warn("billing record failed", zap.Error(err))
+	}
 
 		if err == provider.ErrNotImplemented {
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "speech synthesis not supported by this provider"})
@@ -125,7 +128,9 @@ func (h *ChatHandler) SynthesizeSpeech(c *gin.Context) {
 		Latency:    latency.Milliseconds(),
 		StatusCode: http.StatusOK,
 	}
-	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+	if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+		h.logger.Warn("billing record failed", zap.Error(err))
+	}
 
 	// Return raw audio binary data
 	c.Data(http.StatusOK, result.Response.ContentType, result.Response.Audio)

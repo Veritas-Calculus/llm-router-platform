@@ -10,12 +10,17 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 
+	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
 )
+
+// fgUpdateChannel is the Redis Pub/Sub channel for FG state propagation.
+const fgUpdateChannel = "fg:update"
 
 type Service struct {
 	repo   repository.ConfigRepo
 	logger *zap.Logger
+	rdb    *redis.Client // optional, nil if Redis unavailable
 }
 
 func NewService(repo repository.ConfigRepo, logger *zap.Logger) *Service {
@@ -23,6 +28,11 @@ func NewService(repo repository.ConfigRepo, logger *zap.Logger) *Service {
 		repo:   repo,
 		logger: logger,
 	}
+}
+
+// SetRedis injects an optional Redis client for Pub/Sub FG propagation.
+func (s *Service) SetRedis(rdb *redis.Client) {
+	s.rdb = rdb
 }
 
 func (s *Service) Get(ctx context.Context, key string) (string, error) {
@@ -178,7 +188,53 @@ func (s *Service) SetFeatureGate(fg *config.FeatureGates, name string, enabled b
 		zap.Bool("enabled", enabled),
 		zap.String("db_key", dbKey),
 	)
+
+	// Publish update to other instances via Redis Pub/Sub
+	if s.rdb != nil {
+		if err := s.rdb.Publish(context.Background(), fgUpdateChannel, name).Err(); err != nil {
+			s.logger.Warn("failed to publish FG update to Redis",
+				zap.String("gate", name),
+				zap.Error(err),
+			)
+		}
+	}
+
 	return nil
+}
+
+// StartFGSubscriber starts a background goroutine that listens for FG updates
+// from other instances via Redis Pub/Sub and reloads gates from DB.
+// Returns immediately. Safe to call even if rdb is nil (no-op).
+func (s *Service) StartFGSubscriber(ctx context.Context, fg *config.FeatureGates) {
+	if s.rdb == nil {
+		s.logger.Info("FG subscriber skipped: no Redis client")
+		return
+	}
+
+	go func() {
+		pubsub := s.rdb.Subscribe(ctx, fgUpdateChannel)
+		defer pubsub.Close()
+
+		s.logger.Info("FG subscriber started", zap.String("channel", fgUpdateChannel))
+
+		ch := pubsub.Channel()
+		for {
+			select {
+			case <-ctx.Done():
+				s.logger.Info("FG subscriber stopped")
+				return
+			case msg, ok := <-ch:
+				if !ok {
+					return
+				}
+				s.logger.Info("FG update received from peer",
+					zap.String("gate", msg.Payload),
+				)
+				// Reload all gates from DB
+				s.InitFeatureGates(fg)
+			}
+		}
+	}()
 }
 
 // GetAllSettings returns all settings grouped by category.

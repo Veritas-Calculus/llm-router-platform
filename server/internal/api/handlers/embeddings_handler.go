@@ -13,6 +13,7 @@ import (
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 	"github.com/google/uuid"
 )
 
@@ -109,7 +110,9 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 		} else {
 			usageLog.ErrorMessage = "all API keys failed"
 		}
-		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+		h.logger.Warn("billing record failed", zap.Error(err))
+	}
 
 		if err == provider.ErrNotImplemented {
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "embeddings not supported by this provider"})
@@ -136,7 +139,9 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 		ResponseTokens: resp.Usage.CompletionTokens,
 		TotalTokens:    resp.Usage.TotalTokens,
 	}
-	_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
+	if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+		h.logger.Warn("billing record failed", zap.Error(err))
+	}
 
 	c.JSON(http.StatusOK, resp)
 }
