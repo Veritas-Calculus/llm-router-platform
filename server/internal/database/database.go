@@ -6,6 +6,7 @@ import (
 
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/models"
+	"llm-router-platform/pkg/sanitize"
 
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -276,7 +277,7 @@ func (d *Database) SeedDefaultAdminOnly(cfg *config.AdminConfig) error {
 
 	var existing models.User
 	if d.DB.Where("email = ?", cfg.Email).First(&existing).Error == nil {
-		d.logger.Info("admin user already exists, skipping seed (release mode)", zap.String("email", cfg.Email))
+		d.logger.Info("admin user already exists, skipping seed (release mode)", zap.String("email", sanitize.MaskEmail(cfg.Email)))
 		d.ensureDefaultOrgProject(&existing)
 		return nil
 	}
@@ -303,7 +304,7 @@ func (d *Database) SeedDefaultAdminOnly(cfg *config.AdminConfig) error {
 	}
 
 	d.ensureDefaultOrgProject(admin)
-	d.logger.Info("default admin user created (release mode)", zap.String("email", cfg.Email))
+	d.logger.Info("default admin user created (release mode)", zap.String("email", sanitize.MaskEmail(cfg.Email)))
 	return nil
 }
 
@@ -330,9 +331,9 @@ func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
 				d.logger.Error("failed to sync admin password", zap.Error(updateErr))
 				return updateErr
 			}
-			d.logger.Info("admin password synced with env config", zap.String("email", cfg.Email))
+			d.logger.Info("admin password synced with env config", zap.String("email", sanitize.MaskEmail(cfg.Email)))
 		} else {
-			d.logger.Info("admin user already exists, password matches", zap.String("email", cfg.Email))
+			d.logger.Info("admin user already exists, password matches", zap.String("email", sanitize.MaskEmail(cfg.Email)))
 		}
 		// Back-fill org+project if missing (admin was created before this logic existed)
 		d.ensureDefaultOrgProject(&existing)
@@ -363,7 +364,7 @@ func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
 	// Auto-create default org+project for new admin (same as register flow)
 	d.ensureDefaultOrgProject(admin)
 
-	d.logger.Info("default admin user created", zap.String("email", cfg.Email))
+	d.logger.Info("default admin user created", zap.String("email", sanitize.MaskEmail(cfg.Email)))
 	return nil
 }
 
@@ -397,7 +398,7 @@ func (d *Database) ensureDefaultOrgProject(user *models.User) {
 		d.DB.Create(&models.Transaction{OrgID: org.ID, UserID: user.ID, Type: "recharge", Amount: 5.0, Balance: 5.0, Description: "Welcome credit", Currency: "USD"})
 	}
 
-	d.logger.Info("created default org+project for user", zap.String("email", user.Email), zap.String("orgId", org.ID.String()))
+	d.logger.Info("created default org+project for user", zap.String("email", sanitize.MaskEmail(user.Email)), zap.String("orgId", org.ID.String()))
 }
 
 // CleanupOldHealthHistory removes health history records older than the specified duration.

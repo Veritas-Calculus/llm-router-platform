@@ -199,14 +199,14 @@ func (app *Application) InitInfrastructure() error {
 	}
 	app.db = db
 
-	// Migrations — controlled by FG_AUTO_MIGRATE (default OFF for safety)
+	// Migrations -- controlled by FeatureGates.AutoMigrate (default OFF for safety)
 	if app.cfg.FeatureGates.AutoMigrate {
 		if err := db.Migrate(); err != nil {
 			return err
 		}
-		app.logger.Info("AutoMigrate completed (FG_AUTO_MIGRATE=true)")
+		app.logger.Info("AutoMigrate completed")
 	} else {
-		app.logger.Info("AutoMigrate skipped (FG_AUTO_MIGRATE=false). Ensure migrations are pre-applied.")
+		app.logger.Info("AutoMigrate skipped. Ensure migrations are pre-applied.")
 	}
 
 	// Seed data

@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // handleStreamingChat handles streaming chat completion requests.
@@ -99,7 +100,9 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 		errStr = sanitize.TruncateErrorMessage(streamErr.Error())
 	}
 
-	_ = h.billing.UpdateUsageTokens(context.Background(), logID, promptTokens, completionTokens, statusCode, time.Since(start).Milliseconds(), errStr)
+	if err := h.billing.UpdateUsageTokens(context.Background(), logID, promptTokens, completionTokens, statusCode, time.Since(start).Milliseconds(), errStr); err != nil {
+		h.logger.Warn("billing update failed after stream", zap.Error(err))
+	}
 
 	if conversationID != "" && h.memory != nil {
 		for _, m := range originalMessages {

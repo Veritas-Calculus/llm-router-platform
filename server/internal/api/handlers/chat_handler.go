@@ -190,7 +190,9 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 		streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
 		if err != nil {
 			h.logger.Error("anthropic stream failed", zap.Error(err))
-			_ = h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), err.Error())
+			if billingErr := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), err.Error()); billingErr != nil {
+				h.logger.Warn("billing update failed", zap.Error(billingErr))
+			}
 			c.JSON(http.StatusBadGateway, gin.H{"type": "error", "error": gin.H{"type": "api_error", "message": "upstream stream failed"}})
 			return
 		}
@@ -262,7 +264,9 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 		c.Writer.Flush()
 
 		latency := time.Since(start)
-		_ = h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, totalOutput, http.StatusOK, latency.Milliseconds(), "")
+		if err := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, totalOutput, http.StatusOK, latency.Milliseconds(), ""); err != nil {
+			h.logger.Warn("billing update failed", zap.Error(err))
+		}
 		return
 	}
 
@@ -566,7 +570,9 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 				ResponseTokens: 0,
 				TotalTokens:    tokencount.CountTokens(req.Model, string(msgBytes)),
 			}
-			_ = h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, userAPIKey.UserID, fmt.Sprintf("Cache hit: %s", req.Model))
+			if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, userAPIKey.UserID, fmt.Sprintf("Cache hit: %s", req.Model)); err != nil {
+				h.logger.Warn("billing deduction failed (cache hit)", zap.Error(err), zap.String("model", req.Model))
+			}
 
 			if req.Stream {
 				c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -623,7 +629,9 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			h.logger.Error("failed to establish stream", zap.Error(err))
 			usageLog.StatusCode = http.StatusBadGateway
 			usageLog.ErrorMessage = sanitize.TruncateErrorMessage(err.Error())
-			_ = h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), sanitize.TruncateErrorMessage(err.Error()))
+			if billingErr := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), sanitize.TruncateErrorMessage(err.Error())); billingErr != nil {
+				h.logger.Warn("billing update failed", zap.Error(billingErr))
+			}
 
 			c.JSON(http.StatusBadGateway, router_errs.NewRouterError(
 				router_errs.ErrCodeInternalSystemError, http.StatusBadGateway, "server_error", "upstream provider error: stream failed to initialize", err,

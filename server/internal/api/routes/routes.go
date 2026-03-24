@@ -143,13 +143,13 @@ func Setup(
 	// Internal metrics endpoint — no auth, for Prometheus scraping within Docker network
 	if cfg.FeatureGates.MetricsUnauthenticated {
 		engine.GET("/internal/metrics", middleware.MetricsHandler())
-		logger.Info("unauthenticated metrics endpoint enabled at /internal/metrics (FG_METRICS_UNAUTH)")
+		logger.Info("unauthenticated metrics endpoint enabled at /internal/metrics")
 	}
 
-	// Swagger API Docs — gated by FG_SWAGGER_DOCS
+	// Swagger API Docs
 	if cfg.FeatureGates.SwaggerDocs {
 		engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-		logger.Info("swagger docs enabled at /swagger/ (FG_SWAGGER_DOCS)")
+		logger.Info("swagger docs enabled at /swagger/")
 	}
 
 	// ─── GraphQL Endpoint ────────────────────────────────────────────
@@ -210,7 +210,7 @@ func Setup(
 
 	if cfg.FeatureGates.GraphQLPlayground {
 		graphqlGroup.GET("", gqlhandler.ServePlayground())
-		logger.Info("graphql playground enabled at /graphql (FG_GRAPHQL_PLAYGROUND)")
+		logger.Info("graphql playground enabled at /graphql")
 	}
 
 	// ─── Rate Limiter middleware ──────────────────────────────────────
@@ -227,7 +227,7 @@ func Setup(
 	}
 	backpressureLimiter := middleware.NewBackpressure(sqlDB, logger)
 
-	// pprof debug endpoints (gated by FG_PPROF_DEBUG, always requires admin auth)
+	// pprof debug endpoints (always requires admin auth)
 	if cfg.FeatureGates.PprofDebug {
 		pprofGroup := engine.Group("/debug/pprof")
 		pprofGroup.Use(authMiddleware.JWT())
