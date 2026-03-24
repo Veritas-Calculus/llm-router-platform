@@ -527,6 +527,8 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	// Dynamically get Stripe config from DB if available
 	stripeCfg := cfgService.GetStripeConfig(context.Background(), cfg.Stripe)
 	paymentService := billing.NewPaymentService(stripeCfg, cfg.Frontend.URL, repos.Plan, repos.Subscription, repos.Transaction, logger)
+	wechatPayService := billing.NewWechatPayService(cfg.WechatPay, cfg.Frontend.URL, repos.Subscription, repos.Transaction, logger)
+	alipayService := billing.NewAlipayService(cfg.Alipay, cfg.Frontend.URL, repos.Subscription, repos.Transaction, logger)
 
 	memoryService := memory.NewService(repos.Memory, redisClient, logger)
 	proxyService := proxy.NewService(repos.Proxy, logger)
@@ -572,6 +574,8 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		BudgetService:    budgetService,
 		Subscription:     subscriptionService,
 		Payment:          paymentService,
+		WechatPay:        wechatPayService,
+		Alipay:           alipayService,
 		Balance:          balanceService,
 		SystemConfig:     cfgService,
 		Health:           healthService,

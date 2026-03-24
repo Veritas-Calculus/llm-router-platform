@@ -66,6 +66,8 @@ type Services struct {
 	BudgetService    *billing.BudgetService
 	Subscription     *billing.SubscriptionService
 	Payment          *billing.PaymentService
+	WechatPay        *billing.WechatPayService
+	Alipay           *billing.AlipayService
 	Balance          *billing.BalanceService
 	SystemConfig     *configService.Service
 	Health           *health.Service
@@ -280,7 +282,7 @@ func Setup(
 	}
 	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, chatMemory, services.Subscription, services.Balance, services.Observability, services.DB, chatCache, services.RedisClient, chatSafety, logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)
-	paymentHandler := handlers.NewPaymentHandler(services.Payment, logger)
+	paymentHandler := handlers.NewPaymentHandler(services.Payment, services.WechatPay, services.Alipay, logger)
 	auditExportHandler := handlers.NewAuditHandler(services.AuditService, logger)
 
 	// Shared middleware chain for all LLM API endpoints.
@@ -299,6 +301,8 @@ func Setup(
 		{
 			// ── Public / Webhooks ──────────────────────────────
 			v1.POST("/payments/webhook/stripe", paymentHandler.StripeWebhook)
+			v1.POST("/payments/webhook/wechat-pay", paymentHandler.WechatPayNotify)
+			v1.POST("/payments/webhook/alipay", paymentHandler.AlipayNotify)
 
 			// ─── SSO / Tenant-Aware Login ───────────────────────────
 			ssoHandler := handlers.NewSSOHandler(cfg, services.DB, logger)

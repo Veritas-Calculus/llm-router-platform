@@ -21,7 +21,7 @@ import {
   EyeSlashIcon,
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation } from '@apollo/client/react';
-import { SYSTEM_SETTINGS_QUERY, UPDATE_SYSTEM_SETTINGS, SEND_TEST_EMAIL, TRIGGER_BACKUP } from '@/lib/graphql/operations/settings';
+import { SYSTEM_SETTINGS_QUERY, UPDATE_SYSTEM_SETTINGS, SEND_TEST_EMAIL, TRIGGER_BACKUP, SITE_CONFIG_QUERY } from '@/lib/graphql/operations/settings';
 import { GET_INTEGRATIONS, UPDATE_INTEGRATION, TEST_LANGFUSE_CONNECTION } from '@/lib/graphql/operations/integrations';
 import { useTranslation } from '@/lib/i18n';
 import toast from 'react-hot-toast';
@@ -315,6 +315,7 @@ function BackupSettingsTab({ data, onChange, t }: { data: any; onChange: (d: any
 function PaymentSettingsTab({ data, onChange, t }: { data: any; onChange: (d: any) => void; t: (k: string) => string }) {
   return (
     <div className="space-y-5">
+      {/* ── Stripe ── */}
       <div className="space-y-4">
         <h4 className="text-sm font-semibold text-apple-gray-900">Stripe</h4>
         <Toggle checked={data.stripeEnabled ?? false} onChange={(v) => onChange({ ...data, stripeEnabled: v })} label={t('admin_settings.payment.stripe_enabled')} />
@@ -332,9 +333,74 @@ function PaymentSettingsTab({ data, onChange, t }: { data: any; onChange: (d: an
           </div>
         )}
       </div>
-      <div className="border-t border-apple-gray-200 pt-4 space-y-3">
+
+      {/* ── WeChat Pay ── */}
+      <div className="border-t border-apple-gray-200 pt-4 space-y-4">
+        <h4 className="text-sm font-semibold text-apple-gray-900">微信支付 (WeChat Pay)</h4>
         <Toggle checked={data.wechatPayEnabled ?? false} onChange={(v) => onChange({ ...data, wechatPayEnabled: v })} label={t('admin_settings.payment.wechat_enabled')} />
+        {data.wechatPayEnabled && (
+          <div className="space-y-4 pl-1">
+            <FormField label="App ID">
+              <TextInput value={data.wechatPayAppId || ''} onChange={(v) => onChange({ ...data, wechatPayAppId: v })} placeholder="wx..." />
+            </FormField>
+            <FormField label="商户号 (Merchant ID)">
+              <TextInput value={data.wechatPayMchId || ''} onChange={(v) => onChange({ ...data, wechatPayMchId: v })} placeholder="1900000000" />
+            </FormField>
+            <FormField label="API v3 密钥">
+              <TextInput type="password" value={data.wechatPayApiV3Key || ''} onChange={(v) => onChange({ ...data, wechatPayApiV3Key: v })} placeholder="32位密钥..." />
+            </FormField>
+            <FormField label="商户证书序列号">
+              <TextInput value={data.wechatPaySerialNo || ''} onChange={(v) => onChange({ ...data, wechatPaySerialNo: v })} placeholder="证书序列号..." />
+            </FormField>
+            <FormField label="商户私钥 (PEM)">
+              <textarea
+                value={data.wechatPayPrivateKey || ''}
+                onChange={(e) => onChange({ ...data, wechatPayPrivateKey: e.target.value })}
+                placeholder="-----BEGIN PRIVATE KEY-----&#10;..."
+                rows={4}
+                className="w-full px-3.5 py-2.5 bg-apple-gray-50 border border-apple-gray-200 rounded-xl text-sm font-mono text-apple-gray-900 placeholder:text-apple-gray-400 focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue transition-all resize-none"
+              />
+            </FormField>
+            <FormField label="异步通知地址 (Notify URL)">
+              <TextInput value={data.wechatPayNotifyUrl || ''} onChange={(v) => onChange({ ...data, wechatPayNotifyUrl: v })} placeholder="https://yourdomain.com/api/v1/payments/webhook/wechat-pay" />
+            </FormField>
+          </div>
+        )}
+      </div>
+
+      {/* ── Alipay ── */}
+      <div className="border-t border-apple-gray-200 pt-4 space-y-4">
+        <h4 className="text-sm font-semibold text-apple-gray-900">支付宝 (Alipay)</h4>
         <Toggle checked={data.alipayEnabled ?? false} onChange={(v) => onChange({ ...data, alipayEnabled: v })} label={t('admin_settings.payment.alipay_enabled')} />
+        {data.alipayEnabled && (
+          <div className="space-y-4 pl-1">
+            <FormField label="App ID">
+              <TextInput value={data.alipayAppId || ''} onChange={(v) => onChange({ ...data, alipayAppId: v })} placeholder="2021000000000000" />
+            </FormField>
+            <FormField label="应用私钥 (Private Key PEM)">
+              <textarea
+                value={data.alipayPrivateKey || ''}
+                onChange={(e) => onChange({ ...data, alipayPrivateKey: e.target.value })}
+                placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;..."
+                rows={4}
+                className="w-full px-3.5 py-2.5 bg-apple-gray-50 border border-apple-gray-200 rounded-xl text-sm font-mono text-apple-gray-900 placeholder:text-apple-gray-400 focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue transition-all resize-none"
+              />
+            </FormField>
+            <FormField label="支付宝公钥 (Alipay Public Key)">
+              <textarea
+                value={data.alipayPublicKey || ''}
+                onChange={(e) => onChange({ ...data, alipayPublicKey: e.target.value })}
+                placeholder="MIIBIjANBgkq..."
+                rows={3}
+                className="w-full px-3.5 py-2.5 bg-apple-gray-50 border border-apple-gray-200 rounded-xl text-sm font-mono text-apple-gray-900 placeholder:text-apple-gray-400 focus:outline-none focus:ring-2 focus:ring-apple-blue/30 focus:border-apple-blue transition-all resize-none"
+              />
+            </FormField>
+            <FormField label="异步通知地址 (Notify URL)">
+              <TextInput value={data.alipayNotifyUrl || ''} onChange={(v) => onChange({ ...data, alipayNotifyUrl: v })} placeholder="https://yourdomain.com/api/v1/payments/webhook/alipay" />
+            </FormField>
+            <Toggle checked={data.alipaySandbox ?? false} onChange={(v) => onChange({ ...data, alipaySandbox: v })} label="沙箱模式 (Sandbox)" />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -777,7 +843,9 @@ function AdminSettingsPage() {
       const parsed: Record<TabKey, any> = { site: {}, security: {}, defaults: {}, email: {}, backup: {}, payment: {}, sso: {}, integrations: {}, featuregates: {} };
       for (const key of Object.keys(parsed) as TabKey[]) {
         try {
-          if (s[key]) parsed[key] = JSON.parse(s[key]);
+          // Map GraphQL 'oauth' field → frontend 'sso' tab
+          const gqlKey = key === 'sso' ? 'oauth' : key;
+          if (s[gqlKey]) parsed[key] = JSON.parse(s[gqlKey]);
         } catch { /* empty */ }
       }
       setFormData(parsed);
@@ -791,20 +859,25 @@ function AdminSettingsPage() {
   }, [activeTab]);
 
   const handleSave = async () => {
+    // Map frontend tab key to backend category
+    const category = activeTab === 'sso' ? 'oauth' : activeTab;
     try {
       await updateSettings({
         variables: {
           input: {
-            category: activeTab,
+            category,
             data: JSON.stringify(formData[activeTab]),
           },
         },
+        // Refetch siteConfig so Layout sidebar updates immediately
+        ...(activeTab === 'site' ? { refetchQueries: [{ query: SITE_CONFIG_QUERY }] } : {}),
       });
       setSaved(true);
       setDirty(false);
+      toast.success(t('common.saved'));
       setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      console.error('Failed to save settings:', err);
+    } catch (err: any) {
+      toast.error(err?.message || t('common.error'));
     }
   };
 
@@ -869,7 +942,8 @@ function AdminSettingsPage() {
             <div className="max-w-2xl">
               {renderTabContent()}
 
-              {/* Save button — full width, prominent */}
+              {/* Save button — hidden for tabs with independent save (featuregates, integrations) */}
+              {activeTab !== 'featuregates' && activeTab !== 'integrations' && (
               <div className="mt-8 flex items-center gap-3">
                 <button
                   onClick={handleSave}
@@ -894,6 +968,7 @@ function AdminSettingsPage() {
                   </motion.span>
                 )}
               </div>
+              )}
             </div>
           </motion.div>
         )}

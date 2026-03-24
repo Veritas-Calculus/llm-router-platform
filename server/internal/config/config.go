@@ -30,6 +30,8 @@ type Config struct {
 	Observability ObservabilityConfig
 	Frontend      FrontendConfig
 	Stripe        StripeConfig
+	WechatPay     WechatPayConfig
+	Alipay        AlipayConfig
 	OAuth2        OAuth2Config
 	Turnstile     TurnstileConfig
 	Cleanup       CleanupConfig
@@ -157,6 +159,27 @@ type StripeConfig struct {
 	SecretKey      string // #nosec G101
 	PublishableKey string // #nosec G101
 	WebhookSecret  string // #nosec G101
+}
+
+// WechatPayConfig holds WeChat Pay Native payment configuration.
+type WechatPayConfig struct {
+	Enabled    bool
+	AppID      string // 微信应用 App ID
+	MchID      string // 商户号
+	APIv3Key   string // #nosec G101 -- API v3 密钥
+	SerialNo   string // 商户证书序列号
+	PrivateKey string // #nosec G101 -- 商户私钥 PEM
+	NotifyURL  string // 异步通知地址
+}
+
+// AlipayConfig holds Alipay payment configuration.
+type AlipayConfig struct {
+	Enabled         bool
+	AppID           string
+	PrivateKey      string // #nosec G101 -- 应用私钥 PEM
+	AlipayPublicKey string // #nosec G101 -- 支付宝公钥
+	NotifyURL       string // 异步通知地址
+	IsSandbox       bool   // 沙箱模式
 }
 
 // TurnstileConfig holds Cloudflare Turnstile CAPTCHA configuration.
@@ -352,6 +375,23 @@ func Load() (*Config, error) {
 			PublishableKey: viper.GetString("STRIPE_PUBLISHABLE_KEY"),
 			WebhookSecret:  viper.GetString("STRIPE_WEBHOOK_SECRET"),
 		},
+		WechatPay: WechatPayConfig{
+			Enabled:    viper.GetBool("WECHAT_PAY_ENABLED"),
+			AppID:      viper.GetString("WECHAT_PAY_APP_ID"),
+			MchID:      viper.GetString("WECHAT_PAY_MCH_ID"),
+			APIv3Key:   viper.GetString("WECHAT_PAY_API_V3_KEY"),
+			SerialNo:   viper.GetString("WECHAT_PAY_SERIAL_NO"),
+			PrivateKey: viper.GetString("WECHAT_PAY_PRIVATE_KEY"),
+			NotifyURL:  viper.GetString("WECHAT_PAY_NOTIFY_URL"),
+		},
+		Alipay: AlipayConfig{
+			Enabled:         viper.GetBool("ALIPAY_ENABLED"),
+			AppID:           viper.GetString("ALIPAY_APP_ID"),
+			PrivateKey:      viper.GetString("ALIPAY_PRIVATE_KEY"),
+			AlipayPublicKey: viper.GetString("ALIPAY_PUBLIC_KEY"),
+			NotifyURL:       viper.GetString("ALIPAY_NOTIFY_URL"),
+			IsSandbox:       viper.GetBool("ALIPAY_SANDBOX"),
+		},
 		OAuth2: OAuth2Config{
 			GitHub: OAuth2ProviderConfig{
 				ClientID:     viper.GetString("GITHUB_CLIENT_ID"),
@@ -503,6 +543,9 @@ func setDefaults() {
 	viper.SetDefault("SENTRY_ENVIRONMENT", "production")
 	viper.SetDefault("SENTRY_SAMPLE_RATE", 1.0)
 	viper.SetDefault("STRIPE_ENABLED", false)
+	viper.SetDefault("WECHAT_PAY_ENABLED", false)
+	viper.SetDefault("ALIPAY_ENABLED", false)
+	viper.SetDefault("ALIPAY_SANDBOX", false)
 	viper.SetDefault("OTEL_ENABLED", false)
 	viper.SetDefault("OTEL_ENDPOINT", "")
 	viper.SetDefault("OTEL_SERVICE_NAME", "llm-router-platform")
