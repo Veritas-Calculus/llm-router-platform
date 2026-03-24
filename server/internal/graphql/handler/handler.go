@@ -90,7 +90,7 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 	srv.Use(extension.FixedComplexityLimit(200))
 
 	// ── Introspection ──
-	if cfg.Server.Mode != "release" {
+	if cfg.FeatureGates.GraphQLIntrospection {
 		srv.Use(extension.Introspection{})
 	}
 
@@ -110,8 +110,8 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 	})
 
 	// ── Introspection control ──
-	// Disable introspection in production to prevent schema leakage
-	if cfg.Server.Mode == "release" {
+	// Block introspection queries when the gate is off
+	if !cfg.FeatureGates.GraphQLIntrospection {
 		srv.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
 			oc := graphql.GetOperationContext(ctx)
 			if oc.Operation != nil && oc.Operation.Operation == ast.Query {
@@ -119,7 +119,7 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 				for _, sel := range oc.Operation.SelectionSet {
 					if field, ok := sel.(*ast.Field); ok {
 						if field.Name == "__schema" || field.Name == "__type" {
-							return graphql.OneShot(graphql.ErrorResponse(ctx, "introspection is disabled in production"))
+							return graphql.OneShot(graphql.ErrorResponse(ctx, "introspection is disabled"))
 						}
 					}
 				}

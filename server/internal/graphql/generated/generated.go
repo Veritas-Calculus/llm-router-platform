@@ -385,6 +385,14 @@ type ComplexityRoot struct {
 		Total    func(childComplexity int) int
 	}
 
+	FeatureGate struct {
+		Category    func(childComplexity int) int
+		Description func(childComplexity int) int
+		Enabled     func(childComplexity int) int
+		EnvVar      func(childComplexity int) int
+		Name        func(childComplexity int) int
+	}
+
 	GenerateRedeemCodesResult struct {
 		Codes func(childComplexity int) int
 		Count func(childComplexity int) int
@@ -818,6 +826,7 @@ type ComplexityRoot struct {
 		Document               func(childComplexity int, id string) int
 		Documents              func(childComplexity int) int
 		ErrorLogs              func(childComplexity int, page *int, pageSize *int) int
+		FeatureGates           func(childComplexity int) int
 		GetDlpConfig           func(childComplexity int, projectID string) int
 		HealthAPIKeys          func(childComplexity int) int
 		HealthHistory          func(childComplexity int) int
@@ -1363,6 +1372,7 @@ type QueryResolver interface {
 	CacheConfig(ctx context.Context) (*model.CacheConfig, error)
 	GetDlpConfig(ctx context.Context, projectID string) (*model.DlpConfig, error)
 	TestDlpRedaction(ctx context.Context, projectID string, input string) (*model.DlpTestResult, error)
+	FeatureGates(ctx context.Context) ([]*model.FeatureGate, error)
 	NotificationChannels(ctx context.Context) ([]*model.NotificationChannel, error)
 	Webhooks(ctx context.Context, projectID string) ([]*model.WebhookEndpoint, error)
 	WebhookDeliveries(ctx context.Context, endpointID string, limit *int) ([]*model.WebhookDelivery, error)
@@ -2902,6 +2912,37 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ErrorLogConnection.Total(childComplexity), true
+
+	case "FeatureGate.category":
+		if e.ComplexityRoot.FeatureGate.Category == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FeatureGate.Category(childComplexity), true
+	case "FeatureGate.description":
+		if e.ComplexityRoot.FeatureGate.Description == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FeatureGate.Description(childComplexity), true
+	case "FeatureGate.enabled":
+		if e.ComplexityRoot.FeatureGate.Enabled == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FeatureGate.Enabled(childComplexity), true
+	case "FeatureGate.envVar":
+		if e.ComplexityRoot.FeatureGate.EnvVar == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FeatureGate.EnvVar(childComplexity), true
+	case "FeatureGate.name":
+		if e.ComplexityRoot.FeatureGate.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.FeatureGate.Name(childComplexity), true
 
 	case "GenerateRedeemCodesResult.codes":
 		if e.ComplexityRoot.GenerateRedeemCodesResult.Codes == nil {
@@ -5515,6 +5556,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.ErrorLogs(childComplexity, args["page"].(*int), args["pageSize"].(*int)), true
+	case "Query.featureGates":
+		if e.ComplexityRoot.Query.FeatureGates == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.FeatureGates(childComplexity), true
 	case "Query.getDlpConfig":
 		if e.ComplexityRoot.Query.GetDlpConfig == nil {
 			break
@@ -7532,19 +7579,19 @@ type Mutation {
   login(input: LoginInput!): AuthPayload! @rateLimit(max: 5, window: "1m")
   register(input: RegisterInput!): AuthPayload! @rateLimit(max: 5, window: "1m")
   refreshToken: AuthPayload! @auth
-  rotateRefreshToken(refreshToken: String!): AuthPayload!
+  rotateRefreshToken(refreshToken: String!): AuthPayload! @rateLimit(max: 5, window: "1m")
   logout: Boolean! @auth
   forgotPassword(email: String!): Boolean! @rateLimit(max: 3, window: "1m")
   resetPassword(input: ResetPasswordInput!): Boolean! @rateLimit(max: 5, window: "1m")
-  changePassword(input: ChangePasswordInput!): Boolean! @auth
+  changePassword(input: ChangePasswordInput!): Boolean! @auth @rateLimit(max: 5, window: "1m")
   updateProfile(input: UpdateProfileInput!): User! @auth
   verifyEmail(token: String!): Boolean! @rateLimit(max: 10, window: "1m")
   resendVerificationEmail: Boolean! @auth @rateLimit(max: 3, window: "5m")
 
   # -- MFA (Multi-Factor Auth) --
-  generateMfaSecret: MfaSecretInfo! @auth
-  verifyAndEnableMfa(code: String!): Boolean! @auth
-  disableMfa(code: String!): Boolean! @auth
+  generateMfaSecret: MfaSecretInfo! @auth @rateLimit(max: 5, window: "1m")
+  verifyAndEnableMfa(code: String!): Boolean! @auth @rateLimit(max: 5, window: "1m")
+  disableMfa(code: String!): Boolean! @auth @rateLimit(max: 5, window: "1m")
 
   # ── API Keys & Projects ──
   createApiKey(projectId: ID!, name: String!, scopes: String, rateLimit: Int, tokenLimit: Int): ApiKeyWithSecret! @auth
@@ -7579,7 +7626,7 @@ type Mutation {
   createRechargeSession(amount: Float!): CheckoutSession! @auth @rateLimit(max: 5, window: "1m")
 
   # ── Redeem Codes ──
-  redeemCode(code: String!): RedeemResult! @auth
+  redeemCode(code: String!): RedeemResult! @auth @rateLimit(max: 5, window: "1m")
 
   # ── Admin: Users ──
   toggleUser(id: ID!): User! @auth(role: ADMIN)
@@ -8201,6 +8248,22 @@ type ErrorLogConnection {
   total: Int!
   page: Int!
   pageSize: Int!
+}
+`, BuiltIn: false},
+	{Name: "../schema/types_featuregate.graphqls", Input: `# ──────────────────────────────────────────────────
+# Feature Gate types and queries
+# ──────────────────────────────────────────────────
+
+type FeatureGate {
+  name: String!
+  enabled: Boolean!
+  category: String!
+  description: String!
+  envVar: String!
+}
+
+extend type Query {
+  featureGates: [FeatureGate!]! @auth(role: ADMIN)
 }
 `, BuiltIn: false},
 	{Name: "../schema/types_health.graphqls", Input: `# ──────────────────────────────────────────────────
@@ -18466,6 +18529,151 @@ func (ec *executionContext) fieldContext_ErrorLogConnection_pageSize(_ context.C
 	return fc, nil
 }
 
+func (ec *executionContext) _FeatureGate_name(ctx context.Context, field graphql.CollectedField, obj *model.FeatureGate) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_FeatureGate_name,
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_FeatureGate_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "FeatureGate",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _FeatureGate_enabled(ctx context.Context, field graphql.CollectedField, obj *model.FeatureGate) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_FeatureGate_enabled,
+		func(ctx context.Context) (any, error) {
+			return obj.Enabled, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_FeatureGate_enabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "FeatureGate",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _FeatureGate_category(ctx context.Context, field graphql.CollectedField, obj *model.FeatureGate) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_FeatureGate_category,
+		func(ctx context.Context) (any, error) {
+			return obj.Category, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_FeatureGate_category(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "FeatureGate",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _FeatureGate_description(ctx context.Context, field graphql.CollectedField, obj *model.FeatureGate) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_FeatureGate_description,
+		func(ctx context.Context) (any, error) {
+			return obj.Description, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_FeatureGate_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "FeatureGate",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _FeatureGate_envVar(ctx context.Context, field graphql.CollectedField, obj *model.FeatureGate) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_FeatureGate_envVar,
+		func(ctx context.Context) (any, error) {
+			return obj.EnvVar, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_FeatureGate_envVar(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "FeatureGate",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _GenerateRedeemCodesResult_codes(ctx context.Context, field graphql.CollectedField, obj *model.GenerateRedeemCodesResult) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -21106,7 +21314,30 @@ func (ec *executionContext) _Mutation_rotateRefreshToken(ctx context.Context, fi
 			fc := graphql.GetFieldContext(ctx)
 			return ec.Resolvers.Mutation().RotateRefreshToken(ctx, fc.Args["refreshToken"].(string))
 		},
-		nil,
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int(ctx, 5)
+				if err != nil {
+					var zeroVal *model.AuthPayload
+					return zeroVal, err
+				}
+				window, err := ec.unmarshalNString2string(ctx, "1m")
+				if err != nil {
+					var zeroVal *model.AuthPayload
+					return zeroVal, err
+				}
+				if ec.Directives.RateLimit == nil {
+					var zeroVal *model.AuthPayload
+					return zeroVal, errors.New("directive rateLimit is not implemented")
+				}
+				return ec.Directives.RateLimit(ctx, nil, directive0, max, window)
+			}
+
+			next = directive1
+			return next
+		},
 		ec.marshalNAuthPayload2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAuthPayload,
 		true,
 		true,
@@ -21345,8 +21576,25 @@ func (ec *executionContext) _Mutation_changePassword(ctx context.Context, field 
 				}
 				return ec.Directives.Auth(ctx, nil, directive0, role)
 			}
+			directive2 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int(ctx, 5)
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				window, err := ec.unmarshalNString2string(ctx, "1m")
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				if ec.Directives.RateLimit == nil {
+					var zeroVal bool
+					return zeroVal, errors.New("directive rateLimit is not implemented")
+				}
+				return ec.Directives.RateLimit(ctx, nil, directive1, max, window)
+			}
 
-			next = directive1
+			next = directive2
 			return next
 		},
 		ec.marshalNBoolean2bool,
@@ -21618,8 +21866,25 @@ func (ec *executionContext) _Mutation_generateMfaSecret(ctx context.Context, fie
 				}
 				return ec.Directives.Auth(ctx, nil, directive0, role)
 			}
+			directive2 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int(ctx, 5)
+				if err != nil {
+					var zeroVal *model.MfaSecretInfo
+					return zeroVal, err
+				}
+				window, err := ec.unmarshalNString2string(ctx, "1m")
+				if err != nil {
+					var zeroVal *model.MfaSecretInfo
+					return zeroVal, err
+				}
+				if ec.Directives.RateLimit == nil {
+					var zeroVal *model.MfaSecretInfo
+					return zeroVal, errors.New("directive rateLimit is not implemented")
+				}
+				return ec.Directives.RateLimit(ctx, nil, directive1, max, window)
+			}
 
-			next = directive1
+			next = directive2
 			return next
 		},
 		ec.marshalNMfaSecretInfo2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMfaSecretInfo,
@@ -21674,8 +21939,25 @@ func (ec *executionContext) _Mutation_verifyAndEnableMfa(ctx context.Context, fi
 				}
 				return ec.Directives.Auth(ctx, nil, directive0, role)
 			}
+			directive2 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int(ctx, 5)
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				window, err := ec.unmarshalNString2string(ctx, "1m")
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				if ec.Directives.RateLimit == nil {
+					var zeroVal bool
+					return zeroVal, errors.New("directive rateLimit is not implemented")
+				}
+				return ec.Directives.RateLimit(ctx, nil, directive1, max, window)
+			}
 
-			next = directive1
+			next = directive2
 			return next
 		},
 		ec.marshalNBoolean2bool,
@@ -21733,8 +22015,25 @@ func (ec *executionContext) _Mutation_disableMfa(ctx context.Context, field grap
 				}
 				return ec.Directives.Auth(ctx, nil, directive0, role)
 			}
+			directive2 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int(ctx, 5)
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				window, err := ec.unmarshalNString2string(ctx, "1m")
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				if ec.Directives.RateLimit == nil {
+					var zeroVal bool
+					return zeroVal, errors.New("directive rateLimit is not implemented")
+				}
+				return ec.Directives.RateLimit(ctx, nil, directive1, max, window)
+			}
 
-			next = directive1
+			next = directive2
 			return next
 		},
 		ec.marshalNBoolean2bool,
@@ -23145,8 +23444,25 @@ func (ec *executionContext) _Mutation_redeemCode(ctx context.Context, field grap
 				}
 				return ec.Directives.Auth(ctx, nil, directive0, role)
 			}
+			directive2 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int(ctx, 5)
+				if err != nil {
+					var zeroVal *model.RedeemResult
+					return zeroVal, err
+				}
+				window, err := ec.unmarshalNString2string(ctx, "1m")
+				if err != nil {
+					var zeroVal *model.RedeemResult
+					return zeroVal, err
+				}
+				if ec.Directives.RateLimit == nil {
+					var zeroVal *model.RedeemResult
+					return zeroVal, errors.New("directive rateLimit is not implemented")
+				}
+				return ec.Directives.RateLimit(ctx, nil, directive1, max, window)
+			}
 
-			next = directive1
+			next = directive2
 			return next
 		},
 		ec.marshalNRedeemResult2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRedeemResult,
@@ -37804,6 +38120,65 @@ func (ec *executionContext) fieldContext_Query_testDlpRedaction(ctx context.Cont
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_featureGates(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_featureGates,
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().FeatureGates(ctx)
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "ADMIN")
+				if err != nil {
+					var zeroVal []*model.FeatureGate
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal []*model.FeatureGate
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNFeatureGate2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐFeatureGateᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_featureGates(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "name":
+				return ec.fieldContext_FeatureGate_name(ctx, field)
+			case "enabled":
+				return ec.fieldContext_FeatureGate_enabled(ctx, field)
+			case "category":
+				return ec.fieldContext_FeatureGate_category(ctx, field)
+			case "description":
+				return ec.fieldContext_FeatureGate_description(ctx, field)
+			case "envVar":
+				return ec.fieldContext_FeatureGate_envVar(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type FeatureGate", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_notificationChannels(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -50430,6 +50805,65 @@ func (ec *executionContext) _ErrorLogConnection(ctx context.Context, sel ast.Sel
 	return out
 }
 
+var featureGateImplementors = []string{"FeatureGate"}
+
+func (ec *executionContext) _FeatureGate(ctx context.Context, sel ast.SelectionSet, obj *model.FeatureGate) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, featureGateImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("FeatureGate")
+		case "name":
+			out.Values[i] = ec._FeatureGate_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "enabled":
+			out.Values[i] = ec._FeatureGate_enabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "category":
+			out.Values[i] = ec._FeatureGate_category(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "description":
+			out.Values[i] = ec._FeatureGate_description(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "envVar":
+			out.Values[i] = ec._FeatureGate_envVar(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var generateRedeemCodesResultImplementors = []string{"GenerateRedeemCodesResult"}
 
 func (ec *executionContext) _GenerateRedeemCodesResult(ctx context.Context, sel ast.SelectionSet, obj *model.GenerateRedeemCodesResult) graphql.Marshaler {
@@ -54809,6 +55243,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "featureGates":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_featureGates(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "notificationChannels":
 			field := field
 
@@ -57971,6 +58427,32 @@ func (ec *executionContext) marshalNErrorLogConnection2ᚖllmᚑrouterᚑplatfor
 		return graphql.Null
 	}
 	return ec._ErrorLogConnection(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNFeatureGate2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐFeatureGateᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.FeatureGate) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNFeatureGate2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐFeatureGate(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNFeatureGate2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐFeatureGate(ctx context.Context, sel ast.SelectionSet, v *model.FeatureGate) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._FeatureGate(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v any) (float64, error) {

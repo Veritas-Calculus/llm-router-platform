@@ -471,6 +471,14 @@ type ErrorLogConnection struct {
 	PageSize int         `json:"pageSize"`
 }
 
+type FeatureGate struct {
+	Name        string `json:"name"`
+	Enabled     bool   `json:"enabled"`
+	Category    string `json:"category"`
+	Description string `json:"description"`
+	EnvVar      string `json:"envVar"`
+}
+
 type GenerateRedeemCodesInput struct {
 	Type         string     `json:"type"`
 	CreditAmount *float64   `json:"creditAmount,omitempty"`

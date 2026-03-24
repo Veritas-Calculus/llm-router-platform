@@ -100,6 +100,9 @@ func run() error {
 	}
 	defer func() { _ = app.logger.Sync() }()
 
+	// Log all feature gate states for audit trail
+	app.cfg.FeatureGates.LogGates(app.logger)
+
 	if err := app.InitInfrastructure(); err != nil {
 		return err
 	}
@@ -197,13 +200,14 @@ func (app *Application) InitInfrastructure() error {
 	}
 	app.db = db
 
-	// Migrations
-	if app.cfg.Server.Mode == "release" {
-		app.logger.Info("Bypassing AutoMigrate in release mode. Please ensure database migrations are already applied.")
-	} else {
+	// Migrations — controlled by FG_AUTO_MIGRATE (default OFF for safety)
+	if app.cfg.FeatureGates.AutoMigrate {
 		if err := db.Migrate(); err != nil {
 			return err
 		}
+		app.logger.Info("AutoMigrate completed (FG_AUTO_MIGRATE=true)")
+	} else {
+		app.logger.Info("AutoMigrate skipped (FG_AUTO_MIGRATE=false). Ensure migrations are pre-applied.")
 	}
 
 	// Seed data

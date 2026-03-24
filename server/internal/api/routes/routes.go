@@ -141,15 +141,15 @@ func Setup(
 	metricsGroup.GET("", middleware.MetricsHandler())
 
 	// Internal metrics endpoint — no auth, for Prometheus scraping within Docker network
-	if cfg.Server.MetricsAllowUnauthenticated {
+	if cfg.FeatureGates.MetricsUnauthenticated {
 		engine.GET("/internal/metrics", middleware.MetricsHandler())
-		logger.Info("unauthenticated metrics endpoint enabled at /internal/metrics")
+		logger.Info("unauthenticated metrics endpoint enabled at /internal/metrics (FG_METRICS_UNAUTH)")
 	}
 
-	// Swagger API Docs — disabled in release/production mode
-	if cfg.Server.Mode != "release" {
+	// Swagger API Docs — gated by FG_SWAGGER_DOCS
+	if cfg.FeatureGates.SwaggerDocs {
 		engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-		logger.Info("swagger docs enabled at /swagger/ (non-release mode)")
+		logger.Info("swagger docs enabled at /swagger/ (FG_SWAGGER_DOCS)")
 	}
 
 	// ─── GraphQL Endpoint ────────────────────────────────────────────
@@ -208,9 +208,9 @@ func Setup(
 	})
 	graphqlGroup.POST("", graphqlHandler.ServeGraphQL())
 
-	if cfg.Server.Mode != "release" {
+	if cfg.FeatureGates.GraphQLPlayground {
 		graphqlGroup.GET("", gqlhandler.ServePlayground())
-		logger.Info("graphql playground enabled at /graphql (non-release mode)")
+		logger.Info("graphql playground enabled at /graphql (FG_GRAPHQL_PLAYGROUND)")
 	}
 
 	// ─── Rate Limiter middleware ──────────────────────────────────────
@@ -227,8 +227,8 @@ func Setup(
 	}
 	backpressureLimiter := middleware.NewBackpressure(sqlDB, logger)
 
-	// pprof debug endpoints (opt-in via PPROF_ENABLED=true, always requires admin auth)
-	if cfg.Server.PprofEnabled {
+	// pprof debug endpoints (gated by FG_PPROF_DEBUG, always requires admin auth)
+	if cfg.FeatureGates.PprofDebug {
 		pprofGroup := engine.Group("/debug/pprof")
 		pprofGroup.Use(authMiddleware.JWT())
 		pprofGroup.Use(middleware.AdminOnly())
@@ -265,7 +265,20 @@ func Setup(
 	// All management operations are now served via /graphql (Apollo Client).
 	// Only LLM proxy endpoints and payment webhooks remain under /api/v1.
 
-	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, services.Memory, services.Subscription, services.Balance, services.Observability, services.DB, services.SemanticCache, services.RedisClient, safety.NewRuleEngine(), logger)
+	// Gate optional services based on FeatureGates
+	var chatMemory *memory.Service
+	if cfg.FeatureGates.ConversationMemory {
+		chatMemory = services.Memory
+	}
+	var chatCache *semantic.SemanticCacheService
+	if cfg.FeatureGates.SemanticCache {
+		chatCache = services.SemanticCache
+	}
+	var chatSafety safety.Classifier
+	if cfg.FeatureGates.PromptSafety {
+		chatSafety = safety.NewRuleEngine()
+	}
+	chatHandler := handlers.NewChatHandler(services.Router, services.Billing, chatMemory, services.Subscription, services.Balance, services.Observability, services.DB, chatCache, services.RedisClient, chatSafety, logger)
 	modelHandler := handlers.NewModelHandler(services.Router, services.Provider, logger)
 	paymentHandler := handlers.NewPaymentHandler(services.Payment, logger)
 	auditExportHandler := handlers.NewAuditHandler(services.AuditService, logger)
@@ -288,11 +301,14 @@ func Setup(
 			v1.POST("/payments/webhook/stripe", paymentHandler.StripeWebhook)
 
 			// ─── SSO / Tenant-Aware Login ───────────────────────────
-			ssoHandler := handlers.NewSSOHandler(cfg, services.DB, logger)
-			sso := v1.Group("/sso")
-			{
-				sso.POST("/discover", ssoHandler.Discover)
-				sso.GET("/callback/:id", ssoHandler.Callback)
+			if cfg.FeatureGates.SSOEnterprise {
+				ssoHandler := handlers.NewSSOHandler(cfg, services.DB, logger)
+				sso := v1.Group("/sso")
+				{
+					sso.POST("/discover", ssoHandler.Discover)
+					sso.GET("/callback/:id", ssoHandler.Callback)
+				}
+				logger.Info("SSO enterprise routes enabled (FG_SSO_ENTERPRISE)")
 			}
 
 			// ─── Compliance / Audit Export ───────────────────────────
@@ -310,13 +326,15 @@ func Setup(
 		}
 	}
 
-	// ─── OAuth2 Social Login ────────────────────────────────────────
-	oauth2Handler := handlers.NewOAuth2Handler(cfg, services.SystemConfig, services.DB, logger)
-	authGroup := engine.Group("/auth/oauth2")
-	{
-		authGroup.GET("/providers", oauth2Handler.Providers)
-		authGroup.GET("/:provider/redirect", oauth2Handler.Redirect)
-		authGroup.GET("/:provider/callback", oauth2Handler.Callback)
+	if cfg.FeatureGates.OAuth2Login {
+		oauth2Handler := handlers.NewOAuth2Handler(cfg, services.SystemConfig, services.DB, logger)
+		authGroup := engine.Group("/auth/oauth2")
+		{
+			authGroup.GET("/providers", oauth2Handler.Providers)
+			authGroup.GET("/:provider/redirect", oauth2Handler.Redirect)
+			authGroup.GET("/:provider/callback", oauth2Handler.Callback)
+		}
+		logger.Info("OAuth2 social login routes enabled (FG_OAUTH2_LOGIN)")
 	}
 
 	// ─── OpenAI-Compatible Route Aliases ───────────────────────────

@@ -33,6 +33,7 @@ type Config struct {
 	OAuth2        OAuth2Config
 	Turnstile     TurnstileConfig
 	Cleanup       CleanupConfig
+	FeatureGates  FeatureGates
 }
 
 // SecurityConfig holds API and Gateway security environment settings.
@@ -371,6 +372,7 @@ func Load() (*Config, error) {
 			AlertRetentionDays:  viper.GetInt("CLEANUP_ALERT_RETENTION_DAYS"),
 			AuditRetentionDays:  viper.GetInt("CLEANUP_AUDIT_RETENTION_DAYS"),
 		},
+		FeatureGates: loadFeatureGates(),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -508,6 +510,9 @@ func setDefaults() {
 	viper.SetDefault("OTEL_SERVICE_NAME", "llm-router-platform")
 	viper.SetDefault("TURNSTILE_ENABLED", false)
 	viper.SetDefault("CACHE_HIT_COST_RATIO", 0.1) // Cache hits billed at 10% of model price
+
+	// Feature Gates
+	setFeatureGateDefaults()
 }
 
 // GetDSN returns the database connection string with proper escaping.

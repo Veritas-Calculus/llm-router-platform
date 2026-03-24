@@ -1,0 +1,15 @@
+# ──────────────────────────────────────────────────
+# Feature Gate types and queries
+# ──────────────────────────────────────────────────
+
+type FeatureGate {
+  name: String!
+  enabled: Boolean!
+  category: String!
+  description: String!
+  envVar: String!
+}
+
+extend type Query {
+  featureGates: [FeatureGate!]! @auth(role: ADMIN)
+}
