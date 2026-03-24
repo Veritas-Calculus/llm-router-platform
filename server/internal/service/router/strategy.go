@@ -17,11 +17,27 @@ import (
 	"go.uber.org/zap"
 )
 
+// heuristicPrefixes maps provider name to model name prefixes for last-resort heuristic matching.
+var heuristicPrefixes = map[string][]string{
+	"google":    {"gemini", "gemma", "embedding", "text-embedding", "imagen", "veo", "aqa"},
+	"openai":    {"gpt-", "o1", "o3", "o4", "chatgpt", "text-davinci", "dall-e", "whisper", "tts"},
+	"anthropic": {"claude"},
+	"deepseek":  {"deepseek"},
+	"mistral":   {"mistral", "mixtral", "codestral", "pixtral", "open-mistral", "open-mixtral"},
+}
+
+// heuristicContains maps provider name to model name substrings for local/self-hosted providers.
+var heuristicContains = map[string][]string{
+	"ollama":   {"llama", "codellama", "vicuna", "phi", "yi-", "qwen", "mistral", "cosyvoice", "fish-speech", "chattts", "bark"},
+	"lmstudio": {"llama", "codellama", "vicuna", "phi", "yi-", "qwen", "mistral", "cosyvoice", "fish-speech", "chattts", "bark"},
+	"vllm":     {"llama", "codellama", "vicuna", "phi", "yi-", "qwen", "mistral", "cosyvoice", "fish-speech", "chattts", "bark"},
+}
+
 // findProviderForModel tries to find the appropriate provider for a given model name.
-// It strips client-format prefixes (e.g., "openai/gpt-oss-120b" → "gpt-oss-120b"),
+// It strips client-format prefixes (e.g., "openai/gpt-oss-120b" -> "gpt-oss-120b"),
 // then prioritises explicit DB model assignments over heuristic prefix matching.
 func (r *Router) findProviderForModel(modelName string, providers []models.Provider) *models.Provider {
-	// Strip client prefix if present (e.g., "openai/gpt-oss-120b" → "gpt-oss-120b").
+	// Strip client prefix if present (e.g., "openai/gpt-oss-120b" -> "gpt-oss-120b").
 	actualModel := modelName
 	if idx := strings.Index(modelName, "/"); idx > 0 {
 		actualModel = modelName[idx+1:]
@@ -39,13 +55,9 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 		}
 	}
 
-	// 2. Cached upstream model discovery: look up which provider actually
-	//    serves this model. Cache is refreshed every 5 minutes; individual
-	//    requests always read from memory (no per-request upstream queries).
+	// 2. Cached upstream model discovery.
 	discoveryMap := r.getDiscoveryCache()
 	if discoveryMap == nil {
-		// Cache expired or first request — refresh in the background for next time,
-		// but also use the result now. The refresh has a 2s per-provider timeout.
 		discoveryMap = r.refreshDiscoveryCache(providers)
 	}
 	if providerName, ok := discoveryMap[strings.ToLower(actualModel)]; ok {
@@ -63,8 +75,6 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 	modelLower := strings.ToLower(actualModel)
 
 	// 3. Configurable model patterns from Provider.ModelPatterns.
-	//    Each provider can define glob patterns (e.g., ["gpt-*","o1*"]).
-	//    This takes priority over the hardcoded heuristic fallback.
 	for i := range providers {
 		patterns := providers[i].GetModelPatterns()
 		if len(patterns) == 0 {
@@ -82,67 +92,36 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 		}
 	}
 
-	// 4. Heuristic prefix-based matching (last-resort fallback).
-	//    Used only when no provider has matching ModelPatterns configured.
+	// 4. Heuristic fallback (data-driven).
+	if p := r.matchHeuristicFallback(modelLower, providers); p != nil {
+		return p
+	}
+
+	return nil
+}
+
+// matchHeuristicFallback uses data-driven maps to match a model name to a provider
+// via prefix or substring matching. This replaces the former switch-case block.
+func (r *Router) matchHeuristicFallback(modelLower string, providers []models.Provider) *models.Provider {
 	for i := range providers {
 		p := &providers[i]
-		switch p.Name {
-		case "google":
-			if strings.HasPrefix(modelLower, "gemini") ||
-				strings.HasPrefix(modelLower, "gemma") ||
-				strings.HasPrefix(modelLower, "embedding") ||
-				strings.HasPrefix(modelLower, "text-embedding") ||
-				strings.HasPrefix(modelLower, "imagen") ||
-				strings.HasPrefix(modelLower, "veo") ||
-				strings.HasPrefix(modelLower, "aqa") {
-				return p
+		// Check prefix-based matching
+		if prefixes, ok := heuristicPrefixes[p.Name]; ok {
+			for _, prefix := range prefixes {
+				if strings.HasPrefix(modelLower, prefix) {
+					return p
+				}
 			}
-		case "openai":
-			if strings.HasPrefix(modelLower, "gpt-") ||
-				strings.HasPrefix(modelLower, "o1") ||
-				strings.HasPrefix(modelLower, "o3") ||
-				strings.HasPrefix(modelLower, "o4") ||
-				strings.HasPrefix(modelLower, "chatgpt") ||
-				strings.HasPrefix(modelLower, "text-davinci") ||
-				strings.HasPrefix(modelLower, "dall-e") ||
-				strings.HasPrefix(modelLower, "whisper") ||
-				strings.HasPrefix(modelLower, "tts") {
-				return p
-			}
-		case "anthropic":
-			if strings.HasPrefix(modelLower, "claude") {
-				return p
-			}
-		case "ollama", "lmstudio", "vllm":
-			if strings.Contains(modelLower, "llama") ||
-				strings.Contains(modelLower, "codellama") ||
-				strings.Contains(modelLower, "vicuna") ||
-				strings.Contains(modelLower, "phi") ||
-				strings.Contains(modelLower, "yi-") ||
-				strings.Contains(modelLower, "qwen") ||
-				strings.Contains(modelLower, "mistral") ||
-				strings.Contains(modelLower, "cosyvoice") ||
-				strings.Contains(modelLower, "fish-speech") ||
-				strings.Contains(modelLower, "chattts") ||
-				strings.Contains(modelLower, "bark") {
-				return p
-			}
-		case "deepseek":
-			if strings.HasPrefix(modelLower, "deepseek") {
-				return p
-			}
-		case "mistral":
-			if strings.HasPrefix(modelLower, "mistral") ||
-				strings.HasPrefix(modelLower, "mixtral") ||
-				strings.HasPrefix(modelLower, "codestral") ||
-				strings.HasPrefix(modelLower, "pixtral") ||
-				strings.HasPrefix(modelLower, "open-mistral") ||
-				strings.HasPrefix(modelLower, "open-mixtral") {
-				return p
+		}
+		// Check substring-based matching (local providers)
+		if substrings, ok := heuristicContains[p.Name]; ok {
+			for _, substr := range substrings {
+				if strings.Contains(modelLower, substr) {
+					return p
+				}
 			}
 		}
 	}
-
 	return nil
 }
 

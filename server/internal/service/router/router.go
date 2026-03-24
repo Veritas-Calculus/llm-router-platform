@@ -273,76 +273,16 @@ func (r *Router) Route(ctx context.Context, modelName string) (*models.Provider,
 	var selectedProvider *models.Provider
 
 	// 1. Evaluate explicit Routing Rules
-	rules, err := r.routingRuleRepo.GetActive(ctx)
-	if err == nil && len(rules) > 0 {
-		// Sort by Priority DESC, CreatedAt ASC
-		sort.Slice(rules, func(i, j int) bool {
-			if rules[i].Priority != rules[j].Priority {
-				return rules[i].Priority > rules[j].Priority
-			}
-			return rules[i].CreatedAt.Before(rules[j].CreatedAt)
-		})
-
-		for _, rule := range rules {
-			if matchesGlobPattern(modelName, rule.ModelPattern) {
-				// Matched a rule. Try to find the target provider.
-				for i := range providers {
-					if providers[i].ID == rule.TargetProviderID {
-						r.circuitMu.RLock()
-						_, melted := r.providerMelted[providers[i].ID]
-						r.circuitMu.RUnlock()
-
-						if !melted {
-							selectedProvider = &providers[i]
-						}
-						break
-					}
-				}
-
-				// If target melted/unavailable and we have a fallback, try fallback.
-				if selectedProvider == nil && rule.FallbackProviderID != nil {
-					for i := range providers {
-						if providers[i].ID == *rule.FallbackProviderID {
-							r.circuitMu.RLock()
-							_, melted := r.providerMelted[providers[i].ID]
-							r.circuitMu.RUnlock()
-
-							if !melted {
-								selectedProvider = &providers[i]
-							}
-							break
-						}
-					}
-				}
-
-				// If we matched a rule, we stick to its routing decision.
-				// Even if circuit breakers are open for both, we stop evaluating further heuristics.
-				if selectedProvider != nil || rule.FallbackProviderID != nil {
-					break // Exits the rule checking loop
-				}
-			}
-		}
-	}
+	selectedProvider = r.evaluateRoutingRules(ctx, modelName, providers)
 
 	// 2. Try to find provider based on model name patterns (Heuristics)
 	if selectedProvider == nil {
 		selectedProvider = r.findProviderForModel(modelName, providers)
 	}
 
-	// 3. If no specific provider found, use weighted selection
+	// 3. If no specific provider found, use strategy selection
 	if selectedProvider == nil {
-		switch r.strategy {
-		case StrategyRoundRobin:
-			selectedProvider = r.selectRoundRobin(providers)
-		case StrategyWeighted:
-			selectedProvider = r.selectWeighted(providers)
-		case StrategyLeastLatency:
-			selectedProvider = r.selectLeastLatency(providers)
-		case StrategyCostOptimized:
-			selectedProvider = r.selectCostOptimized(ctx, modelName, providers)
-		default:
-			selectedProvider = r.selectWeighted(providers)
-		}
+		selectedProvider = r.selectByStrategy(ctx, modelName, providers)
 	}
 
 	// For providers that don't require API keys (e.g., Ollama, LM Studio), return nil for apiKey
@@ -356,6 +296,79 @@ func (r *Router) Route(ctx context.Context, modelName string) (*models.Provider,
 	}
 
 	return selectedProvider, apiKey, nil
+}
+
+// evaluateRoutingRules checks explicit routing rules and returns a matching provider, or nil.
+func (r *Router) evaluateRoutingRules(ctx context.Context, modelName string, providers []models.Provider) *models.Provider {
+	rules, err := r.routingRuleRepo.GetActive(ctx)
+	if err != nil || len(rules) == 0 {
+		return nil
+	}
+
+	// Sort by Priority DESC, CreatedAt ASC
+	sort.Slice(rules, func(i, j int) bool {
+		if rules[i].Priority != rules[j].Priority {
+			return rules[i].Priority > rules[j].Priority
+		}
+		return rules[i].CreatedAt.Before(rules[j].CreatedAt)
+	})
+
+	for _, rule := range rules {
+		if !matchesGlobPattern(modelName, rule.ModelPattern) {
+			continue
+		}
+
+		// Try to find the target provider
+		if p := r.findHealthyProvider(rule.TargetProviderID, providers); p != nil {
+			return p
+		}
+
+		// Try fallback provider
+		if rule.FallbackProviderID != nil {
+			if p := r.findHealthyProvider(*rule.FallbackProviderID, providers); p != nil {
+				return p
+			}
+		}
+
+		// Matched a rule but both providers unavailable -- stop evaluating
+		if rule.FallbackProviderID != nil {
+			break
+		}
+	}
+	return nil
+}
+
+// findHealthyProvider returns the provider with the given ID if it exists and is not melted.
+func (r *Router) findHealthyProvider(providerID uuid.UUID, providers []models.Provider) *models.Provider {
+	for i := range providers {
+		if providers[i].ID != providerID {
+			continue
+		}
+		r.circuitMu.RLock()
+		_, melted := r.providerMelted[providers[i].ID]
+		r.circuitMu.RUnlock()
+		if !melted {
+			return &providers[i]
+		}
+		return nil
+	}
+	return nil
+}
+
+// selectByStrategy selects a provider based on the configured routing strategy.
+func (r *Router) selectByStrategy(ctx context.Context, modelName string, providers []models.Provider) *models.Provider {
+	switch r.strategy {
+	case StrategyRoundRobin:
+		return r.selectRoundRobin(providers)
+	case StrategyWeighted:
+		return r.selectWeighted(providers)
+	case StrategyLeastLatency:
+		return r.selectLeastLatency(providers)
+	case StrategyCostOptimized:
+		return r.selectCostOptimized(ctx, modelName, providers)
+	default:
+		return r.selectWeighted(providers)
+	}
 }
 
 // RouteWithFallback attempts routing with fallback providers.

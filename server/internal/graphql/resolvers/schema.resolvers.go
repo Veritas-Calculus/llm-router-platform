@@ -75,11 +75,12 @@ func (r *mutationResolver) Login(ctx context.Context, input model.LoginInput) (*
 
 // Register is the resolver for the register field.
 func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInput) (*model.AuthPayload, error) {
-	// ── Registration mode enforcement ──
+	// Registration mode enforcement
 	mode := r.Config().Registration.Mode
 	if mode == "" {
 		mode = "closed"
 	}
+
 	switch mode {
 	case "closed":
 		return nil, fmt.Errorf("registration is currently closed")
@@ -87,38 +88,14 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 		if input.InviteCode == nil || *input.InviteCode == "" {
 			return nil, fmt.Errorf("invite code is required")
 		}
-
-		// ── Turnstile CAPTCHA verification ──
-		ip, _ := clientInfo(ctx)
-		token := ""
-		if input.CaptchaToken != nil {
-			token = *input.CaptchaToken
-		}
-		if err := r.TurnstileSvc.Verify(ctx, token, ip); err != nil {
+		if err := r.verifyCaptcha(ctx, input.CaptchaToken); err != nil {
 			return nil, err
 		}
-		// Validate + consume invite code atomically with SELECT FOR UPDATE
-		if err := r.DB().Transaction(func(tx *gorm.DB) error {
-			var ic models.InviteCode
-			if err := tx.Set("gorm:query_option", "FOR UPDATE").
-				Where("code = ?", *input.InviteCode).First(&ic).Error; err != nil {
-				return fmt.Errorf("invalid invite code")
-			}
-			if !ic.IsValid() {
-				return fmt.Errorf("invite code is expired or exhausted")
-			}
-			return tx.Model(&ic).UpdateColumn("use_count", gorm.Expr("use_count + 1")).Error
-		}); err != nil {
+		if err := r.consumeInviteCode(ctx, *input.InviteCode); err != nil {
 			return nil, err
 		}
 	case "open":
-		// ── Turnstile CAPTCHA verification (open registration) ──
-		ip, _ := clientInfo(ctx)
-		token := ""
-		if input.CaptchaToken != nil {
-			token = *input.CaptchaToken
-		}
-		if err := r.TurnstileSvc.Verify(ctx, token, ip); err != nil {
+		if err := r.verifyCaptcha(ctx, input.CaptchaToken); err != nil {
 			return nil, err
 		}
 	}
@@ -128,23 +105,8 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 		return nil, err
 	}
 
-	// ── Onboard: create Org + Project + optional Welcome Credit ──
-	grantCredit := true
-	if r.RedisClient() != nil {
-		ip, _ := clientInfo(ctx)
-		creditKey := fmt.Sprintf("reg_credit:%s", ip)
-		cnt, redisErr := r.RedisClient().Incr(ctx, creditKey).Result()
-		if redisErr == nil {
-			if cnt == 1 {
-				r.RedisClient().Expire(ctx, creditKey, 24*time.Hour)
-			}
-			if cnt > 3 {
-				grantCredit = false
-				r.Logger.Warn("welcome credit denied: IP throttle exceeded",
-					zap.String("ip", sanitize.LogValue(ip)), zap.Int64("count", cnt))
-			}
-		}
-	}
+	// Onboard: create Org + Project + optional Welcome Credit
+	grantCredit := r.checkWelcomeCreditEligibility(ctx)
 
 	if err := user.OnboardAccount(ctx, r.DB(), u, user.OnboardAccountParams{
 		GrantWelcomeCredit: grantCredit,
@@ -155,7 +117,7 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 	ip, ua := clientInfo(ctx)
 	r.AuditService.Log(ctx, audit.ActionRegister, u.ID, u.ID, ip, ua, nil)
 
-	// ── Send email verification (non-blocking) ──
+	// Send email verification (non-blocking)
 	go func() {
 		rawToken, tokenErr := r.EmailVerifySvc.CreateVerificationToken(ctx, u.ID)
 		if tokenErr != nil {
@@ -176,6 +138,53 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 		return nil, err
 	}
 	return &model.AuthPayload{Token: token, RefreshToken: &refresh, User: userToGQL(u)}, nil
+}
+
+// verifyCaptcha performs Turnstile CAPTCHA verification using the client IP.
+func (r *mutationResolver) verifyCaptcha(ctx context.Context, captchaToken *string) error {
+	ip, _ := clientInfo(ctx)
+	token := ""
+	if captchaToken != nil {
+		token = *captchaToken
+	}
+	return r.TurnstileSvc.Verify(ctx, token, ip)
+}
+
+// consumeInviteCode atomically validates and consumes an invite code.
+func (r *mutationResolver) consumeInviteCode(ctx context.Context, code string) error {
+	return r.DB().Transaction(func(tx *gorm.DB) error {
+		var ic models.InviteCode
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("code = ?", code).First(&ic).Error; err != nil {
+			return fmt.Errorf("invalid invite code")
+		}
+		if !ic.IsValid() {
+			return fmt.Errorf("invite code is expired or exhausted")
+		}
+		return tx.Model(&ic).UpdateColumn("use_count", gorm.Expr("use_count + 1")).Error
+	})
+}
+
+// checkWelcomeCreditEligibility checks IP-based throttling for welcome credits.
+func (r *mutationResolver) checkWelcomeCreditEligibility(ctx context.Context) bool {
+	if r.RedisClient() == nil {
+		return true
+	}
+	ip, _ := clientInfo(ctx)
+	creditKey := fmt.Sprintf("reg_credit:%s", ip)
+	cnt, redisErr := r.RedisClient().Incr(ctx, creditKey).Result()
+	if redisErr != nil {
+		return true
+	}
+	if cnt == 1 {
+		r.RedisClient().Expire(ctx, creditKey, 24*time.Hour)
+	}
+	if cnt > 3 {
+		r.Logger.Warn("welcome credit denied: IP throttle exceeded",
+			zap.String("ip", sanitize.LogValue(ip)), zap.Int64("count", cnt))
+		return false
+	}
+	return true
 }
 
 // RefreshToken is the resolver for the refreshToken field.

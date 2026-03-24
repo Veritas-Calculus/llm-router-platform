@@ -383,100 +383,22 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 	projectObj := c.MustGet("project").(*models.Project)
 	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 
-	// Fetch conversation history if provided
-	var historyMessages []provider.Message
-	if req.ConversationID != "" && h.memory != nil {
-		history, err := h.memory.GetConversationWithLimit(c.Request.Context(), projectObj.ID, &userAPIKey.ID, req.ConversationID, 20)
-		if err == nil {
-			for _, hm := range history {
-				historyMessages = append(historyMessages, provider.Message{Role: hm.Role, Content: provider.StringContent(hm.Content)})
-			}
-		} else {
-			h.logger.Warn("failed to fetch conversation memory", zap.Error(err), zap.String("conversation_id", sanitize.LogValue(req.ConversationID)))
-		}
+	// 1. Build messages (conversation history + request)
+	messages := h.buildMessages(c, req, projectObj, userAPIKey)
+
+	// 2. Stream resume injection
+	if done := h.applyStreamResume(c, &req, projectObj, &messages); done {
+		return
 	}
 
-	messages := make([]provider.Message, 0, len(historyMessages)+len(req.Messages))
-	messages = append(messages, historyMessages...)
-	for _, m := range req.Messages {
-		messages = append(messages, provider.Message{Role: m.Role, Content: m.Content})
+	// 3. DLP
+	if done := h.applyDLP(c, projectObj, messages); done {
+		return
 	}
 
-	// Stream Resume Injection: When upstream crashes, the client can pass a resume pointer containing the last incomplete string.
-	// We inject a system directive to guide the model to seamlessly continue.
-	// Security: validate that the resume ID corresponds to an actual interrupted stream for this project.
-	if req.ResumeFromStreamID != "" {
-		resumeID, parseErr := uuid.Parse(req.ResumeFromStreamID)
-		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": gin.H{
-					"message": "invalid resume_from_stream_id format",
-					"type":    "invalid_request_error",
-					"code":    "invalid_request",
-				},
-			})
-			return
-		}
-		// Verify the referenced usage log exists, belongs to this project, and was interrupted (non-200)
-		var count int64
-		if h.db != nil {
-			h.db.Model(&models.UsageLog{}).Where("id = ? AND project_id = ? AND status_code != ?", resumeID, projectObj.ID, http.StatusOK).Count(&count)
-		}
-		if count > 0 {
-			resumeContext := "System Protocol: The previous generation was interrupted due to a network or upstream error. Please continue writing seamlessly from exactly where you left off. Do not repeat anything that was already written. End of System Protocol."
-			messages = append(messages, provider.Message{Role: "system", Content: provider.StringContent(resumeContext)})
-		} else {
-			h.logger.Warn("invalid resume_from_stream_id: no matching interrupted stream found",
-				zap.String("resume_id", sanitize.LogValue(req.ResumeFromStreamID)),
-				zap.String("project_id", projectObj.ID.String()),
-			)
-		}
-	}
-
-	// === Data Loss Prevention (DLP) ===
-	if projectObj.DlpConfig != nil && projectObj.DlpConfig.IsEnabled {
-		for i, m := range messages {
-			rawBytes, _ := json.Marshal(m.Content)
-			rawStr := string(rawBytes)
-
-			switch projectObj.DlpConfig.Strategy {
-			case dlp.StrategyBlock:
-				if dlp.HasPII(rawStr, projectObj.DlpConfig) {
-					c.JSON(http.StatusBadRequest, router_errs.NewRouterError(
-						router_errs.ErrCodeProviderParseFailed, http.StatusBadRequest, "invalid_request_error", "Request blocked by Data Loss Prevention (DLP) policy due to sensitive information.", nil,
-					).MapToOpenAIResponse())
-					return
-				}
-			case dlp.StrategyRedact:
-				scrubbedStr := dlp.ScrubText(rawStr, projectObj.DlpConfig)
-				var newContent provider.FlexibleContent
-				_ = json.Unmarshal([]byte(scrubbedStr), &newContent)
-				messages[i].Content = newContent
-			}
-		}
-	}
-
-	// === Content Safety Classification ===
-	if h.safety != nil {
-		result, err := h.safety.Classify(c.Request.Context(), messages)
-		if err != nil {
-			h.logger.Error("safety classification failed", zap.Error(err))
-			// Fail open: if the safety service is down, allow the request through
-		} else if !result.Safe {
-			h.logger.Warn("request blocked by safety classifier",
-				zap.String("category", result.Category),
-				zap.Float64("score", result.Score),
-				zap.String("model", sanitize.LogValue(req.Model)),
-			)
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": gin.H{
-					"message": "Your request was flagged by our content safety system. Please revise your input.",
-					"type":    "invalid_request_error",
-					"code":    "content_policy_violation",
-				},
-			})
-			return
-		}
+	// 4. Content safety
+	if done := h.applySafetyCheck(c, req, messages); done {
+		return
 	}
 
 	providerReq := &provider.ChatRequest{
@@ -501,7 +423,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
-	// Check user quota before processing
+	// 5. Quota check
 	if quotaErr := h.checkProjectQuota(c, projectObj); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, router_errs.NewRouterError(
 			router_errs.ErrCodeRateLimitExceeded, http.StatusTooManyRequests, "quota_exceeded", *quotaErr, nil,
@@ -509,140 +431,277 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		return
 	}
 
-	// === Semantic Cache (Exact Match) ===
-	var cacheHit *models.SemanticCache
-	var promptHash string
-	var msgBytes []byte
-	if len(messages) > 0 {
-		msgBytes, _ = json.Marshal(messages)
-		promptHash = h.cache.HashPrompt(string(msgBytes))
+	// 6. Semantic cache lookup
+	msgBytes, _ := json.Marshal(messages)
+	promptHash, promptEmbedding, cacheHit := h.lookupSemanticCache(c, messages, msgBytes)
 
-		hit, err := h.cache.FindExactMatch(c.Request.Context(), promptHash)
-		if err == nil && hit != nil {
-			cacheHit = hit
-			h.logger.Info("Semantic Cache exact hit", zap.String("hash", promptHash))
-		}
-	}
-
-	// === Semantic Cache (Semantic Vector Match) ===
-	var promptEmbedding []float32
-	if cacheHit == nil && promptHash != "" {
-		embProvider, embKey, embErr := h.router.Route(c.Request.Context(), "text-embedding-3-small")
-		if embErr == nil {
-			embReq := &provider.EmbeddingRequest{
-				Model: "text-embedding-3-small",
-				Input: string(msgBytes),
-			}
-			embRes, embErr2 := h.router.ExecuteEmbeddings(c.Request.Context(), embProvider, embKey, embReq, 1)
-			if embErr2 == nil && len(embRes.Response.Data) > 0 {
-				promptEmbedding = embRes.Response.Data[0].Embedding
-				
-				semanticHit, semErr := h.cache.FindSemanticMatch(c.Request.Context(), promptEmbedding)
-				if semErr == nil && semanticHit != nil {
-					cacheHit = semanticHit
-					h.logger.Info("Semantic Cache vector hit", zap.String("hash", promptHash))
-				}
-			} else {
-                h.logger.Warn("Failed to generate embedding for semantic cache", zap.Error(embErr2))
-            }
-		} else {
-			h.logger.Debug("No embedding provider available for semantic cache (requires text-embedding-3-small)")
-		}
-	}
-	// === End Semantic Match ===
-
+	// 7. Cache hit response
 	if cacheHit != nil {
-		var cachedResp provider.ChatResponse
-		if err := json.Unmarshal(cacheHit.Response, &cachedResp); err == nil {
-			
-			h.obsInfo.StartGeneration(c.Request.Context(), trace, "Cache: ExactMatch", req.Model, nil, req.Messages).End(cachedResp.Choices[0].Message.Content.Text, 0, 0)
-			
-			usageLog := &models.UsageLog{
-				UserID:         userAPIKey.UserID,
-				ProjectID:      projectObj.ID,
-		Channel:        userAPIKey.Channel,
-				APIKeyID:       userAPIKey.ID,
-				ProviderID:     selectedProvider.ID,
-				ModelName:      req.Model,
-				Latency:        1,
-				StatusCode:     http.StatusOK,
-				RequestTokens:  tokencount.CountTokens(req.Model, string(msgBytes)),
-				ResponseTokens: 0,
-				TotalTokens:    tokencount.CountTokens(req.Model, string(msgBytes)),
-			}
-			if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, userAPIKey.UserID, fmt.Sprintf("Cache hit: %s", req.Model)); err != nil {
-				h.logger.Warn("billing deduction failed (cache hit)", zap.Error(err), zap.String("model", req.Model))
-			}
-
-			if req.Stream {
-				c.Writer.Header().Set("Content-Type", "text/event-stream")
-				c.Writer.Header().Set("Cache-Control", "no-cache")
-				c.Writer.Header().Set("Connection", "keep-alive")
-
-				chunk := provider.StreamChunk{
-					ID:    cachedResp.ID,
-					Model: cachedResp.Model,
-					Choices: []provider.DeltaChoice{
-						{
-							Delta: provider.Delta{
-								Role:    "assistant",
-								Content: cachedResp.Choices[0].Message.Content.Text,
-							},
-							Index:        0,
-							FinishReason: "stop",
-						},
-					},
-				}
-				chunkBytes, _ := json.Marshal(chunk)
-				_, _ = c.Writer.Write([]byte("data: "))
-				_, _ = c.Writer.Write(chunkBytes)
-				_, _ = c.Writer.Write([]byte("\n\ndata: [DONE]\n\n"))
-				c.Writer.Flush()
-				return
-			}
-
-			c.JSON(http.StatusOK, cachedResp)
+		if h.handleCacheHit(c, cacheHit, req, userAPIKey, selectedProvider, projectObj, msgBytes, trace) {
 			return
 		}
 	}
 
-	// Handle streaming requests
+	// 8. Streaming path
 	if req.Stream {
-		// Record initial usage log (pending) to ensure request is tracked even if stream fails early
-		usageLog := &models.UsageLog{
-			UserID:     userAPIKey.UserID,
-			ProjectID:   projectObj.ID,
-			APIKeyID:   userAPIKey.ID,
-			ProviderID: selectedProvider.ID,
-			ModelName:  req.Model,
-			Latency:    0,
-			StatusCode: http.StatusProcessing, // Temporary status
-		}
-		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
-			h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", req.Model))
-		}
-
-		// ExecuteStreamChat retries key rotation before the stream is established
-		streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
-		if err != nil {
-			h.saveErrorLog(c.Request.Context(), err, req.TrajectoryID, trace.GetID(), selectedProvider.Name, req.Model)
-			h.logger.Error("failed to establish stream", zap.Error(err))
-			usageLog.StatusCode = http.StatusBadGateway
-			usageLog.ErrorMessage = sanitize.TruncateErrorMessage(err.Error())
-			if billingErr := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), sanitize.TruncateErrorMessage(err.Error())); billingErr != nil {
-				h.logger.Warn("billing update failed", zap.Error(billingErr))
-			}
-
-			c.JSON(http.StatusBadGateway, router_errs.NewRouterError(
-				router_errs.ErrCodeInternalSystemError, http.StatusBadGateway, "server_error", "upstream provider error: stream failed to initialize", err,
-			).MapToOpenAIResponse())
-			return
-		}
-		h.handleStreamingChat(c, streamResult.Stream, providerReq, selectedProvider, projectObj, userAPIKey, start, trace, req.ConversationID, req.Messages, usageLog.ID, promptHash, promptEmbedding)
+		h.handleStreamPath(c, req, providerReq, selectedProvider, userAPIKey, projectObj, start, trace, promptHash, promptEmbedding)
 		return
 	}
 
-	// Non-streaming: delegate to Router.ExecuteChat which handles key-rotation retry
+	// 9. Non-streaming path
+	h.handleNonStreamResponse(c, req, providerReq, selectedProvider, apiKey, userAPIKey, projectObj, start, trace, promptHash, promptEmbedding, messages, msgBytes)
+}
+
+// ─── ChatCompletion Helpers ────────────────────────────────────────────────
+
+// buildMessages constructs the message list from conversation history + request messages.
+func (h *ChatHandler) buildMessages(c *gin.Context, req ChatCompletionRequest, projectObj *models.Project, userAPIKey *models.APIKey) []provider.Message {
+	var historyMessages []provider.Message
+	if req.ConversationID != "" && h.memory != nil {
+		history, err := h.memory.GetConversationWithLimit(c.Request.Context(), projectObj.ID, &userAPIKey.ID, req.ConversationID, 20)
+		if err == nil {
+			for _, hm := range history {
+				historyMessages = append(historyMessages, provider.Message{Role: hm.Role, Content: provider.StringContent(hm.Content)})
+			}
+		} else {
+			h.logger.Warn("failed to fetch conversation memory", zap.Error(err), zap.String("conversation_id", sanitize.LogValue(req.ConversationID)))
+		}
+	}
+
+	messages := make([]provider.Message, 0, len(historyMessages)+len(req.Messages))
+	messages = append(messages, historyMessages...)
+	for _, m := range req.Messages {
+		messages = append(messages, provider.Message{Role: m.Role, Content: m.Content})
+	}
+	return messages
+}
+
+// applyStreamResume handles stream resume injection. Returns true if the request was terminated (bad input).
+func (h *ChatHandler) applyStreamResume(c *gin.Context, req *ChatCompletionRequest, projectObj *models.Project, messages *[]provider.Message) bool {
+	if req.ResumeFromStreamID == "" {
+		return false
+	}
+
+	resumeID, parseErr := uuid.Parse(req.ResumeFromStreamID)
+	if parseErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"message": "invalid resume_from_stream_id format",
+				"type":    "invalid_request_error",
+				"code":    "invalid_request",
+			},
+		})
+		return true
+	}
+
+	var count int64
+	if h.db != nil {
+		h.db.Model(&models.UsageLog{}).Where("id = ? AND project_id = ? AND status_code != ?", resumeID, projectObj.ID, http.StatusOK).Count(&count)
+	}
+	if count > 0 {
+		resumeContext := "System Protocol: The previous generation was interrupted due to a network or upstream error. Please continue writing seamlessly from exactly where you left off. Do not repeat anything that was already written. End of System Protocol."
+		*messages = append(*messages, provider.Message{Role: "system", Content: provider.StringContent(resumeContext)})
+	} else {
+		h.logger.Warn("invalid resume_from_stream_id: no matching interrupted stream found",
+			zap.String("resume_id", sanitize.LogValue(req.ResumeFromStreamID)),
+			zap.String("project_id", projectObj.ID.String()),
+		)
+	}
+	return false
+}
+
+// applyDLP runs Data Loss Prevention checks on messages. Returns true if the request was blocked.
+func (h *ChatHandler) applyDLP(c *gin.Context, projectObj *models.Project, messages []provider.Message) bool {
+	if projectObj.DlpConfig == nil || !projectObj.DlpConfig.IsEnabled {
+		return false
+	}
+
+	for i, m := range messages {
+		rawBytes, _ := json.Marshal(m.Content)
+		rawStr := string(rawBytes)
+
+		switch projectObj.DlpConfig.Strategy {
+		case dlp.StrategyBlock:
+			if dlp.HasPII(rawStr, projectObj.DlpConfig) {
+				c.JSON(http.StatusBadRequest, router_errs.NewRouterError(
+					router_errs.ErrCodeProviderParseFailed, http.StatusBadRequest, "invalid_request_error", "Request blocked by Data Loss Prevention (DLP) policy due to sensitive information.", nil,
+				).MapToOpenAIResponse())
+				return true
+			}
+		case dlp.StrategyRedact:
+			scrubbedStr := dlp.ScrubText(rawStr, projectObj.DlpConfig)
+			var newContent provider.FlexibleContent
+			_ = json.Unmarshal([]byte(scrubbedStr), &newContent)
+			messages[i].Content = newContent
+		}
+	}
+	return false
+}
+
+// applySafetyCheck runs content safety classification. Returns true if the request was blocked.
+func (h *ChatHandler) applySafetyCheck(c *gin.Context, req ChatCompletionRequest, messages []provider.Message) bool {
+	if h.safety == nil {
+		return false
+	}
+
+	result, err := h.safety.Classify(c.Request.Context(), messages)
+	if err != nil {
+		h.logger.Error("safety classification failed", zap.Error(err))
+		return false // Fail open
+	}
+
+	if !result.Safe {
+		h.logger.Warn("request blocked by safety classifier",
+			zap.String("category", result.Category),
+			zap.Float64("score", result.Score),
+			zap.String("model", sanitize.LogValue(req.Model)),
+		)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"message": "Your request was flagged by our content safety system. Please revise your input.",
+				"type":    "invalid_request_error",
+				"code":    "content_policy_violation",
+			},
+		})
+		return true
+	}
+	return false
+}
+
+// lookupSemanticCache performs exact-match and vector-match cache lookups. Returns hash, embedding, and cache entry (nil if miss).
+func (h *ChatHandler) lookupSemanticCache(c *gin.Context, messages []provider.Message, msgBytes []byte) (string, []float32, *models.SemanticCache) {
+	if len(messages) == 0 {
+		return "", nil, nil
+	}
+
+	promptHash := h.cache.HashPrompt(string(msgBytes))
+
+	// Exact match
+	hit, err := h.cache.FindExactMatch(c.Request.Context(), promptHash)
+	if err == nil && hit != nil {
+		h.logger.Info("Semantic Cache exact hit", zap.String("hash", promptHash))
+		return promptHash, nil, hit
+	}
+
+	// Vector match
+	var promptEmbedding []float32
+	embProvider, embKey, embErr := h.router.Route(c.Request.Context(), "text-embedding-3-small")
+	if embErr == nil {
+		embReq := &provider.EmbeddingRequest{
+			Model: "text-embedding-3-small",
+			Input: string(msgBytes),
+		}
+		embRes, embErr2 := h.router.ExecuteEmbeddings(c.Request.Context(), embProvider, embKey, embReq, 1)
+		if embErr2 == nil && len(embRes.Response.Data) > 0 {
+			promptEmbedding = embRes.Response.Data[0].Embedding
+
+			semanticHit, semErr := h.cache.FindSemanticMatch(c.Request.Context(), promptEmbedding)
+			if semErr == nil && semanticHit != nil {
+				h.logger.Info("Semantic Cache vector hit", zap.String("hash", promptHash))
+				return promptHash, promptEmbedding, semanticHit
+			}
+		} else {
+			h.logger.Warn("Failed to generate embedding for semantic cache", zap.Error(embErr2))
+		}
+	} else {
+		h.logger.Debug("No embedding provider available for semantic cache (requires text-embedding-3-small)")
+	}
+
+	return promptHash, promptEmbedding, nil
+}
+
+// handleCacheHit serves a cached response (stream or non-stream). Returns true if handled.
+func (h *ChatHandler) handleCacheHit(c *gin.Context, cacheHit *models.SemanticCache, req ChatCompletionRequest, userAPIKey *models.APIKey, selectedProvider *models.Provider, projectObj *models.Project, msgBytes []byte, trace observability.Trace) bool {
+	var cachedResp provider.ChatResponse
+	if err := json.Unmarshal(cacheHit.Response, &cachedResp); err != nil {
+		return false
+	}
+
+	h.obsInfo.StartGeneration(c.Request.Context(), trace, "Cache: ExactMatch", req.Model, nil, req.Messages).End(cachedResp.Choices[0].Message.Content.Text, 0, 0)
+
+	usageLog := &models.UsageLog{
+		UserID:         userAPIKey.UserID,
+		ProjectID:      projectObj.ID,
+		Channel:        userAPIKey.Channel,
+		APIKeyID:       userAPIKey.ID,
+		ProviderID:     selectedProvider.ID,
+		ModelName:      req.Model,
+		Latency:        1,
+		StatusCode:     http.StatusOK,
+		RequestTokens:  tokencount.CountTokens(req.Model, string(msgBytes)),
+		ResponseTokens: 0,
+		TotalTokens:    tokencount.CountTokens(req.Model, string(msgBytes)),
+	}
+	if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, userAPIKey.UserID, fmt.Sprintf("Cache hit: %s", req.Model)); err != nil {
+		h.logger.Warn("billing deduction failed (cache hit)", zap.Error(err), zap.String("model", req.Model))
+	}
+
+	if req.Stream {
+		c.Writer.Header().Set("Content-Type", "text/event-stream")
+		c.Writer.Header().Set("Cache-Control", "no-cache")
+		c.Writer.Header().Set("Connection", "keep-alive")
+
+		chunk := provider.StreamChunk{
+			ID:    cachedResp.ID,
+			Model: cachedResp.Model,
+			Choices: []provider.DeltaChoice{
+				{
+					Delta: provider.Delta{
+						Role:    "assistant",
+						Content: cachedResp.Choices[0].Message.Content.Text,
+					},
+					Index:        0,
+					FinishReason: "stop",
+				},
+			},
+		}
+		chunkBytes, _ := json.Marshal(chunk)
+		_, _ = c.Writer.Write([]byte("data: "))
+		_, _ = c.Writer.Write(chunkBytes)
+		_, _ = c.Writer.Write([]byte("\n\ndata: [DONE]\n\n"))
+		c.Writer.Flush()
+		return true
+	}
+
+	c.JSON(http.StatusOK, cachedResp)
+	return true
+}
+
+// handleStreamPath handles the streaming chat path (pre-record, establish stream, delegate).
+func (h *ChatHandler) handleStreamPath(c *gin.Context, req ChatCompletionRequest, providerReq *provider.ChatRequest, selectedProvider *models.Provider, userAPIKey *models.APIKey, projectObj *models.Project, start time.Time, trace observability.Trace, promptHash string, promptEmbedding []float32) {
+	usageLog := &models.UsageLog{
+		UserID:     userAPIKey.UserID,
+		ProjectID:  projectObj.ID,
+		APIKeyID:   userAPIKey.ID,
+		ProviderID: selectedProvider.ID,
+		ModelName:  req.Model,
+		Latency:    0,
+		StatusCode: http.StatusProcessing,
+	}
+	if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+		h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", req.Model))
+	}
+
+	streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, nil, providerReq, 3)
+	if err != nil {
+		h.saveErrorLog(c.Request.Context(), err, req.TrajectoryID, trace.GetID(), selectedProvider.Name, req.Model)
+		h.logger.Error("failed to establish stream", zap.Error(err))
+		usageLog.StatusCode = http.StatusBadGateway
+		usageLog.ErrorMessage = sanitize.TruncateErrorMessage(err.Error())
+		if billingErr := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), sanitize.TruncateErrorMessage(err.Error())); billingErr != nil {
+			h.logger.Warn("billing update failed", zap.Error(billingErr))
+		}
+
+		c.JSON(http.StatusBadGateway, router_errs.NewRouterError(
+			router_errs.ErrCodeInternalSystemError, http.StatusBadGateway, "server_error", "upstream provider error: stream failed to initialize", err,
+		).MapToOpenAIResponse())
+		return
+	}
+	h.handleStreamingChat(c, streamResult.Stream, providerReq, selectedProvider, projectObj, userAPIKey, start, trace, req.ConversationID, req.Messages, usageLog.ID, promptHash, promptEmbedding)
+}
+
+// handleNonStreamResponse handles non-streaming chat completion, billing, memory save, and cache store.
+func (h *ChatHandler) handleNonStreamResponse(c *gin.Context, req ChatCompletionRequest, providerReq *provider.ChatRequest, selectedProvider *models.Provider, apiKey *models.ProviderAPIKey, userAPIKey *models.APIKey, projectObj *models.Project, start time.Time, trace observability.Trace, promptHash string, promptEmbedding []float32, messages []provider.Message, msgBytes []byte) {
 	gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, "Provider: "+selectedProvider.Name, req.Model, map[string]interface{}{
 		"temperature": req.Temperature,
 		"max_tokens":  req.MaxTokens,
@@ -658,7 +717,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		latency := time.Since(start)
 		usageLog := &models.UsageLog{
 			UserID:       userAPIKey.UserID,
-			ProjectID:   projectObj.ID,
+			ProjectID:    projectObj.ID,
 			APIKeyID:     userAPIKey.ID,
 			ProviderID:   selectedProvider.ID,
 			ModelName:    req.Model,
@@ -693,7 +752,6 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	// Save conversation memory
 	if req.ConversationID != "" && h.memory != nil {
-		// Save full message history including tool calls and results
 		for _, m := range result.FinalMessages {
 			content := m.Content.Text
 			if content == "" && len(m.ToolCalls) > 0 {
@@ -701,7 +759,6 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			}
 			_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, &userAPIKey.ID, req.ConversationID, m.Role, content, 0)
 		}
-		// Final assistant response
 		_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, &userAPIKey.ID, req.ConversationID, "assistant", outText, resp.Usage.CompletionTokens)
 	}
 
