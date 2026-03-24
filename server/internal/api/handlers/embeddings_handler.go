@@ -55,9 +55,10 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 			}
 		case dlp.StrategyRedact:
 			scrubbedStr := dlp.ScrubText(rawStr, projectObj.DlpConfig)
-			var newContent interface{}
-			_ = json.Unmarshal([]byte(scrubbedStr), &newContent)
-			providerReq.Input = newContent
+			var newContent json.RawMessage
+			if err := json.Unmarshal([]byte(scrubbedStr), &newContent); err == nil {
+				providerReq.Input = newContent
+			}
 		}
 	}
 

@@ -290,7 +290,7 @@ func (c *SSEClient) CallTool(ctx context.Context, name string, arguments interfa
 		return nil, err
 	}
 
-	var result interface{}
+	var result json.RawMessage
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		return nil, err
 	}
@@ -325,7 +325,7 @@ func (c *SSEClient) ReadResource(ctx context.Context, uri string) (interface{}, 
 		return nil, err
 	}
 
-	var result interface{}
+	var result json.RawMessage
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		return nil, err
 	}

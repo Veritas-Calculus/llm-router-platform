@@ -196,7 +196,7 @@ func (r *Router) handleMCPToolCalls(ctx context.Context, resp *provider.ChatResp
 
 		serverName, toolName := parts[0], parts[1]
 		
-		var args interface{}
+		var args map[string]json.RawMessage
 		_ = json.Unmarshal(tc.Function.Arguments, &args)
 
 		r.logger.Info("executing MCP tool", zap.String("server", serverName), zap.String("tool", toolName))

@@ -267,7 +267,7 @@ func (h *ModelHandler) List(c *gin.Context) {
 				if k == "id" || k == "object" || k == "owned_by" {
 					continue
 				}
-				var val interface{}
+				var val json.RawMessage
 				if err := json.Unmarshal(v, &val); err == nil {
 					m[k] = val
 				}
@@ -362,7 +362,7 @@ func (h *ModelHandler) Retrieve(c *gin.Context) {
 					if k == "id" || k == "object" || k == "owned_by" {
 						continue
 					}
-					var val interface{}
+					var val json.RawMessage
 					if err := json.Unmarshal(v, &val); err == nil {
 						m[k] = val
 					}
