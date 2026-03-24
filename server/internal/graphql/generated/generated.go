@@ -389,8 +389,6 @@ type ComplexityRoot struct {
 		Category    func(childComplexity int) int
 		Description func(childComplexity int) int
 		Enabled     func(childComplexity int) int
-		EnvVar      func(childComplexity int) int
-		Locked      func(childComplexity int) int
 		Name        func(childComplexity int) int
 		Source      func(childComplexity int) int
 	}
@@ -2935,18 +2933,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.FeatureGate.Enabled(childComplexity), true
-	case "FeatureGate.envVar":
-		if e.ComplexityRoot.FeatureGate.EnvVar == nil {
-			break
-		}
-
-		return e.ComplexityRoot.FeatureGate.EnvVar(childComplexity), true
-	case "FeatureGate.locked":
-		if e.ComplexityRoot.FeatureGate.Locked == nil {
-			break
-		}
-
-		return e.ComplexityRoot.FeatureGate.Locked(childComplexity), true
 	case "FeatureGate.name":
 		if e.ComplexityRoot.FeatureGate.Name == nil {
 			break
@@ -8286,9 +8272,7 @@ type FeatureGate {
   enabled: Boolean!
   category: String!
   description: String!
-  envVar: String!
   source: String!
-  locked: Boolean!
 }
 
 extend type Query {
@@ -18694,35 +18678,6 @@ func (ec *executionContext) fieldContext_FeatureGate_description(_ context.Conte
 	return fc, nil
 }
 
-func (ec *executionContext) _FeatureGate_envVar(ctx context.Context, field graphql.CollectedField, obj *model.FeatureGate) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		ec.fieldContext_FeatureGate_envVar,
-		func(ctx context.Context) (any, error) {
-			return obj.EnvVar, nil
-		},
-		nil,
-		ec.marshalNString2string,
-		true,
-		true,
-	)
-}
-
-func (ec *executionContext) fieldContext_FeatureGate_envVar(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	fc = &graphql.FieldContext{
-		Object:     "FeatureGate",
-		Field:      field,
-		IsMethod:   false,
-		IsResolver: false,
-		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type String does not have child fields")
-		},
-	}
-	return fc, nil
-}
-
 func (ec *executionContext) _FeatureGate_source(ctx context.Context, field graphql.CollectedField, obj *model.FeatureGate) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -18747,35 +18702,6 @@ func (ec *executionContext) fieldContext_FeatureGate_source(_ context.Context, f
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type String does not have child fields")
-		},
-	}
-	return fc, nil
-}
-
-func (ec *executionContext) _FeatureGate_locked(ctx context.Context, field graphql.CollectedField, obj *model.FeatureGate) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		ec.fieldContext_FeatureGate_locked,
-		func(ctx context.Context) (any, error) {
-			return obj.Locked, nil
-		},
-		nil,
-		ec.marshalNBoolean2bool,
-		true,
-		true,
-	)
-}
-
-func (ec *executionContext) fieldContext_FeatureGate_locked(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	fc = &graphql.FieldContext{
-		Object:     "FeatureGate",
-		Field:      field,
-		IsMethod:   false,
-		IsResolver: false,
-		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type Boolean does not have child fields")
 		},
 	}
 	return fc, nil
@@ -28530,12 +28456,8 @@ func (ec *executionContext) fieldContext_Mutation_updateFeatureGate(ctx context.
 				return ec.fieldContext_FeatureGate_category(ctx, field)
 			case "description":
 				return ec.fieldContext_FeatureGate_description(ctx, field)
-			case "envVar":
-				return ec.fieldContext_FeatureGate_envVar(ctx, field)
 			case "source":
 				return ec.fieldContext_FeatureGate_source(ctx, field)
-			case "locked":
-				return ec.fieldContext_FeatureGate_locked(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type FeatureGate", field.Name)
 		},
@@ -38352,12 +38274,8 @@ func (ec *executionContext) fieldContext_Query_featureGates(_ context.Context, f
 				return ec.fieldContext_FeatureGate_category(ctx, field)
 			case "description":
 				return ec.fieldContext_FeatureGate_description(ctx, field)
-			case "envVar":
-				return ec.fieldContext_FeatureGate_envVar(ctx, field)
 			case "source":
 				return ec.fieldContext_FeatureGate_source(ctx, field)
-			case "locked":
-				return ec.fieldContext_FeatureGate_locked(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type FeatureGate", field.Name)
 		},
@@ -51022,18 +50940,8 @@ func (ec *executionContext) _FeatureGate(ctx context.Context, sel ast.SelectionS
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
-		case "envVar":
-			out.Values[i] = ec._FeatureGate_envVar(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
 		case "source":
 			out.Values[i] = ec._FeatureGate_source(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
-		case "locked":
-			out.Values[i] = ec._FeatureGate_locked(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

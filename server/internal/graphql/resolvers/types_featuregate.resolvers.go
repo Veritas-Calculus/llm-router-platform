@@ -8,7 +8,6 @@ package resolvers
 import (
 	"context"
 	"fmt"
-
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/pkg/sanitize"
 
@@ -20,7 +19,7 @@ import (
 func (r *mutationResolver) UpdateFeatureGate(ctx context.Context, name string, enabled bool) (*model.FeatureGate, error) {
 	cfg := r.Config()
 
-	// Persist to DB + update runtime (env override check inside)
+	// Persist to DB + update runtime
 	if err := r.SystemConfig.SetFeatureGate(cfg.FeatureGates, name, enabled); err != nil {
 		return nil, fmt.Errorf("failed to update feature gate: %w", err)
 	}
@@ -49,9 +48,7 @@ func (r *mutationResolver) UpdateFeatureGate(ctx context.Context, name string, e
 				Enabled:     g.Enabled,
 				Category:    g.Category,
 				Description: g.Description,
-				EnvVar:      g.EnvVar,
 				Source:      g.Source,
-				Locked:      g.Locked,
 			}, nil
 		}
 	}
@@ -70,9 +67,7 @@ func (r *queryResolver) FeatureGates(ctx context.Context) ([]*model.FeatureGate,
 			Enabled:     g.Enabled,
 			Category:    g.Category,
 			Description: g.Description,
-			EnvVar:      g.EnvVar,
 			Source:      g.Source,
-			Locked:      g.Locked,
 		}
 	}
 	return result, nil

@@ -301,14 +301,11 @@ func Setup(
 			v1.POST("/payments/webhook/stripe", paymentHandler.StripeWebhook)
 
 			// ─── SSO / Tenant-Aware Login ───────────────────────────
-			if cfg.FeatureGates.SSOEnterprise {
-				ssoHandler := handlers.NewSSOHandler(cfg, services.DB, logger)
-				sso := v1.Group("/sso")
-				{
-					sso.POST("/discover", ssoHandler.Discover)
-					sso.GET("/callback/:id", ssoHandler.Callback)
-				}
-				logger.Info("SSO enterprise routes enabled (FG_SSO_ENTERPRISE)")
+			ssoHandler := handlers.NewSSOHandler(cfg, services.DB, logger)
+			sso := v1.Group("/sso")
+			{
+				sso.POST("/discover", ssoHandler.Discover)
+				sso.GET("/callback/:id", ssoHandler.Callback)
 			}
 
 			// ─── Compliance / Audit Export ───────────────────────────
@@ -326,15 +323,12 @@ func Setup(
 		}
 	}
 
-	if cfg.FeatureGates.OAuth2Login {
-		oauth2Handler := handlers.NewOAuth2Handler(cfg, services.SystemConfig, services.DB, logger)
-		authGroup := engine.Group("/auth/oauth2")
-		{
-			authGroup.GET("/providers", oauth2Handler.Providers)
-			authGroup.GET("/:provider/redirect", oauth2Handler.Redirect)
-			authGroup.GET("/:provider/callback", oauth2Handler.Callback)
-		}
-		logger.Info("OAuth2 social login routes enabled (FG_OAUTH2_LOGIN)")
+	oauth2Handler := handlers.NewOAuth2Handler(cfg, services.SystemConfig, services.DB, logger)
+	authGroup := engine.Group("/auth/oauth2")
+	{
+		authGroup.GET("/providers", oauth2Handler.Providers)
+		authGroup.GET("/:provider/redirect", oauth2Handler.Redirect)
+		authGroup.GET("/:provider/callback", oauth2Handler.Callback)
 	}
 
 	// ─── OpenAI-Compatible Route Aliases ───────────────────────────

@@ -7,9 +7,7 @@ export const FEATURE_GATES_QUERY = gql`
       enabled
       category
       description
-      envVar
       source
-      locked
     }
   }
 `;
@@ -21,9 +19,7 @@ export const UPDATE_FEATURE_GATE = gql`
       enabled
       category
       description
-      envVar
       source
-      locked
     }
   }
 `;

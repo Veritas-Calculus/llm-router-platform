@@ -431,15 +431,12 @@ interface FeatureGateItem {
   enabled: boolean;
   category: string;
   description: string;
-  envVar: string;
   source: string;
-  locked: boolean;
 }
 
-const categoryOrder = ['security', 'auth', 'feature', 'observability'];
+const categoryOrder = ['security', 'feature', 'observability'];
 const categoryLabels: Record<string, string> = {
   security: 'Security',
-  auth: 'Authentication',
   feature: 'Features',
   observability: 'Observability',
 };
@@ -478,7 +475,7 @@ function FeatureGatesSettingsTab() {
   return (
     <div className="space-y-8">
       <p className="text-sm text-apple-gray-500">
-        Toggle platform capabilities at runtime. Gates locked by environment variables cannot be modified here.
+        Toggle platform capabilities at runtime. Changes take effect immediately.
       </p>
       {categoryOrder.map((cat) => {
         const items = grouped[cat];
@@ -494,11 +491,6 @@ function FeatureGatesSettingsTab() {
                   <div className="flex-1 min-w-0 pr-4">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-apple-gray-900">{gate.name}</span>
-                      {gate.locked && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                          ENV Override
-                        </span>
-                      )}
                       {gate.source === 'database' && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-200">
                           DB
@@ -506,19 +498,14 @@ function FeatureGatesSettingsTab() {
                       )}
                     </div>
                     <p className="text-xs text-apple-gray-500 mt-0.5 truncate">{gate.description}</p>
-                    <p className="text-[10px] text-apple-gray-400 font-mono mt-0.5">{gate.envVar}</p>
                   </div>
                   <button
                     type="button"
                     role="switch"
                     aria-checked={gate.enabled}
-                    disabled={gate.locked}
                     onClick={() => handleToggle(gate.name, gate.enabled)}
                     className={clsx(
-                      'relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 flex-shrink-0',
-                      gate.locked
-                        ? 'opacity-40 cursor-not-allowed'
-                        : 'cursor-pointer',
+                      'relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 flex-shrink-0 cursor-pointer',
                       gate.enabled ? 'bg-apple-blue' : 'bg-apple-gray-300'
                     )}
                   >
