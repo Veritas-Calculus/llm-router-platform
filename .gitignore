@@ -53,3 +53,6 @@ server/server
 temp/
 tmp/
 vendor/
+
+# Helm subchart tarballs (downloaded by helm dependency build)
+deploy/helm/*/charts/

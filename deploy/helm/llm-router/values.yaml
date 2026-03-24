@@ -56,6 +56,7 @@ autoscaling:
   minReplicas: 2
   maxReplicas: 10
   targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
 
 nodeSelector: {}
 
@@ -63,29 +64,210 @@ tolerations: []
 
 affinity: {}
 
+# ─── Pod Disruption Budget ─────────────────────────────────────────
+pdb:
+  enabled: true
+  minAvailable: 1
+  # maxUnavailable: 1   # alternative to minAvailable
+
+# ─── Init Containers ───────────────────────────────────────────────
+initContainers:
+  waitForDB:
+    enabled: true
+    image: busybox:1.36
+    timeoutSeconds: 60
+
+# ─── Application Config (Non-Secret) ──────────────────────────────
 config:
+  # Server
   ginMode: release
   logLevel: info
-  domain: localhost:8080
-  corsOrigins: "http://localhost:5173,http://localhost:8080"
+  corsOrigins: ""
+  serverReadTimeoutSeconds: 30
+  serverWriteTimeoutSeconds: 600
+  allowLocalProviders: false
+
+  # Database
   dbHost: postgres
-  dbPort: 5432
+  dbPort: "5432"
   dbUser: postgres
   dbName: llm_router
   dbSslMode: disable
-  redisAddr: redis:6379
-  redisDb: 0
+  dbMaxOpenConns: 100
+  dbMaxIdleConns: 10
+  dbConnMaxLifetimeMinutes: 60
 
-# Securely inject secrets (These should be replaced or managed by external secrets in production)
+  # Redis
+  redisHost: redis
+  redisPort: "6379"
+  redisDb: "0"
+  redisTlsEnabled: false
+
+  # Admin (non-secret parts)
+  adminEmail: admin@example.com
+  adminName: Administrator
+
+  # Auth / JWT (durations)
+  jwtExpiresIn: 1h
+  jwtRefreshExpiresIn: 168h
+
+  # Registration
+  registrationMode: open   # open | invite | closed
+  inviteCode: ""
+
+  # Rate Limiting
+  rateLimitEnabled: true
+  rateLimitRequestsPerMinute: 60
+
+  # Health Check
+  healthCheckEnabled: true
+  healthCheckInterval: 60
+  healthCheckTimeout: 10
+  healthCheckRetryCount: 3
+  healthCheckFailureThreshold: 3
+
+  # Email
+  emailEnabled: false
+  emailSmtpHost: ""
+  emailSmtpPort: 587
+  emailSmtpTls: true
+  emailFrom: ""
+  emailFromName: "LLM Router"
+
+  # Alerts
+  alertEnabled: true
+  alertWebhookUrl: ""
+  alertEmailEnabled: false
+
+  # Frontend
+  frontendUrl: "http://localhost:5173"
+
+  # Payment toggles (secrets are in secret section)
+  stripeEnabled: false
+  wechatPayEnabled: false
+  alipayEnabled: false
+  alipaySandbox: false
+
+  # CAPTCHA toggle
+  turnstileEnabled: false
+
+  # Observability toggles
+  langfuseEnabled: false
+  langfuseHost: "https://cloud.langfuse.com"
+  sentryEnabled: false
+  sentryEnvironment: production
+  sentrySampleRate: "1.0"
+  otelEnabled: false
+  otelEndpoint: ""
+  otelServiceName: "llm-router-platform"
+
+  # Data Retention
+  cleanupHealthRetentionDays: 30
+  cleanupAlertRetentionDays: 90
+  cleanupAuditRetentionDays: 90
+
+# ─── Secrets ───────────────────────────────────────────────────────
+# For production, use existingSecret (populated by External Secrets Operator,
+# Sealed Secrets, or kubectl create secret) instead of inlining values here.
+existingSecret: ""
+
 secret:
   jwtSecret: ""
   adminPassword: ""
   encryptionKey: ""
   dbPassword: ""
   redisPassword: ""
+  # Payment secrets (only set if enabled)
+  stripeSecretKey: ""
+  stripePublishableKey: ""
+  stripeWebhookSecret: ""
+  wechatPayAppId: ""
+  wechatPayMchId: ""
+  wechatPayApiV3Key: ""
+  wechatPaySerialNo: ""
+  wechatPayPrivateKey: ""
+  wechatPayNotifyUrl: ""
+  alipayAppId: ""
+  alipayPrivateKey: ""
+  alipayPublicKey: ""
+  alipayNotifyUrl: ""
+  # CAPTCHA
+  turnstileSiteKey: ""
+  turnstileSecretKey: ""
+  # OAuth2
+  githubClientId: ""
+  githubClientSecret: ""
+  googleClientId: ""
+  googleClientSecret: ""
+  # Observability
+  langfusePublicKey: ""
+  langfuseSecretKey: ""
+  sentryDsn: ""
+  # Vault
+  vaultAddr: ""
+  vaultToken: ""
+  vaultTransitKey: ""
 
+# ─── Prometheus ServiceMonitor ─────────────────────────────────────
 serviceMonitor:
   enabled: false
-  path: /metrics
+  path: /internal/metrics
   interval: 10s
   labels: {}
+
+# ═══════════════════════════════════════════════════════════════════
+# Infrastructure Dependencies (Bitnami Subcharts)
+# ═══════════════════════════════════════════════════════════════════
+# When enabled, the chart deploys PostgreSQL/Redis as subcharts and
+# automatically wires connection config. When disabled, you must point
+# config.dbHost / config.redisHost to your external instances.
+
+# ─── PostgreSQL (Bitnami) ──────────────────────────────────────────
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: ""       # superuser password
+    username: llm_router       # app user
+    password: ""               # app user password (REQUIRED)
+    database: llm_router
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+    # PostgreSQL tuning
+    extendedConfiguration: |
+      max_connections = 200
+      shared_buffers = 512MB
+      effective_cache_size = 1536MB
+      work_mem = 4MB
+      maintenance_work_mem = 128MB
+  metrics:
+    enabled: false     # set true to enable pg_exporter sidecar
+
+# ─── Redis (Bitnami) ──────────────────────────────────────────────
+redis:
+  enabled: true
+  architecture: standalone     # standalone | replication
+  auth:
+    enabled: true
+    password: ""               # REQUIRED when auth.enabled
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  metrics:
+    enabled: false     # set true to enable redis_exporter sidecar

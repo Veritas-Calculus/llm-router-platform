@@ -1,0 +1,31 @@
+🚀 LLM Router Platform has been deployed!
+
+{{- if .Values.ingress.enabled }}
+Access the application at:
+{{- range .Values.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host | default $.Values.ingress.hosts }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else }}
+
+Get the application URL by running:
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "{{ include "llm-router.selectorLabels" . | replace ": " "=" | replace "\n" "," }}" -o jsonpath="{.items[0].metadata.name}")
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:8080
+  echo "Visit http://127.0.0.1:8080"
+{{- end }}
+
+Admin login:
+  Email: {{ .Values.config.adminEmail }}
+  Password: (set via secret.adminPassword or existingSecret)
+
+Management API:
+  GraphQL endpoint: POST /graphql
+  {{- if not (eq .Values.config.ginMode "release") }}
+  GraphQL Playground: GET /graphql (non-release mode)
+  {{- end }}
+
+LLM API (OpenAI-compatible):
+  POST /v1/chat/completions
+  POST /v1/embeddings
+  POST /v1/images/generations

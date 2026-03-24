@@ -5,15 +5,76 @@ metadata:
   labels:
     {{- include "llm-router.labels" . | nindent 4 }}
 data:
+  # ── Server ──
   SERVER_PORT: "8080"
   GIN_MODE: {{ .Values.config.ginMode | quote }}
   LOG_LEVEL: {{ .Values.config.logLevel | quote }}
-  DOMAIN: {{ .Values.config.domain | quote }}
   CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
-  DB_HOST: {{ .Values.config.dbHost | quote }}
+  SERVER_READ_TIMEOUT_SECONDS: {{ .Values.config.serverReadTimeoutSeconds | quote }}
+  SERVER_WRITE_TIMEOUT_SECONDS: {{ .Values.config.serverWriteTimeoutSeconds | quote }}
+  ALLOW_LOCAL_PROVIDERS: {{ .Values.config.allowLocalProviders | quote }}
+  # ── Database (auto-resolved from subchart when postgresql.enabled) ──
+  DB_HOST: {{ include "llm-router.dbHost" . | quote }}
   DB_PORT: {{ .Values.config.dbPort | quote }}
-  DB_USER: {{ .Values.config.dbUser | quote }}
-  DB_NAME: {{ .Values.config.dbName | quote }}
-  DB_SSLMODE: {{ .Values.config.dbSslMode | quote }}
-  REDIS_ADDR: {{ .Values.config.redisAddr | quote }}
+  DB_USER: {{ include "llm-router.dbUser" . | quote }}
+  DB_NAME: {{ include "llm-router.dbName" . | quote }}
+  DB_SSL_MODE: {{ .Values.config.dbSslMode | quote }}
+  DB_MAX_OPEN_CONNS: {{ .Values.config.dbMaxOpenConns | quote }}
+  DB_MAX_IDLE_CONNS: {{ .Values.config.dbMaxIdleConns | quote }}
+  DB_CONN_MAX_LIFETIME_MINUTES: {{ .Values.config.dbConnMaxLifetimeMinutes | quote }}
+  # ── Redis (auto-resolved from subchart when redis.enabled) ──
+  REDIS_HOST: {{ include "llm-router.redisHost" . | quote }}
+  REDIS_PORT: {{ .Values.config.redisPort | quote }}
   REDIS_DB: {{ .Values.config.redisDb | quote }}
+  REDIS_TLS_ENABLED: {{ .Values.config.redisTlsEnabled | quote }}
+  # ── Admin ──
+  ADMIN_EMAIL: {{ .Values.config.adminEmail | quote }}
+  ADMIN_NAME: {{ .Values.config.adminName | quote }}
+  # ── JWT ──
+  JWT_EXPIRES_IN: {{ .Values.config.jwtExpiresIn | quote }}
+  JWT_REFRESH_EXPIRES_IN: {{ .Values.config.jwtRefreshExpiresIn | quote }}
+  # ── Registration ──
+  REGISTRATION_MODE: {{ .Values.config.registrationMode | quote }}
+  INVITE_CODE: {{ .Values.config.inviteCode | quote }}
+  # ── Rate Limiting ──
+  RATE_LIMIT_ENABLED: {{ .Values.config.rateLimitEnabled | quote }}
+  RATE_LIMIT_REQUESTS_PER_MINUTE: {{ .Values.config.rateLimitRequestsPerMinute | quote }}
+  # ── Health Check ──
+  HEALTH_CHECK_ENABLED: {{ .Values.config.healthCheckEnabled | quote }}
+  HEALTH_CHECK_INTERVAL: {{ .Values.config.healthCheckInterval | quote }}
+  HEALTH_CHECK_TIMEOUT: {{ .Values.config.healthCheckTimeout | quote }}
+  HEALTH_CHECK_RETRY_COUNT: {{ .Values.config.healthCheckRetryCount | quote }}
+  HEALTH_CHECK_FAILURE_THRESHOLD: {{ .Values.config.healthCheckFailureThreshold | quote }}
+  # ── Email ──
+  EMAIL_ENABLED: {{ .Values.config.emailEnabled | quote }}
+  EMAIL_SMTP_HOST: {{ .Values.config.emailSmtpHost | quote }}
+  EMAIL_SMTP_PORT: {{ .Values.config.emailSmtpPort | quote }}
+  EMAIL_SMTP_TLS: {{ .Values.config.emailSmtpTls | quote }}
+  EMAIL_FROM: {{ .Values.config.emailFrom | quote }}
+  EMAIL_FROM_NAME: {{ .Values.config.emailFromName | quote }}
+  # ── Alerts ──
+  ALERT_ENABLED: {{ .Values.config.alertEnabled | quote }}
+  ALERT_WEBHOOK_URL: {{ .Values.config.alertWebhookUrl | quote }}
+  ALERT_EMAIL_ENABLED: {{ .Values.config.alertEmailEnabled | quote }}
+  # ── Frontend ──
+  FRONTEND_URL: {{ .Values.config.frontendUrl | quote }}
+  # ── Payment Toggles ──
+  STRIPE_ENABLED: {{ .Values.config.stripeEnabled | quote }}
+  WECHAT_PAY_ENABLED: {{ .Values.config.wechatPayEnabled | quote }}
+  ALIPAY_ENABLED: {{ .Values.config.alipayEnabled | quote }}
+  ALIPAY_SANDBOX: {{ .Values.config.alipaySandbox | quote }}
+  # ── CAPTCHA ──
+  TURNSTILE_ENABLED: {{ .Values.config.turnstileEnabled | quote }}
+  # ── Observability ──
+  LANGFUSE_ENABLED: {{ .Values.config.langfuseEnabled | quote }}
+  LANGFUSE_HOST: {{ .Values.config.langfuseHost | quote }}
+  SENTRY_ENABLED: {{ .Values.config.sentryEnabled | quote }}
+  SENTRY_ENVIRONMENT: {{ .Values.config.sentryEnvironment | quote }}
+  SENTRY_SAMPLE_RATE: {{ .Values.config.sentrySampleRate | quote }}
+  OTEL_ENABLED: {{ .Values.config.otelEnabled | quote }}
+  OTEL_ENDPOINT: {{ .Values.config.otelEndpoint | quote }}
+  OTEL_SERVICE_NAME: {{ .Values.config.otelServiceName | quote }}
+  # ── Data Retention ──
+  CLEANUP_HEALTH_RETENTION_DAYS: {{ .Values.config.cleanupHealthRetentionDays | quote }}
+  CLEANUP_ALERT_RETENTION_DAYS: {{ .Values.config.cleanupAlertRetentionDays | quote }}
+  CLEANUP_AUDIT_RETENTION_DAYS: {{ .Values.config.cleanupAuditRetentionDays | quote }}
