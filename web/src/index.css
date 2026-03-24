@@ -174,7 +174,9 @@
     background-image: none !important;
   }
 
-  .label {
+  /* ── Form labels ──────────────────────────────────────────── */
+  .label,
+  .form-label {
     display: block;
     font-size: 0.875rem;
     font-weight: 500;
@@ -182,27 +184,58 @@
     margin-bottom: 0.375rem;
   }
 
-  .input {
+  /* ── Form inputs ──────────────────────────────────────────── */
+  .input,
+  .form-input {
     width: 100%;
-    padding: 0.75rem 1rem;
+    padding: 0.625rem 0.875rem;
     border-radius: var(--radius-apple);
     border: 1px solid var(--theme-border);
-    background-color: var(--color-apple-gray-50, #F5F5F7);
+    background-color: var(--theme-bg-input);
     color: var(--theme-text);
-    font-size: 1rem;
+    font-size: 0.9375rem;
+    line-height: 1.5;
     transition: all 0.2s ease;
   }
 
-  .input::placeholder {
+  .input::placeholder,
+  .form-input::placeholder {
     color: var(--theme-text-muted);
   }
 
-  .input:focus {
+  .input:focus,
+  .form-input:focus {
     outline: none;
     border-color: var(--color-apple-blue);
     box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
   }
 
+  select.form-input {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23636366'%3E%3Cpath fill-rule='evenodd' d='M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z' clip-rule='evenodd'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1.25rem;
+    padding-right: 2.5rem;
+  }
+
+  textarea.form-input {
+    resize: vertical;
+    min-height: 2.5rem;
+  }
+
+  /* ── Checkbox styling ─────────────────────────────────────── */
+  input[type="checkbox"].form-checkbox,
+  .form-input[type="checkbox"] {
+    width: 1.125rem;
+    height: 1.125rem;
+    border-radius: 0.375rem;
+    border: 1.5px solid var(--theme-border);
+    accent-color: var(--color-apple-blue);
+    cursor: pointer;
+  }
+
+  /* ── Buttons ──────────────────────────────────────────────── */
   .btn {
     display: inline-flex;
     align-items: center;
@@ -222,12 +255,25 @@
   }
 
   .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1.125rem;
+    border-radius: var(--radius-apple);
+    font-weight: 500;
+    font-size: 0.9375rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    border: none;
     background-color: var(--color-apple-blue);
     color: white;
+    box-shadow: 0 1px 3px rgba(0, 122, 255, 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
     background-color: var(--color-apple-blue-hover);
+    box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+    transform: translateY(-0.5px);
   }
 
   .btn-primary:focus {
@@ -235,16 +281,49 @@
     box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.3);
   }
 
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
   .btn-secondary {
-    background-color: var(--theme-bg-hover);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1.125rem;
+    border-radius: var(--radius-apple);
+    font-weight: 500;
+    font-size: 0.9375rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    border: 1px solid var(--theme-border);
+    background-color: var(--theme-bg-card);
     color: var(--theme-text);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background-color: var(--theme-border);
+    background-color: var(--theme-bg-hover);
+    border-color: var(--theme-text-muted);
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .btn-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1.125rem;
+    border-radius: var(--radius-apple);
+    font-weight: 500;
+    font-size: 0.9375rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    border: none;
     background-color: var(--color-apple-red);
     color: white;
   }
@@ -253,13 +332,102 @@
     opacity: 0.9;
   }
 
+  .btn-danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-apple);
+    font-weight: 500;
+    font-size: 0.9375rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    border: none;
     background-color: transparent;
     color: var(--theme-text-secondary);
   }
 
   .btn-ghost:hover:not(:disabled) {
     background-color: var(--theme-bg-hover);
+  }
+
+  .btn-ghost:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Icon-only button (edit, delete, close, etc.) */
+  .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.5rem;
+    transition: all 0.15s ease;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: var(--theme-text-muted);
+  }
+
+  .btn-icon:hover {
+    background-color: var(--theme-bg-hover);
+    color: var(--theme-text);
+  }
+
+  .btn-icon-danger {
+    color: var(--theme-text-muted);
+  }
+
+  .btn-icon-danger:hover {
+    background-color: rgba(255, 59, 48, 0.1);
+    color: var(--color-apple-red);
+  }
+
+  /* ── Markdown Editor ──────────────────────────────────────── */
+  .markdown-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--theme-border-light);
+    margin-bottom: 0;
+  }
+
+  .markdown-tab {
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--theme-text-muted);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: transparent;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+  }
+
+  .markdown-tab:hover {
+    color: var(--theme-text);
+  }
+
+  .markdown-tab--active {
+    color: var(--color-apple-blue);
+    border-bottom-color: var(--color-apple-blue);
+  }
+
+  .markdown-preview {
+    padding: 0.875rem;
+    min-height: 8rem;
+    border: 1px solid var(--theme-border);
+    border-radius: var(--radius-apple);
+    background-color: var(--theme-bg-input);
+    overflow-y: auto;
   }
 
   .badge {

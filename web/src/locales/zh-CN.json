@@ -48,6 +48,8 @@
         "all": "全部",
         "none": "无",
         "description": "描述",
+        "write": "编写",
+        "preview": "预览",
         "processing": "处理中...",
         "revoked": "已吊销",
         "key": "密钥",

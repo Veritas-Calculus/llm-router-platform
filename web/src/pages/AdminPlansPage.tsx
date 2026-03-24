@@ -59,7 +59,7 @@ function AdminPlansPage() {
           <p className="mt-1 text-apple-gray-500">{t('plans.subtitle')}</p>
         </div>
         <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-          <PlusIcon className="w-5 h-5 mr-2" />
+          <PlusIcon className="w-4 h-4" />
           {t('plans.create')}
         </button>
       </div>
@@ -68,7 +68,7 @@ function AdminPlansPage() {
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="card p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">{editing ? t('plans.edit') : t('plans.create')}</h3>
-            <button onClick={() => { setCreating(false); setEditing(null); }}><XMarkIcon className="w-5 h-5" /></button>
+            <button onClick={() => { setCreating(false); setEditing(null); }} className="btn-icon"><XMarkIcon className="w-5 h-5" /></button>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -106,7 +106,8 @@ function AdminPlansPage() {
               <label htmlFor="plan-active" className="text-sm">{t('common.active')}</label>
             </div>
           </div>
-          <div className="mt-4 flex justify-end">
+          <div className="mt-5 flex justify-end gap-3">
+            <button onClick={() => { setCreating(false); setEditing(null); }} className="btn-secondary">{t('common.cancel') || 'Cancel'}</button>
             <button onClick={handleSubmit} disabled={saving} className="btn-primary">
               {saving ? t('common.loading') : t('common.save')}
             </button>
@@ -114,7 +115,7 @@ function AdminPlansPage() {
         </motion.div>
       )}
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card overflow-hidden">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card overflow-hidden p-0">
         {loading ? (
           <div className="p-8 text-center text-apple-gray-400">{t('common.loading')}</div>
         ) : plans.length === 0 ? (
@@ -124,33 +125,32 @@ function AdminPlansPage() {
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-apple-gray-50 text-apple-gray-500 text-xs uppercase">
+            <thead className="bg-apple-gray-50 text-apple-gray-500 text-xs uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-3 text-left">{t('plans.name')}</th>
-                <th className="px-4 py-3 text-right">{t('plans.price_month')}</th>
-                <th className="px-4 py-3 text-right">{t('plans.token_limit')}</th>
-                <th className="px-4 py-3 text-right">{t('plans.rate_limit')}</th>
-                <th className="px-4 py-3 text-center">{t('common.status')}</th>
-                <th className="px-4 py-3 text-right">{t('common.actions')}</th>
+                <th className="px-5 py-3 text-left font-medium">{t('plans.name')}</th>
+                <th className="px-5 py-3 text-right font-medium">{t('plans.price_month')}</th>
+                <th className="px-5 py-3 text-right font-medium">{t('plans.token_limit')}</th>
+                <th className="px-5 py-3 text-right font-medium">{t('plans.rate_limit')}</th>
+                <th className="px-5 py-3 text-center font-medium">{t('common.status')}</th>
+                <th className="px-5 py-3 text-right font-medium">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-apple-gray-100">
               {plans.map(plan => (
-                <tr key={plan.id} className="hover:bg-apple-gray-50/50">
-                  <td className="px-4 py-3 font-medium">{plan.name}</td>
-                  <td className="px-4 py-3 text-right">${plan.priceMonth.toFixed(2)}/mo</td>
-                  <td className="px-4 py-3 text-right">{(plan.tokenLimit / 1000).toFixed(0)}K</td>
-                  <td className="px-4 py-3 text-right">{plan.rateLimit} req/min</td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                      plan.isActive ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                <tr key={plan.id} className="hover:bg-apple-gray-50/50 transition-colors">
+                  <td className="px-5 py-3.5 font-medium text-apple-gray-900">{plan.name}</td>
+                  <td className="px-5 py-3.5 text-right">${plan.priceMonth.toFixed(2)}/mo</td>
+                  <td className="px-5 py-3.5 text-right">{(plan.tokenLimit / 1000).toFixed(0)}K</td>
+                  <td className="px-5 py-3.5 text-right">{plan.rateLimit} req/min</td>
+                  <td className="px-5 py-3.5 text-center">
+                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      plan.isActive ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>
                       {plan.isActive ? t('common.active') : t('common.inactive')}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => openEdit(plan)} className="text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 text-sm">
+                  <td className="px-5 py-3.5 text-right">
+                    <button onClick={() => openEdit(plan)} className="btn-icon" title={t('common.edit')}>
                       <PencilSquareIcon className="w-4 h-4" />
-                      {t('common.edit')}
                     </button>
                   </td>
                 </tr>

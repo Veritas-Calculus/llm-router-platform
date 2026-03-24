@@ -48,6 +48,8 @@
         "all": "All",
         "none": "None",
         "description": "Description",
+        "write": "Write",
+        "preview": "Preview",
         "processing": "Processing...",
         "revoked": "Revoked",
         "key": "Key",

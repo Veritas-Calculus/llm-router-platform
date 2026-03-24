@@ -66,7 +66,7 @@ function CouponsPage() {
           <p className="mt-1 text-apple-gray-500">{t('coupons.subtitle')}</p>
         </div>
         <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-          <PlusIcon className="w-5 h-5 mr-2" />{t('coupons.create')}
+          <PlusIcon className="w-4 h-4" />{t('coupons.create')}
         </button>
       </div>
 
@@ -74,7 +74,7 @@ function CouponsPage() {
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="card p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">{editing ? t('coupons.edit') : t('coupons.create')}</h3>
-            <button onClick={() => { setCreating(false); setEditing(null); }}><XMarkIcon className="w-5 h-5" /></button>
+            <button onClick={() => { setCreating(false); setEditing(null); }} className="btn-icon"><XMarkIcon className="w-5 h-5" /></button>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -113,7 +113,8 @@ function CouponsPage() {
               <label htmlFor="coupon-active" className="text-sm">{t('common.active')}</label>
             </div>
           </div>
-          <div className="mt-4 flex justify-end">
+          <div className="mt-5 flex justify-end gap-3">
+            <button onClick={() => { setCreating(false); setEditing(null); }} className="btn-secondary">{t('common.cancel') || 'Cancel'}</button>
             <button onClick={handleSubmit} disabled={saving} className="btn-primary">
               {saving ? t('common.loading') : t('common.save')}
             </button>
@@ -121,7 +122,7 @@ function CouponsPage() {
         </motion.div>
       )}
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card overflow-hidden">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card overflow-hidden p-0">
         {loading ? (
           <div className="p-8 text-center text-apple-gray-400">{t('common.loading')}</div>
         ) : items.length === 0 ? (
@@ -131,38 +132,40 @@ function CouponsPage() {
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-apple-gray-50 text-apple-gray-500 text-xs uppercase">
+            <thead className="bg-apple-gray-50 text-apple-gray-500 text-xs uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-3 text-left">{t('coupons.code')}</th>
-                <th className="px-4 py-3 text-left">{t('coupons.name')}</th>
-                <th className="px-4 py-3 text-right">{t('coupons.discount')}</th>
-                <th className="px-4 py-3 text-right">{t('coupons.usage')}</th>
-                <th className="px-4 py-3 text-center">{t('common.status')}</th>
-                <th className="px-4 py-3 text-right">{t('common.actions')}</th>
+                <th className="px-5 py-3 text-left font-medium">{t('coupons.code')}</th>
+                <th className="px-5 py-3 text-left font-medium">{t('coupons.name')}</th>
+                <th className="px-5 py-3 text-right font-medium">{t('coupons.discount')}</th>
+                <th className="px-5 py-3 text-right font-medium">{t('coupons.usage')}</th>
+                <th className="px-5 py-3 text-center font-medium">{t('common.status')}</th>
+                <th className="px-5 py-3 text-right font-medium">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-apple-gray-100">
               {items.map(c => (
-                <tr key={c.id} className="hover:bg-apple-gray-50/50">
-                  <td className="px-4 py-3 font-mono text-xs">{c.code}</td>
-                  <td className="px-4 py-3">{c.name}</td>
-                  <td className="px-4 py-3 text-right">
+                <tr key={c.id} className="hover:bg-apple-gray-50/50 transition-colors">
+                  <td className="px-5 py-3.5 font-mono text-xs">{c.code}</td>
+                  <td className="px-5 py-3.5">{c.name}</td>
+                  <td className="px-5 py-3.5 text-right">
                     {c.type === 'percent' ? `${c.discountValue}%` : `$${c.discountValue.toFixed(2)}`}
                   </td>
-                  <td className="px-4 py-3 text-right">{c.useCount}{c.maxUses > 0 ? `/${c.maxUses}` : ''}</td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                      c.isActive ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                  <td className="px-5 py-3.5 text-right">{c.useCount}{c.maxUses > 0 ? `/${c.maxUses}` : ''}</td>
+                  <td className="px-5 py-3.5 text-center">
+                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      c.isActive ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>
                       {c.isActive ? t('common.active') : t('common.inactive')}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right flex gap-2 justify-end">
-                    <button onClick={() => openEdit(c)} className="text-blue-600 hover:text-blue-700">
-                      <PencilSquareIcon className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => handleDelete(c.id)} className="text-red-600 hover:text-red-700">
-                      <TrashIcon className="w-4 h-4" />
-                    </button>
+                  <td className="px-5 py-3.5 text-right">
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={() => openEdit(c)} className="btn-icon" title={t('common.edit')}>
+                        <PencilSquareIcon className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleDelete(c.id)} className="btn-icon btn-icon-danger" title={t('common.delete')}>
+                        <TrashIcon className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

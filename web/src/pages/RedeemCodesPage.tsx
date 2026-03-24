@@ -78,7 +78,7 @@ function RedeemCodesPage() {
           <p className="mt-1 text-apple-gray-500">{t('redeem_codes.subtitle')}</p>
         </div>
         <button onClick={() => setShowForm(true)} className="btn-primary flex items-center gap-2">
-          <PlusIcon className="w-5 h-5 mr-2" />
+          <PlusIcon className="w-4 h-4" />
           {t('redeem_codes.generate')}
         </button>
       </div>
@@ -87,7 +87,7 @@ function RedeemCodesPage() {
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="card p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">{t('redeem_codes.generate_form_title')}</h3>
-            <button onClick={() => setShowForm(false)}><XMarkIcon className="w-5 h-5" /></button>
+            <button onClick={() => setShowForm(false)} className="btn-icon"><XMarkIcon className="w-5 h-5" /></button>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -113,7 +113,8 @@ function RedeemCodesPage() {
                 onChange={e => setFormData(d => ({ ...d, note: e.target.value }))} />
             </div>
           </div>
-          <div className="mt-4 flex justify-end">
+          <div className="mt-5 flex justify-end gap-3">
+            <button onClick={() => setShowForm(false)} className="btn-secondary">{t('common.cancel') || 'Cancel'}</button>
             <button onClick={handleGenerate} disabled={generating} className="btn-primary">
               {generating ? t('common.loading') : t('redeem_codes.generate')}
             </button>
@@ -121,7 +122,7 @@ function RedeemCodesPage() {
         </motion.div>
       )}
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card overflow-hidden">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card overflow-hidden p-0">
         {loading ? (
           <div className="p-8 text-center text-apple-gray-400">{t('common.loading')}</div>
         ) : codes.length === 0 ? (
@@ -131,33 +132,33 @@ function RedeemCodesPage() {
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-apple-gray-50 text-apple-gray-500 text-xs uppercase">
+            <thead className="bg-apple-gray-50 text-apple-gray-500 text-xs uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-3 text-left">{t('redeem_codes.code')}</th>
-                <th className="px-4 py-3 text-left">{t('redeem_codes.type')}</th>
-                <th className="px-4 py-3 text-right">{t('redeem_codes.credit_amount')}</th>
-                <th className="px-4 py-3 text-center">{t('common.status')}</th>
-                <th className="px-4 py-3 text-left">{t('common.created')}</th>
-                <th className="px-4 py-3 text-right">{t('common.actions')}</th>
+                <th className="px-5 py-3 text-left font-medium">{t('redeem_codes.code')}</th>
+                <th className="px-5 py-3 text-left font-medium">{t('redeem_codes.type')}</th>
+                <th className="px-5 py-3 text-right font-medium">{t('redeem_codes.credit_amount')}</th>
+                <th className="px-5 py-3 text-center font-medium">{t('common.status')}</th>
+                <th className="px-5 py-3 text-left font-medium">{t('common.created')}</th>
+                <th className="px-5 py-3 text-right font-medium">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-apple-gray-100">
               {codes.map(code => (
-                <tr key={code.id} className="hover:bg-apple-gray-50/50">
-                  <td className="px-4 py-3 font-mono text-xs">{code.code}</td>
-                  <td className="px-4 py-3 capitalize">{code.type}</td>
-                  <td className="px-4 py-3 text-right">${code.creditAmount.toFixed(2)}</td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                      code.usedBy ? 'bg-gray-100 text-gray-600' : code.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                <tr key={code.id} className="hover:bg-apple-gray-50/50 transition-colors">
+                  <td className="px-5 py-3.5 font-mono text-xs">{code.code}</td>
+                  <td className="px-5 py-3.5 capitalize">{code.type}</td>
+                  <td className="px-5 py-3.5 text-right">${code.creditAmount.toFixed(2)}</td>
+                  <td className="px-5 py-3.5 text-center">
+                    <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      code.usedBy ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300' : code.isActive ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300'
                     }`}>
                       {code.usedBy ? t('redeem_codes.used') : code.isActive ? t('common.active') : t('common.inactive')}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-apple-gray-500">{new Date(code.createdAt).toLocaleDateString()}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-5 py-3.5 text-apple-gray-500">{new Date(code.createdAt).toLocaleDateString()}</td>
+                  <td className="px-5 py-3.5 text-right">
                     {code.isActive && !code.usedBy && (
-                      <button onClick={() => handleRevoke(code.id)} className="text-red-600 hover:text-red-700 text-xs font-medium">
+                      <button onClick={() => handleRevoke(code.id)} className="text-xs font-medium text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
                         {t('redeem_codes.revoke')}
                       </button>
                     )}
