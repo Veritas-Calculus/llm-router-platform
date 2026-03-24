@@ -105,7 +105,7 @@ func (h *OperationalHandler) Readiness(c *gin.Context) {
 	if h.db != nil {
 		sqlDB, err := h.db.DB()
 		if err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not ready", "error": err.Error()})
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not ready", "error": "database connection unavailable"})
 			return
 		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 1*time.Second)

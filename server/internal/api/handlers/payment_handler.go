@@ -31,13 +31,14 @@ func (h *PaymentHandler) CreateCheckoutSession(c *gin.Context) {
 		PlanID uuid.UUID `json:"plan_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
 		return
 	}
 
 	url, err := h.paymentService.CreateCheckoutSession(c.Request.Context(), user.ID, req.PlanID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.logger.Error("failed to create checkout session", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create checkout session"})
 		return
 	}
 
@@ -51,13 +52,14 @@ func (h *PaymentHandler) CreateRechargeSession(c *gin.Context) {
 		Amount float64 `json:"amount" binding:"required,gt=0"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
 		return
 	}
 
 	url, err := h.paymentService.CreateRechargeSession(c.Request.Context(), user.ID, req.Amount)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.logger.Error("failed to create recharge session", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create recharge session"})
 		return
 	}
 
@@ -68,7 +70,8 @@ func (h *PaymentHandler) GetMyOrders(c *gin.Context) {
 	user := c.MustGet("project").(*models.Project)
 	orders, err := h.paymentService.GetUserOrders(c.Request.Context(), user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.logger.Error("failed to get user orders", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve orders"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": orders})
@@ -78,7 +81,8 @@ func (h *PaymentHandler) GetMyTransactions(c *gin.Context) {
 	user := c.MustGet("project").(*models.Project)
 	txs, err := h.paymentService.GetUserTransactions(c.Request.Context(), user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		h.logger.Error("failed to get user transactions", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve transactions"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": txs})
@@ -94,7 +98,7 @@ func (h *PaymentHandler) StripeWebhook(c *gin.Context) {
 	sigHeader := c.GetHeader("Stripe-Signature")
 	if err := h.paymentService.HandleWebhook(payload, sigHeader); err != nil {
 		h.logger.Error("webhook failed", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "webhook processing failed"})
 		return
 	}
 

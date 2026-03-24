@@ -66,7 +66,7 @@ func (h *OAuth2Handler) Redirect(c *gin.Context) {
 	provider := c.Param("provider")
 	pcfg, err := h.providerConfig(c.Request.Context(), provider)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "requested OAuth2 provider is not available"})
 		return
 	}
 

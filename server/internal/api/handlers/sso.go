@@ -144,7 +144,7 @@ func (h *SSOHandler) Callback(c *gin.Context) {
 	user, err := h.jitProvisionUser(&idp, email, name, oauthID, groups)
 	if err != nil {
 		h.logger.Error("JIT Provisioning failed", zap.Error(err))
-		h.redirectWithError(c, "Account provisioning failed: "+err.Error())
+		h.redirectWithError(c, "Account provisioning failed")
 		return
 	}
 

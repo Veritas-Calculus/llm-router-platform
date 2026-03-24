@@ -391,9 +391,33 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	// Stream Resume Injection: When upstream crashes, the client can pass a resume pointer containing the last incomplete string.
 	// We inject a system directive to guide the model to seamlessly continue.
+	// Security: validate that the resume ID corresponds to an actual interrupted stream for this project.
 	if req.ResumeFromStreamID != "" {
-		resumeContext := "System Protocol: The previous generation was interrupted due to a network or upstream error. Please continue writing seamlessly from exactly where you left off. Do not repeat anything that was already written. End of System Protocol."
-		messages = append(messages, provider.Message{Role: "system", Content: provider.StringContent(resumeContext)})
+		resumeID, parseErr := uuid.Parse(req.ResumeFromStreamID)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": gin.H{
+					"message": "invalid resume_from_stream_id format",
+					"type":    "invalid_request_error",
+					"code":    "invalid_request",
+				},
+			})
+			return
+		}
+		// Verify the referenced usage log exists, belongs to this project, and was interrupted (non-200)
+		var count int64
+		if h.db != nil {
+			h.db.Model(&models.UsageLog{}).Where("id = ? AND project_id = ? AND status_code != ?", resumeID, projectObj.ID, http.StatusOK).Count(&count)
+		}
+		if count > 0 {
+			resumeContext := "System Protocol: The previous generation was interrupted due to a network or upstream error. Please continue writing seamlessly from exactly where you left off. Do not repeat anything that was already written. End of System Protocol."
+			messages = append(messages, provider.Message{Role: "system", Content: provider.StringContent(resumeContext)})
+		} else {
+			h.logger.Warn("invalid resume_from_stream_id: no matching interrupted stream found",
+				zap.String("resume_id", sanitize.LogValue(req.ResumeFromStreamID)),
+				zap.String("project_id", projectObj.ID.String()),
+			)
+		}
 	}
 
 	// === Data Loss Prevention (DLP) ===
@@ -564,8 +588,8 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			h.saveErrorLog(c.Request.Context(), err, req.TrajectoryID, trace.GetID(), selectedProvider.Name, req.Model)
 			h.logger.Error("failed to establish stream", zap.Error(err))
 			usageLog.StatusCode = http.StatusBadGateway
-			usageLog.ErrorMessage = err.Error()
-			_ = h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), err.Error())
+			usageLog.ErrorMessage = sanitize.TruncateErrorMessage(err.Error())
+			_ = h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), sanitize.TruncateErrorMessage(err.Error()))
 
 			c.JSON(http.StatusBadGateway, router_errs.NewRouterError(
 				router_errs.ErrCodeInternalSystemError, http.StatusBadGateway, "server_error", "upstream provider error: stream failed to initialize", err,
@@ -601,7 +625,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 			ErrorMessage: "all API keys failed",
 		}
 		if err != nil {
-			usageLog.ErrorMessage = err.Error()
+			usageLog.ErrorMessage = sanitize.TruncateErrorMessage(err.Error())
 		}
 		_ = h.billing.RecordUsage(c.Request.Context(), usageLog)
 
@@ -688,7 +712,8 @@ func (h *ChatHandler) saveErrorLog(ctx context.Context, err error, trajectoryID,
 
 	var provErr *provider.ProviderError
 	if errors.As(err, &provErr) {
-		headersBytes, _ := json.Marshal(provErr.Headers)
+		sanitizedHeaders := sanitize.RedactHeaders(provErr.Headers)
+		sanitizedBody := sanitize.TruncateResponseBody(provErr.Body)
 		errLog := &models.ErrorLog{
 			ID:           uuid.New(),
 			TrajectoryID: trajectoryID,
@@ -696,8 +721,8 @@ func (h *ChatHandler) saveErrorLog(ctx context.Context, err error, trajectoryID,
 			Provider:     providerName,
 			Model:        modelName,
 			StatusCode:   provErr.StatusCode,
-			Headers:      headersBytes,
-			ResponseBody: provErr.Body,
+			Headers:      sanitizedHeaders,
+			ResponseBody: sanitizedBody,
 			CreatedAt:    time.Now(),
 		}
 		if dbErr := h.db.Create(errLog).Error; dbErr != nil {

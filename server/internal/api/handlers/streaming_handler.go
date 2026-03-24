@@ -12,6 +12,7 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -94,7 +95,7 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 	errStr := ""
 	if streamErr != nil {
 		statusCode = http.StatusPartialContent
-		errStr = streamErr.Error()
+		errStr = sanitize.TruncateErrorMessage(streamErr.Error())
 	}
 
 	_ = h.billing.UpdateUsageTokens(context.Background(), logID, promptTokens, completionTokens, statusCode, time.Since(start).Milliseconds(), errStr)

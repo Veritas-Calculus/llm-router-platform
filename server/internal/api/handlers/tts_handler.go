@@ -8,6 +8,7 @@ import (
 
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/provider"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -95,7 +96,7 @@ func (h *ChatHandler) SynthesizeSpeech(c *gin.Context) {
 			StatusCode: http.StatusBadGateway,
 		}
 		if err != nil {
-			usageLog.ErrorMessage = err.Error()
+			usageLog.ErrorMessage = sanitize.TruncateErrorMessage(err.Error())
 			if err == provider.ErrNotImplemented {
 				usageLog.StatusCode = http.StatusNotImplemented
 			}
