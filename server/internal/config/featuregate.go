@@ -80,22 +80,6 @@ type gateMeta struct {
 	Description string
 }
 
-// featureDefaults defines code-level defaults for each gate.
-// Security/Observability default OFF; Feature gates default ON.
-var featureDefaults = map[string]bool{
-	"GraphQLIntrospection":   false,
-	"GraphQLPlayground":      false,
-	"SwaggerDocs":            false,
-	"PprofDebug":             false,
-	"AutoMigrate":            false,
-	"SemanticCache":          true,
-	"ConversationMemory":     true,
-	"PromptSafety":           true,
-	"MCPIntegration":         true,
-	"WebhookNotify":          true,
-	"MetricsUnauthenticated": false,
-	"OTelTracing":            false,
-}
 
 // GateInfo describes a single feature gate for API/admin consumption.
 type GateInfo struct {

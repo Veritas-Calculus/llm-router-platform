@@ -132,7 +132,7 @@ func (s *AlipayService) CreatePreCreateOrder(ctx context.Context, userID uuid.UU
 	if err != nil {
 		return "", "", fmt.Errorf("alipay API request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 
@@ -253,7 +253,7 @@ func (s *AlipayService) QueryOrderStatus(ctx context.Context, orderNo string) (s
 	if err != nil {
 		return "unknown", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	var result struct {

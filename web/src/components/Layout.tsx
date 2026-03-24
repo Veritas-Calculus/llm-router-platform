@@ -124,7 +124,7 @@ const adminNavGroups = [
 
 /* ── Shared NavItem renderer ── */
 
-function NavItem({ item, t }: { item: { key: string; href: string; icon: any }; t: (key: string) => string }) {
+function NavItem({ item, t }: { item: { key: string; href: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>> }; t: (key: string) => string }) {
   return (
     <NavLink
       to={item.href}
@@ -171,7 +171,7 @@ function Layout() {
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   // Load site config
-  const { data: siteData } = useQuery<any>(SITE_CONFIG_QUERY);
+  const { data: siteData } = useQuery<{ siteConfig: { siteName: string } }>(SITE_CONFIG_QUERY);
   const siteName = siteData?.siteConfig?.siteName || 'Router';
   const siteInitial = siteName.charAt(0).toUpperCase();
 

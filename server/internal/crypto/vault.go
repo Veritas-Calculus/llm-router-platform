@@ -116,7 +116,7 @@ func (v *VaultEncryptor) doRequest(method, url string, payload interface{}) (*va
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

@@ -1,0 +1,23 @@
+# ── Semgrep ignore rules ──────────────────────────────────────────
+# https://semgrep.dev/docs/ignoring-files-folders-code
+
+# Vendor dependencies
+vendor/
+node_modules/
+
+# Generated code
+server/internal/graphql/generated/
+
+# nginx configs: false positive on $host (required for reverse proxy)
+# and Connection 'upgrade' (required for WebSocket/SSE proxying).
+# These are intentional and reviewed — h2c smuggling is mitigated by
+# running behind a TLS-terminating load balancer or the deploy/tls config.
+deploy/tls/nginx/
+web/nginx.conf
+
+# Go JSON deserialization: Semgrep's unsafe-deserialization-interface rule
+# flags json.NewDecoder().Decode(&typedStruct) as unsafe. Our usage always
+# decodes into strongly-typed structs (not interface{}) and only processes
+# responses from trusted upstream LLM providers behind authenticated APIs.
+# This is a known false positive for this rule.
+# Rule: go.lang.security.deserialization.unsafe-deserialization-interface

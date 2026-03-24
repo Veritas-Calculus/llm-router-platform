@@ -137,20 +137,3 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 		}(promptHash, promptEmbedding, fullText, selectedProvider.Name, req.Model)
 	}
 }
-
-// estimateTokenCount estimates token count from text.
-// Uses a heuristic of ~4 characters per token for English (GPT-family tokenizers).
-// For CJK text, each character is roughly 1-2 tokens, so we use a conservative
-// estimate that works reasonably for mixed-language content.
-func estimateTokenCount(text string) int {
-	if text == "" {
-		return 0
-	}
-	charCount := len(text)
-	// ~4 bytes per token is a reasonable average for mixed content
-	tokens := (charCount + 3) / 4
-	if tokens < 1 {
-		tokens = 1
-	}
-	return tokens
-}

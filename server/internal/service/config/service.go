@@ -213,7 +213,7 @@ func (s *Service) StartFGSubscriber(ctx context.Context, fg *config.FeatureGates
 
 	go func() {
 		pubsub := s.rdb.Subscribe(ctx, fgUpdateChannel)
-		defer pubsub.Close()
+		defer func() { _ = pubsub.Close() }()
 
 		s.logger.Info("FG subscriber started", zap.String("channel", fgUpdateChannel))
 

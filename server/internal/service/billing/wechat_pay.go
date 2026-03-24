@@ -118,7 +118,7 @@ func (s *WechatPayService) CreateNativeOrder(ctx context.Context, userID uuid.UU
 	if err != nil {
 		return "", "", fmt.Errorf("wechat pay API request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 
@@ -253,7 +253,7 @@ func (s *WechatPayService) QueryOrderStatus(ctx context.Context, orderNo string)
 	if err != nil {
 		return "unknown", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, _ := io.ReadAll(resp.Body)
 	var result struct {
