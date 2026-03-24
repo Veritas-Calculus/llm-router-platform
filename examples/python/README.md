@@ -26,7 +26,7 @@ The examples demonstrate the complete flow:
    pip install -r requirements.txt
    ```
 
-3. Configure at least one provider in the dashboard (http://localhost:5173)
+3. Configure at least one provider in the dashboard (http://localhost)
 
 ## Examples
 
@@ -78,7 +78,7 @@ You can set the following environment variables:
 
 - `LLM_ROUTER_URL`: The base URL of your LLM Router instance (default: `http://localhost:8080`)
 - `LLM_ROUTER_EMAIL`: Your login email (default: `admin@example.com`)
-- `LLM_ROUTER_PASSWORD`: Your login password (default: `admin123`)
+- `LLM_ROUTER_PASSWORD`: Your login password (default: `DevAdmin123!`)
 
 Example:
 ```bash
@@ -96,7 +96,7 @@ Once you have an API key, you can use it directly without logging in each time:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8080/api/v1",
+    base_url="http://localhost:8080/v1",
     api_key="your-api-key-here",  # API Key, not JWT token!
 )
 
@@ -113,9 +113,9 @@ Or with requests:
 import requests
 
 response = requests.post(
-    "http://localhost:8080/api/v1/chat/completions",
+    "http://localhost:8080/v1/chat/completions",
     json={"model": "llama2", "messages": [{"role": "user", "content": "Hello!"}]},
-    headers={"X-API-Key": "your-api-key-here"},
+    headers={"Authorization": "Bearer your-api-key-here"},
 )
 print(response.json()["choices"][0]["message"]["content"])
 ```

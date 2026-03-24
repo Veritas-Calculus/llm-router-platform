@@ -80,7 +80,7 @@ web/
 
 - **Styling**: Apple Design (neutral colors `#F5F5F7`, border-radius 12px+)
 - **State**: Zustand for global state
-- **Data fetching**: Axios via `@/lib/api`
+- **Data fetching**: Apollo Client (`useQuery`/`useMutation`) via `@/lib/graphql/`
 - **Testing**: Vitest + React Testing Library
 
 ## Pull Request Guidelines

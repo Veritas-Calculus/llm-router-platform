@@ -36,7 +36,7 @@ k6 run --env BASE_URL=http://localhost:8080 \
 | Metric | Target |
 |--------|--------|
 | `/health` P95 | < 100ms |
-| `/api/v1/dashboard/overview` P95 | < 500ms |
+| `/graphql` (dashboard query) P95 | < 500ms |
 | `/v1/chat/completions` P95 | < 5000ms |
 | Error rate | < 5% |
 

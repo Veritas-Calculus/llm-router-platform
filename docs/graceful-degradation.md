@@ -54,6 +54,41 @@ This document describes how the LLM Router Platform behaves when optional depend
   - User registration and login are unaffected.
 - **Recovery**: Correct SMTP configuration; no restart needed for most email libraries.
 
+### Cloudflare Turnstile (CAPTCHA)
+
+- **Detection**: Controlled by `TURNSTILE_ENABLED=true/false`.
+- **Behavior when disabled/unavailable**:
+  - Registration and login forms skip CAPTCHA verification entirely.
+  - Bot protection relies solely on rate limiting.
+- **Recovery**: Set `TURNSTILE_ENABLED=true` with valid site key / secret key and restart.
+
+### WeChat Pay
+
+- **Detection**: Controlled by `WECHAT_PAY_ENABLED=true/false`.
+- **Behavior when disabled/unavailable**:
+  - WeChat Pay payment option is hidden from the billing UI.
+  - Other payment methods (Stripe, Alipay) are unaffected.
+  - Usage tracking and free-tier billing continue normally.
+- **Recovery**: Set `WECHAT_PAY_ENABLED=true` with valid merchant credentials and restart.
+
+### Alipay
+
+- **Detection**: Controlled by `ALIPAY_ENABLED=true/false`.
+- **Behavior when disabled/unavailable**:
+  - Alipay payment option is hidden from the billing UI.
+  - Other payment methods (Stripe, WeChat Pay) are unaffected.
+  - Usage tracking and free-tier billing continue normally.
+- **Recovery**: Set `ALIPAY_ENABLED=true` with valid app credentials and restart.
+
+### MCP Servers (Tool Integration)
+
+- **Detection**: Controlled by `MCPIntegration` feature gate (default: ON). Individual servers detected via stdio/SSE connectivity.
+- **Behavior when unavailable**:
+  - If the feature gate is OFF, MCP tool injection is skipped entirely; LLM requests proceed without tools.
+  - If a specific MCP server is unreachable, it is marked as `Error` status. Tools from that server are not injected.
+  - LLM requests continue normally without the unavailable server's tools.
+- **Recovery**: Fix the MCP server process or URL; use the management UI to refresh the server connection.
+
 ## Health Check Endpoints
 
 | Endpoint | Purpose | Checks |

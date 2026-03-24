@@ -95,36 +95,53 @@
 ```
 llm-router-platform/
 ├── server/                          # Go Backend
-│   ├── cmd/server/                  # 主程序入口 
+│   ├── cmd/
+│   │   ├── server/                  # 主程序入口
+│   │   └── migrate/                 # 数据库迁移工具
 │   ├── internal/
 │   │   ├── api/
 │   │   │   ├── handlers/            # LLM Proxy REST Handler (OpenAI 兼容转发)
-│   │   │   ├── middleware/          # Security (CORS, Backpressure, JWT, RateLimit, Sentinal)
-│   │   │   └── routes/             
-│   │   ├── graphql/                 # ★ 运营后台入口 (schema / resolvers / dataloaders)
+│   │   │   ├── middleware/          # Security (CORS, Backpressure, JWT, RateLimit, APIKey)
+│   │   │   ├── openapi/            # OpenAPI 规范生成
+│   │   │   └── routes/
+│   │   ├── graphql/                 # ★ 管理后台入口 (schema / resolvers / dataloaders / directives)
+│   │   ├── config/                  # Viper 配置 + Feature Gate 系统
 │   │   ├── models/                  # E-R 引擎关系实体
 │   │   ├── repository/              # Repository 数据层模式
-│   │   └── service/                 # 15个微型逻辑子模块集合
-│   │       ├── audit/               # 审计模块
-│   │       ├── billing/             # 支付与额度
-│   │       ├── cache/               # 重构后的语义缓存 (向量+Redis)
-│   │       ├── dlp/                 # 核心数据防泄漏管道
+│   │   └── service/                 # 26 个微型逻辑子模块集合
+│   │       ├── admin/               # 平台管理员 KPI 聚合
+│   │       ├── audit/               # 安全审计日志
+│   │       ├── billing/             # 计费、支付 (Stripe/WeChat Pay/Alipay)、预算
+│   │       ├── cache/               # 语义缓存 (向量+Redis)
+│   │       ├── config/              # 系统配置 (Feature Gate DB 存储)
+│   │       ├── dlp/                 # 数据防泄漏管道
 │   │       ├── health/              # 服务监控存活探针
 │   │       ├── mcp/                 # Model Context Protocol 子客户端
-│   │       ├── org/                 # 多租户管理组织形态
-│   │       ├── router/              # 重型策略和权重负载均衡机制
-│   │       ├── sso/                 # OIDC 企业联邦身份入口
-│   │       └── ...
-│   ├── pkg/
-│   └── docs/                        # Swagger/OpenAPI
+│   │       ├── memory/              # 对话记忆管理
+│   │       ├── notification/        # 多通道告警推送
+│   │       ├── provider/            # 供应商注册与模型同步
+│   │       ├── router/              # 策略负载均衡 (轮询/加权/延迟/成本)
+│   │       ├── safety/              # Prompt 安全检测
+│   │       ├── user/                # 用户管理 + 认证 + 密码重置
+│   │       ├── webhook/             # Webhook 回调管理
+│   │       └── ...                  # + coupon, document, email, monitoring, etc.
+│   └── pkg/                         # 公共/可复用工具包
 │
 ├── web/                             # React Frontend
 │   ├── src/
-│   │   ├── pages/                   # User / Admin Console 拆分的多页面 (SSO, Routing, Org 等20+业务面板)
-│   │   ├── components/              
+│   │   ├── pages/                   # User / Admin Console 拆分的多页面 (20+ 业务面板)
+│   │   ├── components/
 │   │   ├── lib/graphql/             # Apollo Client GQL 操作语句集中管理
 │   │   └── stores/                  # Zustand
 │   └── package.json
+│
+├── deploy/                          # 部署配置
+│   ├── tls/                         # Caddy/Nginx TLS 模板
+│   ├── grafana/                     # Grafana Dashboard JSON
+│   └── helm/                        # Helm Chart (K8s)
+├── docs/                            # 项目文档
+├── examples/                        # SDK 示例 (Python)
+├── tests/                           # 负载测试 (k6)
 └── docker-compose.yml               # 本地/发布容器化编排环境
 ```
 
@@ -141,6 +158,10 @@ llm-router-platform/
 - [x] **多租户数据中心级别组织 (Orgs & Workspaces)**
 - [x] GraphQL 强类型声明式管理全端重构
 - [x] 安全加固 (SSRF 抑制，后端资源竞态修复，SQLI，Gosec/Lint 安全性验证)
+- [x] **多通道支付 (Stripe + WeChat Pay + Alipay)**
+- [x] **Feature Gate 运行时功能开关系统**
+- [x] **Prompt Safety 注入检测引擎**
+- [x] **Cloudflare Turnstile 验证码集成**
 - [ ] Kubernetes 针对企业内网的大规模发布 (Helm Chart & Rolling Update)
 - [ ] iOS/Android 原生多形态客户端扩展
 
@@ -190,6 +211,28 @@ go run cmd/migrate/main.go up
 
 详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+## 文档
+
+| 文档 | 说明 |
+|------|------|
+| [API Reference](docs/api-reference.md) | OpenAI 兼容 REST API 完整参考 |
+| [GraphQL Guide](docs/graphql-guide.md) | 管理 API 使用指南与示例 |
+| [Architecture](docs/architecture.md) | 系统架构图、请求生命周期、数据模型 |
+| [Environment Variables](docs/environment-variables.md) | 全部环境变量参考 (80+) |
+| [Feature Gates](docs/feature-gates.md) | 运行时功能开关操作手册 |
+| [Database Schema](docs/database-schema.md) | 核心表结构与 ER 图 |
+| [SSO Integration](docs/sso-integration.md) | OAuth2 + OIDC/SAML 企业 SSO 集成 |
+| [DLP Guide](docs/dlp-guide.md) | 数据防泄漏配置与策略 |
+| [Webhook Integration](docs/webhook-integration.md) | Webhook 事件通知与签名验证 |
+| [Graceful Degradation](docs/graceful-degradation.md) | 可选依赖降级行为说明 |
+| [MCP Integration](MCP.md) | Model Context Protocol 集成指南 |
+| [Helm Chart](deploy/helm/llm-router/README.md) | Kubernetes Helm 部署指南 |
+| [Grafana Dashboard](deploy/grafana/README.md) | Grafana 监控面板导入 |
+| [TLS Setup](deploy/tls/README.md) | Caddy/Nginx TLS 部署配置 |
+| [Load Testing](tests/load/README.md) | k6 负载测试指南 |
+| [Contributing](CONTRIBUTING.md) | 开发规范与 PR 流程 |
+| [Changelog](CHANGELOG.md) | 版本变更日志 |
+
 ## 许可证
 
-本项目由 MIT License 授权。
+本项目由 MIT License 授权。详见 [LICENSE](LICENSE)。
