@@ -9,7 +9,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation } from '@apollo/client/react';
 import {
-    MY_API_KEYS, // using this to just load myOrganizations
+    MY_ORGANIZATIONS,
     GET_ORG_MEMBERS,
     ADD_ORG_MEMBER,
     UPDATE_ORG_MEMBER_ROLE,
@@ -31,9 +31,7 @@ export default function OrganizationMembersPage() {
   const { t } = useTranslation();
     const { user } = useAuthStore();
     
-    // We get the orgs from MY_API_KEYS query context currently 
-    // Ideally we should have a standalone GET_MY_ORGS query, but this works for now.
-    const { data: orgData, loading: orgLoading } = useQuery<any>(MY_API_KEYS);
+    const { data: orgData, loading: orgLoading } = useQuery<any>(MY_ORGANIZATIONS);
     
     const orgs = useMemo(() => orgData?.myOrganizations || [], [orgData]);
     const [selectedOrgId, setSelectedOrgId] = useState<string>('');
