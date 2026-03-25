@@ -282,7 +282,7 @@ func (d *Database) SeedDefaultAdminOnly(cfg *config.AdminConfig) error {
 		return nil
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(cfg.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(cfg.Password), 12) // Unified bcrypt cost (matches user.Service)
 	if err != nil {
 		d.logger.Error("failed to hash admin password", zap.Error(err))
 		return err
@@ -320,7 +320,7 @@ func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
 	if result.Error == nil {
 		// Admin exists — verify password matches env config and sync if needed
 		if err := bcrypt.CompareHashAndPassword([]byte(existing.PasswordHash), []byte(cfg.Password)); err != nil {
-			newHash, hashErr := bcrypt.GenerateFromPassword([]byte(cfg.Password), bcrypt.DefaultCost)
+			newHash, hashErr := bcrypt.GenerateFromPassword([]byte(cfg.Password), 12) // Unified bcrypt cost
 			if hashErr != nil {
 				return hashErr
 			}
@@ -340,7 +340,7 @@ func (d *Database) SeedDefaultAdmin(cfg *config.AdminConfig) error {
 		return nil
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(cfg.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(cfg.Password), 12) // Unified bcrypt cost (matches user.Service)
 	if err != nil {
 		d.logger.Error("failed to hash admin password", zap.Error(err))
 		return err

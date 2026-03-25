@@ -177,9 +177,13 @@ func NewApplication() (*Application, error) {
 		}
 	}
 
-	// CORS safety warning
-	if len(cfg.Server.CORSOrigins) > 0 && cfg.Server.CORSOrigins[0] == "*" && cfg.Log.Level != "debug" {
-		logger.Warn("CORS_ORIGINS is set to '*' — this allows any origin. Consider restricting to specific domains in production.")
+	// CORS safety enforcement
+	if len(cfg.Server.CORSOrigins) > 0 && cfg.Server.CORSOrigins[0] == "*" {
+		if cfg.Server.Mode == "debug" {
+			logger.Warn("CORS_ORIGINS is set to '*' — this allows any origin. Consider restricting to specific domains in production.")
+		} else {
+			logger.Fatal("CORS_ORIGINS is set to '*' — wildcard CORS is not allowed in production/release mode. Set to specific origins.")
+		}
 	}
 
 	return &Application{cfg: cfg, logger: logger}, nil

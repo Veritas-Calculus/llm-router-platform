@@ -70,7 +70,7 @@ services:
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME:-llm_router}
-      - DB_SSL_MODE=${DB_SSL_MODE:-prefer}
+      - DB_SSL_MODE=${DB_SSL_MODE:-disable}  # Local dev: disable. Production: require or verify-full
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
