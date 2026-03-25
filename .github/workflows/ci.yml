@@ -191,7 +191,7 @@ jobs:
         run: docker build -t llm-router-server:scan ./server
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # v0.35.0 — last verified safe SHA (CVE-2026-33634)
         with:
           image-ref: 'llm-router-server:scan'
           format: 'table'

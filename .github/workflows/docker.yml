@@ -168,7 +168,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # v0.35.0 — last verified safe SHA (CVE-2026-33634)
         with:
           image-ref: ${{ env.REGISTRY }}/${{ steps.image-name.outputs.name }}:latest
           format: 'sarif'
@@ -207,7 +207,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # v0.35.0 — last verified safe SHA (CVE-2026-33634)
         with:
           image-ref: ${{ env.REGISTRY }}/${{ steps.image-name.outputs.name }}:latest
           format: 'sarif'
@@ -252,7 +252,7 @@ jobs:
           tags: web:scan
 
       - name: Run Trivy on server image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # v0.35.0 — last verified safe SHA (CVE-2026-33634)
         with:
           image-ref: 'server:scan'
           format: 'sarif'
@@ -260,7 +260,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Run Trivy on web image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # v0.35.0 — last verified safe SHA (CVE-2026-33634)
         with:
           image-ref: 'web:scan'
           format: 'sarif'
