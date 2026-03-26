@@ -291,9 +291,9 @@ func toSnakeCase(s string) string {
 			if i > 0 {
 				result = append(result, '_')
 			}
-			result = append(result, byte(c+32)) // toLower
-		} else {
-			result = append(result, byte(c))
+			result = append(result, byte(c+32)) // toLower — safe: c is [A-Z] per the guard above
+		} else if c <= 0x7F { // ASCII-only; non-ASCII runes in Go identifiers are rare
+			result = append(result, byte(c)) // #nosec G115 -- guarded by ASCII range check
 		}
 	}
 	return string(result)

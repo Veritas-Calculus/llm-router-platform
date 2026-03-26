@@ -192,9 +192,9 @@ func (h *OAuth2Handler) exchangeCode(ctx context.Context, provider string, pcfg 
 	var tokenURL string
 	switch provider {
 	case "github":
-		tokenURL = "https://github.com/login/oauth/access_token"
+		tokenURL = "https://github.com/login/oauth/access_token" // #nosec G101 -- OAuth2 endpoint URL, not a credential
 	case "google":
-		tokenURL = "https://oauth2.googleapis.com/token"
+		tokenURL = "https://oauth2.googleapis.com/token" // #nosec G101 -- OAuth2 endpoint URL, not a credential
 	}
 
 	body := fmt.Sprintf("client_id=%s&client_secret=%s&code=%s&redirect_uri=%s&grant_type=authorization_code",

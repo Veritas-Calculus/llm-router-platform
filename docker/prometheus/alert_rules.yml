@@ -1,0 +1,135 @@
+# ─── LLM Router Platform — Prometheus Alerting Rules ────────────────────────
+# These rules cover the critical KPIs identified in the SRE audit.
+# Deploy alongside prometheus.yml.
+
+groups:
+  - name: llm_router_availability
+    interval: 30s
+    rules:
+
+      # ── HTTP Error Rate ──────────────────────────────────────────────
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(llm_router_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(llm_router_http_requests_total[5m]))
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate ({{ $value | humanizePercentage }})"
+          description: "More than 5% of requests are returning 5xx errors over the last 5 minutes."
+          runbook: "Check provider health, circuit breaker state, and recent deployments."
+
+      # ── Latency ──────────────────────────────────────────────────────
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(llm_router_http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 10
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P99 latency exceeds 10s ({{ $value | humanizeDuration }})"
+          description: "99th percentile request latency is above 10 seconds."
+          runbook: "Check upstream provider latency, connection pool saturation."
+
+      - alert: HighLatencyP50
+        expr: |
+          histogram_quantile(0.50,
+            sum(rate(llm_router_http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P50 latency exceeds 5s ({{ $value | humanizeDuration }})"
+          description: "Median request latency is above 5 seconds — most users are affected."
+
+  - name: llm_router_circuit_breaker
+    interval: 15s
+    rules:
+
+      # ── Circuit Breaker ──────────────────────────────────────────────
+      - alert: ProviderCircuitOpen
+        expr: llm_router_circuit_breaker_state > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker open for provider {{ $labels.provider }}"
+          description: "Provider {{ $labels.provider }} ({{ $labels.provider_id }}) circuit breaker has been non-closed for >2m. State: {{ $value }} (1=open, 2=half_open)."
+          runbook: "Check provider health dashboard. If provider is healthy, consider manual reset."
+
+      - alert: CircuitBreakerFlapping
+        expr: increase(llm_router_circuit_breaker_trips_total[15m]) > 3
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker flapping for {{ $labels.provider }}"
+          description: "Provider {{ $labels.provider }} circuit has tripped {{ $value }} times in 15m — indicating persistent instability."
+
+  - name: llm_router_resources
+    interval: 30s
+    rules:
+
+      # ── Token Consumption ────────────────────────────────────────────
+      - alert: HighTokenBurnRate
+        expr: |
+          sum(rate(llm_router_tokens_consumed_total[5m])) by (type)
+          > 2 * sum(rate(llm_router_tokens_consumed_total[1h] offset 1h)) by (type)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Token consumption 2x above normal for {{ $labels.type }}"
+          description: "Current token burn rate is more than double the rate from 1 hour ago."
+
+      # ── Infrastructure Health ────────────────────────────────────────
+      - alert: TargetDown
+        expr: up{job="llm-router"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LLM Router server is down"
+          description: "Prometheus cannot reach the LLM Router metrics endpoint."
+
+      # ── Retry Exhaustion ─────────────────────────────────────────────
+      - alert: HighRetryExhaustion
+        expr: |
+          sum(rate(llm_router_retry_attempts_total{result="exhausted"}[5m])) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High retry exhaustion rate for {{ $labels.provider }}"
+          description: "Retries are being exhausted at {{ $value }}/s — upstream provider may be degraded."
+
+  - name: llm_router_db_pool
+    interval: 30s
+    rules:
+
+      # ── DB Connection Pool (requires Phase 2 db pool metrics) ───────
+      - alert: DBConnectionPoolExhaustion
+        expr: |
+          llm_router_db_open_connections / llm_router_db_max_open_connections > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DB connection pool >85% utilized"
+          description: "Database connection pool is nearing exhaustion ({{ $value | humanizePercentage }})."
+
+      - alert: DBHighWaitCount
+        expr: rate(llm_router_db_wait_count_total[5m]) > 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DB connections waiting at >1/s"
+          description: "Requests are queueing for database connections — consider increasing pool size."

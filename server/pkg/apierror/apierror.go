@@ -36,7 +36,7 @@ const (
 	CodeTokenRevoked       Code = "token_revoked"
 	CodeAccountDisabled    Code = "account_disabled"
 	CodePasswordChangeReq  Code = "password_change_required"
-	CodeInvalidCredentials Code = "invalid_credentials"
+	CodeInvalidCredentials Code = "invalid_credentials" // #nosec G101 -- API error code, not a credential
 )
 
 // APIError represents a structured API error response.

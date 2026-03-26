@@ -7,6 +7,7 @@ import (
 	"llm-router-platform/internal/models"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // GetAPIKeysHealth returns health status of all API keys.
@@ -96,10 +97,20 @@ func (s *Service) CheckSingleAPIKey(ctx context.Context, id uuid.UUID) (*APIKeyH
 		ResponseTime: latency.Milliseconds(),
 		CheckedAt:    time.Now(),
 	}
-	_ = s.healthHistoryRepo.Create(ctx, history)
+	if err := s.healthHistoryRepo.Create(ctx, history); err != nil {
+		s.logger.Error("failed to record health check history",
+			zap.String("target_type", "api_key"),
+			zap.String("target_id", key.ID.String()),
+			zap.Error(err))
+	}
 
 	if !healthy && s.alertNotifier != nil {
-		_ = s.alertNotifier.Notify(ctx, "api_key", key.ID, "health_check_failed", "API key health check failed")
+		if err := s.alertNotifier.Notify(ctx, "api_key", key.ID, "health_check_failed", "API key health check failed"); err != nil {
+			s.logger.Error("failed to send health check alert",
+				zap.String("target_type", "api_key"),
+				zap.String("target_id", key.ID.String()),
+				zap.Error(err))
+		}
 	}
 
 	successRate := s.calculateSuccessRate(ctx, "api_key", key.ID)
@@ -180,10 +191,20 @@ func (s *Service) CheckSingleProxy(ctx context.Context, id uuid.UUID) (*ProxyHea
 		ResponseTime: latency.Milliseconds(),
 		CheckedAt:    time.Now(),
 	}
-	_ = s.healthHistoryRepo.Create(ctx, history)
+	if err := s.healthHistoryRepo.Create(ctx, history); err != nil {
+		s.logger.Error("failed to record health check history",
+			zap.String("target_type", "proxy"),
+			zap.String("target_id", proxy.ID.String()),
+			zap.Error(err))
+	}
 
 	if !healthy && s.alertNotifier != nil {
-		_ = s.alertNotifier.Notify(ctx, "proxy", proxy.ID, "health_check_failed", "Proxy health check failed")
+		if err := s.alertNotifier.Notify(ctx, "proxy", proxy.ID, "health_check_failed", "Proxy health check failed"); err != nil {
+			s.logger.Error("failed to send health check alert",
+				zap.String("target_type", "proxy"),
+				zap.String("target_id", proxy.ID.String()),
+				zap.Error(err))
+		}
 	}
 
 	successRate := s.calculateSuccessRate(ctx, "proxy", proxy.ID)

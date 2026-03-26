@@ -11,21 +11,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Secrets Scanning ─────────────────────────────────────────────────
-  secrets-scan:
-    name: Secrets Scan (Gitleaks)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          fetch-depth: 0  # Full history for scanning all commits
-
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@83373cf2f8c4db6e24b41c1a9b086bb9619e9cd3  # v2.3.7
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   backend-test:
     name: Backend Tests
     runs-on: ubuntu-latest

@@ -20,6 +20,8 @@ type Service struct {
 	clients map[string]Client // name -> MCP client
 	mu      sync.RWMutex
 	logger  *zap.Logger
+	ctx     context.Context    // lifecycle context for background goroutines
+	cancel  context.CancelFunc // cancels all background goroutines on shutdown
 }
 
 // Client defines the interface for an MCP client (stdio or sse).
@@ -42,10 +44,26 @@ type Resource struct {
 
 // NewService creates a new MCP service.
 func NewService(repo repository.MCPRepo, logger *zap.Logger) *Service {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{
 		repo:    repo,
 		clients: make(map[string]Client),
 		logger:  logger,
+		ctx:     ctx,
+		cancel:  cancel,
+	}
+}
+
+// Shutdown cancels all background MCP connections and releases resources.
+func (s *Service) Shutdown() {
+	s.cancel()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for name, client := range s.clients {
+		if err := client.Close(); err != nil {
+			s.logger.Error("error closing MCP client", zap.String("name", name), zap.Error(err))
+		}
+		delete(s.clients, name)
 	}
 }
 
@@ -57,7 +75,7 @@ func (s *Service) Initialize(ctx context.Context) error {
 	}
 
 	for _, server := range servers {
-		go s.connectServer(context.Background(), server)
+		go s.connectServer(s.ctx, server) // G118: uses lifecycle context, not context.Background()
 	}
 
 	return nil
@@ -70,7 +88,7 @@ func (s *Service) CreateServer(ctx context.Context, server *models.MCPServer) er
 		return err
 	}
 	if server.IsActive {
-		go s.connectServer(context.Background(), *server)
+		go s.connectServer(s.ctx, *server) // G118: lifecycle-scoped
 	}
 	return nil
 }
@@ -90,7 +108,7 @@ func (s *Service) UpdateServer(ctx context.Context, server *models.MCPServer) er
 	
 	// Reconnect if status changed or active status changed
 	if server.IsActive {
-		go s.connectServer(context.Background(), *server)
+		go s.connectServer(s.ctx, *server) // G118: lifecycle-scoped
 	} else {
 		s.mu.Lock()
 		if client, ok := s.clients[server.Name]; ok {

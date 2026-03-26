@@ -102,6 +102,7 @@ func (h *OperationalHandler) DeepHealth(c *gin.Context) {
 // Readiness checks that critical dependencies are available (for K8s).
 // GET /readyz
 func (h *OperationalHandler) Readiness(c *gin.Context) {
+	// Check PostgreSQL
 	if h.db != nil {
 		sqlDB, err := h.db.DB()
 		if err != nil {
@@ -115,6 +116,17 @@ func (h *OperationalHandler) Readiness(c *gin.Context) {
 			return
 		}
 	}
+
+	// Check Redis (when available — rate limiting, caching, and feature gates depend on it)
+	if h.redisClient != nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 1*time.Second)
+		defer cancel()
+		if err := h.redisClient.Ping(ctx).Err(); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not ready", "error": "redis unavailable"})
+			return
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"status": "ready"})
 }
 

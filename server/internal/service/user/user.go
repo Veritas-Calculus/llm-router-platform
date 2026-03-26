@@ -528,7 +528,9 @@ func (s *Service) GenerateMfaSecret(ctx context.Context, userID uuid.UUID, email
 	for i := 0; i < 8; i++ {
 		// Generate 8 character random string for backup code
 		b := make([]byte, 4)
-		cryptorand.Read(b)
+		if _, err := cryptorand.Read(b); err != nil {
+			return nil, fmt.Errorf("failed to generate backup code: %w", err)
+		}
 		code := fmt.Sprintf("%04x-%04x", b[0:2], b[2:4])
 		backupCodes = append(backupCodes, code)
 	}

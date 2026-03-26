@@ -65,7 +65,24 @@ func NewStdioClient(server models.MCPServer, logger *zap.Logger) (*StdioClient, 
 	}, nil
 }
 
+// allowedMCPCommands is an allowlist of executables permitted for MCP stdio transport.
+// Commands not in this list are rejected to prevent arbitrary code execution (G204).
+var allowedMCPCommands = map[string]bool{
+	"npx":    true,
+	"node":   true,
+	"python": true, "python3": true,
+	"uvx":    true, "uv": true,
+	"docker": true,
+	"deno":   true,
+	"bun":    true,
+}
+
 func (c *StdioClient) Connect(ctx context.Context) error {
+	// G204: Validate command against allowlist before execution
+	if !allowedMCPCommands[c.server.Command] {
+		return fmt.Errorf("MCP command %q is not in the allowed commands list; permitted: npx, node, python, python3, uvx, uv, docker, deno, bun", c.server.Command)
+	}
+
 	var args []string
 	if len(c.server.Args) > 0 {
 		if err := json.Unmarshal(c.server.Args, &args); err != nil {
@@ -73,7 +90,7 @@ func (c *StdioClient) Connect(ctx context.Context) error {
 		}
 	}
 
-	c.cmd = exec.Command(c.server.Command, args...)
+	c.cmd = exec.Command(c.server.Command, args...) // #nosec G204 -- command validated against allowlist above
 	
 	// Set environment variables
 	if len(c.server.Env) > 0 {
