@@ -23,6 +23,7 @@ import (
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -200,7 +201,7 @@ func (s *WechatPayService) HandleNotify(body []byte, headers http.Header) (strin
 		return "", fmt.Errorf("order not found: %s", txResult.OutTradeNo)
 	}
 	if order.Status == "paid" {
-		s.logger.Info("wechat order already fulfilled", zap.String("order_no", txResult.OutTradeNo))
+		s.logger.Info("wechat order already fulfilled", zap.String("order_no", sanitize.LogValue(txResult.OutTradeNo)))
 		return txResult.OutTradeNo, nil
 	}
 
@@ -212,10 +213,10 @@ func (s *WechatPayService) HandleNotify(body []byte, headers http.Header) (strin
 		// Credit user balance
 		amount := float64(txResult.Amount.Total) / 100.0
 		if err := s.subRepo.UpdateUserBalance(ctx, order.OrgID, amount, "recharge", "Credit Top-up via WeChat Pay", txResult.OutTradeNo); err != nil {
-			s.logger.Error("failed to credit user balance for wechat payment", zap.Error(err), zap.String("order_no", txResult.OutTradeNo))
+			s.logger.Error("failed to credit user balance for wechat payment", zap.Error(err), zap.String("order_no", sanitize.LogValue(txResult.OutTradeNo)))
 			return "", err
 		}
-		s.logger.Info("wechat pay order fulfilled", zap.String("order_no", txResult.OutTradeNo), zap.Float64("amount", amount))
+		s.logger.Info("wechat pay order fulfilled", zap.String("order_no", sanitize.LogValue(txResult.OutTradeNo)), zap.Float64("amount", amount))
 	}
 
 	return txResult.OutTradeNo, nil

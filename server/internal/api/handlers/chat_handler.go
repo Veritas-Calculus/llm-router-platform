@@ -184,7 +184,7 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 			StatusCode: http.StatusProcessing,
 		}
 		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
-			h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", anthroReq.Model))
+			h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", sanitize.LogValue(anthroReq.Model)))
 		}
 
 		streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
@@ -312,7 +312,7 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 		TotalTokens:    resp.Usage.TotalTokens,
 	}
 	if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, projectObj.ID, "Anthropic API: "+anthroReq.Model); err != nil {
-		h.logger.Warn("billing deduction failed", zap.Error(err), zap.String("model", anthroReq.Model))
+		h.logger.Warn("billing deduction failed", zap.Error(err), zap.String("model", sanitize.LogValue(anthroReq.Model)))
 	}
 
 	c.JSON(http.StatusOK, anthroResp)
@@ -633,7 +633,7 @@ func (h *ChatHandler) handleCacheHit(c *gin.Context, cacheHit *models.SemanticCa
 		TotalTokens:    tokencount.CountTokens(req.Model, string(msgBytes)),
 	}
 	if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, userAPIKey.UserID, fmt.Sprintf("Cache hit: %s", req.Model)); err != nil {
-		h.logger.Warn("billing deduction failed (cache hit)", zap.Error(err), zap.String("model", req.Model))
+		h.logger.Warn("billing deduction failed (cache hit)", zap.Error(err), zap.String("model", sanitize.LogValue(req.Model)))
 	}
 
 	if req.Stream {
@@ -679,7 +679,7 @@ func (h *ChatHandler) handleStreamPath(c *gin.Context, req ChatCompletionRequest
 		StatusCode: http.StatusProcessing,
 	}
 	if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
-		h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", req.Model))
+		h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", sanitize.LogValue(req.Model)))
 	}
 
 	streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, nil, providerReq, 3)
@@ -729,7 +729,7 @@ func (h *ChatHandler) handleNonStreamResponse(c *gin.Context, req ChatCompletion
 			usageLog.ErrorMessage = sanitize.TruncateErrorMessage(err.Error())
 		}
 		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
-			h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", req.Model))
+			h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", sanitize.LogValue(req.Model)))
 		}
 
 		h.logger.Error("provider request failed",
@@ -779,7 +779,7 @@ func (h *ChatHandler) handleNonStreamResponse(c *gin.Context, req ChatCompletion
 		MCPErrorCount:  result.MCPErrorCount,
 	}
 	if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, projectObj.ID, "LLM Request: "+req.Model); err != nil {
-		h.logger.Warn("billing deduction failed", zap.Error(err), zap.String("model", req.Model))
+		h.logger.Warn("billing deduction failed", zap.Error(err), zap.String("model", sanitize.LogValue(req.Model)))
 	}
 
 	// Save Semantic Cache (Async)

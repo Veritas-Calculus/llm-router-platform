@@ -2096,7 +2096,9 @@ func (r *mutationResolver) CreateInviteCode(ctx context.Context, input model.Inv
 		maxUses = *input.MaxUses
 	}
 	buf := make([]byte, 16)
-	rand.Read(buf)
+	if _, err := rand.Read(buf); err != nil {
+		return nil, fmt.Errorf("failed to generate invite code: %w", err)
+	}
 	code := "inv_" + hex.EncodeToString(buf)
 	adminID, _ := directives.UserIDFromContext(ctx)
 	aid, _ := uuid.Parse(adminID)

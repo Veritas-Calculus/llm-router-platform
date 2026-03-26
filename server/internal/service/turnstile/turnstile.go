@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
+
+	"llm-router-platform/pkg/sanitize"
 
 	"go.uber.org/zap"
 )
@@ -83,12 +84,12 @@ func (s *Service) Verify(ctx context.Context, token string, remoteIP string) err
 	}
 
 	if !result.Success {
-		safeIP := strings.ReplaceAll(strings.ReplaceAll(remoteIP, "\n", ""), "\r", "")
 		s.logger.Warn("turnstile verification failed",
 			zap.Strings("errors", result.ErrorCodes),
-			zap.String("remote_ip", safeIP))
+			zap.String("remote_ip", sanitize.MaskIP(remoteIP)))
 		return fmt.Errorf("CAPTCHA verification failed, please try again")
 	}
 
 	return nil
 }
+

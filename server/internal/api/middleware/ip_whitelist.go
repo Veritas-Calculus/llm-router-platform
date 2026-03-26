@@ -112,7 +112,7 @@ func ParseWhitelist(whitelist string, logger *zap.Logger) []*net.IPNet {
 		}
 
 		if err != nil {
-			logger.Warn("Failed to parse whitelist entry, skipping", zap.String("entry", p), zap.Error(err))
+			logger.Warn("Failed to parse whitelist entry, skipping", zap.String("entry", sanitize.LogValue(p)), zap.Error(err))
 			continue
 		}
 		

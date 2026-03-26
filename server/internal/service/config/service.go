@@ -9,6 +9,7 @@ import (
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
@@ -176,7 +177,7 @@ func (s *Service) SetFeatureGate(fg *config.FeatureGates, name string, enabled b
 	}
 	if err := s.repo.Set(context.Background(), cfg); err != nil {
 		s.logger.Error("failed to persist feature gate to DB",
-			zap.String("gate", name),
+			zap.String("gate", sanitize.LogValue(name)),
 			zap.Bool("enabled", enabled),
 			zap.Error(err),
 		)
@@ -184,16 +185,16 @@ func (s *Service) SetFeatureGate(fg *config.FeatureGates, name string, enabled b
 	}
 
 	s.logger.Info("feature gate updated",
-		zap.String("gate", name),
+		zap.String("gate", sanitize.LogValue(name)),
 		zap.Bool("enabled", enabled),
-		zap.String("db_key", dbKey),
+		zap.String("db_key", sanitize.LogValue(dbKey)),
 	)
 
 	// Publish update to other instances via Redis Pub/Sub
 	if s.rdb != nil {
 		if err := s.rdb.Publish(context.Background(), fgUpdateChannel, name).Err(); err != nil {
 			s.logger.Warn("failed to publish FG update to Redis",
-				zap.String("gate", name),
+				zap.String("gate", sanitize.LogValue(name)),
 				zap.Error(err),
 			)
 		}
@@ -228,7 +229,7 @@ func (s *Service) StartFGSubscriber(ctx context.Context, fg *config.FeatureGates
 					return
 				}
 				s.logger.Info("FG update received from peer",
-					zap.String("gate", msg.Payload),
+					zap.String("gate", sanitize.LogValue(msg.Payload)),
 				)
 				// Reload all gates from DB
 				s.InitFeatureGates(fg)

@@ -23,6 +23,7 @@ import (
 	"llm-router-platform/internal/graphql/generated"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/graphql/resolvers"
+	"llm-router-platform/pkg/sanitize"
 )
 
 // ─── Prometheus Metrics ─────────────────────────────────────────────
@@ -230,7 +231,7 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 				requestID = gc.GetHeader("X-Request-ID")
 			}
 			logger.Warn("graphql internal error masked",
-				zap.String("original_error", msg),
+				zap.String("original_error", sanitize.LogValue(msg)),
 				zap.String("request_id", requestID),
 			)
 			gqlErr.Message = fmt.Sprintf("internal error [%s]", requestID)

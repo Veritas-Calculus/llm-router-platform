@@ -21,6 +21,7 @@ import (
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -193,7 +194,7 @@ func (s *AlipayService) HandleNotify(formValues url.Values) (string, error) {
 		return "", fmt.Errorf("order not found: %s", orderNo)
 	}
 	if order.Status == "paid" {
-		s.logger.Info("alipay order already fulfilled", zap.String("order_no", orderNo))
+		s.logger.Info("alipay order already fulfilled", zap.String("order_no", sanitize.LogValue(orderNo)))
 		return orderNo, nil
 	}
 
@@ -204,10 +205,10 @@ func (s *AlipayService) HandleNotify(formValues url.Values) (string, error) {
 
 		// Credit user balance
 		if err := s.subRepo.UpdateUserBalance(ctx, order.OrgID, order.Amount, "recharge", "Credit Top-up via Alipay", orderNo); err != nil {
-			s.logger.Error("failed to credit user balance for alipay payment", zap.Error(err), zap.String("order_no", orderNo))
+			s.logger.Error("failed to credit user balance for alipay payment", zap.Error(err), zap.String("order_no", sanitize.LogValue(orderNo)))
 			return "", err
 		}
-		s.logger.Info("alipay order fulfilled", zap.String("order_no", orderNo), zap.Float64("amount", order.Amount))
+		s.logger.Info("alipay order fulfilled", zap.String("order_no", sanitize.LogValue(orderNo)), zap.Float64("amount", order.Amount))
 	}
 
 	return orderNo, nil
