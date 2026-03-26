@@ -23,6 +23,8 @@ ARG GIT_COMMIT=unknown
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -ldflags="-w -s -X llm-router-platform/internal/api/routes.Version=${VERSION} -X llm-router-platform/internal/api/routes.GitCommit=${GIT_COMMIT} -X llm-router-platform/internal/api/routes.BuildTime=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
     -o /app/server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+    -ldflags="-w -s" -o /app/migrate ./cmd/migrate
 
 # Runtime stage
 FROM alpine:3.23
@@ -43,6 +45,8 @@ RUN addgroup -g 10001 -S appgroup && \
 
 # Copy binary from builder
 COPY --from=builder /app/server /app/server
+COPY --from=builder /app/migrate /app/migrate
+COPY --from=builder /app/migrations /app/migrations
 
 # Copy config if exists
 COPY --from=builder /app/.env.example /app/.env.example

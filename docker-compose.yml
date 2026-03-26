@@ -70,7 +70,7 @@ services:
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME:-llm_router}
-      - DB_SSL_MODE=${DB_SSL_MODE:-disable}  # Local dev: disable. Production: require or verify-full
+      - DB_SSL_MODE=${DB_SSL_MODE:-disable} # Local dev: disable. Production: require or verify-full
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -184,7 +184,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: llm-router-prometheus
-    profiles: ["monitoring"]
+    profiles: [ "monitoring" ]
     ports:
       - "9090:9090"
     volumes:
@@ -198,7 +198,7 @@ services:
       - '--storage.tsdb.retention.time=15d'
       - '--web.enable-lifecycle'
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy" ]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -218,7 +218,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     container_name: llm-router-grafana
-    profiles: ["monitoring"]
+    profiles: [ "monitoring" ]
     ports:
       - "3001:3000"
     environment:
@@ -236,7 +236,7 @@ services:
       prometheus:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health" ]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -273,7 +273,7 @@ services:
   langfuse-postgres:
     image: postgres:16-alpine
     container_name: langfuse-postgres
-    profiles: ["langfuse"]
+    profiles: [ "langfuse" ]
     environment:
       POSTGRES_USER: langfuse
       POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse_secret}
@@ -283,7 +283,7 @@ services:
     networks:
       - backend_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      test: [ "CMD-SHELL", "pg_isready -U langfuse" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -303,7 +303,7 @@ services:
   langfuse-clickhouse:
     image: clickhouse/clickhouse-server:24-alpine
     container_name: langfuse-clickhouse
-    profiles: ["langfuse"]
+    profiles: [ "langfuse" ]
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: langfuse
@@ -314,7 +314,7 @@ services:
     networks:
       - backend_net
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --user langfuse --password ${CLICKHOUSE_PASSWORD:-clickhouse_secret} --query 'SELECT 1' || exit 1"]
+      test: [ "CMD-SHELL", "clickhouse-client --user langfuse --password ${CLICKHOUSE_PASSWORD:-clickhouse_secret} --query 'SELECT 1' || exit 1" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -335,7 +335,7 @@ services:
   langfuse-redis:
     image: redis:7-alpine
     container_name: langfuse-redis
-    profiles: ["langfuse"]
+    profiles: [ "langfuse" ]
     command: >
       redis-server --requirepass ${LANGFUSE_REDIS_AUTH:-langfuse_redis_secret} --maxmemory 128mb --maxmemory-policy noeviction
     volumes:
@@ -343,7 +343,7 @@ services:
     networks:
       - backend_net
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 3s
       timeout: 10s
       retries: 10
@@ -363,7 +363,7 @@ services:
   langfuse-minio:
     image: minio/minio
     container_name: langfuse-minio
-    profiles: ["langfuse"]
+    profiles: [ "langfuse" ]
     entrypoint: sh
     command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
     environment:
@@ -374,7 +374,7 @@ services:
     networks:
       - backend_net
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: [ "CMD", "mc", "ready", "local" ]
       interval: 3s
       timeout: 5s
       retries: 5
@@ -395,7 +395,7 @@ services:
   langfuse-worker:
     image: langfuse/langfuse-worker:3
     container_name: langfuse-worker
-    profiles: ["langfuse"]
+    profiles: [ "langfuse" ]
     environment: &langfuse-env
       DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse_secret}@langfuse-postgres:5432/langfuse
       CLICKHOUSE_URL: http://langfuse-clickhouse:8123
@@ -455,7 +455,7 @@ services:
   langfuse-server:
     image: langfuse/langfuse:3
     container_name: langfuse-server
-    profiles: ["langfuse"]
+    profiles: [ "langfuse" ]
     ports:
       - "3000:3000"
     environment:
@@ -475,7 +475,7 @@ services:
       langfuse-minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/public/health"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/public/health" ]
       interval: 15s
       timeout: 5s
       retries: 5

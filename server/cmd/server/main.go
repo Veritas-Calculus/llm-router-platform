@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -203,15 +204,18 @@ func (app *Application) InitInfrastructure() error {
 	}
 	app.db = db
 
-	// Migrations -- controlled by FeatureGates.AutoMigrate (default OFF for safety)
-	if app.cfg.FeatureGates.AutoMigrate {
-		if err := db.Migrate(); err != nil {
-			return err
-		}
-		app.logger.Info("AutoMigrate completed")
-	} else {
-		app.logger.Info("AutoMigrate skipped. Ensure migrations are pre-applied.")
+	// ── SQL Migrations (always run — safe, idempotent, version-tracked) ──
+	if err := database.RunSQLMigrations(&app.cfg.Database, app.logger); err != nil {
+		app.logger.Warn("SQL migrations skipped or failed", zap.Error(err))
 	}
+
+	// ── GORM AutoMigrate (always run — additive only: adds tables/columns, never drops) ──
+	// This ensures any new models or fields defined in Go code are reflected in
+	// the database, even if a corresponding SQL migration hasn't been written yet.
+	if err := db.Migrate(); err != nil {
+		return fmt.Errorf("AutoMigrate failed: %w", err)
+	}
+	app.logger.Info("database schema synchronization completed")
 
 	// Seed data
 	app.seedData()
