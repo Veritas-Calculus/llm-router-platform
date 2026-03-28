@@ -39,89 +39,107 @@ func main() {
 
 	switch command {
 	case "up":
-		fmt.Println("Running SQL migrations...")
-		if err := runSQLMigrations(&cfg.Database, "up"); err != nil {
-			log.Fatalf("SQL migration failed: %v", err)
-		}
-		fmt.Println("SQL migrations completed successfully.")
-
+		handleUp(cfg)
 	case "down":
-		steps := 1
-		if len(os.Args) > 2 && os.Args[2] == "all" {
-			steps = -1
-		}
-		fmt.Printf("Rolling back %d migration(s)...\n", steps)
-		if err := runSQLMigrationsWithSteps(&cfg.Database, steps); err != nil {
-			log.Fatalf("rollback failed: %v", err)
-		}
-		fmt.Println("Rollback completed.")
-
+		handleDown(cfg)
 	case "auto":
-		if cfg.Server.Mode == "release" {
-			logger.Warn("Running AutoMigrate in release mode is NOT recommended. Please use explicit SQL migrations ('up').")
-		}
-		fmt.Println("Running GORM AutoMigrate (development mode)...")
-		if err := db.Migrate(); err != nil {
-			log.Fatalf("auto migration failed: %v", err)
-		}
-		fmt.Println("AutoMigrate completed.")
-
+		handleAuto(cfg, db, logger)
 	case "seed":
-		fmt.Println("Running migrations and seeding data...")
-		if err := runSQLMigrations(&cfg.Database, "up"); err != nil {
-			// Fallback to AutoMigrate if SQL migrations fail
-			fmt.Println("SQL migrations failed, falling back to AutoMigrate...")
-			if err := db.Migrate(); err != nil {
-				log.Fatalf("migration failed: %v", err)
-			}
-		}
-		_ = db.SeedDefaultProviders()
-		_ = db.SeedDefaultModels()
-		_ = db.SeedDefaultAdmin(&cfg.Admin)
-		fmt.Println("Migrations and seeding completed successfully.")
-
+		handleSeed(cfg, db)
 	case "version":
-		m, err := newMigrator(&cfg.Database)
-		if err != nil {
-			log.Fatalf("failed to create migrator: %v", err)
+		handleVersion(cfg)
+	case "status":
+		handleStatus(cfg)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func handleUp(cfg *config.Config) {
+	fmt.Println("Running SQL migrations...")
+	if err := runSQLMigrations(&cfg.Database, "up"); err != nil {
+		log.Fatalf("SQL migration failed: %v", err)
+	}
+	fmt.Println("SQL migrations completed successfully.")
+}
+
+func handleDown(cfg *config.Config) {
+	steps := 1
+	if len(os.Args) > 2 && os.Args[2] == "all" {
+		steps = -1
+	}
+	fmt.Printf("Rolling back %d migration(s)...\n", steps)
+	if err := runSQLMigrationsWithSteps(&cfg.Database, steps); err != nil {
+		log.Fatalf("rollback failed: %v", err)
+	}
+	fmt.Println("Rollback completed.")
+}
+
+func handleAuto(cfg *config.Config, db *database.Database, logger *zap.Logger) {
+	if cfg.Server.Mode == "release" {
+		logger.Warn("Running AutoMigrate in release mode is NOT recommended. Please use explicit SQL migrations ('up').")
+	}
+	fmt.Println("Running GORM AutoMigrate (development mode)...")
+	if err := db.Migrate(); err != nil {
+		log.Fatalf("auto migration failed: %v", err)
+	}
+	fmt.Println("AutoMigrate completed.")
+}
+
+func handleSeed(cfg *config.Config, db *database.Database) {
+	fmt.Println("Running migrations and seeding data...")
+	if err := runSQLMigrations(&cfg.Database, "up"); err != nil {
+		// Fallback to AutoMigrate if SQL migrations fail
+		fmt.Println("SQL migrations failed, falling back to AutoMigrate...")
+		if err := db.Migrate(); err != nil {
+			log.Fatalf("migration failed: %v", err)
 		}
+	}
+	// NOTE: Providers and models are NOT seeded by default.
+	// Administrators must configure providers through the management UI.
+	_ = db.SeedDefaultAdmin(&cfg.Admin)
+	fmt.Println("Migrations and seeding completed successfully.")
+}
+
+func handleVersion(cfg *config.Config) {
+	m, err := newMigrator(&cfg.Database)
+	if err != nil {
+		log.Fatalf("failed to create migrator: %v", err)
+	}
+	defer func() {
+		if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
+			log.Printf("failed to close migrator: srcErr=%v, dbErr=%v", srcErr, dbErr)
+		}
+	}()
+
+	version, dirty, err := m.Version()
+	if err != nil {
+		fmt.Printf("Migration version: none (error: %v)\n", err)
+	} else {
+		fmt.Printf("Migration version: %d (dirty: %v)\n", version, dirty)
+	}
+}
+
+func handleStatus(cfg *config.Config) {
+	fmt.Println("Database connection successful.")
+	fmt.Printf("Host: %s:%s\n", cfg.Database.Host, cfg.Database.Port)
+	fmt.Printf("Database: %s\n", cfg.Database.Name)
+
+	m, err := newMigrator(&cfg.Database)
+	if err == nil {
 		defer func() {
 			if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
 				log.Printf("failed to close migrator: srcErr=%v, dbErr=%v", srcErr, dbErr)
 			}
 		}()
-
-		version, dirty, err := m.Version()
-		if err != nil {
-			fmt.Printf("Migration version: none (error: %v)\n", err)
-		} else {
+		version, dirty, verr := m.Version()
+		if verr == nil {
 			fmt.Printf("Migration version: %d (dirty: %v)\n", version, dirty)
+		} else {
+			fmt.Printf("Migration version: none (%v)\n", verr)
 		}
-
-	case "status":
-		fmt.Println("Database connection successful.")
-		fmt.Printf("Host: %s:%s\n", cfg.Database.Host, cfg.Database.Port)
-		fmt.Printf("Database: %s\n", cfg.Database.Name)
-
-		m, err := newMigrator(&cfg.Database)
-		if err == nil {
-			defer func() {
-				if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
-					log.Printf("failed to close migrator: srcErr=%v, dbErr=%v", srcErr, dbErr)
-				}
-			}()
-			version, dirty, verr := m.Version()
-			if verr == nil {
-				fmt.Printf("Migration version: %d (dirty: %v)\n", version, dirty)
-			} else {
-				fmt.Printf("Migration version: none (%v)\n", verr)
-			}
-		}
-
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
-		printUsage()
-		os.Exit(1)
 	}
 }
 

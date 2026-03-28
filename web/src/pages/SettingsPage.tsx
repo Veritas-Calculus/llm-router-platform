@@ -8,8 +8,10 @@ import { useMutation } from '@apollo/client/react';
 import { CHANGE_PASSWORD, GENERATE_MFA_SECRET, VERIFY_AND_ENABLE_MFA, DISABLE_MFA, UPDATE_PROFILE } from '@/lib/graphql/operations';
 import { ShieldCheckIcon, ShieldExclamationIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 import { QRCodeSVG } from 'qrcode.react';
+import { useTranslation } from '@/lib/i18n';
 
 function SettingsPage() {
+  const { t } = useTranslation();
   const { user, updateUser } = useAuthStore();
   const [changePwd] = useMutation<any>(CHANGE_PASSWORD);
   const [generateMfaSecret] = useMutation<any>(GENERATE_MFA_SECRET);
@@ -43,9 +45,9 @@ function SettingsPage() {
       if (result?.updateProfile && user) {
         updateUser({ ...user, name: result.updateProfile.name });
       }
-      toast.success('Profile updated');
+      toast.success(t('settings.profile_updated'));
     } catch {
-      toast.error('Failed to update profile');
+      toast.error(t('settings.profile_update_error'));
     } finally {
       setSaving(false);
     }
@@ -53,17 +55,17 @@ function SettingsPage() {
 
   const handleChangePassword = async () => {
     if (!formData.currentPassword || !formData.newPassword) {
-      toast.error('Please fill in all password fields');
+      toast.error(t('settings.password_fill_all'));
       return;
     }
 
     if (formData.newPassword !== formData.confirmPassword) {
-      toast.error('New passwords do not match');
+      toast.error(t('settings.password_mismatch'));
       return;
     }
 
     if (formData.newPassword.length < 6) {
-      toast.error('Password must be at least 6 characters');
+      toast.error(t('settings.password_min_length'));
       return;
     }
 
@@ -78,9 +80,9 @@ function SettingsPage() {
         newPassword: '',
         confirmPassword: '',
       }));
-      toast.success('Password changed');
+      toast.success(t('settings.change_password_success'));
     } catch {
-      toast.error('Failed to change password');
+      toast.error(t('settings.change_password_error'));
     } finally {
       setSaving(false);
     }
@@ -103,13 +105,13 @@ function SettingsPage() {
 
   const handleVerifyAndEnableMfa = async () => {
     if (!verificationCode || verificationCode.length !== 6) {
-      toast.error('Please enter a valid 6-digit code');
+      toast.error(t('settings.mfa_invalid_code'));
       return;
     }
     setSaving(true);
     try {
       await verifyAndEnableMfa({ variables: { code: verificationCode } });
-      toast.success('Two-factor authentication enabled successfully.');
+      toast.success(t('settings.mfa_enabled_success'));
       setIsMfaModalOpen(false);
       setMfaSecretData(null);
       setVerificationCode('');
@@ -125,13 +127,13 @@ function SettingsPage() {
 
   const handleDisableMfa = async () => {
     if (!disableCode || disableCode.length !== 6) {
-      toast.error('Please enter a valid 6-digit code');
+      toast.error(t('settings.mfa_invalid_code'));
       return;
     }
     setSaving(true);
     try {
       await disableMfaMut({ variables: { code: disableCode } });
-      toast.success('Two-factor authentication disabled.');
+      toast.success(t('settings.mfa_disabled_success'));
       setIsDisableMfaModalOpen(false);
       setDisableCode('');
       if (user) {
@@ -147,17 +149,17 @@ function SettingsPage() {
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success('Copied to clipboard');
+      toast.success(t('common.copied_clipboard'));
     } catch {
-      toast.error('Failed to copy');
+      toast.error(t('common.copy_failed'));
     }
   };
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold text-apple-gray-900">Settings</h1>
-        <p className="text-apple-gray-500 mt-1">Manage your account settings</p>
+        <h1 className="text-2xl font-semibold text-apple-gray-900">{t('settings.title')}</h1>
+        <p className="text-apple-gray-500 mt-1">{t('settings.subtitle')}</p>
       </div>
 
       <motion.div
@@ -165,11 +167,11 @@ function SettingsPage() {
         animate={{ opacity: 1, y: 0 }}
         className="card max-w-2xl"
       >
-        <h2 className="text-lg font-semibold text-apple-gray-900 mb-6">Profile</h2>
+        <h2 className="text-lg font-semibold text-apple-gray-900 mb-6">{t('settings.profile')}</h2>
         <div className="space-y-4">
           <div>
             <label htmlFor="name" className="label">
-              Name
+              {t('common.name')}
             </label>
             <input
               type="text"
@@ -183,7 +185,7 @@ function SettingsPage() {
           </div>
           <div>
             <label htmlFor="email" className="label">
-              Email
+              {t('auth.email')}
             </label>
             <input
               type="email"
@@ -196,7 +198,7 @@ function SettingsPage() {
               disabled
             />
             <p className="text-xs text-apple-gray-500 mt-1">
-              Contact support to change your email
+              {t('settings.email_hint')}
             </p>
           </div>
           <div className="pt-4">
@@ -205,7 +207,7 @@ function SettingsPage() {
               className="btn btn-primary"
               disabled={saving}
             >
-              {saving ? 'Saving...' : 'Save Changes'}
+              {saving ? t('common.saving') : t('settings.save_changes')}
             </button>
           </div>
         </div>
@@ -217,11 +219,11 @@ function SettingsPage() {
         transition={{ delay: 0.1 }}
         className="card max-w-2xl"
       >
-        <h2 className="text-lg font-semibold text-apple-gray-900 mb-6">Change Password</h2>
+        <h2 className="text-lg font-semibold text-apple-gray-900 mb-6">{t('settings.change_password')}</h2>
         <div className="space-y-4">
           <div>
             <label htmlFor="currentPassword" className="label">
-              Current Password
+              {t('settings.current_password')}
             </label>
             <input
               type="password"
@@ -235,7 +237,7 @@ function SettingsPage() {
           </div>
           <div>
             <label htmlFor="newPassword" className="label">
-              New Password
+              {t('settings.new_password')}
             </label>
             <input
               type="password"
@@ -249,7 +251,7 @@ function SettingsPage() {
           </div>
           <div>
             <label htmlFor="confirmPassword" className="label">
-              Confirm New Password
+              {t('settings.confirm_new_password')}
             </label>
             <input
               type="password"
@@ -267,7 +269,7 @@ function SettingsPage() {
               className="btn btn-primary"
               disabled={saving}
             >
-              {saving ? 'Changing...' : 'Change Password'}
+              {saving ? t('settings.changing') : t('settings.change_password')}
             </button>
           </div>
         </div>
@@ -284,9 +286,9 @@ function SettingsPage() {
             {user?.mfaEnabled ? <ShieldCheckIcon className="w-6 h-6" /> : <ShieldExclamationIcon className="w-6 h-6" />}
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-apple-gray-900">Two-Factor Authentication (2FA)</h2>
+            <h2 className="text-lg font-semibold text-apple-gray-900">{t('settings.mfa_title')}</h2>
             <p className="text-sm text-apple-gray-500">
-              {user?.mfaEnabled ? 'Your account is protected by TOTP-based 2FA.' : 'Add an extra layer of security to your account.'}
+              {user?.mfaEnabled ? t('settings.mfa_enabled_desc') : t('settings.mfa_disabled_desc')}
             </p>
           </div>
         </div>
@@ -298,7 +300,7 @@ function SettingsPage() {
               className="btn mt-4 bg-apple-gray-100 text-apple-gray-700 hover:bg-apple-gray-200"
               disabled={saving}
             >
-              Disable 2FA
+              {t('settings.mfa_disable')}
             </button>
           ) : (
             <button
@@ -306,7 +308,7 @@ function SettingsPage() {
               className="btn btn-primary mt-4"
               disabled={saving}
             >
-              {saving ? 'Loading...' : 'Set Up 2FA'}
+              {saving ? t('settings.mfa_loading') : t('settings.mfa_setup')}
             </button>
           )}
         </div>
@@ -318,15 +320,15 @@ function SettingsPage() {
         transition={{ delay: 0.2 }}
         className="card max-w-2xl"
       >
-        <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Danger Zone</h2>
+        <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">{t('settings.danger_zone')}</h2>
         <p className="text-apple-gray-500 mb-4">
-          Once you delete your account, there is no going back. Please be certain.
+          {t('settings.danger_zone_desc')}
         </p>
         <button
-          onClick={() => toast.error('Account deletion is disabled')}
+          onClick={() => toast.error(t('settings.delete_account_disabled'))}
           className="btn btn-danger"
         >
-          Delete Account
+          {t('settings.delete_account')}
         </button>
       </motion.div>
 
@@ -338,18 +340,18 @@ function SettingsPage() {
             animate={{ opacity: 1, scale: 1 }}
             className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-lg mx-4"
           >
-            <h3 className="text-xl font-semibold text-apple-gray-900 mb-6">Set Up Two-Factor Authentication</h3>
+            <h3 className="text-xl font-semibold text-apple-gray-900 mb-6">{t('settings.mfa_setup_title')}</h3>
             
             <div className="space-y-6">
               <div className="flex flex-col items-center justify-center space-y-4">
                 <p className="text-sm text-apple-gray-600 text-center">
-                  Scan this QR code with your authenticator app (e.g., Google Authenticator, Authy).
+                  {t('settings.mfa_scan_desc')}
                 </p>
                 <div className="p-4 bg-white rounded-xl border border-apple-gray-200 shadow-sm inline-block">
                   <QRCodeSVG value={mfaSecretData.qrCodeUrl} size={192} level="M" />
                 </div>
                 <div className="flex items-center gap-2 mt-2">
-                  <span className="text-xs text-apple-gray-500">Manual Entry Key:</span>
+                  <span className="text-xs text-apple-gray-500">{t('settings.mfa_manual_key')}</span>
                   <code className="text-sm font-mono bg-apple-gray-50 px-2 py-1 rounded">{mfaSecretData.secret}</code>
                   <button onClick={() => copyToClipboard(mfaSecretData.secret)} className="text-apple-gray-400 hover:text-apple-blue transition-colors">
                     <DocumentDuplicateIcon className="w-4 h-4" />
@@ -360,10 +362,10 @@ function SettingsPage() {
               <div className="border-t border-apple-gray-100 pt-6">
                 <h4 className="text-sm font-semibold text-apple-gray-900 mb-2 flex items-center gap-2">
                   <ShieldExclamationIcon className="w-4 h-4 text-apple-orange" />
-                  Recovery Codes
+                  {t('settings.mfa_recovery')}
                 </h4>
                 <p className="text-xs text-apple-gray-500 mb-3">
-                  Save these recovery codes in a secure place. You can use them to sign in if you lose access to your authenticator app.
+                  {t('settings.mfa_recovery_desc')}
                 </p>
                 <div className="bg-apple-gray-50 p-4 rounded-apple border border-apple-gray-200 flex flex-wrap gap-2 text-sm font-mono text-apple-gray-700">
                   {mfaSecretData.backupCodes.map((code, i) => (
@@ -376,10 +378,10 @@ function SettingsPage() {
 
               <div className="border-t border-apple-gray-100 pt-6">
                 <label className="block text-sm font-medium text-apple-gray-700 mb-2">
-                  Verify Setup
+                  {t('settings.mfa_verify_setup')}
                 </label>
                 <p className="text-xs text-apple-gray-500 mb-3">
-                  Enter the 6-digit code from your authenticator app to complete setup.
+                  {t('settings.mfa_verify_desc')}
                 </p>
                 <input
                   type="text"
@@ -402,14 +404,14 @@ function SettingsPage() {
                 className="btn btn-secondary"
                 disabled={saving}
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleVerifyAndEnableMfa}
                 className="btn btn-primary"
                 disabled={saving || verificationCode.length !== 6}
               >
-                {saving ? 'Verifying...' : 'Verify & Enable'}
+                {saving ? t('settings.mfa_verifying') : t('settings.mfa_verify_enable')}
               </button>
             </div>
           </motion.div>
@@ -424,15 +426,15 @@ function SettingsPage() {
             animate={{ opacity: 1, scale: 1 }}
             className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-sm mx-4"
           >
-            <h3 className="text-xl font-semibold text-apple-gray-900 mb-4">Disable 2FA</h3>
+            <h3 className="text-xl font-semibold text-apple-gray-900 mb-4">{t('settings.mfa_disable_title')}</h3>
             
             <p className="text-sm text-apple-gray-600 mb-6">
-              To disable Two-Factor Authentication, please enter a code from your authenticator app or one of your recovery codes.
+              {t('settings.mfa_disable_desc')}
             </p>
 
             <div className="mb-6">
               <label className="block text-sm font-medium text-apple-gray-700 mb-2">
-                Authentication Code
+                {t('settings.mfa_auth_code')}
               </label>
               <input
                 type="text"
@@ -453,14 +455,14 @@ function SettingsPage() {
                 className="btn btn-secondary"
                 disabled={saving}
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleDisableMfa}
                 className="btn btn-danger"
                 disabled={saving || disableCode.length !== 6}
               >
-                {saving ? 'Disabling...' : 'Disable 2FA'}
+                {saving ? t('settings.mfa_disabling') : t('settings.mfa_disable')}
               </button>
             </div>
           </motion.div>

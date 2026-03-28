@@ -34,6 +34,7 @@ import {
   CircleStackIcon,
   BoltIcon,
   BellAlertIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/stores/authStore';
 import { useTranslation } from '@/lib/i18n';
@@ -109,6 +110,12 @@ const adminNavGroups = [
       { key: 'nav.admin_notifications', href: '/admin/notifications', icon: BellAlertIcon },
       { key: 'nav.prompts', href: '/admin/prompts', icon: DocumentTextIcon },
       { key: 'nav.rate_limits', href: '/admin/rate-limits', icon: ShieldExclamationIcon },
+    ],
+  },
+  {
+    labelKey: 'nav.group_troubleshooting',
+    items: [
+      { key: 'nav.troubleshooting', href: '/admin/troubleshooting', icon: MagnifyingGlassIcon },
     ],
   },
   {
@@ -204,10 +211,27 @@ function Layout() {
     setIsSidebarOpen(false);
   }, [location.pathname]);
 
-  // Update document title from site config
+  // Update document title based on current route
   useEffect(() => {
-    document.title = siteName;
-  }, [siteName]);
+    const allGroups = [...userNavGroups, ...adminNavGroups];
+    let routeTitle = '';
+
+    for (const group of allGroups) {
+      for (const item of group.items) {
+        if (location.pathname === item.href || (item.href !== '/' && location.pathname.startsWith(item.href))) {
+          routeTitle = t(item.key);
+          break;
+        }
+      }
+      if (routeTitle) break;
+    }
+
+    if (routeTitle) {
+      document.title = `${routeTitle} - ${siteName}`;
+    } else {
+      document.title = siteName;
+    }
+  }, [location.pathname, siteName, t]);
 
   // If admin switches to user view while on an admin-only page, redirect
   // If admin switches to admin view while on a user page, redirect to admin dashboard

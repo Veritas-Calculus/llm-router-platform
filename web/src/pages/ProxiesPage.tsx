@@ -62,22 +62,22 @@ function ProxiesPage() {
           <h1 className="text-2xl font-semibold text-apple-gray-900">Proxies</h1>
           <p className="text-apple-gray-500 mt-1">Manage proxy nodes for API requests</p>
         </div>
-        <div className="flex items-center gap-3">
-          {proxies.length > 0 && (
+        {proxies.length > 0 && (
+          <div className="flex items-center gap-3">
             <button onClick={handleTestAllProxies} className="btn btn-secondary" disabled={testingAll}>
               {testingAll ? <ArrowPathIcon className="w-5 h-5 mr-2 animate-spin" /> : <PlayIcon className="w-5 h-5 mr-2" />}
               Test All
             </button>
-          )}
-          <div className="relative group">
-            <button onClick={openBatchModal} className="btn btn-secondary">
-              <DocumentArrowUpIcon className="w-5 h-5 mr-2" /> Import
+            <div className="relative group">
+              <button onClick={openBatchModal} className="btn btn-secondary">
+                <DocumentArrowUpIcon className="w-5 h-5 mr-2" /> Import
+              </button>
+            </div>
+            <button onClick={openCreateModal} className="btn btn-primary">
+              <PlusIcon className="w-5 h-5 mr-2" /> Add Proxy
             </button>
           </div>
-          <button onClick={openCreateModal} className="btn btn-primary">
-            <PlusIcon className="w-5 h-5 mr-2" /> Add Proxy
-          </button>
-        </div>
+        )}
       </div>
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card overflow-x-auto">

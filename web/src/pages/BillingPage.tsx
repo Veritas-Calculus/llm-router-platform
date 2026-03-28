@@ -11,10 +11,12 @@ import { useQuery } from '@apollo/client/react';
 import { MY_BILLING_QUERY } from '@/lib/graphql/operations';
 import type { Order } from '@/lib/types';
 import toast from 'react-hot-toast';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 function BillingPage() {
+  const { t } = useTranslation();
   const { data, loading } = useQuery<any>(MY_BILLING_QUERY);
   const orders: Order[] = useMemo(() =>
     (data?.myOrders || []).map((o: any) => ({
@@ -30,21 +32,21 @@ function BillingPage() {
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
             <CheckCircleIcon className="w-3 h-3 mr-1" />
-            Paid
+            {t('subscription.status_paid')}
           </span>
         );
       case 'pending':
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
             <ClockIcon className="w-3 h-3 mr-1 animate-pulse" />
-            Pending
+            {t('subscription.status_pending')}
           </span>
         );
       case 'failed':
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
             <XCircleIcon className="w-3 h-3 mr-1" />
-            Failed
+            {t('subscription.status_failed')}
           </span>
         );
       default:
@@ -58,15 +60,15 @@ function BillingPage() {
 
   const copyOrderNo = (orderNo: string) => {
     navigator.clipboard.writeText(orderNo);
-    toast.success('Order number copied');
+    toast.success(t('common.copied_clipboard'));
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-apple-gray-900">Billing History</h1>
-          <p className="text-apple-gray-500">View and manage your recent payments and invoices</p>
+          <h1 className="text-2xl font-semibold text-apple-gray-900">{t('billing.title')}</h1>
+          <p className="text-apple-gray-500">{t('billing.subtitle')}</p>
         </div>
       </div>
 
@@ -75,26 +77,25 @@ function BillingPage() {
           <ArrowPathIcon className="w-8 h-8 text-apple-blue animate-spin" />
         </div>
       ) : orders.length === 0 ? (
-        <div className="bg-white rounded-apple border border-apple-gray-200 p-12 text-center">
+        <div className="card p-12 text-center">
           <CreditCardIcon className="w-12 h-12 text-apple-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-apple-gray-900">No Billing History</h3>
+          <h3 className="text-lg font-medium text-apple-gray-900">{t('billing.no_records')}</h3>
           <p className="text-apple-gray-500 max-w-sm mx-auto mt-2">
-            You haven't made any payments yet. Subscribe to a plan to get more features.
+            {t('subscription.no_orders_desc')}
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-apple border border-apple-gray-200 overflow-hidden shadow-sm">
+        <div className="card overflow-hidden">
           <table className="min-w-full divide-y divide-apple-gray-200">
-            <thead className="bg-apple-gray-50">
+            <thead style={{ backgroundColor: 'var(--theme-bg-input)' }}>
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-apple-gray-500 uppercase tracking-wider">Order Info</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-apple-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-apple-gray-500 uppercase tracking-wider">Amount</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-apple-gray-500 uppercase tracking-wider">Date</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-apple-gray-500 uppercase tracking-wider">Actions</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-apple-gray-500 uppercase tracking-wider">{t('subscription.order_info')}</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-apple-gray-500 uppercase tracking-wider">{t('common.status')}</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-apple-gray-500 uppercase tracking-wider">{t('subscription.amount')}</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-apple-gray-500 uppercase tracking-wider">{t('billing.date')}</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-apple-gray-200">
+            <tbody className="divide-y divide-apple-gray-200">
               {orders.map((order) => (
                 <tr key={order.id} className="hover:bg-apple-gray-50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -121,9 +122,6 @@ function BillingPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-apple-gray-500">
                     {new Date(order.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button className="text-apple-blue hover:text-blue-700">Receipt</button>
                   </td>
                 </tr>
               ))}

@@ -342,6 +342,18 @@ type CreateIdentityProviderInput struct {
 	GroupRoleMapping *string `json:"groupRoleMapping,omitempty"`
 }
 
+type CreateProviderInput struct {
+	Name           string   `json:"name"`
+	BaseURL        string   `json:"baseUrl"`
+	IsActive       *bool    `json:"isActive,omitempty"`
+	Priority       *int     `json:"priority,omitempty"`
+	Weight         *float64 `json:"weight,omitempty"`
+	MaxRetries     *int     `json:"maxRetries,omitempty"`
+	Timeout        *int     `json:"timeout,omitempty"`
+	UseProxy       *bool    `json:"useProxy,omitempty"`
+	RequiresAPIKey *bool    `json:"requiresApiKey,omitempty"`
+}
+
 type CreateRoutingRuleInput struct {
 	Name               string  `json:"name"`
 	Description        *string `json:"description,omitempty"`
@@ -545,6 +557,22 @@ type InviteCode struct {
 type InviteCodeInput struct {
 	MaxUses   *int       `json:"maxUses,omitempty"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+}
+
+type LogEntry struct {
+	Timestamp  string   `json:"timestamp"`
+	Level      string   `json:"level"`
+	Message    string   `json:"message"`
+	RequestID  *string  `json:"requestId,omitempty"`
+	Caller     *string  `json:"caller,omitempty"`
+	Error      *string  `json:"error,omitempty"`
+	Method     *string  `json:"method,omitempty"`
+	Path       *string  `json:"path,omitempty"`
+	StatusCode *int     `json:"statusCode,omitempty"`
+	Latency    *float64 `json:"latency,omitempty"`
+	ClientIP   *string  `json:"clientIp,omitempty"`
+	UserAgent  *string  `json:"userAgent,omitempty"`
+	RawJSON    *string  `json:"rawJson,omitempty"`
 }
 
 type LoginInput struct {

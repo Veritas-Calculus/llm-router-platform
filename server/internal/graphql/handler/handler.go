@@ -107,7 +107,6 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 	srv.AddTransport(transport.POST{})
 
 	// ── Query Complexity Limiting ──
-	// Lists cost 10x, max complexity 200
 	srv.Use(extension.FixedComplexityLimit(200))
 
 	// ── Introspection ──
@@ -115,7 +114,23 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 		srv.Use(extension.Introspection{})
 	}
 
-	// ── Query Depth Limiting ──
+	setupQueryDepthLimiting(srv)
+	setupAliasLimiting(srv)
+
+	if !cfg.FeatureGates.GraphQLIntrospection {
+		setupIntrospectionControl(srv)
+	}
+
+	setupPrometheusMetrics(srv)
+
+	if cfg.Server.Mode == "release" {
+		setupErrorMasking(srv, logger)
+	}
+
+	return &Handler{server: srv, logger: logger}
+}
+
+func setupQueryDepthLimiting(srv *handler.Server) {
 	const maxDepth = 7
 	srv.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
 		oc := graphql.GetOperationContext(ctx)
@@ -129,9 +144,9 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 		}
 		return next(ctx)
 	})
+}
 
-	// ── Alias Count Limiting ──
-	// Prevent alias-based amplification attacks
+func setupAliasLimiting(srv *handler.Server) {
 	const maxAliases = 20
 	srv.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
 		oc := graphql.GetOperationContext(ctx)
@@ -145,35 +160,31 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 		}
 		return next(ctx)
 	})
+}
 
-	// ── Introspection control ──
-	// Block introspection queries when the gate is off
-	if !cfg.FeatureGates.GraphQLIntrospection {
-		srv.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
-			oc := graphql.GetOperationContext(ctx)
-			if oc.Operation != nil && oc.Operation.Operation == ast.Query {
-				// Block introspection queries (__schema, __type).
-				for _, sel := range oc.Operation.SelectionSet {
-					if field, ok := sel.(*ast.Field); ok {
-						if field.Name == "__schema" || field.Name == "__type" {
-							return graphql.OneShot(graphql.ErrorResponse(ctx, "introspection is disabled"))
-						}
+func setupIntrospectionControl(srv *handler.Server) {
+	srv.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
+		oc := graphql.GetOperationContext(ctx)
+		if oc.Operation != nil && oc.Operation.Operation == ast.Query {
+			for _, sel := range oc.Operation.SelectionSet {
+				if field, ok := sel.(*ast.Field); ok {
+					if field.Name == "__schema" || field.Name == "__type" {
+						return graphql.OneShot(graphql.ErrorResponse(ctx, "introspection is disabled"))
 					}
 				}
 			}
-			return next(ctx)
-		})
-	}
+		}
+		return next(ctx)
+	})
+}
 
-	// ── Prometheus Metrics ──
+func setupPrometheusMetrics(srv *handler.Server) {
 	srv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
 		oc := graphql.GetOperationContext(ctx)
 		opName := oc.OperationName
 		if opName == "" {
 			opName = "anonymous"
 		}
-		// Cap operation name length to prevent label cardinality explosion
-		// from arbitrary client-supplied names
 		if len(opName) > 64 {
 			opName = "unknown"
 		}
@@ -189,58 +200,55 @@ func NewHandler(resolver *resolvers.Resolver, cfg *config.Config, logger *zap.Lo
 		graphqlRequestsTotal.WithLabelValues(opName, status).Inc()
 		return resp
 	})
+}
 
-	// ── Error Masking ──
-	if cfg.Server.Mode == "release" {
-		srv.SetErrorPresenter(func(ctx context.Context, err error) *gqlerror.Error {
-			gqlErr := graphql.DefaultErrorPresenter(ctx, err)
-			msg := gqlErr.Message
+func setupErrorMasking(srv *handler.Server, logger *zap.Logger) {
+	srv.SetErrorPresenter(func(ctx context.Context, err error) *gqlerror.Error {
+		gqlErr := graphql.DefaultErrorPresenter(ctx, err)
+		msg := gqlErr.Message
 
-			// Client errors: allow through so callers get actionable feedback
-			clientErrors := map[string]bool{
-				"unauthorized: authentication required": true,
-				"forbidden: admin access required":      true,
-				"forbidden: IP not inside admin whitelist": true,
-				"invalid credentials":                   true,
-				"invalid email or password":              true,
-				"account is disabled":                    true,
-				"email already registered":               true,
-				"invalid or expired token":               true,
-				"invalid or expired reset token":         true,
-				"insufficient balance":                   true,
-				"rate limit exceeded":                    true,
-				"rate limit exceeded: try again later":   true,
-				"forbidden: access denied":               true,
-			}
-			if clientErrors[msg] {
-				graphqlErrorsTotal.WithLabelValues("client").Inc()
-				return gqlErr
-			}
-			// Allow password validation + depth/alias errors through
-			if strings.HasPrefix(msg, "password ") ||
-				strings.HasPrefix(msg, "query depth") ||
-				strings.HasPrefix(msg, "query contains") {
-				graphqlErrorsTotal.WithLabelValues("client").Inc()
-				return gqlErr
-			}
-
-			// Everything else: mask and log with correlation ID
-			graphqlErrorsTotal.WithLabelValues("internal").Inc()
-			requestID := ""
-			if gc, gcErr := directives.GinContextFromContext(ctx); gcErr == nil {
-				requestID = gc.GetHeader("X-Request-ID")
-			}
-			logger.Warn("graphql internal error masked",
-				zap.String("original_error", sanitize.LogValue(msg)),
-				zap.String("request_id", requestID),
-			)
-			gqlErr.Message = fmt.Sprintf("internal error [%s]", requestID)
-			gqlErr.Extensions = map[string]interface{}{"request_id": requestID}
+		clientErrors := map[string]bool{
+			"unauthorized: authentication required": true,
+			"forbidden: admin access required":      true,
+			"forbidden: IP not inside admin whitelist": true,
+			"invalid credentials":                   true,
+			"invalid email or password":             true,
+			"account is disabled":                   true,
+			"email already registered":              true,
+			"invalid or expired token":              true,
+			"invalid or expired reset token":        true,
+			"insufficient balance":                  true,
+			"rate limit exceeded":                   true,
+			"rate limit exceeded: try again later":  true,
+			"forbidden: access denied":              true,
+			"account not found":                     true,
+			"too many failed login attempts, please try again later": true,
+		}
+		if clientErrors[msg] {
+			graphqlErrorsTotal.WithLabelValues("client").Inc()
 			return gqlErr
-		})
-	}
+		}
+		if strings.HasPrefix(msg, "password ") ||
+			strings.HasPrefix(msg, "query depth") ||
+			strings.HasPrefix(msg, "query contains") ||
+			strings.HasPrefix(msg, "too many failed login attempts") {
+			graphqlErrorsTotal.WithLabelValues("client").Inc()
+			return gqlErr
+		}
 
-	return &Handler{server: srv, logger: logger}
+		graphqlErrorsTotal.WithLabelValues("internal").Inc()
+		requestID := ""
+		if gc, gcErr := directives.GinContextFromContext(ctx); gcErr == nil {
+			requestID = gc.GetHeader("X-Request-ID")
+		}
+		logger.Warn("graphql internal error masked",
+			zap.String("original_error", sanitize.LogValue(msg)),
+			zap.String("request_id", requestID),
+		)
+		gqlErr.Message = fmt.Sprintf("internal error [%s]", requestID)
+		gqlErr.Extensions = map[string]interface{}{"request_id": requestID}
+		return gqlErr
+	})
 }
 
 // selectionDepth computes the maximum nesting depth of a selection set.

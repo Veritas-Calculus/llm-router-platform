@@ -141,7 +141,7 @@ func (s *Service) Register(ctx context.Context, email, password, name string) (*
 func (s *Service) Authenticate(ctx context.Context, email, password string) (*models.User, error) {
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
-		return nil, errors.New("invalid credentials")
+		return nil, errors.New("account not found")
 	}
 
 	if !user.IsActive {
@@ -149,7 +149,7 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (*mo
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, errors.New("invalid credentials")
+		return nil, errors.New("password incorrect")
 	}
 
 	return user, nil

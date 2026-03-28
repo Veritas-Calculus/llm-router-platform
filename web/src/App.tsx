@@ -41,6 +41,7 @@ const ProvidersPage = lazy(() => import('@/pages/ProvidersPage'));
 const SemanticCachePage = lazy(() => import('@/pages/SemanticCachePage'));
 const AuditLogsPage = lazy(() => import('@/pages/AuditLogsPage'));
 const ErrorLogsPage = lazy(() => import('@/pages/ErrorLogsPage'));
+const TroubleshootingPage = lazy(() => import('@/pages/TroubleshootingPage'));
 
 const RoutingRulesPage = lazy(() => import('@/pages/RoutingRulesPage'));
 const PromptRegistryPage = lazy(() => import('@/pages/PromptRegistryPage'));
@@ -167,6 +168,7 @@ function App() {
           <Route path="admin/monitoring" element={<AdminRoute><MonitoringPage /></AdminRoute>} />
           <Route path="admin/audit" element={<AdminRoute><AuditLogsPage /></AdminRoute>} />
           <Route path="admin/error-logs" element={<AdminRoute><ErrorLogsPage /></AdminRoute>} />
+          <Route path="admin/troubleshooting" element={<AdminRoute><TroubleshootingPage /></AdminRoute>} />
           <Route path="admin/integrations" element={<Navigate to="/admin/settings" replace />} />
           <Route path="admin/routing-rules" element={<AdminRoute><RoutingRulesPage /></AdminRoute>} />
           <Route path="admin/prompts" element={<AdminRoute><PromptRegistryPage /></AdminRoute>} />

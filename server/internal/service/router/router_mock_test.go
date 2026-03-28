@@ -55,6 +55,7 @@ func (m *mockProviderRepo) GetAll(_ context.Context) ([]models.Provider, error) 
 	return m.providers, m.err
 }
 func (m *mockProviderRepo) Update(_ context.Context, _ *models.Provider) error { return nil }
+func (m *mockProviderRepo) Delete(_ context.Context, _ uuid.UUID) error         { return nil }
 
 type mockProviderAPIKeyRepo struct {
 	keys map[uuid.UUID][]models.ProviderAPIKey // providerID -> keys

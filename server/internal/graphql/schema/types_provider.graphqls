@@ -57,3 +57,15 @@ input UpdateProviderApiKeyInput {
   weight: Float
   rateLimit: Int
 }
+
+input CreateProviderInput {
+  name: String!
+  baseUrl: String!
+  isActive: Boolean
+  priority: Int
+  weight: Float
+  maxRetries: Int
+  timeout: Int
+  useProxy: Boolean
+  requiresApiKey: Boolean
+}

@@ -446,6 +446,22 @@ type ComplexityRoot struct {
 		UseCount  func(childComplexity int) int
 	}
 
+	LogEntry struct {
+		Caller     func(childComplexity int) int
+		ClientIP   func(childComplexity int) int
+		Error      func(childComplexity int) int
+		Latency    func(childComplexity int) int
+		Level      func(childComplexity int) int
+		Message    func(childComplexity int) int
+		Method     func(childComplexity int) int
+		Path       func(childComplexity int) int
+		RawJSON    func(childComplexity int) int
+		RequestID  func(childComplexity int) int
+		StatusCode func(childComplexity int) int
+		Timestamp  func(childComplexity int) int
+		UserAgent  func(childComplexity int) int
+	}
+
 	McpResource struct {
 		Description func(childComplexity int) int
 		ID          func(childComplexity int) int
@@ -534,6 +550,7 @@ type ComplexityRoot struct {
 		CreatePlan                   func(childComplexity int, input model.PlanInput) int
 		CreatePromptTemplate         func(childComplexity int, input model.PromptTemplateInput) int
 		CreatePromptVersion          func(childComplexity int, input model.PromptVersionInput) int
+		CreateProvider               func(childComplexity int, input model.CreateProviderInput) int
 		CreateProviderAPIKey         func(childComplexity int, providerID string, input model.ProviderAPIKeyInput) int
 		CreateProxy                  func(childComplexity int, input model.ProxyInput) int
 		CreateRechargeSession        func(childComplexity int, amount float64) int
@@ -550,6 +567,7 @@ type ComplexityRoot struct {
 		DeleteModel                  func(childComplexity int, id string) int
 		DeleteNotificationChannel    func(childComplexity int, id string) int
 		DeletePromptTemplate         func(childComplexity int, id string) int
+		DeleteProvider               func(childComplexity int, id string) int
 		DeleteProviderAPIKey         func(childComplexity int, providerID string, keyID string) int
 		DeleteProxy                  func(childComplexity int, id string) int
 		DeleteRoutingRule            func(childComplexity int, id string) int
@@ -871,6 +889,7 @@ type ComplexityRoot struct {
 		PublishedDocuments     func(childComplexity int) int
 		RedeemCodes            func(childComplexity int, page *int, pageSize *int) int
 		RegistrationMode       func(childComplexity int) int
+		RequestLogs            func(childComplexity int, requestID *string, level *string, startTime *string, endTime *string, limit *int) int
 		RoutingRules           func(childComplexity int, page *int, pageSize *int) int
 		SemanticCaches         func(childComplexity int, limit *int, offset *int) int
 		SiteConfig             func(childComplexity int) int
@@ -1235,6 +1254,8 @@ type MutationResolver interface {
 	ToggleUser(ctx context.Context, id string) (*model.User, error)
 	UpdateUserRole(ctx context.Context, id string, role string) (*model.User, error)
 	UpdateUserQuota(ctx context.Context, id string, input model.QuotaInput) (*model.User, error)
+	CreateProvider(ctx context.Context, input model.CreateProviderInput) (*model.Provider, error)
+	DeleteProvider(ctx context.Context, id string) (bool, error)
 	UpdateProvider(ctx context.Context, id string, input model.ProviderInput) (*model.Provider, error)
 	ToggleProvider(ctx context.Context, id string) (*model.Provider, error)
 	ToggleProviderProxy(ctx context.Context, id string) (*model.Provider, error)
@@ -1363,6 +1384,7 @@ type QueryResolver interface {
 	RedeemCodes(ctx context.Context, page *int, pageSize *int) (*model.RedeemCodeConnection, error)
 	AuditLogs(ctx context.Context, page *int, pageSize *int, action *string) (*model.AuditLogConnection, error)
 	ErrorLogs(ctx context.Context, page *int, pageSize *int) (*model.ErrorLogConnection, error)
+	RequestLogs(ctx context.Context, requestID *string, level *string, startTime *string, endTime *string, limit *int) ([]*model.LogEntry, error)
 	Integrations(ctx context.Context) ([]*model.IntegrationConfig, error)
 	RoutingRules(ctx context.Context, page *int, pageSize *int) (*model.RoutingRuleList, error)
 	PromptTemplates(ctx context.Context) (*model.PromptTemplateConnection, error)
@@ -3188,6 +3210,85 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.InviteCode.UseCount(childComplexity), true
 
+	case "LogEntry.caller":
+		if e.ComplexityRoot.LogEntry.Caller == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.Caller(childComplexity), true
+	case "LogEntry.clientIp":
+		if e.ComplexityRoot.LogEntry.ClientIP == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.ClientIP(childComplexity), true
+	case "LogEntry.error":
+		if e.ComplexityRoot.LogEntry.Error == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.Error(childComplexity), true
+	case "LogEntry.latency":
+		if e.ComplexityRoot.LogEntry.Latency == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.Latency(childComplexity), true
+	case "LogEntry.level":
+		if e.ComplexityRoot.LogEntry.Level == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.Level(childComplexity), true
+	case "LogEntry.message":
+		if e.ComplexityRoot.LogEntry.Message == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.Message(childComplexity), true
+	case "LogEntry.method":
+		if e.ComplexityRoot.LogEntry.Method == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.Method(childComplexity), true
+	case "LogEntry.path":
+		if e.ComplexityRoot.LogEntry.Path == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.Path(childComplexity), true
+	case "LogEntry.rawJson":
+		if e.ComplexityRoot.LogEntry.RawJSON == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.RawJSON(childComplexity), true
+	case "LogEntry.requestId":
+		if e.ComplexityRoot.LogEntry.RequestID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.RequestID(childComplexity), true
+	case "LogEntry.statusCode":
+		if e.ComplexityRoot.LogEntry.StatusCode == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.StatusCode(childComplexity), true
+	case "LogEntry.timestamp":
+		if e.ComplexityRoot.LogEntry.Timestamp == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.Timestamp(childComplexity), true
+	case "LogEntry.userAgent":
+		if e.ComplexityRoot.LogEntry.UserAgent == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LogEntry.UserAgent(childComplexity), true
+
 	case "McpResource.description":
 		if e.ComplexityRoot.McpResource.Description == nil {
 			break
@@ -3718,6 +3819,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.CreatePromptVersion(childComplexity, args["input"].(model.PromptVersionInput)), true
+	case "Mutation.createProvider":
+		if e.ComplexityRoot.Mutation.CreateProvider == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createProvider_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.CreateProvider(childComplexity, args["input"].(model.CreateProviderInput)), true
 	case "Mutation.createProviderApiKey":
 		if e.ComplexityRoot.Mutation.CreateProviderAPIKey == nil {
 			break
@@ -3889,6 +4001,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.DeletePromptTemplate(childComplexity, args["id"].(string)), true
+	case "Mutation.deleteProvider":
+		if e.ComplexityRoot.Mutation.DeleteProvider == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_deleteProvider_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.DeleteProvider(childComplexity, args["id"].(string)), true
 	case "Mutation.deleteProviderApiKey":
 		if e.ComplexityRoot.Mutation.DeleteProviderAPIKey == nil {
 			break
@@ -5958,6 +6081,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.RegistrationMode(childComplexity), true
+	case "Query.requestLogs":
+		if e.ComplexityRoot.Query.RequestLogs == nil {
+			break
+		}
+
+		args, err := ec.field_Query_requestLogs_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.RequestLogs(childComplexity, args["requestId"].(*string), args["level"].(*string), args["startTime"].(*string), args["endTime"].(*string), args["limit"].(*int)), true
 	case "Query.routingRules":
 		if e.ComplexityRoot.Query.RoutingRules == nil {
 			break
@@ -7414,6 +7548,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputChangePasswordInput,
 		ec.unmarshalInputCouponInput,
 		ec.unmarshalInputCreateIdentityProviderInput,
+		ec.unmarshalInputCreateProviderInput,
 		ec.unmarshalInputCreateRoutingRuleInput,
 		ec.unmarshalInputCreateTaskInput,
 		ec.unmarshalInputCreateWebhookEndpointInput,
@@ -7598,6 +7733,7 @@ type Query {
   redeemCodes(page: Int, pageSize: Int): RedeemCodeConnection! @auth(role: ADMIN)
   auditLogs(page: Int = 1, pageSize: Int = 20, action: String): AuditLogConnection! @auth(role: ADMIN)
   errorLogs(page: Int = 1, pageSize: Int = 20): ErrorLogConnection! @auth(role: ADMIN)
+  requestLogs(requestId: String, level: String, startTime: String, endTime: String, limit: Int): [LogEntry!]! @auth(role: ADMIN)
   integrations: [IntegrationConfig!]! @auth(role: ADMIN)
   routingRules(page: Int = 1, pageSize: Int = 20): RoutingRuleList! @auth(role: ADMIN)
   promptTemplates: PromptTemplateConnection! @auth(role: ADMIN)
@@ -7688,6 +7824,8 @@ type Mutation {
   updateUserQuota(id: ID!, input: QuotaInput!): User! @auth(role: ADMIN)
 
   # ── Admin: Providers ──
+  createProvider(input: CreateProviderInput!): Provider! @auth(role: ADMIN)
+  deleteProvider(id: ID!): Boolean! @auth(role: ADMIN)
   updateProvider(id: ID!, input: ProviderInput!): Provider! @auth(role: ADMIN)
   toggleProvider(id: ID!): Provider! @auth(role: ADMIN)
   toggleProviderProxy(id: ID!): Provider! @auth(role: ADMIN)
@@ -8310,6 +8448,22 @@ type ErrorLogConnection {
   page: Int!
   pageSize: Int!
 }
+
+type LogEntry {
+  timestamp: String!
+  level: String!
+  message: String!
+  requestId: String
+  caller: String
+  error: String
+  method: String
+  path: String
+  statusCode: Int
+  latency: Float
+  clientIp: String
+  userAgent: String
+  rawJson: String
+}
 `, BuiltIn: false},
 	{Name: "../schema/types_featuregate.graphqls", Input: `# ──────────────────────────────────────────────────
 # Feature Gate types and queries
@@ -8770,6 +8924,18 @@ input UpdateProviderApiKeyInput {
   priority: Int
   weight: Float
   rateLimit: Int
+}
+
+input CreateProviderInput {
+  name: String!
+  baseUrl: String!
+  isActive: Boolean
+  priority: Int
+  weight: Float
+  maxRetries: Int
+  timeout: Int
+  useProxy: Boolean
+  requiresApiKey: Boolean
 }
 `, BuiltIn: false},
 	{Name: "../schema/types_proxy.graphqls", Input: `# ──────────────────────────────────────────────────
@@ -9558,6 +9724,17 @@ func (ec *executionContext) field_Mutation_createProviderApiKey_args(ctx context
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_createProvider_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNCreateProviderInput2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCreateProviderInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_createProxy_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -9730,6 +9907,17 @@ func (ec *executionContext) field_Mutation_deleteProviderApiKey_args(ctx context
 		return nil, err
 	}
 	args["keyId"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_deleteProvider_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
 	return args, nil
 }
 
@@ -11013,6 +11201,37 @@ func (ec *executionContext) field_Query_redeemCodes_args(ctx context.Context, ra
 		return nil, err
 	}
 	args["pageSize"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_requestLogs_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "requestId", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["requestId"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "level", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["level"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "startTime", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["startTime"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "endTime", ec.unmarshalOString2ᚖstring)
+	if err != nil {
+		return nil, err
+	}
+	args["endTime"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "limit", ec.unmarshalOInt2ᚖint)
+	if err != nil {
+		return nil, err
+	}
+	args["limit"] = arg4
 	return args, nil
 }
 
@@ -19867,6 +20086,383 @@ func (ec *executionContext) fieldContext_InviteCode_createdAt(_ context.Context,
 	return fc, nil
 }
 
+func (ec *executionContext) _LogEntry_timestamp(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_timestamp,
+		func(ctx context.Context) (any, error) {
+			return obj.Timestamp, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_timestamp(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _LogEntry_level(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_level,
+		func(ctx context.Context) (any, error) {
+			return obj.Level, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_level(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _LogEntry_message(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_message,
+		func(ctx context.Context) (any, error) {
+			return obj.Message, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_message(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _LogEntry_requestId(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_requestId,
+		func(ctx context.Context) (any, error) {
+			return obj.RequestID, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_requestId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _LogEntry_caller(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_caller,
+		func(ctx context.Context) (any, error) {
+			return obj.Caller, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_caller(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _LogEntry_error(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_error,
+		func(ctx context.Context) (any, error) {
+			return obj.Error, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_error(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _LogEntry_method(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_method,
+		func(ctx context.Context) (any, error) {
+			return obj.Method, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_method(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _LogEntry_path(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_path,
+		func(ctx context.Context) (any, error) {
+			return obj.Path, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_path(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _LogEntry_statusCode(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_statusCode,
+		func(ctx context.Context) (any, error) {
+			return obj.StatusCode, nil
+		},
+		nil,
+		ec.marshalOInt2ᚖint,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_statusCode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _LogEntry_latency(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_latency,
+		func(ctx context.Context) (any, error) {
+			return obj.Latency, nil
+		},
+		nil,
+		ec.marshalOFloat2ᚖfloat64,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_latency(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _LogEntry_clientIp(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_clientIp,
+		func(ctx context.Context) (any, error) {
+			return obj.ClientIP, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_clientIp(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _LogEntry_userAgent(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_userAgent,
+		func(ctx context.Context) (any, error) {
+			return obj.UserAgent, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_userAgent(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _LogEntry_rawJson(ctx context.Context, field graphql.CollectedField, obj *model.LogEntry) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_LogEntry_rawJson,
+		func(ctx context.Context) (any, error) {
+			return obj.RawJSON, nil
+		},
+		nil,
+		ec.marshalOString2ᚖstring,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_LogEntry_rawJson(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "LogEntry",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _McpResource_id(ctx context.Context, field graphql.CollectedField, obj *model.McpResource) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -23841,6 +24437,150 @@ func (ec *executionContext) fieldContext_Mutation_updateUserQuota(ctx context.Co
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_updateUserQuota_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_createProvider(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_createProvider,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().CreateProvider(ctx, fc.Args["input"].(model.CreateProviderInput))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "ADMIN")
+				if err != nil {
+					var zeroVal *model.Provider
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.Provider
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNProvider2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐProvider,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_createProvider(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Provider_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Provider_name(ctx, field)
+			case "baseUrl":
+				return ec.fieldContext_Provider_baseUrl(ctx, field)
+			case "isActive":
+				return ec.fieldContext_Provider_isActive(ctx, field)
+			case "priority":
+				return ec.fieldContext_Provider_priority(ctx, field)
+			case "weight":
+				return ec.fieldContext_Provider_weight(ctx, field)
+			case "maxRetries":
+				return ec.fieldContext_Provider_maxRetries(ctx, field)
+			case "timeout":
+				return ec.fieldContext_Provider_timeout(ctx, field)
+			case "useProxy":
+				return ec.fieldContext_Provider_useProxy(ctx, field)
+			case "defaultProxyId":
+				return ec.fieldContext_Provider_defaultProxyId(ctx, field)
+			case "requiresApiKey":
+				return ec.fieldContext_Provider_requiresApiKey(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Provider_createdAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Provider", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_createProvider_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_deleteProvider(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_deleteProvider,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().DeleteProvider(ctx, fc.Args["id"].(string))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "ADMIN")
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal bool
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_deleteProvider(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_deleteProvider_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -36973,6 +37713,93 @@ func (ec *executionContext) fieldContext_Query_errorLogs(ctx context.Context, fi
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_requestLogs(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_requestLogs,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().RequestLogs(ctx, fc.Args["requestId"].(*string), fc.Args["level"].(*string), fc.Args["startTime"].(*string), fc.Args["endTime"].(*string), fc.Args["limit"].(*int))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "ADMIN")
+				if err != nil {
+					var zeroVal []*model.LogEntry
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal []*model.LogEntry
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNLogEntry2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐLogEntryᚄ,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_requestLogs(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "timestamp":
+				return ec.fieldContext_LogEntry_timestamp(ctx, field)
+			case "level":
+				return ec.fieldContext_LogEntry_level(ctx, field)
+			case "message":
+				return ec.fieldContext_LogEntry_message(ctx, field)
+			case "requestId":
+				return ec.fieldContext_LogEntry_requestId(ctx, field)
+			case "caller":
+				return ec.fieldContext_LogEntry_caller(ctx, field)
+			case "error":
+				return ec.fieldContext_LogEntry_error(ctx, field)
+			case "method":
+				return ec.fieldContext_LogEntry_method(ctx, field)
+			case "path":
+				return ec.fieldContext_LogEntry_path(ctx, field)
+			case "statusCode":
+				return ec.fieldContext_LogEntry_statusCode(ctx, field)
+			case "latency":
+				return ec.fieldContext_LogEntry_latency(ctx, field)
+			case "clientIp":
+				return ec.fieldContext_LogEntry_clientIp(ctx, field)
+			case "userAgent":
+				return ec.fieldContext_LogEntry_userAgent(ctx, field)
+			case "rawJson":
+				return ec.fieldContext_LogEntry_rawJson(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type LogEntry", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_requestLogs_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_integrations(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -47084,6 +47911,92 @@ func (ec *executionContext) unmarshalInputCreateIdentityProviderInput(ctx contex
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputCreateProviderInput(ctx context.Context, obj any) (model.CreateProviderInput, error) {
+	var it model.CreateProviderInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"name", "baseUrl", "isActive", "priority", "weight", "maxRetries", "timeout", "useProxy", "requiresApiKey"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "name":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Name = data
+		case "baseUrl":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("baseUrl"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.BaseURL = data
+		case "isActive":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("isActive"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.IsActive = data
+		case "priority":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("priority"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Priority = data
+		case "weight":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("weight"))
+			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Weight = data
+		case "maxRetries":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("maxRetries"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MaxRetries = data
+		case "timeout":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("timeout"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Timeout = data
+		case "useProxy":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("useProxy"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.UseProxy = data
+		case "requiresApiKey":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("requiresApiKey"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RequiresAPIKey = data
+		}
+	}
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputCreateRoutingRuleInput(ctx context.Context, obj any) (model.CreateRoutingRuleInput, error) {
 	var it model.CreateRoutingRuleInput
 	if obj == nil {
@@ -51510,6 +52423,75 @@ func (ec *executionContext) _InviteCode(ctx context.Context, sel ast.SelectionSe
 	return out
 }
 
+var logEntryImplementors = []string{"LogEntry"}
+
+func (ec *executionContext) _LogEntry(ctx context.Context, sel ast.SelectionSet, obj *model.LogEntry) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, logEntryImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("LogEntry")
+		case "timestamp":
+			out.Values[i] = ec._LogEntry_timestamp(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "level":
+			out.Values[i] = ec._LogEntry_level(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "message":
+			out.Values[i] = ec._LogEntry_message(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "requestId":
+			out.Values[i] = ec._LogEntry_requestId(ctx, field, obj)
+		case "caller":
+			out.Values[i] = ec._LogEntry_caller(ctx, field, obj)
+		case "error":
+			out.Values[i] = ec._LogEntry_error(ctx, field, obj)
+		case "method":
+			out.Values[i] = ec._LogEntry_method(ctx, field, obj)
+		case "path":
+			out.Values[i] = ec._LogEntry_path(ctx, field, obj)
+		case "statusCode":
+			out.Values[i] = ec._LogEntry_statusCode(ctx, field, obj)
+		case "latency":
+			out.Values[i] = ec._LogEntry_latency(ctx, field, obj)
+		case "clientIp":
+			out.Values[i] = ec._LogEntry_clientIp(ctx, field, obj)
+		case "userAgent":
+			out.Values[i] = ec._LogEntry_userAgent(ctx, field, obj)
+		case "rawJson":
+			out.Values[i] = ec._LogEntry_rawJson(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var mcpResourceImplementors = []string{"McpResource"}
 
 func (ec *executionContext) _McpResource(ctx context.Context, sel ast.SelectionSet, obj *model.McpResource) graphql.Marshaler {
@@ -52170,6 +53152,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "updateUserQuota":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_updateUserQuota(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createProvider":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createProvider(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deleteProvider":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_deleteProvider(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -55127,6 +56123,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_errorLogs(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "requestLogs":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_requestLogs(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -58599,6 +59617,11 @@ func (ec *executionContext) unmarshalNCreateIdentityProviderInput2llmᚑrouter�
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) unmarshalNCreateProviderInput2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCreateProviderInput(ctx context.Context, v any) (model.CreateProviderInput, error) {
+	res, err := ec.unmarshalInputCreateProviderInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalNCreateRoutingRuleInput2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCreateRoutingRuleInput(ctx context.Context, v any) (model.CreateRoutingRuleInput, error) {
 	res, err := ec.unmarshalInputCreateRoutingRuleInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -59035,6 +60058,32 @@ func (ec *executionContext) marshalNInviteCode2ᚖllmᚑrouterᚑplatformᚋinte
 func (ec *executionContext) unmarshalNInviteCodeInput2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐInviteCodeInput(ctx context.Context, v any) (model.InviteCodeInput, error) {
 	res, err := ec.unmarshalInputInviteCodeInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNLogEntry2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐLogEntryᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.LogEntry) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNLogEntry2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐLogEntry(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNLogEntry2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐLogEntry(ctx context.Context, sel ast.SelectionSet, v *model.LogEntry) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._LogEntry(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNLoginInput2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐLoginInput(ctx context.Context, v any) (model.LoginInput, error) {

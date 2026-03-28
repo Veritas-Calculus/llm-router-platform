@@ -44,6 +44,14 @@ func (l *LoginLimiter) Check(ctx context.Context, email, ip string) error {
 	}
 
 	if count >= maxLoginAttempts {
+		ttl, err := l.redis.TTL(ctx, key).Result()
+		if err == nil && ttl > 0 {
+			minutes := int(ttl.Minutes())
+			if minutes < 1 {
+				minutes = 1
+			}
+			return fmt.Errorf("too many failed login attempts, please try again in %d minutes", minutes)
+		}
 		return fmt.Errorf("too many failed login attempts, please try again later")
 	}
 

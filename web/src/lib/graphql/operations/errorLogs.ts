@@ -20,3 +20,23 @@ export const GET_ERROR_LOGS = gql`
     }
   }
 `;
+
+export const GET_REQUEST_LOGS = gql`
+  query GetRequestLogs($requestId: String, $level: String, $startTime: String, $endTime: String, $limit: Int) {
+    requestLogs(requestId: $requestId, level: $level, startTime: $startTime, endTime: $endTime, limit: $limit) {
+      timestamp
+      level
+      message
+      requestId
+      caller
+      error
+      method
+      path
+      statusCode
+      latency
+      clientIp
+      userAgent
+      rawJson
+    }
+  }
+`;

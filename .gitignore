@@ -56,3 +56,6 @@ vendor/
 
 # Helm subchart tarballs (downloaded by helm dependency build)
 deploy/helm/*/charts/
+
+# Sentry self-hosted (cloned from getsentry/self-hosted)
+deploy/sentry/

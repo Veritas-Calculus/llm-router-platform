@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+	"llm-router-platform/pkg/sanitize"
 	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/models"
@@ -510,4 +512,50 @@ func cacheConfigToGQL(cfg *models.CacheConfig) *model.CacheConfig {
 		EmbeddingModel:      cfg.EmbeddingModel,
 		MaxCacheSize:        cfg.MaxCacheSize,
 	}
+}
+
+// ── Auth helpers ────────────────────────────────────────────────────
+
+func (r *Resolver) verifyCaptcha(ctx context.Context, captchaToken *string) error {
+	ip, _ := clientInfo(ctx)
+	token := ""
+	if captchaToken != nil {
+		token = *captchaToken
+	}
+	return r.TurnstileSvc.Verify(ctx, token, ip)
+}
+
+func (r *Resolver) consumeInviteCode(ctx context.Context, code string) error {
+	return r.DB().Transaction(func(tx *gorm.DB) error {
+		var ic models.InviteCode
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("code = ?", code).First(&ic).Error; err != nil {
+			return fmt.Errorf("invalid invite code")
+		}
+		if !ic.IsValid() {
+			return fmt.Errorf("invite code is expired or exhausted")
+		}
+		return tx.Model(&ic).UpdateColumn("use_count", gorm.Expr("use_count + 1")).Error
+	})
+}
+
+func (r *Resolver) checkWelcomeCreditEligibility(ctx context.Context) bool {
+	if r.RedisClient() == nil {
+		return true
+	}
+	ip, _ := clientInfo(ctx)
+	creditKey := fmt.Sprintf("reg_credit:%s", ip)
+	cnt, redisErr := r.RedisClient().Incr(ctx, creditKey).Result()
+	if redisErr != nil {
+		return true
+	}
+	if cnt == 1 {
+		r.RedisClient().Expire(ctx, creditKey, 24*time.Hour)
+	}
+	if cnt > 3 {
+		r.Logger.Warn("welcome credit denied: IP throttle exceeded",
+			zap.String("ip", sanitize.LogValue(ip)), zap.Int64("count", cnt))
+		return false
+	}
+	return true
 }

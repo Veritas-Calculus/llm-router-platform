@@ -81,12 +81,12 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 		}
 	})
 
-	// Record usage after streaming completes (success or partial failure)
-	// If provider didn't return usage in stream chunks, estimate tokens from text
+	h.finalizeStream(c.Request.Context(), req, selectedProvider, projectObj, userAPIKey, start, conversationID, originalMessages, logID, promptHash, promptEmbedding, fullText, promptTokens, completionTokens, streamErr, gen)
+}
+
+func (h *ChatHandler) finalizeStream(ctx context.Context, req *provider.ChatRequest, selectedProvider *models.Provider, projectObj *models.Project, userAPIKey *models.APIKey, start time.Time, conversationID string, originalMessages []MessageRequest, logID uuid.UUID, promptHash string, promptEmbedding []float32, fullText string, promptTokens int, completionTokens int, streamErr error, gen observability.Generation) {
 	if promptTokens == 0 && completionTokens == 0 && fullText != "" {
-		// Use precise tiktoken-based counting instead of crude estimation
 		completionTokens = tokencount.CountTokens(fullText, req.Model)
-		// Estimate input tokens from request messages
 		for _, m := range req.Messages {
 			promptTokens += tokencount.CountTokens(m.Content.Text, req.Model)
 		}
@@ -106,34 +106,36 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 
 	if conversationID != "" && h.memory != nil {
 		for _, m := range originalMessages {
-			_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, &userAPIKey.ID, conversationID, m.Role, m.Content.Text, 0)
+			_ = h.memory.AddMessage(ctx, projectObj.ID, &userAPIKey.ID, conversationID, m.Role, m.Content.Text, 0)
 		}
-		_ = h.memory.AddMessage(c.Request.Context(), projectObj.ID, &userAPIKey.ID, conversationID, "assistant", fullText, completionTokens)
+		_ = h.memory.AddMessage(ctx, projectObj.ID, &userAPIKey.ID, conversationID, "assistant", fullText, completionTokens)
 	}
 
 	if h.cache != nil && promptHash != "" && fullText != "" {
-		go func(hash string, emb []float32, text string, pid string, m string) {
-			if len(emb) == 0 {
-				emb = make([]float32, 1536)
-			}
-			cachedResp := provider.ChatResponse{
-				ID:    uuid.New().String(),
-				Model: m,
-				Choices: []provider.Choice{
-					{
-						Message: provider.Message{
-							Role:    "assistant",
-							Content: provider.FlexibleContent{Text: text},
-						},
-					},
-				},
-				Usage: provider.Usage{
-					PromptTokens:     promptTokens,
-					CompletionTokens: completionTokens,
-					TotalTokens:      promptTokens + completionTokens,
-				},
-			}
-			_ = h.cache.StoreCache(context.Background(), hash, emb, cachedResp, pid, m, nil)
-		}(promptHash, promptEmbedding, fullText, selectedProvider.Name, req.Model)
+		go h.storeInCache(promptHash, promptEmbedding, fullText, selectedProvider.Name, req.Model, promptTokens, completionTokens)
 	}
+}
+
+func (h *ChatHandler) storeInCache(hash string, emb []float32, text string, pid string, m string, promptTokens int, completionTokens int) {
+	if len(emb) == 0 {
+		emb = make([]float32, 1536)
+	}
+	cachedResp := provider.ChatResponse{
+		ID:    uuid.New().String(),
+		Model: m,
+		Choices: []provider.Choice{
+			{
+				Message: provider.Message{
+					Role:    "assistant",
+					Content: provider.FlexibleContent{Text: text},
+				},
+			},
+		},
+		Usage: provider.Usage{
+			PromptTokens:     promptTokens,
+			CompletionTokens: completionTokens,
+			TotalTokens:      promptTokens + completionTokens,
+		},
+	}
+	_ = h.cache.StoreCache(context.Background(), hash, emb, cachedResp, pid, m, nil)
 }

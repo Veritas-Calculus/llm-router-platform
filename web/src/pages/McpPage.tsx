@@ -163,13 +163,15 @@ function McpPage() {
           <h1 className="text-2xl font-semibold text-apple-gray-900">MCP Servers</h1>
           <p className="text-apple-gray-500">Manage Model Context Protocol servers and tools</p>
         </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="apple-button-primary flex items-center"
-        >
-          <PlusIcon className="w-5 h-5 mr-2" />
-          Add Server
-        </button>
+        {!loading && servers.length > 0 && (
+          <button
+            onClick={() => handleOpenModal()}
+            className="apple-button-primary flex items-center"
+          >
+            <PlusIcon className="w-5 h-5 mr-2" />
+            Add Server
+          </button>
+        )}
       </div>
 
       {loading ? (

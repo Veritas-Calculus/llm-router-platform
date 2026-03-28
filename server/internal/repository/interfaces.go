@@ -59,6 +59,7 @@ type ProviderRepo interface {
 	GetActive(ctx context.Context) ([]models.Provider, error)
 	GetAll(ctx context.Context) ([]models.Provider, error)
 	Update(ctx context.Context, provider *models.Provider) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 // ProviderAPIKeyRepo defines the interface for provider API key data access.

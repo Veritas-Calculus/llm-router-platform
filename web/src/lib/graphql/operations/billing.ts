@@ -42,6 +42,12 @@ export const CHANGE_PLAN = gql`
 `;
 
 // ── Admin: Plans ──
+export const CREATE_RECHARGE_SESSION = gql`
+  mutation CreateRechargeSession($amount: Float!) {
+    createRechargeSession(amount: $amount) { url }
+  }
+`;
+
 export const CREATE_PLAN = gql`
   mutation CreatePlan($input: PlanInput!) {
     createPlan(input: $input) { id name priceMonth isActive }

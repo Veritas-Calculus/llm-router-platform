@@ -140,53 +140,6 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 	return &model.AuthPayload{Token: token, RefreshToken: &refresh, User: userToGQL(u)}, nil
 }
 
-// verifyCaptcha performs Turnstile CAPTCHA verification using the client IP.
-func (r *mutationResolver) verifyCaptcha(ctx context.Context, captchaToken *string) error {
-	ip, _ := clientInfo(ctx)
-	token := ""
-	if captchaToken != nil {
-		token = *captchaToken
-	}
-	return r.TurnstileSvc.Verify(ctx, token, ip)
-}
-
-// consumeInviteCode atomically validates and consumes an invite code.
-func (r *mutationResolver) consumeInviteCode(ctx context.Context, code string) error {
-	return r.DB().Transaction(func(tx *gorm.DB) error {
-		var ic models.InviteCode
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").
-			Where("code = ?", code).First(&ic).Error; err != nil {
-			return fmt.Errorf("invalid invite code")
-		}
-		if !ic.IsValid() {
-			return fmt.Errorf("invite code is expired or exhausted")
-		}
-		return tx.Model(&ic).UpdateColumn("use_count", gorm.Expr("use_count + 1")).Error
-	})
-}
-
-// checkWelcomeCreditEligibility checks IP-based throttling for welcome credits.
-func (r *mutationResolver) checkWelcomeCreditEligibility(ctx context.Context) bool {
-	if r.RedisClient() == nil {
-		return true
-	}
-	ip, _ := clientInfo(ctx)
-	creditKey := fmt.Sprintf("reg_credit:%s", ip)
-	cnt, redisErr := r.RedisClient().Incr(ctx, creditKey).Result()
-	if redisErr != nil {
-		return true
-	}
-	if cnt == 1 {
-		r.RedisClient().Expire(ctx, creditKey, 24*time.Hour)
-	}
-	if cnt > 3 {
-		r.Logger.Warn("welcome credit denied: IP throttle exceeded",
-			zap.String("ip", sanitize.LogValue(ip)), zap.Int64("count", cnt))
-		return false
-	}
-	return true
-}
-
 // RefreshToken is the resolver for the refreshToken field.
 func (r *mutationResolver) RefreshToken(ctx context.Context) (*model.AuthPayload, error) {
 	uid, err := directives.UserIDFromContext(ctx)
@@ -998,6 +951,63 @@ func (r *mutationResolver) UpdateUserQuota(ctx context.Context, id string, input
 		return nil, err
 	}
 	return userToGQL(u), nil
+}
+
+// CreateProvider is the resolver for the createProvider field.
+func (r *mutationResolver) CreateProvider(ctx context.Context, input model.CreateProviderInput) (*model.Provider, error) {
+	// SSRF protection: validate the URL
+	if err := sanitize.ValidateWebhookURL(input.BaseURL, true, r.Config().Server.AllowLocalProviders); err != nil {
+		return nil, fmt.Errorf("invalid base URL: %w", err)
+	}
+
+	p := &models.Provider{
+		Name:           input.Name,
+		BaseURL:        input.BaseURL,
+		IsActive:       false,
+		Priority:       5,
+		Weight:         1.0,
+		MaxRetries:     3,
+		Timeout:        30,
+		UseProxy:       false,
+		RequiresAPIKey: true,
+	}
+
+	// Apply optional overrides
+	if input.IsActive != nil {
+		p.IsActive = *input.IsActive
+	}
+	if input.Priority != nil {
+		p.Priority = *input.Priority
+	}
+	if input.Weight != nil {
+		p.Weight = *input.Weight
+	}
+	if input.MaxRetries != nil {
+		p.MaxRetries = *input.MaxRetries
+	}
+	if input.Timeout != nil {
+		p.Timeout = *input.Timeout
+	}
+	if input.UseProxy != nil {
+		p.UseProxy = *input.UseProxy
+	}
+	if input.RequiresAPIKey != nil {
+		p.RequiresAPIKey = *input.RequiresAPIKey
+	}
+
+	if err := r.Router.CreateProvider(ctx, p); err != nil {
+		return nil, err
+	}
+	return providerToGQL(p), nil
+}
+
+// DeleteProvider is the resolver for the deleteProvider field.
+func (r *mutationResolver) DeleteProvider(ctx context.Context, id string) (bool, error) {
+	pid, _ := uuid.Parse(id)
+	if err := r.Router.DeleteProvider(ctx, pid); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // UpdateProvider is the resolver for the updateProvider field.
@@ -3872,6 +3882,35 @@ func (r *queryResolver) ErrorLogs(ctx context.Context, page *int, pageSize *int)
 	}, nil
 }
 
+// RequestLogs is the resolver for the requestLogs field.
+func (r *queryResolver) RequestLogs(ctx context.Context, requestID *string, level *string, startTime *string, endTime *string, limit *int) ([]*model.LogEntry, error) {
+	entries, err := r.AdminSvc.GetRequestLogs(ctx, requestID, level, startTime, endTime, limit)
+	if err != nil {
+		r.Logger.Error("failed to get request logs", zap.Error(err), zap.Stringp("request_id", requestID))
+		return nil, fmt.Errorf("failed to fetch request logs: %w", err)
+	}
+
+	var result []*model.LogEntry
+	for _, e := range entries {
+		result = append(result, &model.LogEntry{
+			Timestamp:  e.Timestamp,
+			Level:      e.Level,
+			Message:    e.Message,
+			RequestID:  e.RequestID,
+			Caller:     e.Caller,
+			Error:      e.Error,
+			Method:     e.Method,
+			Path:       e.Path,
+			StatusCode: e.StatusCode,
+			Latency:    e.Latency,
+			ClientIP:   e.ClientIP,
+			UserAgent:  e.UserAgent,
+			RawJSON:    e.RawJSON,
+		})
+	}
+	return result, nil
+}
+
 // Integrations is the resolver for the integrations field.
 func (r *queryResolver) Integrations(ctx context.Context) ([]*model.IntegrationConfig, error) {
 	var list []models.IntegrationConfig
@@ -4193,53 +4232,3 @@ func (r *Resolver) Query() generated.QueryResolver { return &queryResolver{r} }
 
 type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }
-
-// !!! WARNING !!!
-// The code below was going to be deleted when updating resolvers. It has been copied here so you have
-// one last chance to move it out of harms way if you want. There are two reasons this happens:
-//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
-//    it when you're done.
-//  - You have helper methods in this file. Move them out to keep these resolver files clean.
-/*
-	func (r *mutationResolver) verifyCaptcha(ctx context.Context, captchaToken *string) error {
-	ip, _ := clientInfo(ctx)
-	token := ""
-	if captchaToken != nil {
-		token = *captchaToken
-	}
-	return r.TurnstileSvc.Verify(ctx, token, ip)
-}
-func (r *mutationResolver) consumeInviteCode(ctx context.Context, code string) error {
-	return r.DB().Transaction(func(tx *gorm.DB) error {
-		var ic models.InviteCode
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").
-			Where("code = ?", code).First(&ic).Error; err != nil {
-			return fmt.Errorf("invalid invite code")
-		}
-		if !ic.IsValid() {
-			return fmt.Errorf("invite code is expired or exhausted")
-		}
-		return tx.Model(&ic).UpdateColumn("use_count", gorm.Expr("use_count + 1")).Error
-	})
-}
-func (r *mutationResolver) checkWelcomeCreditEligibility(ctx context.Context) bool {
-	if r.RedisClient() == nil {
-		return true
-	}
-	ip, _ := clientInfo(ctx)
-	creditKey := fmt.Sprintf("reg_credit:%s", ip)
-	cnt, redisErr := r.RedisClient().Incr(ctx, creditKey).Result()
-	if redisErr != nil {
-		return true
-	}
-	if cnt == 1 {
-		r.RedisClient().Expire(ctx, creditKey, 24*time.Hour)
-	}
-	if cnt > 3 {
-		r.Logger.Warn("welcome credit denied: IP throttle exceeded",
-			zap.String("ip", sanitize.LogValue(ip)), zap.Int64("count", cnt))
-		return false
-	}
-	return true
-}
-*/

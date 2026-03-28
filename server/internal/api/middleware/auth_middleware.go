@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"llm-router-platform/internal/config"
+	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/user"
 
 	"github.com/gin-gonic/gin"
@@ -34,9 +35,6 @@ func NewAuthMiddleware(cfg *config.JWTConfig, userService *user.Service, logger 
 	}
 }
 
-// JWT validates JWT token in Authorization header.
-// After signature verification, it queries the database to confirm
-// the user's current role and active status (defense against stale claims).
 func (m *AuthMiddleware) JWT() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -45,34 +43,13 @@ func (m *AuthMiddleware) JWT() gin.HandlerFunc {
 			return
 		}
 
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization format"})
-			return
-		}
-
-		token, err := jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return m.jwtSecret, nil
-		})
-
-		if err != nil || !token.Valid {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
-			return
-		}
-
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid claims"})
+		claims, err := m.parseTokenClaims(authHeader)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
 
 		userIDStr, _ := claims["sub"].(string)
-
-		// Query database for real-time user state instead of trusting JWT claims.
-		// This ensures role changes and account disabling take effect immediately.
 		userID, err := uuid.Parse(userIDStr)
 		if err != nil {
 			AuthFailuresTotal.WithLabelValues("invalid_token").Inc()
@@ -80,42 +57,18 @@ func (m *AuthMiddleware) JWT() gin.HandlerFunc {
 			return
 		}
 
-		userObj, err := m.userService.GetByID(c.Request.Context(), userID)
+		userObj, errCode, status, err := m.validateUserState(c.Request.Context(), userID, claims, c.Request.URL.Path)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
-			return
-		}
-
-		if !userObj.IsActive {
-			AuthFailuresTotal.WithLabelValues("account_disabled").Inc()
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "account is disabled"})
-			return
-		}
-
-		if userObj.RequirePasswordChange {
-			path := c.Request.URL.Path
-			if path != "/api/v1/user/password" && path != "/api/v1/user/profile" && path != "/api/v1/auth/logout" {
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "password_change_required"})
-				return
+			if errCode != "" {
+				AuthFailuresTotal.WithLabelValues(errCode).Inc()
 			}
-		}
-
-		// Check if token was issued before a forced invalidation
-		// (password change, admin force-logout, etc.)
-		if !userObj.TokensInvalidatedAt.IsZero() {
-			iat, _ := claims.GetIssuedAt()
-			if iat != nil && iat.Before(userObj.TokensInvalidatedAt) {
-				AuthFailuresTotal.WithLabelValues("token_revoked").Inc()
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token has been revoked"})
-				return
-			}
+			c.AbortWithStatusJSON(status, gin.H{"error": err.Error()})
+			return
 		}
 
 		c.Set("user_id", userIDStr)
 		c.Set("email", userObj.Email)
-		c.Set("role", userObj.Role) // Real-time role from DB, not from JWT
-
-		// Set quota/rate-limit info for downstream middleware
+		c.Set("role", userObj.Role)
 		c.Set("user_monthly_token_limit", userObj.MonthlyTokenLimit)
 		c.Set("user_monthly_budget_usd", userObj.MonthlyBudgetUSD)
 		c.Set("user_rate_limit", userObj.RateLimitPerMinute)
@@ -124,9 +77,57 @@ func (m *AuthMiddleware) JWT() gin.HandlerFunc {
 	}
 }
 
-// OptionalJWT attempts JWT parsing but does NOT abort if missing/invalid.
-// Used for the GraphQL endpoint where public mutations (login, register)
-// coexist with authenticated queries on the same POST /graphql.
+func (m *AuthMiddleware) parseTokenClaims(authHeader string) (jwt.MapClaims, error) {
+	parts := strings.SplitN(authHeader, " ", 2)
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		return nil, fmt.Errorf("invalid authorization format")
+	}
+
+	token, err := jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return m.jwtSecret, nil
+	})
+
+	if err != nil || !token.Valid {
+		return nil, fmt.Errorf("invalid token")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, fmt.Errorf("invalid claims")
+	}
+
+	return claims, nil
+}
+
+func (m *AuthMiddleware) validateUserState(ctx context.Context, userID uuid.UUID, claims jwt.MapClaims, path string) (*models.User, string, int, error) {
+	userObj, err := m.userService.GetByID(ctx, userID)
+	if err != nil {
+		return nil, "", http.StatusUnauthorized, fmt.Errorf("user not found")
+	}
+
+	if !userObj.IsActive {
+		return nil, "account_disabled", http.StatusForbidden, fmt.Errorf("account is disabled")
+	}
+
+	if userObj.RequirePasswordChange {
+		if path != "/api/v1/user/password" && path != "/api/v1/user/profile" && path != "/api/v1/auth/logout" {
+			return nil, "", http.StatusForbidden, fmt.Errorf("password_change_required")
+		}
+	}
+
+	if !userObj.TokensInvalidatedAt.IsZero() {
+		iat, _ := claims.GetIssuedAt()
+		if iat != nil && iat.Before(userObj.TokensInvalidatedAt) {
+			return nil, "token_revoked", http.StatusUnauthorized, fmt.Errorf("token has been revoked")
+		}
+	}
+
+	return userObj, "", 0, nil
+}
+
 func (m *AuthMiddleware) OptionalJWT() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -135,26 +136,8 @@ func (m *AuthMiddleware) OptionalJWT() gin.HandlerFunc {
 			return
 		}
 
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.Next()
-			return
-		}
-
-		token, err := jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
-			return m.jwtSecret, nil
-		})
-
-		if err != nil || !token.Valid {
-			c.Next()
-			return
-		}
-
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
+		claims, err := m.parseTokenClaims(authHeader)
+		if err != nil {
 			c.Next()
 			return
 		}
@@ -172,7 +155,6 @@ func (m *AuthMiddleware) OptionalJWT() gin.HandlerFunc {
 			return
 		}
 
-		// Check token revocation
 		if !userObj.TokensInvalidatedAt.IsZero() {
 			iat, _ := claims.GetIssuedAt()
 			if iat != nil && iat.Before(userObj.TokensInvalidatedAt) {

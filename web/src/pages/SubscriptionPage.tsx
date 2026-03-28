@@ -12,6 +12,7 @@ import {
   ClockIcon,
   DocumentDuplicateIcon,
   GiftIcon,
+  PlusIcon,
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { PLANS_QUERY, MY_BILLING_QUERY, CHANGE_PLAN } from '@/lib/graphql/operations';
@@ -19,6 +20,7 @@ import { REDEEM_CODE_MUTATION } from '@/lib/graphql/operations/redeem';
 import { useTranslation } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/authStore';
 import toast from 'react-hot-toast';
+import RechargeModal from '@/components/RechargeModal';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -33,6 +35,7 @@ function SubscriptionPage() {
   const [activeTab, setActiveTab] = useState<'plans' | 'orders'>('plans');
   const [redeemCode, setRedeemCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
+  const [isRechargeModalOpen, setIsRechargeModalOpen] = useState(false);
   const loading = plansLoading || billingLoading;
 
   const plans = useMemo(() => (plansData?.plans || []) as any[], [plansData]);
@@ -138,16 +141,26 @@ function SubscriptionPage() {
           </div>
         </div>
         <div className="card p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center">
-              <SparklesIcon className="w-5 h-5 text-green-600" />
+          <div className="flex justify-between items-center w-full">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center">
+                <SparklesIcon className="w-5 h-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-xs text-apple-gray-500">{t('subscription.balance')}</p>
+                <p className="text-lg font-bold text-apple-gray-900">
+                  ${(user?.balance ?? 0).toFixed(2)}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-apple-gray-500">{t('subscription.balance')}</p>
-              <p className="text-lg font-bold text-apple-gray-900">
-                ${(user?.balance ?? 0).toFixed(2)}
-              </p>
-            </div>
+            <button
+              onClick={() => setIsRechargeModalOpen(true)}
+              className="px-3 py-1.5 bg-green-500 hover:bg-green-600 active:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+              title={t('subscription.top_up')}
+            >
+              <PlusIcon className="w-4 h-4" />
+              {t('subscription.top_up')}
+            </button>
           </div>
         </div>
         <div className="card p-5">
@@ -340,6 +353,11 @@ function SubscriptionPage() {
           )}
         </div>
       )}
+
+      <RechargeModal 
+        isOpen={isRechargeModalOpen} 
+        onClose={() => setIsRechargeModalOpen(false)} 
+      />
     </div>
   );
 }

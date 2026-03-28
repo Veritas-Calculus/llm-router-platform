@@ -6,6 +6,8 @@ import {
   PROVIDERS_QUERY,
   PROVIDER_API_KEYS_QUERY,
   PROXIES_QUERY,
+  CREATE_PROVIDER,
+  DELETE_PROVIDER,
   UPDATE_PROVIDER,
   TOGGLE_PROVIDER,
   TOGGLE_PROVIDER_PROXY,
@@ -65,9 +67,6 @@ export function useProviders() {
     () => providers.find((p: Provider) => p.id === selectedProviderId) || null,
     [providers, selectedProviderId]
   );
-  const setSelectedProvider = useCallback((p: Provider | null) => {
-    setSelectedProviderId(p?.id || null);
-  }, []);
 
   // API Keys query — skip if no provider selected
   const { data: keysData, refetch: refetchKeys } = useQuery<any>(PROVIDER_API_KEYS_QUERY, {
@@ -78,10 +77,23 @@ export function useProviders() {
 
   const [testing, setTesting] = useState(false);
   const [healthStatus, setHealthStatus] = useState<ProviderHealthStatus | null>(null);
+
+  // Clear health status when switching providers
+  useEffect(() => {
+    setHealthStatus(null);
+    setTesting(false);
+  }, [selectedProviderId]);
+  const setSelectedProvider = useCallback((p: Provider | null) => {
+    setSelectedProviderId(p?.id || null);
+    setHealthStatus(null);
+    setTesting(false);
+  }, []);
   const [savingProxy, setSavingProxy] = useState(false);
   const loading = providersLoading;
 
   // ── Mutations ──
+  const [createProviderMut] = useMutation(CREATE_PROVIDER);
+  const [deleteProviderMut] = useMutation(DELETE_PROVIDER);
   const [updateProviderMut] = useMutation(UPDATE_PROVIDER);
   const [toggleProviderMut] = useMutation(TOGGLE_PROVIDER);
   const [toggleProxyMut] = useMutation(TOGGLE_PROVIDER_PROXY);
@@ -103,6 +115,31 @@ export function useProviders() {
     finally { setSavingProxy(false); }
   }, [selectedProvider, updateProviderMut, refetchProviders]);
 
+  const handleCreateProvider = useCallback(async (data: { name: string; baseUrl: string; requiresApiKey?: boolean }) => {
+    const { data: result } = await createProviderMut({
+      variables: {
+        input: {
+          name: data.name,
+          baseUrl: data.baseUrl,
+          requiresApiKey: data.requiresApiKey ?? true,
+        },
+      },
+    });
+    await refetchProviders();
+    const created = (result as any)?.createProvider;
+    if (created) {
+      setSelectedProviderId(created.id);
+    }
+    toast.success('Provider created');
+  }, [createProviderMut, refetchProviders]);
+
+  const handleDeleteProvider = useCallback(async (id: string) => {
+    await deleteProviderMut({ variables: { id } });
+    await refetchProviders();
+    setSelectedProviderId(null);
+    toast.success('Provider deleted');
+  }, [deleteProviderMut, refetchProviders]);
+
   const handleToggleProvider = useCallback(async (provider: Provider) => {
     try {
       const { data } = await toggleProviderMut({ variables: { id: provider.id } });
@@ -121,23 +158,28 @@ export function useProviders() {
       const { data } = await client.mutate<any>({ mutation: CHECK_PROVIDER_HEALTH, variables: { id: selectedProvider.id } });
       const status = data?.checkProviderHealth;
       if (status) {
+        const errorMsg = status.isHealthy ? '' : (status.errorMessage || 'Connection failed');
         const mapped: ProviderHealthStatus = {
           id: status.id, name: status.name, base_url: status.baseUrl || selectedProvider.base_url,
           is_active: status.isActive ?? selectedProvider.is_active, is_healthy: status.isHealthy, use_proxy: status.useProxy ?? selectedProvider.use_proxy,
           response_time: status.responseTime, last_check: status.lastCheck || new Date().toISOString(), success_rate: status.successRate || 0,
-          error_message: status.isHealthy ? '' : (status.errorMessage || 'Connection failed'),
+          error_message: errorMsg,
         };
         setHealthStatus(mapped);
-        if (status.isHealthy) toast.success(`Connection successful! Latency: ${status.responseTime}ms`);
-        else toast.error('Connection failed');
+        if (status.isHealthy) {
+          toast.success(`Connection successful! Latency: ${status.responseTime}ms`);
+        } else {
+          toast.error(errorMsg || 'Connection failed');
+        }
       }
-    } catch {
-      toast.error('Failed to test connection');
+    } catch (err: any) {
+      const errMsg = err?.message || 'Failed to test connection';
+      toast.error(errMsg);
       setHealthStatus({
         id: selectedProvider.id, name: selectedProvider.name, base_url: selectedProvider.base_url,
         is_active: selectedProvider.is_active, is_healthy: false, use_proxy: selectedProvider.use_proxy,
         response_time: 0, last_check: new Date().toISOString(), success_rate: 0,
-        error_message: 'Failed to test connection',
+        error_message: errMsg,
       });
     }
     finally { setTesting(false); }
@@ -213,6 +255,7 @@ export function useProviders() {
   return {
     providers, selectedProvider, setSelectedProvider,
     apiKeys, proxies, loading, testing, healthStatus, savingProxy,
+    handleCreateProvider, handleDeleteProvider,
     handleToggleProvider, handleTestConnection, handleToggleProxy,
     handleProxyChange, handleToggleRequiresApiKey, handleSaveEndpoint,
     handleAddKey, handleUpdateKey, handleToggleKey, handleDeleteKey,

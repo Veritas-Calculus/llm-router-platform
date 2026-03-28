@@ -716,9 +716,19 @@ func (r *Router) SyncProviderModels(ctx context.Context, providerID uuid.UUID, h
 	return r.modelRepo.GetByProviderSorted(ctx, providerID)
 }
 
+// CreateProvider creates a new LLM provider.
+func (r *Router) CreateProvider(ctx context.Context, provider *models.Provider) error {
+	return r.providerRepo.Create(ctx, provider)
+}
+
 // UpdateProvider updates a provider.
 func (r *Router) UpdateProvider(ctx context.Context, provider *models.Provider) error {
 	return r.providerRepo.Update(ctx, provider)
+}
+
+// DeleteProvider removes a provider by ID.
+func (r *Router) DeleteProvider(ctx context.Context, id uuid.UUID) error {
+	return r.providerRepo.Delete(ctx, id)
 }
 
 // ToggleProviderAPIKey toggles a provider API key's active status.

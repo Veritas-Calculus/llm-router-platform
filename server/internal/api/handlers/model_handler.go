@@ -336,11 +336,25 @@ func (h *ModelHandler) Retrieve(c *gin.Context) {
 		}
 	}
 
-	// Try cache first, then fetch if not cached
+	if m, found := h.findAndFormatModel(ctx, modelID, activeProviders); found {
+		c.JSON(http.StatusOK, m)
+		return
+	}
+
+	// Model not found
+	c.JSON(http.StatusNotFound, gin.H{
+		"error": gin.H{
+			"message": "The model '" + modelID + "' does not exist",
+			"type":    "invalid_request_error",
+			"code":    "model_not_found",
+		},
+	})
+}
+
+func (h *ModelHandler) findAndFormatModel(ctx context.Context, modelID string, activeProviders []models.Provider) (map[string]interface{}, bool) {
 	for _, p := range activeProviders {
 		models, ok := h.getCachedModels(p.Name)
 		if !ok {
-			// Fetch models for this provider to populate cache
 			result := h.fetchModelsForProvider(ctx, p)
 			models = result.models
 		}
@@ -357,7 +371,6 @@ func (h *ModelHandler) Retrieve(c *gin.Context) {
 				if mi.Created == 0 {
 					m["created"] = now
 				}
-				// Forward extra upstream fields
 				for k, v := range mi.Extra {
 					if k == "id" || k == "object" || k == "owned_by" {
 						continue
@@ -367,23 +380,12 @@ func (h *ModelHandler) Retrieve(c *gin.Context) {
 						m[k] = val
 					}
 				}
-				// Infer capabilities from model name
 				inferModelCapabilities(mi.ID, m)
-
-				c.JSON(http.StatusOK, m)
-				return
+				return m, true
 			}
 		}
 	}
-
-	// Model not found
-	c.JSON(http.StatusNotFound, gin.H{
-		"error": gin.H{
-			"message": "The model '" + modelID + "' does not exist",
-			"type":    "invalid_request_error",
-			"code":    "model_not_found",
-		},
-	})
+	return nil, false
 }
 
 // visionModelPatterns contains substrings that indicate a model supports vision.

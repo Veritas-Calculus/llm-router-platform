@@ -71,7 +71,7 @@ function UsagePage() {
   };
 
   const formatDate = (dateString: string): string => {
-    return new Date(dateString).toLocaleString('en-US', {
+    return new Date(dateString).toLocaleString(undefined, {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -93,14 +93,14 @@ function UsagePage() {
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-apple-gray-900">Usage</h1>
-          <p className="text-apple-gray-500 mt-1">Monitor your API usage and costs</p>
+          <h1 className="text-2xl font-semibold text-apple-gray-900">{t('usage.title')}</h1>
+          <p className="text-apple-gray-500 mt-1">{t('usage.subtitle')}</p>
         </div>
         <div className="flex items-center gap-4">
           <div className="relative">
             <input
               type="text"
-              placeholder="Filter by channel..."
+              placeholder={t('usage.filter_channel')}
               value={channelFilter}
               onChange={(e) => setChannelFilter(e.target.value)}
               className="pl-3 pr-4 py-2 text-sm border border-apple-gray-200 rounded-apple-lg focus:outline-none focus:ring-2 focus:ring-apple-blue/50 focus:border-apple-blue transition-shadow bg-white w-48"
@@ -115,7 +115,7 @@ function UsagePage() {
           animate={{ opacity: 1, y: 0 }}
           className="card"
         >
-          <p className="text-sm text-apple-gray-500 mb-1">Monthly Requests</p>
+          <p className="text-sm text-apple-gray-500 mb-1">{t('usage.monthly_requests')}</p>
           <p className="text-2xl font-semibold text-apple-gray-900">
             {formatNumber(monthlyUsage?.total_requests || 0)}
           </p>
@@ -127,7 +127,7 @@ function UsagePage() {
           transition={{ delay: 0.1 }}
           className="card"
         >
-          <p className="text-sm text-apple-gray-500 mb-1">Total Tokens</p>
+          <p className="text-sm text-apple-gray-500 mb-1">{t('usage.total_tokens')}</p>
           <p className="text-2xl font-semibold text-apple-gray-900">
             {formatNumber(monthlyUsage?.total_tokens || 0)}
           </p>
@@ -139,7 +139,7 @@ function UsagePage() {
           transition={{ delay: 0.2 }}
           className="card"
         >
-          <p className="text-sm text-apple-gray-500 mb-1">Total Cost</p>
+          <p className="text-sm text-apple-gray-500 mb-1">{t('usage.total_cost')}</p>
           <p className="text-2xl font-semibold text-apple-gray-900">
             {formatCurrency(monthlyUsage?.total_cost || 0)}
           </p>
@@ -151,7 +151,7 @@ function UsagePage() {
           transition={{ delay: 0.3 }}
           className="card"
         >
-          <p className="text-sm text-apple-gray-500 mb-1">Success Rate</p>
+          <p className="text-sm text-apple-gray-500 mb-1">{t('usage.success_rate')}</p>
           <p className="text-2xl font-semibold text-apple-gray-900">
             {(monthlyUsage?.success_rate || 0).toFixed(1)}%
           </p>
@@ -164,14 +164,14 @@ function UsagePage() {
         transition={{ delay: 0.4 }}
         className="card"
       >
-        <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Daily Usage</h2>
+        <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">{t('usage.daily_chart')}</h2>
         {dailyStats.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16">
             <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mb-3">
               <ChartBarIcon className="w-7 h-7 text-apple-blue" />
             </div>
-            <p className="text-apple-gray-900 font-medium">No usage data yet</p>
-            <p className="text-apple-gray-500 text-sm mt-1">Usage will appear here once you start making API requests.</p>
+            <p className="text-apple-gray-900 font-medium">{t('usage.no_usage_data')}</p>
+            <p className="text-apple-gray-500 text-sm mt-1">{t('usage.no_usage_hint')}</p>
           </div>
         ) : (
           <div className="h-64" style={{ minHeight: '256px' }}>
@@ -183,7 +183,7 @@ function UsagePage() {
                   stroke="#8E8E93"
                   fontSize={12}
                   tickFormatter={(value) =>
-                    new Date(value).toLocaleDateString('en-US', {
+                    new Date(value).toLocaleDateString(undefined, {
                       month: 'short',
                       day: 'numeric',
                     })
@@ -218,18 +218,18 @@ function UsagePage() {
         transition={{ delay: 0.5 }}
         className="card"
       >
-        <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Recent Requests</h2>
+        <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">{t('usage.recent_requests')}</h2>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-apple-gray-200">
             <thead>
               <tr>
-                <th className="table-header">Model</th>
-                <th className="table-header">Input Tokens</th>
-                <th className="table-header">Output Tokens</th>
-                <th className="table-header">Cost</th>
-                <th className="table-header">Latency</th>
-                <th className="table-header">Status</th>
-                <th className="table-header">Time</th>
+                <th className="table-header">{t('usage.model_name')}</th>
+                <th className="table-header">{t('usage.input_tokens')}</th>
+                <th className="table-header">{t('usage.output_tokens')}</th>
+                <th className="table-header">{t('usage.cost')}</th>
+                <th className="table-header">{t('usage.latency')}</th>
+                <th className="table-header">{t('usage.status')}</th>
+                <th className="table-header">{t('usage.time')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-apple-gray-100">
@@ -240,8 +240,8 @@ function UsagePage() {
                       <div className="w-12 h-12 bg-apple-gray-50 rounded-2xl flex items-center justify-center mb-3">
                         <TableCellsIcon className="w-6 h-6 text-apple-gray-400" />
                       </div>
-                      <p className="text-apple-gray-500 font-medium">No requests recorded</p>
-                      <p className="text-apple-gray-400 text-sm mt-1">Recent API requests will show up here.</p>
+                      <p className="text-apple-gray-500 font-medium">{t('usage.no_requests')}</p>
+                      <p className="text-apple-gray-400 text-sm mt-1">{t('usage.no_requests_hint')}</p>
                     </div>
                   </td>
                 </tr>
@@ -259,7 +259,7 @@ function UsagePage() {
                           record.is_success ? 'badge-success' : 'badge-error'
                         }
                       >
-                        {record.is_success ? 'Success' : 'Failed'}
+                        {record.is_success ? t('usage.success') : t('usage.failed_status')}
                       </span>
                     </td>
                     <td className="table-cell text-apple-gray-500">
@@ -275,8 +275,8 @@ function UsagePage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between mt-4 pt-4 border-t border-apple-gray-200">
             <p className="text-sm text-apple-gray-500">
-              Showing {(page - 1) * pageSize + 1} to{' '}
-              {Math.min(page * pageSize, total)} of {total} results
+              {t('common.showing')} {(page - 1) * pageSize + 1} {t('common.to')}{' '}
+              {Math.min(page * pageSize, total)} {t('common.of')} {total} {t('common.results')}
             </p>
             <div className="flex gap-2">
               <button
@@ -284,14 +284,14 @@ function UsagePage() {
                 disabled={page === 1}
                 className="btn-secondary px-3 py-1.5 text-sm"
               >
-                Previous
+                {t('common.previous')}
               </button>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
                 className="btn-secondary px-3 py-1.5 text-sm"
               >
-                Next
+                {t('common.next')}
               </button>
             </div>
           </div>

@@ -77,6 +77,7 @@ type Query {
   redeemCodes(page: Int, pageSize: Int): RedeemCodeConnection! @auth(role: ADMIN)
   auditLogs(page: Int = 1, pageSize: Int = 20, action: String): AuditLogConnection! @auth(role: ADMIN)
   errorLogs(page: Int = 1, pageSize: Int = 20): ErrorLogConnection! @auth(role: ADMIN)
+  requestLogs(requestId: String, level: String, startTime: String, endTime: String, limit: Int): [LogEntry!]! @auth(role: ADMIN)
   integrations: [IntegrationConfig!]! @auth(role: ADMIN)
   routingRules(page: Int = 1, pageSize: Int = 20): RoutingRuleList! @auth(role: ADMIN)
   promptTemplates: PromptTemplateConnection! @auth(role: ADMIN)
@@ -167,6 +168,8 @@ type Mutation {
   updateUserQuota(id: ID!, input: QuotaInput!): User! @auth(role: ADMIN)
 
   # ── Admin: Providers ──
+  createProvider(input: CreateProviderInput!): Provider! @auth(role: ADMIN)
+  deleteProvider(id: ID!): Boolean! @auth(role: ADMIN)
   updateProvider(id: ID!, input: ProviderInput!): Provider! @auth(role: ADMIN)
   toggleProvider(id: ID!): Provider! @auth(role: ADMIN)
   toggleProviderProxy(id: ID!): Provider! @auth(role: ADMIN)

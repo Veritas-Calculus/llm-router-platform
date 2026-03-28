@@ -159,37 +159,13 @@ func (c *Collector) collectServiceLoad() ServiceLoad {
 	var totalDurationSum, totalDurationCount float64
 
 	for _, mf := range families {
-		name := mf.GetName()
-		switch name {
+		switch mf.GetName() {
 		case "llm_router_http_requests_in_flight":
-			for _, m := range mf.GetMetric() {
-				if m.GetGauge() != nil {
-					sl.RequestsInFlight = int(m.GetGauge().GetValue())
-				}
-			}
+			parseRequestsInFlight(mf, &sl)
 		case "llm_router_http_requests_total":
-			for _, m := range mf.GetMetric() {
-				if m.GetCounter() == nil {
-					continue
-				}
-				val := m.GetCounter().GetValue()
-				totalRequests += val
-				for _, lp := range m.GetLabel() {
-					if lp.GetName() == "status" && len(lp.GetValue()) > 0 && lp.GetValue()[0] == '5' {
-						totalErrors += val
-					}
-				}
-			}
+			parseRequestsTotal(mf, &totalRequests, &totalErrors)
 		case "llm_router_http_request_duration_seconds":
-			for _, m := range mf.GetMetric() {
-				if m.GetHistogram() == nil {
-					continue
-				}
-				h := m.GetHistogram()
-				totalDurationSum += h.GetSampleSum()
-				totalDurationCount += float64(h.GetSampleCount())
-				sl.P95LatencyMs = estimateQuantile(h, 0.95) * 1000
-			}
+			parseRequestDuration(mf, &totalDurationSum, &totalDurationCount, &sl)
 		}
 	}
 
@@ -205,6 +181,41 @@ func (c *Collector) collectServiceLoad() ServiceLoad {
 	}
 
 	return sl
+}
+
+func parseRequestsInFlight(mf *dto.MetricFamily, sl *ServiceLoad) {
+	for _, m := range mf.GetMetric() {
+		if m.GetGauge() != nil {
+			sl.RequestsInFlight = int(m.GetGauge().GetValue())
+		}
+	}
+}
+
+func parseRequestsTotal(mf *dto.MetricFamily, totalRequests, totalErrors *float64) {
+	for _, m := range mf.GetMetric() {
+		if m.GetCounter() == nil {
+			continue
+		}
+		val := m.GetCounter().GetValue()
+		*totalRequests += val
+		for _, lp := range m.GetLabel() {
+			if lp.GetName() == "status" && len(lp.GetValue()) > 0 && lp.GetValue()[0] == '5' {
+				*totalErrors += val
+			}
+		}
+	}
+}
+
+func parseRequestDuration(mf *dto.MetricFamily, totalDurationSum, totalDurationCount *float64, sl *ServiceLoad) {
+	for _, m := range mf.GetMetric() {
+		if m.GetHistogram() == nil {
+			continue
+		}
+		h := m.GetHistogram()
+		*totalDurationSum += h.GetSampleSum()
+		*totalDurationCount += float64(h.GetSampleCount())
+		sl.P95LatencyMs = estimateQuantile(h, 0.95) * 1000
+	}
 }
 
 // estimateQuantile approximates a quantile from histogram buckets.

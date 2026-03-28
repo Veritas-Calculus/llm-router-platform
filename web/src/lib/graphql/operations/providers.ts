@@ -10,6 +10,20 @@ export const PROVIDERS_QUERY = gql`
   }
 `;
 
+export const CREATE_PROVIDER = gql`
+  mutation CreateProvider($input: CreateProviderInput!) {
+    createProvider(input: $input) {
+      id name baseUrl isActive priority weight maxRetries timeout useProxy requiresApiKey createdAt
+    }
+  }
+`;
+
+export const DELETE_PROVIDER = gql`
+  mutation DeleteProvider($id: ID!) {
+    deleteProvider(id: $id)
+  }
+`;
+
 export const PROVIDER_API_KEYS_QUERY = gql`
   query ProviderApiKeys($providerId: ID!) {
     providerApiKeys(providerId: $providerId) {

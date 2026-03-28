@@ -396,8 +396,8 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 		return
 	}
 
-	// 4. Content safety
-	if done := h.applySafetyCheck(c, req, messages); done {
+	// 4. Content safety (respects project DLP toggle)
+	if done := h.applySafetyCheck(c, req, projectObj, messages); done {
 		return
 	}
 
@@ -539,8 +539,15 @@ func (h *ChatHandler) applyDLP(c *gin.Context, projectObj *models.Project, messa
 }
 
 // applySafetyCheck runs content safety classification. Returns true if the request was blocked.
-func (h *ChatHandler) applySafetyCheck(c *gin.Context, req ChatCompletionRequest, messages []provider.Message) bool {
+// Respects the project-level DLP toggle: when DLP is disabled for a project,
+// safety classification is also skipped.
+func (h *ChatHandler) applySafetyCheck(c *gin.Context, req ChatCompletionRequest, projectObj *models.Project, messages []provider.Message) bool {
 	if h.safety == nil {
+		return false
+	}
+
+	// Respect project DLP toggle — when DLP is disabled, skip safety classification too
+	if projectObj.DlpConfig == nil || !projectObj.DlpConfig.IsEnabled {
 		return false
 	}
 

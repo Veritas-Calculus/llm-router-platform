@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   PlusIcon,
   TrashIcon,
@@ -8,6 +8,7 @@ import {
   ExclamationTriangleIcon,
   ExclamationCircleIcon,
   KeyIcon,
+  InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { useQuery, useMutation } from '@apollo/client/react';
@@ -15,6 +16,7 @@ import { MY_API_KEYS, MY_ORGANIZATIONS, MY_PROJECTS, CREATE_API_KEY, REVOKE_API_
 import { SUBSCRIPTION_QUOTA_QUERY } from '@/lib/graphql/operations/billing';
 import type { ApiKey, Organization, Project } from '@/lib/types';
 import { useTranslation } from '@/lib/i18n';
+import QuickStartGuide from '@/components/QuickStartGuide';
 
 const AVAILABLE_SCOPES_BASE = [
   { id: 'all', labelKey: 'api_keys.scopes_all' },
@@ -231,6 +233,7 @@ function ApiKeysPage() {
   });
   const apiKeys: ApiKey[] = useMemo(() => (data?.myApiKeys || []).map(mapApiKey), [data]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [selectedScopes, setSelectedScopes] = useState<string[]>(['all']);
   const [newKeyRateLimit, setNewKeyRateLimit] = useState<string>('');
@@ -358,6 +361,13 @@ function ApiKeysPage() {
   return (
     <div className="space-y-6">
       <SubscriptionQuotaBanner />
+
+      <AnimatePresence>
+        {showQuickGuide && (
+          <QuickStartGuide onDismiss={() => setShowQuickGuide(false)} />
+        )}
+      </AnimatePresence>
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-apple-gray-900">{t('api_keys.title')}</h1>
@@ -408,16 +418,26 @@ function ApiKeysPage() {
             )}
           </div>
         </div>
-        {apiKeys.length > 0 && (
-          <button 
-            onClick={() => setShowCreateModal(true)} 
-            className="btn btn-primary"
-            disabled={!selectedProjectId}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowQuickGuide(!showQuickGuide)}
+            className="btn btn-secondary bg-white dark:bg-[#1C1C1E]"
           >
-            <PlusIcon className="w-5 h-5 mr-2" />
-            Create API Key
+            <InformationCircleIcon className="w-5 h-5 mr-2 -ml-1" />
+            Quick API Reference
           </button>
-        )}
+          
+          {apiKeys.length > 0 && (
+            <button 
+              onClick={() => setShowCreateModal(true)} 
+              className="btn btn-primary"
+              disabled={!selectedProjectId}
+            >
+              <PlusIcon className="w-5 h-5 mr-2 -ml-1" />
+              Create API Key
+            </button>
+          )}
+        </div>
       </div>
 
       {createdKey && (
@@ -474,97 +494,180 @@ function ApiKeysPage() {
             </button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-apple-gray-200">
-              <thead>
-                <tr>
-                  <th className="table-header">{t('common.name')}</th>
-                  <th className="table-header">{t('common.key')}</th>
-                  <th className="table-header">{t('common.status')}</th>
-                  <th className="table-header">{t('common.scopes')}</th>
-                  <th className="table-header">{t('common.limits')}</th>
-                  <th className="table-header">{t('common.expires')}</th>
-                  <th className="table-header">{t('common.created')}</th>
-                  <th className="table-header">{t('common.last_used')}</th>
-                  <th className="table-header">{t('common.actions')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-apple-gray-100">
-                {apiKeys.map((key) => (
-                  <tr key={key.id} className="hover:bg-apple-gray-50">
-                    <td className="table-cell font-medium">{key.name}</td>
-                    <td className="table-cell">
-                      <code className="text-sm bg-apple-gray-100 px-2 py-1 rounded">
+          <>
+            {/* Desktop Table */}
+            <div className="overflow-x-auto hidden lg:block">
+              <table className="min-w-full divide-y divide-apple-gray-200">
+                <thead>
+                  <tr>
+                    <th className="table-header">{t('common.name')}</th>
+                    <th className="table-header">{t('common.key')}</th>
+                    <th className="table-header">{t('common.status')}</th>
+                    <th className="table-header">{t('common.scopes')}</th>
+                    <th className="table-header">{t('common.limits')}</th>
+                    <th className="table-header">{t('common.expires')}</th>
+                    <th className="table-header">{t('common.created')}</th>
+                    <th className="table-header">{t('common.last_used')}</th>
+                    <th className="table-header">{t('common.actions')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-apple-gray-100">
+                  {apiKeys.map((key) => (
+                    <tr key={key.id} className="hover:bg-apple-gray-50">
+                      <td className="table-cell font-medium">{key.name}</td>
+                      <td className="table-cell">
+                        <code className="text-sm bg-apple-gray-100 px-2 py-1 rounded">
+                          {key.key_prefix}...
+                        </code>
+                      </td>
+                      <td className="table-cell">
+                        <span className={key.is_active ? 'badge-success' : 'badge-error'}>
+                          {key.is_active ? t('common.active') : t('common.revoked')}
+                        </span>
+                      </td>
+                      <td className="table-cell">
+                        <div className="flex flex-wrap gap-1">
+                          {key.scopes === 'all' ? (
+                            <span className="badge-purple">{t('common.all')}</span>
+                          ) : (
+                            key.scopes?.split(',').map((s: string) => (
+                              <span key={s} className="px-2 py-0.5 rounded-full bg-apple-gray-100 text-apple-gray-600 text-xs border border-apple-gray-200">
+                                {s}
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </td>
+                      <td className="table-cell">
+                        {key.is_active ? (
+                          <RateLimitStatusCell keyId={key.id} isActive={key.is_active} />
+                        ) : (
+                          <div className="text-xs text-apple-gray-600 space-y-1">
+                            <div><span className="text-apple-gray-400">RPM:</span> {key.rate_limit || 'Unlimited'}</div>
+                            <div><span className="text-apple-gray-400">TPM:</span> {key.token_limit || 'Unlimited'}</div>
+                            <div><span className="text-apple-gray-400">Daily:</span> {key.daily_limit || 'Unlimited'}</div>
+                          </div>
+                        )}
+                      </td>
+                      <td className="table-cell text-apple-gray-500">
+                        {key.expires_at && new Date(key.expires_at).getTime() > 0
+                          ? formatDate(key.expires_at)
+                          : 'Never'}
+                      </td>
+                      <td className="table-cell text-apple-gray-500">
+                        {formatDate(key.created_at)}
+                      </td>
+                      <td className="table-cell text-apple-gray-500">
+                        {key.last_used_at && new Date(key.last_used_at).getTime() > 0
+                          ? formatDate(key.last_used_at)
+                          : 'Never'}
+                      </td>
+                      <td className="table-cell">
+                        <div className="flex items-center gap-2">
+                          {key.is_active && (
+                            <button
+                              onClick={() => openRevokeModal(key.id)}
+                              className="text-apple-orange hover:text-orange-600 transition-colors"
+                              title={t('api_keys.revoke_key')}
+                            >
+                              <XCircleIcon className="w-5 h-5" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => openDeleteModal(key.id)}
+                            className="text-apple-red hover:text-red-600 transition-colors"
+                            title={t('api_keys.delete_key')}
+                          >
+                            <TrashIcon className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card List */}
+            <div className="grid grid-cols-1 gap-4 lg:hidden sm:bg-apple-gray-50/50">
+              {apiKeys.map((key) => (
+                <div key={key.id} className="bg-white border border-apple-gray-200 rounded-apple-lg p-5 shadow-sm flex flex-col gap-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h4 className="text-base font-semibold text-apple-gray-900">{key.name}</h4>
+                      <code className="text-[11px] font-mono bg-apple-gray-100 px-1.5 py-0.5 rounded text-apple-gray-600 mt-1 inline-block border border-apple-gray-200">
                         {key.key_prefix}...
                       </code>
-                    </td>
-                    <td className="table-cell">
-                      <span className={key.is_active ? 'badge-success' : 'badge-error'}>
-                        {key.is_active ? t('common.active') : t('common.revoked')}
-                      </span>
-                    </td>
-                    <td className="table-cell">
-                      <div className="flex flex-wrap gap-1">
-                        {key.scopes === 'all' ? (
-                          <span className="badge-purple">{t('common.all')}</span>
-                        ) : (
-                          key.scopes?.split(',').map((s: string) => (
-                            <span key={s} className="px-2 py-0.5 rounded-full bg-apple-gray-100 text-apple-gray-600 text-xs border border-apple-gray-200">
-                              {s}
-                            </span>
-                          ))
-                        )}
+                    </div>
+                    <span className={key.is_active ? 'badge-success text-[10px]' : 'badge-error text-[10px]'}>
+                      {key.is_active ? t('common.active') : t('common.revoked')}
+                    </span>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-1.5">
+                    {key.scopes === 'all' ? (
+                      <span className="badge-purple text-[10px]">{t('common.all')}</span>
+                    ) : (
+                      key.scopes?.split(',').map((s: string) => (
+                        <span key={s} className="px-2 py-0.5 rounded-full bg-apple-gray-100 text-apple-gray-600 text-[10px] font-medium border border-apple-gray-200">
+                          {s}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                  
+                  <div className="bg-apple-gray-50 rounded-xl p-3 border border-apple-gray-100">
+                    {key.is_active ? (
+                      <RateLimitStatusCell keyId={key.id} isActive={key.is_active} />
+                    ) : (
+                      <div className="text-[11px] text-apple-gray-600 space-y-1.5">
+                        <div className="flex justify-between items-center"><span className="text-apple-gray-500 font-medium tracking-wide">RPM</span> <span className="font-mono">{key.rate_limit || 'Unlimited'}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-apple-gray-500 font-medium tracking-wide">TPM</span> <span className="font-mono">{key.token_limit || 'Unlimited'}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-apple-gray-500 font-medium tracking-wide">Daily</span> <span className="font-mono">{key.daily_limit || 'Unlimited'}</span></div>
                       </div>
-                    </td>
-                    <td className="table-cell">
-                      {key.is_active ? (
-                        <RateLimitStatusCell keyId={key.id} isActive={key.is_active} />
-                      ) : (
-                        <div className="text-xs text-apple-gray-600 space-y-1">
-                          <div><span className="text-apple-gray-400">RPM:</span> {key.rate_limit || 'Unlimited'}</div>
-                          <div><span className="text-apple-gray-400">TPM:</span> {key.token_limit || 'Unlimited'}</div>
-                          <div><span className="text-apple-gray-400">Daily:</span> {key.daily_limit || 'Unlimited'}</div>
-                        </div>
-                      )}
-                    </td>
-                    <td className="table-cell text-apple-gray-500">
-                      {key.expires_at && new Date(key.expires_at).getTime() > 0
-                        ? formatDate(key.expires_at)
-                        : 'Never'}
-                    </td>
-                    <td className="table-cell text-apple-gray-500">
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-apple-gray-500 bg-apple-gray-50/50 p-2.5 rounded-lg border border-apple-gray-100/50">
+                    <div>
+                      <span className="block text-apple-gray-400 font-medium mb-0.5 uppercase tracking-wider text-[9px]">{t('common.created')}</span>
                       {formatDate(key.created_at)}
-                    </td>
-                    <td className="table-cell text-apple-gray-500">
-                      {key.last_used_at && new Date(key.last_used_at).getTime() > 0
-                        ? formatDate(key.last_used_at)
-                        : 'Never'}
-                    </td>
-                    <td className="table-cell">
-                      <div className="flex items-center gap-2">
-                        {key.is_active && (
-                          <button
-                            onClick={() => openRevokeModal(key.id)}
-                            className="text-apple-orange hover:text-orange-600 transition-colors"
-                            title={t('api_keys.revoke_key')}
-                          >
-                            <XCircleIcon className="w-5 h-5" />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => openDeleteModal(key.id)}
-                          className="text-apple-red hover:text-red-600 transition-colors"
-                          title={t('api_keys.delete_key')}
-                        >
-                          <TrashIcon className="w-5 h-5" />
-                        </button>
+                    </div>
+                    {key.last_used_at && new Date(key.last_used_at).getTime() > 0 ? (
+                      <div className="text-right">
+                        <span className="block text-apple-gray-400 font-medium mb-0.5 uppercase tracking-wider text-[9px]">{t('common.last_used')}</span>
+                        {formatDate(key.last_used_at)}
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    ) : (
+                       <div className="text-right">
+                        <span className="block text-apple-gray-400 font-medium mb-0.5 uppercase tracking-wider text-[9px]">{t('common.last_used')}</span>
+                        Never
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-apple-gray-100">
+                    {key.is_active && (
+                      <button
+                        onClick={() => openRevokeModal(key.id)}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-orange-50 text-apple-orange hover:bg-orange-100 hover:text-orange-600 text-xs font-semibold rounded-lg transition-colors border border-orange-200/50"
+                      >
+                        <XCircleIcon className="w-4 h-4" />
+                        {t('api_keys.revoke_key')}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => openDeleteModal(key.id)}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-apple-red hover:bg-red-100 hover:text-red-600 text-xs font-semibold rounded-lg transition-colors border border-red-200/50"
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                      {t('api_keys.delete_key')}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </motion.div>
 

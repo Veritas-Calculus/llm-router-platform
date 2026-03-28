@@ -29,7 +29,6 @@ import (
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/database"
-	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/internal/service/admin"
 	"llm-router-platform/internal/service/announcement"
@@ -226,27 +225,20 @@ func (app *Application) InitInfrastructure() error {
 	return nil
 }
 
-// seedData populates default data.  In release mode only the admin account is
-// ensured (without overwriting a runtime-changed password).  Development mode
-// additionally seeds providers, models, and plans.
+// seedData populates default data.  Only the admin account is ensured on
+// startup.  Providers, models, and plans must be configured manually by the
+// administrator through the management UI.
 func (app *Application) seedData() {
 	if app.cfg.Server.Mode == "release" {
 		if err := app.db.SeedDefaultAdminOnly(&app.cfg.Admin); err != nil {
 			app.logger.Error("failed to seed admin user", zap.Error(err))
 		}
-		app.logger.Info("release mode: skipping provider/model/plan seed data")
 	} else {
-		if err := app.db.SeedDefaultProviders(); err != nil {
-			app.logger.Error("failed to seed default providers", zap.Error(err))
-		}
-		if err := app.db.SeedDefaultModels(); err != nil {
-			app.logger.Error("failed to seed default models", zap.Error(err))
-		}
 		if err := app.db.SeedDefaultAdmin(&app.cfg.Admin); err != nil {
 			app.logger.Error("failed to seed admin user", zap.Error(err))
 		}
-		seedDefaultPlans(app.db.DB)
 	}
+	app.logger.Info("provider/model/plan seed data skipped: configure via admin UI")
 }
 
 // connectRedis creates and tests a Redis connection.  Returns nil (with a
@@ -615,27 +607,6 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-func seedDefaultPlans(db *gorm.DB) {
-	plans := []models.Plan{
-		{
-			Name: "Free", Description: "Perfect for trying out the platform",
-			PriceMonth: 0, TokenLimit: 100000, RateLimit: 5,
-			SupportLevel: "standard", Features: "Basic models access, 100K tokens/month, 5 RPM",
-		},
-		{
-			Name: "Pro", Description: "For individuals and small teams",
-			PriceMonth: 20, TokenLimit: 5000000, RateLimit: 50,
-			SupportLevel: "priority", Features: "All models access, MCP support, 5M tokens/month, 50 RPM",
-		},
-	}
-
-	for _, p := range plans {
-		var existing models.Plan
-		if err := db.Where("name = ?", p.Name).First(&existing).Error; err != nil {
-			db.Create(&p)
-		}
-	}
-}
 
 // buildLogger creates a zap.Logger that respects the LOG_LEVEL and LOG_FORMAT
 // configuration values.

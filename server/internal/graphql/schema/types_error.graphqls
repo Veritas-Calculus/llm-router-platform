@@ -16,3 +16,19 @@ type ErrorLogConnection {
   page: Int!
   pageSize: Int!
 }
+
+type LogEntry {
+  timestamp: String!
+  level: String!
+  message: String!
+  requestId: String
+  caller: String
+  error: String
+  method: String
+  path: String
+  statusCode: Int
+  latency: Float
+  clientIp: String
+  userAgent: String
+  rawJson: String
+}

@@ -241,6 +241,7 @@ type ObservabilityConfig struct {
 	OTelEnabled       bool
 	OTelEndpoint      string // e.g. "localhost:4318" or URL
 	OTelServiceName   string // default: "llm-router-platform"
+	LokiURL           string
 }
 
 // Load reads configuration from environment variables and .env file.
@@ -365,6 +366,7 @@ func Load() (*Config, error) {
 			OTelEnabled:       viper.GetBool("OTEL_ENABLED"),
 			OTelEndpoint:      viper.GetString("OTEL_ENDPOINT"),
 			OTelServiceName:   viper.GetString("OTEL_SERVICE_NAME"),
+			LokiURL:           viper.GetString("LOKI_URL"),
 		},
 		Frontend: FrontendConfig{
 			URL: viper.GetString("FRONTEND_URL"),
@@ -551,6 +553,7 @@ func setDefaults() {
 	viper.SetDefault("OTEL_SERVICE_NAME", "llm-router-platform")
 	viper.SetDefault("TURNSTILE_ENABLED", false)
 	viper.SetDefault("CACHE_HIT_COST_RATIO", 0.1) // Cache hits billed at 10% of model price
+	viper.SetDefault("LOKI_URL", "")              // Empty disables Loki querying
 }
 
 // GetDSN returns the database connection string with proper escaping.

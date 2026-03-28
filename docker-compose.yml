@@ -65,13 +65,13 @@ services:
     environment:
       - SERVER_PORT=8080
       - GIN_MODE=release
-      - DB_HOST=postgres
+      - DB_HOST=llm-router-postgres
       - DB_PORT=5432
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME:-llm_router}
       - DB_SSL_MODE=${DB_SSL_MODE:-disable} # Local dev: disable. Production: require or verify-full
-      - REDIS_HOST=redis
+      - REDIS_HOST=llm-router-redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - REDIS_DB=0
@@ -79,6 +79,7 @@ services:
       - JWT_EXPIRES_IN=1h
       - LOG_LEVEL=info
       - LOG_FORMAT=json
+      - LOKI_URL=http://loki:3100
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set}
       - ADMIN_NAME=${ADMIN_NAME:-Administrator}
@@ -107,6 +108,7 @@ services:
     networks:
       - frontend_net
       - backend_net
+      - sentry_net
     depends_on:
       postgres:
         condition: service_healthy
@@ -139,7 +141,11 @@ services:
 
   web:
     image: ghcr.io/veritas-calculus/llm-router-platform/web:latest
-    build: ./web
+    build:
+      context: ./web
+      args:
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+        VITE_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
     container_name: llm-router-web
     ports:
       - "80:8080"
@@ -538,10 +544,46 @@ services:
         max-file: "3"
     restart: unless-stopped
 
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: llm-router-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./deploy/loki/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - backend_net
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:2.9.4
+    container_name: llm-router-promtail
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./deploy/loki/promtail-config.yaml:/etc/promtail/promtail-config.yaml
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    networks:
+      - backend_net
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+    restart: unless-stopped
+
 networks:
   frontend_net:
   backend_net:
     internal: true
+  sentry_net:
+    external: true
+    name: sentry-self-hosted_default
 
 volumes:
   postgres_data:
@@ -553,3 +595,4 @@ volumes:
   langfuse_clickhouse_data:
   langfuse_redis_data:
   langfuse_minio_data:
+  loki_data:

@@ -3,6 +3,8 @@
 package middleware
 
 import (
+	"llm-router-platform/internal/models"
+
 	"github.com/getsentry/sentry-go"
 	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-gonic/gin"
@@ -20,23 +22,45 @@ func SentryMiddleware() gin.HandlerFunc {
 }
 
 // SentryUserContext returns middleware that enriches Sentry events with the
-// authenticated user's information (set by the auth middleware earlier in the chain).
+// authenticated user's information and project/org context for LLM API requests.
 func SentryUserContext() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 
-		// Only enrich if Sentry hub is active and user is set
-		if hub := sentrygin.GetHubFromContext(c); hub != nil {
+		// Only enrich if Sentry hub is active
+		hub := sentrygin.GetHubFromContext(c)
+		if hub == nil {
+			return
+		}
+
+		hub.ConfigureScope(func(scope *sentry.Scope) {
+			// User context (set by JWT or API key auth middleware)
 			userID, _ := c.Get("userID")
 			email, _ := c.Get("email")
 
 			if uid, ok := userID.(string); ok && uid != "" {
-				hub.Scope().SetUser(sentry.User{
+				scope.SetUser(sentry.User{
 					ID:    uid,
 					Email: emailStr(email),
 				})
 			}
-		}
+
+			// Project context (set by API key auth middleware for LLM endpoints)
+			if projectObj, exists := c.Get("project"); exists {
+				if p, ok := projectObj.(*models.Project); ok {
+					scope.SetTag("project_id", p.ID.String())
+					scope.SetTag("org_id", p.OrgID.String())
+				}
+			}
+
+			// API key context
+			if apiKeyObj, exists := c.Get("api_key"); exists {
+				if ak, ok := apiKeyObj.(*models.APIKey); ok {
+					scope.SetTag("api_key_id", ak.ID.String())
+					scope.SetTag("channel", ak.Channel)
+				}
+			}
+		})
 	}
 }
 

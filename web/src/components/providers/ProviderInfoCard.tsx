@@ -3,8 +3,10 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   ArrowPathIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import { Provider, ProviderHealthStatus, Proxy } from '@/lib/types';
+import { useState } from 'react';
 
 interface ProviderInfoCardProps {
   provider: Provider;
@@ -15,6 +17,7 @@ interface ProviderInfoCardProps {
   onTestConnection: () => void;
   onToggleProxy: () => void;
   onProxyChange: (proxyId: string) => void;
+  onDeleteProvider: (id: string) => Promise<void>;
 }
 
 export default function ProviderInfoCard({
@@ -26,7 +29,10 @@ export default function ProviderInfoCard({
   onTestConnection,
   onToggleProxy,
   onProxyChange,
+  onDeleteProvider,
 }: ProviderInfoCardProps) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   return (
     <div className="card">
       <div className="flex items-start justify-between">
@@ -64,6 +70,40 @@ export default function ProviderInfoCard({
             )}
             Test Connection
           </button>
+          {!confirmDelete ? (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="p-2 rounded-apple text-apple-gray-400 hover:text-apple-red hover:bg-red-50 transition-colors"
+              title="Delete provider"
+            >
+              <TrashIcon className="w-5 h-5" />
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-apple bg-red-50 border border-apple-red/20">
+              <span className="text-sm text-apple-red font-medium">确认删除？</span>
+              <button
+                onClick={async () => {
+                  setDeleting(true);
+                  try {
+                    await onDeleteProvider(provider.id);
+                  } finally {
+                    setDeleting(false);
+                    setConfirmDelete(false);
+                  }
+                }}
+                disabled={deleting}
+                className="px-2.5 py-1 text-xs font-medium text-white bg-apple-red rounded-md hover:bg-red-600 transition-colors disabled:opacity-50"
+              >
+                {deleting ? '删除中...' : '删除'}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="px-2.5 py-1 text-xs font-medium text-apple-gray-700 bg-white rounded-md hover:bg-apple-gray-100 transition-colors border border-apple-gray-200"
+              >
+                取消
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

@@ -11,6 +11,11 @@ RUN npm ci
 
 ARG CACHEBUST=1
 
+# Sentry DSN is baked in at build time (Vite inlines import.meta.env.VITE_*)
+ARG VITE_SENTRY_DSN=""
+ARG VITE_SENTRY_ENVIRONMENT="production"
+ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
+ENV VITE_SENTRY_ENVIRONMENT=$VITE_SENTRY_ENVIRONMENT
 
 # Copy source code
 COPY . .

@@ -1,7 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { useState, useMemo } from 'react';
 import { useQuery } from '@apollo/client/react';
+import { useNavigate } from 'react-router-dom';
 import { GET_ERROR_LOGS } from '@/lib/graphql/operations/errorLogs';
 import {
   ExclamationCircleIcon,
@@ -15,8 +14,10 @@ import { useTranslation } from '@/lib/i18n';
 
 export default function ErrorLogsPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const pageSize = 20;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [selectedLog, setSelectedLog] = useState<any>(null);
 
   const { data, loading } = useQuery<any>(GET_ERROR_LOGS, {
@@ -192,12 +193,20 @@ ${log.responseBody}`;
                   <h2 className="text-xl font-semibold text-apple-gray-900">Error Details</h2>
                   <p className="text-sm font-mono text-apple-gray-500 mt-1">{selectedLog.traceId}</p>
                 </div>
-                <button
-                  onClick={() => setSelectedLog(null)}
-                  className="p-2 text-apple-gray-400 hover:text-apple-gray-600 hover:bg-apple-gray-100 rounded-full transition-colors"
-                >
-                  <XMarkIcon className="w-6 h-6" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => navigate(`/admin/troubleshooting?requestId=${encodeURIComponent(selectedLog.traceId)}`)}
+                    className="px-4 py-2 bg-apple-blue text-white text-sm font-medium rounded-lg shadow-sm hover:bg-blue-600 transition-colors"
+                  >
+                    View Trace
+                  </button>
+                  <button
+                    onClick={() => setSelectedLog(null)}
+                    className="p-2 text-apple-gray-400 hover:text-apple-gray-600 hover:bg-apple-gray-100 rounded-full transition-colors"
+                  >
+                    <XMarkIcon className="w-6 h-6" />
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-apple-gray-50">

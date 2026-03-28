@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@apollo/client/react';
 import {
@@ -14,6 +15,7 @@ import {
   CommandLineIcon,
   UsersIcon,
   BanknotesIcon,
+  ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 import {
   LineChart,
@@ -118,7 +120,14 @@ function HealthBadge({ healthy, total, icon: Icon, label }: { healthy: number; t
 
 function DashboardPage() {
   const { t } = useTranslation();
-  const { data, loading } = useQuery<any>(ADMIN_DASHBOARD_QUERY, { pollInterval: 30_000 });
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const { data, loading, refetch } = useQuery<any>(ADMIN_DASHBOARD_QUERY, { pollInterval: 30_000 });
+
+  useEffect(() => {
+    if (data) {
+      setLastUpdated(new Date());
+    }
+  }, [data]);
 
   const d = data?.adminDashboard;
   const chartData = data?.usageChart || [];
@@ -141,11 +150,21 @@ function DashboardPage() {
           <h1 className="text-2xl font-semibold text-apple-gray-900">{t('admin.dashboard.title')}</h1>
           <p className="text-apple-gray-500 mt-1">{t('admin.dashboard.subtitle')}</p>
         </div>
-        <div className="text-right hidden sm:block">
-          <p className="text-sm text-apple-gray-500">{t('admin.dashboard.last_updated')}</p>
-          <p className="text-sm font-medium text-apple-gray-700">
-            {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-          </p>
+        <div className="hidden sm:flex items-center gap-4 text-right">
+          <div>
+            <p className="text-sm text-apple-gray-500">{t('admin.dashboard.last_updated')}</p>
+            <p className="text-sm font-medium text-apple-gray-700">
+              {lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </p>
+          </div>
+          <button 
+            onClick={() => refetch()} 
+            disabled={loading}
+            className="p-2 rounded-xl bg-white border border-apple-gray-200 shadow-sm text-apple-gray-600 hover:text-apple-gray-900 hover:bg-apple-gray-50 transition-colors disabled:opacity-50"
+            title="Refresh Dashboard"
+          >
+            <ArrowPathIcon className={`w-5 h-5 ${loading ? 'animate-spin text-apple-blue' : ''}`} />
+          </button>
         </div>
       </div>
 

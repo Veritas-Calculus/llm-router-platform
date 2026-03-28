@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,7 +9,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"strings"
 	"time"
 
 	"llm-router-platform/internal/config"
@@ -158,44 +156,7 @@ func (c *OpenAIClient) StreamChat(ctx context.Context, req *ChatRequest) (<-chan
 	}
 
 	chunks := make(chan StreamChunk)
-	go func() {
-		defer close(chunks)
-		defer func() { _ = resp.Body.Close() }()
-
-		scanner := bufio.NewScanner(resp.Body)
-		// Increase buffer size to handle large streaming responses
-		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			select {
-			case <-ctx.Done():
-				c.logger.Debug("stream cancelled by context")
-				return
-			default:
-				line := scanner.Text()
-				if !strings.HasPrefix(line, "data: ") {
-					continue
-				}
-				data := strings.TrimPrefix(line, "data: ")
-				if data == "[DONE]" {
-					select {
-					case chunks <- StreamChunk{Done: true}:
-					case <-ctx.Done():
-					}
-					return
-				}
-
-				var chunk StreamChunk
-				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-					continue
-				}
-				select {
-				case chunks <- chunk:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
+	go processSSEStream(ctx, resp.Body, chunks, c.logger)
 
 	return chunks, nil
 }

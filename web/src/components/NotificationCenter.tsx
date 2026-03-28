@@ -184,7 +184,7 @@ export default function NotificationCenter({ pollInterval = 60000 }: Notificatio
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 top-full mt-2 w-80 sm:w-[420px] rounded-2xl overflow-hidden z-50"
+            className="fixed inset-x-4 top-16 sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[420px] rounded-2xl overflow-hidden z-50 origin-top"
             style={{
               backgroundColor: 'var(--theme-bg-card)',
               border: '1px solid var(--theme-border-light)',
