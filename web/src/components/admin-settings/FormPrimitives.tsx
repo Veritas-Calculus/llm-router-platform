@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import clsx from 'clsx';
 
 /* ── Shared form primitives for admin settings tabs ── */

@@ -11,9 +11,21 @@ interface RequestTraceModalProps {
   requestId: string | null;
 }
 
+interface RequestLogEntry {
+  level: string;
+  timestamp: string;
+  message: string;
+  caller?: string;
+  error?: string;
+}
+
+interface RequestLogsData {
+  requestLogs: RequestLogEntry[];
+}
+
 export default function RequestTraceModal({ isOpen, onClose, requestId }: RequestTraceModalProps) {
   const { t } = useTranslation();
-  const { data, loading, error } = useQuery<any>(GET_REQUEST_LOGS, {
+  const { data, loading, error } = useQuery<RequestLogsData>(GET_REQUEST_LOGS, {
     variables: { requestId },
     skip: !isOpen || !requestId,
     fetchPolicy: 'network-only',
@@ -115,7 +127,7 @@ export default function RequestTraceModal({ isOpen, onClose, requestId }: Reques
 
                   {!loading && !error && data?.requestLogs && data.requestLogs.length > 0 && (
                     <div className="space-y-3">
-                      {data.requestLogs.map((log: any, idx: number) => (
+                      {data.requestLogs.map((log: RequestLogEntry, idx: number) => (
                         <div key={idx} className={`p-4 rounded-xl border ${getLevelColor(log.level)} shadow-sm transition-all hover:shadow-md`}>
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex items-center space-x-2">

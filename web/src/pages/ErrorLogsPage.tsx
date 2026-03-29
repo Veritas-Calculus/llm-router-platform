@@ -12,15 +12,30 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useTranslation } from '@/lib/i18n';
 
+interface ErrorLog {
+  id: string;
+  trajectoryId: string;
+  traceId: string;
+  provider: string;
+  model: string;
+  statusCode: number;
+  headers: string;
+  responseBody: string;
+  createdAt: string;
+}
+
+interface ErrorLogsData {
+  errorLogs: { data: ErrorLog[]; total: number };
+}
+
 export default function ErrorLogsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const pageSize = 20;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [selectedLog, setSelectedLog] = useState<any>(null);
+  const [selectedLog, setSelectedLog] = useState<ErrorLog | null>(null);
 
-  const { data, loading } = useQuery<any>(GET_ERROR_LOGS, {
+  const { data, loading } = useQuery<ErrorLogsData>(GET_ERROR_LOGS, {
     variables: { page, pageSize },
     fetchPolicy: 'cache-and-network',
   });
@@ -37,7 +52,7 @@ export default function ErrorLogsPage() {
     });
   };
 
-  const copySherlog = (log: any) => {
+  const copySherlog = (log: ErrorLog) => {
     const formatStr = `Trajectory ID: ${log.trajectoryId}
 Error: HTTP ${log.statusCode} upstream
 Sherlog: 
@@ -88,7 +103,7 @@ ${log.responseBody}`;
                 </td>
               </tr>
             ) : (
-              logs.map((log: any, idx: number) => (
+              logs.map((log: ErrorLog, idx: number) => (
                 <motion.tr
                   key={log.id}
                   initial={{ opacity: 0, y: 10 }}
@@ -234,7 +249,7 @@ ${log.responseBody}`;
                     {(() => {
                         try {
                             return JSON.stringify(JSON.parse(selectedLog.headers), null, 2);
-                        } catch(e) {
+                        } catch {
                             return selectedLog.headers;
                         }
                     })()}
@@ -255,7 +270,7 @@ ${log.responseBody}`;
                     {(() => {
                         try {
                             return JSON.stringify(JSON.parse(selectedLog.responseBody), null, 2);
-                        } catch(e) {
+                        } catch {
                             return selectedLog.responseBody;
                         }
                     })()}

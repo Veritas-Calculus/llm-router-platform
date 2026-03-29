@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable react-refresh/only-export-components */
 import { motion } from 'framer-motion';
 import { useQuery } from '@apollo/client/react';
 import { ExclamationTriangleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
@@ -27,7 +27,46 @@ const STATUS_BADGE_BASE: Record<string, { labelKey: string; className: string }>
 
 /* ── Utility ── */
 
-export function mapApiKey(d: any): ApiKey {
+interface RawApiKeyData {
+  id: string;
+  projectId: string;
+  channel: string;
+  name: string;
+  key?: string;
+  keyPrefix: string;
+  isActive: boolean;
+  scopes: string;
+  rateLimit: number;
+  tokenLimit: number;
+  dailyLimit: number;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+}
+
+interface RateLimitStatusData {
+  apiKeyRateLimitStatus: {
+    status: string;
+    rpmCurrent: number;
+    rpmLimit: number;
+    tpmCurrent: number;
+    tpmLimit: number;
+    dailyCurrent: number;
+    dailyLimit: number;
+  };
+}
+
+interface SubscriptionQuotaData {
+  mySubscription: {
+    planName: string;
+    tokenLimit: number;
+    usedTokens: number;
+    quotaPercentage: number;
+    isQuotaExceeded: boolean;
+  };
+}
+
+export function mapApiKey(d: RawApiKeyData): ApiKey {
   return {
     id: d.id, project_id: d.projectId, channel: d.channel, name: d.name, key: d.key || '', key_prefix: d.keyPrefix,
     is_active: d.isActive, scopes: d.scopes, rate_limit: d.rateLimit, token_limit: d.tokenLimit, daily_limit: d.dailyLimit,
@@ -60,7 +99,7 @@ function RateLimitMiniBar({ current, limit, label }: { current: number; limit: n
 
 export function RateLimitStatusCell({ keyId, isActive }: { keyId: string; isActive: boolean }) {
   const { t } = useTranslation();
-  const { data } = useQuery<any>(API_KEY_RATE_LIMIT_STATUS, {
+  const { data } = useQuery<RateLimitStatusData>(API_KEY_RATE_LIMIT_STATUS, {
     variables: { keyId },
     skip: !isActive,
     pollInterval: 10000,
@@ -85,7 +124,7 @@ export function RateLimitStatusCell({ keyId, isActive }: { keyId: string; isActi
 /* ── Subscription Quota Banner ── */
 
 export function SubscriptionQuotaBanner() {
-  const { data } = useQuery<any>(SUBSCRIPTION_QUOTA_QUERY, { fetchPolicy: 'cache-and-network' });
+  const { data } = useQuery<SubscriptionQuotaData>(SUBSCRIPTION_QUOTA_QUERY, { fetchPolicy: 'cache-and-network' });
   const sub = data?.mySubscription;
   if (!sub || sub.tokenLimit <= 0) return null;
 
