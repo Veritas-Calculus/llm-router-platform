@@ -27,8 +27,26 @@ func ScrubText(content string, config *models.DlpConfig) string {
 		return content
 	}
 
-	result := content
+	result := scrubBuiltinPII(content, config)
+	result = scrubCustomPII(result, config.CustomRegex)
+	return result
+}
 
+// HasPII returns true if any of the enabled PII patterns are found in the content.
+func HasPII(content string, config *models.DlpConfig) bool {
+	if config == nil || !config.IsEnabled {
+		return false
+	}
+
+	if matchesBuiltinPII(content, config) {
+		return true
+	}
+	return matchesCustomPII(content, config.CustomRegex)
+}
+
+// scrubBuiltinPII replaces built-in PII patterns in the content.
+func scrubBuiltinPII(content string, config *models.DlpConfig) string {
+	result := content
 	if config.MaskCreditCards {
 		result = creditCardRegex.ReplaceAllString(result, "[CREDIT_CARD_REDACTED]")
 	}
@@ -44,27 +62,25 @@ func ScrubText(content string, config *models.DlpConfig) string {
 	if config.MaskPhones {
 		result = phoneRegex.ReplaceAllString(result, "[PHONE_REDACTED]")
 	}
+	return result
+}
 
-	// Apply custom regexes
-	for _, customPattern := range config.CustomRegex {
+// scrubCustomPII replaces custom regex patterns in the content.
+func scrubCustomPII(content string, patterns []string) string {
+	result := content
+	for _, customPattern := range patterns {
 		if customPattern == "" {
 			continue
 		}
-		// A potential optimization is an LRU cache mapping project_id -> compiled regex list.
 		if re, err := regexp.Compile(customPattern); err == nil {
 			result = re.ReplaceAllString(result, "[CUSTOM_REDACTED]")
 		}
 	}
-
 	return result
 }
 
-// HasPII returns true if any of the enabled PII patterns are found in the content.
-func HasPII(content string, config *models.DlpConfig) bool {
-	if config == nil || !config.IsEnabled {
-		return false
-	}
-
+// matchesBuiltinPII returns true if any enabled built-in PII pattern matches.
+func matchesBuiltinPII(content string, config *models.DlpConfig) bool {
 	if config.MaskCreditCards && creditCardRegex.MatchString(content) {
 		return true
 	}
@@ -80,8 +96,12 @@ func HasPII(content string, config *models.DlpConfig) bool {
 	if config.MaskPhones && phoneRegex.MatchString(content) {
 		return true
 	}
+	return false
+}
 
-	for _, customPattern := range config.CustomRegex {
+// matchesCustomPII returns true if any custom regex pattern matches.
+func matchesCustomPII(content string, patterns []string) bool {
+	for _, customPattern := range patterns {
 		if customPattern == "" {
 			continue
 		}
@@ -91,6 +111,5 @@ func HasPII(content string, config *models.DlpConfig) bool {
 			}
 		}
 	}
-
 	return false
 }

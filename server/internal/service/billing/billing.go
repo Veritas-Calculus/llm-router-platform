@@ -172,18 +172,7 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 		}
 
 		// 4. Low balance alert (async, non-transactional)
-		if balanceSvc.redis != nil && balanceSvc.emailSvc != nil && user.Balance < 1.0 {
-			cacheKey := fmt.Sprintf("quota_warn:balance:%s", userID.String())
-			if err := balanceSvc.redis.Get(ctx, cacheKey).Err(); err == redis.Nil {
-				balanceSvc.logger.Info("sending low balance warning email", zap.String("userID", userID.String()), zap.Float64("balance", user.Balance))
-				go func(to, name string, currentBalance float64) {
-					if err := balanceSvc.emailSvc.SendQuotaWarningEmail(to, name, fmt.Sprintf("$%.2f", currentBalance), "$1.00"); err != nil {
-						balanceSvc.logger.Error("failed to send quota warning email", zap.Error(err))
-					}
-				}(user.Email, user.Name, user.Balance)
-				balanceSvc.redis.Set(ctx, cacheKey, "1", 24*time.Hour)
-			}
-		}
+		balanceSvc.sendLowBalanceAlert(ctx, userID, user.Email, user.Name, user.Balance)
 
 		return nil
 	})
@@ -197,6 +186,27 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 	}
 
 	return err
+}
+
+// sendLowBalanceAlert sends a low-balance warning email if the user's balance drops below $1,
+// with a 24-hour cooldown per user to avoid spam.
+func (bs *BalanceService) sendLowBalanceAlert(ctx context.Context, userID uuid.UUID, email, name string, balance float64) {
+	if bs.redis == nil || bs.emailSvc == nil || balance >= 1.0 {
+		return
+	}
+
+	cacheKey := fmt.Sprintf("quota_warn:balance:%s", userID.String())
+	if err := bs.redis.Get(ctx, cacheKey).Err(); err != redis.Nil {
+		return // Already sent recently or Redis error
+	}
+
+	bs.logger.Info("sending low balance warning email", zap.String("userID", userID.String()), zap.Float64("balance", balance))
+	go func(to, uname string, currentBalance float64) {
+		if err := bs.emailSvc.SendQuotaWarningEmail(to, uname, fmt.Sprintf("$%.2f", currentBalance), "$1.00"); err != nil {
+			bs.logger.Error("failed to send quota warning email", zap.Error(err))
+		}
+	}(email, name, balance)
+	bs.redis.Set(ctx, cacheKey, "1", 24*time.Hour)
 }
 
 // incrUsageCache increments the Redis usage cache using org-scoped keys

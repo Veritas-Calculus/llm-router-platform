@@ -563,6 +563,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		cfg.Server.Mode, logger,
 	)
 	adminSvc := admin.NewService(gormDB, redisClient, cfg, logger)
+	adminSvc.SetSystemConfig(cfgService)
 
 	return &routes.Services{
 		User:             userService,

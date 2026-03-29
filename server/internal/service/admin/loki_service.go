@@ -49,49 +49,13 @@ func (s *Service) GetRequestLogs(ctx context.Context, requestID *string, level *
 		return nil, fmt.Errorf("loki is not configured or disabled via environment variables")
 	}
 
-	// Calculate time range
-	now := time.Now()
-	var startNs, endNs int64
-
-	if endTime != nil && *endTime != "" {
-		t, err := time.Parse(time.RFC3339, *endTime)
-		if err != nil {
-			return nil, fmt.Errorf("invalid endTime format, expected RFC3339: %w", err)
-		}
-		endNs = t.UnixNano()
-	} else {
-		endNs = now.UnixNano()
+	startNs, endNs, err := parseTimeRange(startTime, endTime)
+	if err != nil {
+		return nil, err
 	}
 
-	if startTime != nil && *startTime != "" {
-		t, err := time.Parse(time.RFC3339, *startTime)
-		if err != nil {
-			return nil, fmt.Errorf("invalid startTime format, expected RFC3339: %w", err)
-		}
-		startNs = t.UnixNano()
-	} else {
-		// Default to last 30 minutes
-		startNs = now.Add(-30 * time.Minute).UnixNano()
-	}
-
-	// Default limit
-	queryLimit := 500
-	if limit != nil && *limit > 0 {
-		queryLimit = *limit
-		if queryLimit > 5000 {
-			queryLimit = 5000 // Safety cap
-		}
-	}
-
-	// Build LogQL query with optional filters
-	query := `{container="llm-router-server"}`
-	if requestID != nil && *requestID != "" {
-		query += fmt.Sprintf(` |= "%s"`, *requestID)
-	}
-	if level != nil && *level != "" {
-		query += fmt.Sprintf(` |= "\"level\":\"%s\""`, *level)
-	}
-	query += " | json"
+	queryLimit := clampLimit(limit, 500, 5000)
+	query := buildLogQLQuery(requestID, level)
 
 	reqURL, err := url.Parse(lokiURL)
 	if err != nil {
@@ -104,7 +68,7 @@ func (s *Service) GetRequestLogs(ctx context.Context, requestID *string, level *
 	q.Set("start", fmt.Sprintf("%d", startNs))
 	q.Set("end", fmt.Sprintf("%d", endNs))
 	q.Set("limit", fmt.Sprintf("%d", queryLimit))
-	q.Set("direction", "forward") // Return chronological order
+	q.Set("direction", "forward")
 	reqURL.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL.String(), nil)
@@ -135,76 +99,130 @@ func (s *Service) GetRequestLogs(ctx context.Context, requestID *string, level *
 			if len(val) < 2 {
 				continue
 			}
-
-			tsStr := val[0]
-			line := val[1]
-
-			entry := &LogEntry{
-				Level:   "info",
-				Message: line,
-			}
-
-			// Safely parse JSON log line produced by Zap
-			var logLine map[string]interface{}
-			if err := json.Unmarshal([]byte(line), &logLine); err == nil {
-				// Store raw JSON for detailed view
-				rawCopy := line
-				entry.RawJSON = &rawCopy
-
-				// Core fields
-				if msg, ok := logLine["msg"].(string); ok {
-					entry.Message = msg
-				}
-				if l, ok := logLine["level"].(string); ok {
-					entry.Level = l
-				}
-				if c, ok := logLine["caller"].(string); ok {
-					entry.Caller = &c
-				}
-				if e, ok := logLine["error"].(string); ok {
-					entry.Error = &e
-				}
-
-				// Request ID
-				if rId, ok := logLine["request_id"].(string); ok {
-					entry.RequestID = &rId
-				} else if rId, ok := logLine["trace_id"].(string); ok {
-					entry.RequestID = &rId
-				}
-
-				// HTTP request details
-				if m, ok := logLine["method"].(string); ok {
-					entry.Method = &m
-				}
-				if p, ok := logLine["path"].(string); ok {
-					entry.Path = &p
-				}
-				if s, ok := logLine["status"].(float64); ok {
-					sc := int(s)
-					entry.StatusCode = &sc
-				}
-				if lat, ok := logLine["latency"].(float64); ok {
-					entry.Latency = &lat
-				}
-				if ip, ok := logLine["client_ip"].(string); ok {
-					entry.ClientIP = &ip
-				}
-				if ua, ok := logLine["user_agent"].(string); ok {
-					entry.UserAgent = &ua
-				}
-			}
-
-			// Parse timestamp
-			var tsNs int64
-			if _, err := fmt.Sscanf(tsStr, "%d", &tsNs); err == nil {
-				entry.Timestamp = time.Unix(0, tsNs).Format(time.RFC3339Nano)
-			} else {
-				entry.Timestamp = tsStr
-			}
-
-			entries = append(entries, entry)
+			entries = append(entries, parseLogLine(val[0], val[1]))
 		}
 	}
 
 	return entries, nil
+}
+
+// parseTimeRange parses optional RFC3339 start/end times into nanosecond timestamps.
+func parseTimeRange(startTime *string, endTime *string) (startNs, endNs int64, err error) {
+	now := time.Now()
+
+	if endTime != nil && *endTime != "" {
+		t, err := time.Parse(time.RFC3339, *endTime)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid endTime format, expected RFC3339: %w", err)
+		}
+		endNs = t.UnixNano()
+	} else {
+		endNs = now.UnixNano()
+	}
+
+	if startTime != nil && *startTime != "" {
+		t, err := time.Parse(time.RFC3339, *startTime)
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid startTime format, expected RFC3339: %w", err)
+		}
+		startNs = t.UnixNano()
+	} else {
+		startNs = now.Add(-30 * time.Minute).UnixNano()
+	}
+
+	return startNs, endNs, nil
+}
+
+// clampLimit returns the dereferenced limit value, clamped between the default and max.
+func clampLimit(limit *int, defaultVal, maxVal int) int {
+	if limit == nil || *limit <= 0 {
+		return defaultVal
+	}
+	if *limit > maxVal {
+		return maxVal
+	}
+	return *limit
+}
+
+// buildLogQLQuery constructs a LogQL query string with optional filters.
+func buildLogQLQuery(requestID *string, level *string) string {
+	query := `{container="llm-router-server"}`
+	if requestID != nil && *requestID != "" {
+		query += fmt.Sprintf(` |= "%s"`, *requestID)
+	}
+	if level != nil && *level != "" {
+		query += fmt.Sprintf(` |= "\"level\":\"%s\""`, *level)
+	}
+	query += " | json"
+	return query
+}
+
+// parseLogLine parses a single Loki log value pair (timestamp, line) into a LogEntry.
+func parseLogLine(tsStr, line string) *LogEntry {
+	entry := &LogEntry{
+		Level:   "info",
+		Message: line,
+	}
+
+	// Safely parse JSON log line produced by Zap
+	var logLine map[string]interface{}
+	if err := json.Unmarshal([]byte(line), &logLine); err == nil {
+		rawCopy := line
+		entry.RawJSON = &rawCopy
+		populateLogEntryFromJSON(entry, logLine)
+	}
+
+	// Parse timestamp
+	var tsNs int64
+	if _, err := fmt.Sscanf(tsStr, "%d", &tsNs); err == nil {
+		entry.Timestamp = time.Unix(0, tsNs).Format(time.RFC3339Nano)
+	} else {
+		entry.Timestamp = tsStr
+	}
+
+	return entry
+}
+
+// populateLogEntryFromJSON extracts structured fields from a parsed JSON log line.
+func populateLogEntryFromJSON(entry *LogEntry, logLine map[string]interface{}) {
+	if msg, ok := logLine["msg"].(string); ok {
+		entry.Message = msg
+	}
+	if l, ok := logLine["level"].(string); ok {
+		entry.Level = l
+	}
+	if c, ok := logLine["caller"].(string); ok {
+		entry.Caller = &c
+	}
+	if e, ok := logLine["error"].(string); ok {
+		entry.Error = &e
+	}
+
+	// Request ID
+	if rId, ok := logLine["request_id"].(string); ok {
+		entry.RequestID = &rId
+	} else if rId, ok := logLine["trace_id"].(string); ok {
+		entry.RequestID = &rId
+	}
+
+	// HTTP request details
+	if m, ok := logLine["method"].(string); ok {
+		entry.Method = &m
+	}
+	if p, ok := logLine["path"].(string); ok {
+		entry.Path = &p
+	}
+	if s, ok := logLine["status"].(float64); ok {
+		sc := int(s)
+		entry.StatusCode = &sc
+	}
+	if lat, ok := logLine["latency"].(float64); ok {
+		entry.Latency = &lat
+	}
+	if ip, ok := logLine["client_ip"].(string); ok {
+		entry.ClientIP = &ip
+	}
+	if ua, ok := logLine["user_agent"].(string); ok {
+		entry.UserAgent = &ua
+	}
 }

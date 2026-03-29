@@ -116,31 +116,7 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 	}
 
 	// Map Anthropic request to internal ChatRequest
-	internalMessages := make([]provider.Message, 0)
-	
-	// Add system message if present
-	if anthroReq.System != "" {
-		internalMessages = append(internalMessages, provider.Message{
-			Role:    "system",
-			Content: provider.StringContent(anthroReq.System),
-		})
-	}
-
-	for _, m := range anthroReq.Messages {
-		content := ""
-		switch v := m.Content.(type) {
-		case string:
-			content = v
-		case []interface{}:
-			// Simple mapping for complex content blocks
-			data, _ := json.Marshal(v)
-			content = string(data)
-		}
-		internalMessages = append(internalMessages, provider.Message{
-			Role:    m.Role,
-			Content: provider.StringContent(content),
-		})
-	}
+	internalMessages := mapAnthropicMessages(anthroReq)
 
 	var temp float64
 	if anthroReq.Temperature != nil {
@@ -173,100 +149,7 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 
 	// Handle streaming via existing infrastructure
 	if anthroReq.Stream {
-		usageLog := &models.UsageLog{
-			UserID:     userAPIKey.UserID,
-			ProjectID:  projectObj.ID,
-			Channel:    userAPIKey.Channel,
-			APIKeyID:   userAPIKey.ID,
-			ProviderID: selectedProvider.ID,
-			ModelName:  anthroReq.Model,
-			Latency:    0,
-			StatusCode: http.StatusProcessing,
-		}
-		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
-			h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", sanitize.LogValue(anthroReq.Model)))
-		}
-
-		streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
-		if err != nil {
-			h.logger.Error("anthropic stream failed", zap.Error(err))
-			if billingErr := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), err.Error()); billingErr != nil {
-				h.logger.Warn("billing update failed", zap.Error(billingErr))
-			}
-			c.JSON(http.StatusBadGateway, gin.H{"type": "error", "error": gin.H{"type": "api_error", "message": "upstream stream failed"}})
-			return
-		}
-
-		c.Writer.Header().Set("Content-Type", "text/event-stream")
-		c.Writer.Header().Set("Cache-Control", "no-cache")
-		c.Writer.Header().Set("Connection", "keep-alive")
-
-		// Anthropic message_start event
-		msgStartEvent := gin.H{
-			"type": "message_start",
-			"message": gin.H{
-				"id":    "msg_" + uuid.New().String()[:8],
-				"type":  "message",
-				"role":  "assistant",
-				"model": anthroReq.Model,
-				"content": []interface{}{},
-				"usage": gin.H{"input_tokens": 0, "output_tokens": 0},
-			},
-		}
-		data, _ := json.Marshal(msgStartEvent)
-		_, _ = c.Writer.Write([]byte("event: message_start\ndata: "))
-		_, _ = c.Writer.Write(data)
-		_, _ = c.Writer.Write([]byte("\n\n"))
-
-		// content_block_start
-		blockStart := gin.H{"type": "content_block_start", "index": 0, "content_block": gin.H{"type": "text", "text": ""}}
-		data, _ = json.Marshal(blockStart)
-		_, _ = c.Writer.Write([]byte("event: content_block_start\ndata: "))
-		_, _ = c.Writer.Write(data)
-		_, _ = c.Writer.Write([]byte("\n\n"))
-		c.Writer.Flush()
-
-		var totalOutput int
-		for chunk := range streamResult.Stream {
-			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
-				totalOutput++
-				delta := gin.H{
-					"type":  "content_block_delta",
-					"index": 0,
-					"delta": gin.H{"type": "text_delta", "text": chunk.Choices[0].Delta.Content},
-				}
-				data, _ = json.Marshal(delta)
-				_, _ = c.Writer.Write([]byte("event: content_block_delta\ndata: "))
-				_, _ = c.Writer.Write(data)
-				_, _ = c.Writer.Write([]byte("\n\n"))
-				c.Writer.Flush()
-			}
-		}
-
-		// content_block_stop + message_delta + message_stop
-		blockStop := gin.H{"type": "content_block_stop", "index": 0}
-		data, _ = json.Marshal(blockStop)
-		_, _ = c.Writer.Write([]byte("event: content_block_stop\ndata: "))
-		_, _ = c.Writer.Write(data)
-		_, _ = c.Writer.Write([]byte("\n\n"))
-
-		msgDelta := gin.H{"type": "message_delta", "delta": gin.H{"stop_reason": "end_turn"}, "usage": gin.H{"output_tokens": totalOutput}}
-		data, _ = json.Marshal(msgDelta)
-		_, _ = c.Writer.Write([]byte("event: message_delta\ndata: "))
-		_, _ = c.Writer.Write(data)
-		_, _ = c.Writer.Write([]byte("\n\n"))
-
-		msgStop := gin.H{"type": "message_stop"}
-		data, _ = json.Marshal(msgStop)
-		_, _ = c.Writer.Write([]byte("event: message_stop\ndata: "))
-		_, _ = c.Writer.Write(data)
-		_, _ = c.Writer.Write([]byte("\n\n"))
-		c.Writer.Flush()
-
-		latency := time.Since(start)
-		if err := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, totalOutput, http.StatusOK, latency.Milliseconds(), ""); err != nil {
-			h.logger.Warn("billing update failed", zap.Error(err))
-		}
+		h.handleAnthropicStream(c, anthroReq, providerReq, selectedProvider, userAPIKey, projectObj, start)
 		return
 	}
 
@@ -316,6 +199,133 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, anthroResp)
+}
+
+// mapAnthropicMessages converts Anthropic message format to internal provider.Message format.
+func mapAnthropicMessages(anthroReq AnthropicMessagesRequest) []provider.Message {
+	messages := make([]provider.Message, 0)
+
+	// Add system message if present
+	if anthroReq.System != "" {
+		messages = append(messages, provider.Message{
+			Role:    "system",
+			Content: provider.StringContent(anthroReq.System),
+		})
+	}
+
+	for _, m := range anthroReq.Messages {
+		content := ""
+		switch v := m.Content.(type) {
+		case string:
+			content = v
+		case []interface{}:
+			data, _ := json.Marshal(v)
+			content = string(data)
+		}
+		messages = append(messages, provider.Message{
+			Role:    m.Role,
+			Content: provider.StringContent(content),
+		})
+	}
+	return messages
+}
+
+// handleAnthropicStream handles the streaming path for Anthropic-compatible requests.
+func (h *ChatHandler) handleAnthropicStream(c *gin.Context, anthroReq AnthropicMessagesRequest, providerReq *provider.ChatRequest, selectedProvider *models.Provider, userAPIKey *models.APIKey, projectObj *models.Project, start time.Time) {
+	usageLog := &models.UsageLog{
+		UserID:     userAPIKey.UserID,
+		ProjectID:  projectObj.ID,
+		Channel:    userAPIKey.Channel,
+		APIKeyID:   userAPIKey.ID,
+		ProviderID: selectedProvider.ID,
+		ModelName:  anthroReq.Model,
+		Latency:    0,
+		StatusCode: http.StatusProcessing,
+	}
+	if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
+		h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", sanitize.LogValue(anthroReq.Model)))
+	}
+
+	streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, nil, providerReq, 3)
+	if err != nil {
+		h.logger.Error("anthropic stream failed", zap.Error(err))
+		if billingErr := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), err.Error()); billingErr != nil {
+			h.logger.Warn("billing update failed", zap.Error(billingErr))
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"type": "error", "error": gin.H{"type": "api_error", "message": "upstream stream failed"}})
+		return
+	}
+
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+
+	// Anthropic message_start event
+	msgStartEvent := gin.H{
+		"type": "message_start",
+		"message": gin.H{
+			"id":    "msg_" + uuid.New().String()[:8],
+			"type":  "message",
+			"role":  "assistant",
+			"model": anthroReq.Model,
+			"content": []interface{}{},
+			"usage": gin.H{"input_tokens": 0, "output_tokens": 0},
+		},
+	}
+	data, _ := json.Marshal(msgStartEvent)
+	_, _ = c.Writer.Write([]byte("event: message_start\ndata: "))
+	_, _ = c.Writer.Write(data)
+	_, _ = c.Writer.Write([]byte("\n\n"))
+
+	// content_block_start
+	blockStart := gin.H{"type": "content_block_start", "index": 0, "content_block": gin.H{"type": "text", "text": ""}}
+	data, _ = json.Marshal(blockStart)
+	_, _ = c.Writer.Write([]byte("event: content_block_start\ndata: "))
+	_, _ = c.Writer.Write(data)
+	_, _ = c.Writer.Write([]byte("\n\n"))
+	c.Writer.Flush()
+
+	var totalOutput int
+	for chunk := range streamResult.Stream {
+		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+			totalOutput++
+			delta := gin.H{
+				"type":  "content_block_delta",
+				"index": 0,
+				"delta": gin.H{"type": "text_delta", "text": chunk.Choices[0].Delta.Content},
+			}
+			data, _ = json.Marshal(delta)
+			_, _ = c.Writer.Write([]byte("event: content_block_delta\ndata: "))
+			_, _ = c.Writer.Write(data)
+			_, _ = c.Writer.Write([]byte("\n\n"))
+			c.Writer.Flush()
+		}
+	}
+
+	// content_block_stop + message_delta + message_stop
+	blockStop := gin.H{"type": "content_block_stop", "index": 0}
+	data, _ = json.Marshal(blockStop)
+	_, _ = c.Writer.Write([]byte("event: content_block_stop\ndata: "))
+	_, _ = c.Writer.Write(data)
+	_, _ = c.Writer.Write([]byte("\n\n"))
+
+	msgDelta := gin.H{"type": "message_delta", "delta": gin.H{"stop_reason": "end_turn"}, "usage": gin.H{"output_tokens": totalOutput}}
+	data, _ = json.Marshal(msgDelta)
+	_, _ = c.Writer.Write([]byte("event: message_delta\ndata: "))
+	_, _ = c.Writer.Write(data)
+	_, _ = c.Writer.Write([]byte("\n\n"))
+
+	msgStop := gin.H{"type": "message_stop"}
+	data, _ = json.Marshal(msgStop)
+	_, _ = c.Writer.Write([]byte("event: message_stop\ndata: "))
+	_, _ = c.Writer.Write(data)
+	_, _ = c.Writer.Write([]byte("\n\n"))
+	c.Writer.Flush()
+
+	latency := time.Since(start)
+	if err := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, totalOutput, http.StatusOK, latency.Milliseconds(), ""); err != nil {
+		h.logger.Warn("billing update failed", zap.Error(err))
+	}
 }
 
 // ChatCompletionRequest represents a chat completion request.
@@ -836,4 +846,37 @@ func (h *ChatHandler) saveErrorLog(ctx context.Context, err error, trajectoryID,
 			h.dispatcher.ReportRouteError(ctx, errLog)
 		}
 	}
+}
+
+// handleProviderError records a usage log for a failed provider request and sends the
+// appropriate error response. This shared helper deduplicates logic between Embeddings
+// and TranscribeAudio handlers.
+func (h *ChatHandler) handleProviderError(c *gin.Context, err error, start time.Time, userAPIKey *models.APIKey, projectObj *models.Project, selectedProvider *models.Provider, modelName string) {
+	latency := time.Since(start)
+	usageLog := &models.UsageLog{
+		UserID:     userAPIKey.UserID,
+		ProjectID:  projectObj.ID,
+		APIKeyID:   userAPIKey.ID,
+		ProviderID: selectedProvider.ID,
+		ModelName:  modelName,
+		Latency:    latency.Milliseconds(),
+		StatusCode: http.StatusBadGateway,
+	}
+	if err != nil {
+		usageLog.ErrorMessage = sanitize.TruncateErrorMessage(err.Error())
+		if err == provider.ErrNotImplemented {
+			usageLog.StatusCode = http.StatusNotImplemented
+		}
+	} else {
+		usageLog.ErrorMessage = "all API keys failed"
+	}
+	if billingErr := h.billing.RecordUsage(c.Request.Context(), usageLog); billingErr != nil {
+		h.logger.Warn("billing record failed", zap.Error(billingErr))
+	}
+
+	if err == provider.ErrNotImplemented {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": modelName + " not supported by this provider"})
+		return
+	}
+	c.JSON(http.StatusBadGateway, gin.H{"error": "provider request failed after retries"})
 }

@@ -386,30 +386,33 @@ func (s *Service) GetOAuth2Config(ctx context.Context, env config.OAuth2Config) 
 	}
 
 	res := env
-	// GitHub
-	if v, ok := parsed["githubEnabled"].(bool); ok && v {
-		if id, ok := parsed["githubClientId"].(string); ok && id != "" {
-			res.GitHub.ClientID = id
-		}
-		if secret, ok := parsed["githubClientSecret"].(string); ok && secret != "" {
-			res.GitHub.ClientSecret = secret
-		}
-	} else if v, ok := parsed["githubEnabled"].(bool); ok && !v {
-		// Explicitly disabled in DB → clear env fallback
-		res.GitHub.ClientID = ""
-		res.GitHub.ClientSecret = ""
-	}
-	// Google
-	if v, ok := parsed["googleEnabled"].(bool); ok && v {
-		if id, ok := parsed["googleClientId"].(string); ok && id != "" {
-			res.Google.ClientID = id
-		}
-		if secret, ok := parsed["googleClientSecret"].(string); ok && secret != "" {
-			res.Google.ClientSecret = secret
-		}
-	} else if v, ok := parsed["googleEnabled"].(bool); ok && !v {
-		res.Google.ClientID = ""
-		res.Google.ClientSecret = ""
-	}
+	applyOAuthProviderConfig(parsed, "github", &res.GitHub.ClientID, &res.GitHub.ClientSecret)
+	applyOAuthProviderConfig(parsed, "google", &res.Google.ClientID, &res.Google.ClientSecret)
 	return res
+}
+
+// applyOAuthProviderConfig applies settings from parsed JSON to a single OAuth provider.
+// If the provider is explicitly enabled, it reads clientId/clientSecret from the parsed map.
+// If explicitly disabled, it clears the env-based fallback values.
+func applyOAuthProviderConfig(parsed map[string]interface{}, providerName string, clientID, clientSecret *string) {
+	enabledKey := providerName + "Enabled"
+	idKey := providerName + "ClientId"
+	secretKey := providerName + "ClientSecret"
+
+	v, ok := parsed[enabledKey].(bool)
+	if !ok {
+		return
+	}
+
+	if v {
+		if id, ok := parsed[idKey].(string); ok && id != "" {
+			*clientID = id
+		}
+		if secret, ok := parsed[secretKey].(string); ok && secret != "" {
+			*clientSecret = secret
+		}
+	} else {
+		*clientID = ""
+		*clientSecret = ""
+	}
 }

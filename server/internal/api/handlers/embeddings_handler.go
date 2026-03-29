@@ -10,11 +10,10 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/dlp"
 	"llm-router-platform/internal/service/provider"
-	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // Embeddings handles embedding generation requests.
@@ -93,33 +92,7 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 
 	if err != nil || result == nil {
 		gen.EndWithError(err)
-		latency := time.Since(start)
-		usageLog := &models.UsageLog{
-			UserID:     userAPIKey.UserID,
-			ProjectID:   projectObj.ID,
-			APIKeyID:   userAPIKey.ID,
-			ProviderID: selectedProvider.ID,
-			ModelName:  req.Model,
-			Latency:    latency.Milliseconds(),
-			StatusCode: http.StatusBadGateway,
-		}
-		if err != nil {
-			usageLog.ErrorMessage = sanitize.TruncateErrorMessage(err.Error())
-			if err == provider.ErrNotImplemented {
-				usageLog.StatusCode = http.StatusNotImplemented
-			}
-		} else {
-			usageLog.ErrorMessage = "all API keys failed"
-		}
-		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
-		h.logger.Warn("billing record failed", zap.Error(err))
-	}
-
-		if err == provider.ErrNotImplemented {
-			c.JSON(http.StatusNotImplemented, gin.H{"error": "embeddings not supported by this provider"})
-			return
-		}
-		c.JSON(http.StatusBadGateway, gin.H{"error": "provider request failed after retries"})
+		h.handleProviderError(c, err, start, userAPIKey, projectObj, selectedProvider, req.Model)
 		return
 	}
 

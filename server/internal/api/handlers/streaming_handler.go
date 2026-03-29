@@ -112,7 +112,8 @@ func (h *ChatHandler) finalizeStream(ctx context.Context, req *provider.ChatRequ
 	}
 
 	if h.cache != nil && promptHash != "" && fullText != "" {
-		go h.storeInCache(promptHash, promptEmbedding, fullText, selectedProvider.Name, req.Model, promptTokens, completionTokens)
+		// Cache store runs after HTTP response is sent — intentionally detached from request context.
+		go h.storeInCache(promptHash, promptEmbedding, fullText, selectedProvider.Name, req.Model, promptTokens, completionTokens) // #nosec G118 -- fire-and-forget cache write after response
 	}
 }
 
