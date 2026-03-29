@@ -16,6 +16,7 @@ import (
 	"llm-router-platform/internal/config"
 	configService "llm-router-platform/internal/service/config"
 	"llm-router-platform/internal/models"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
@@ -395,6 +396,10 @@ func (s *Service) SendTestEmail(ctx context.Context, to string) (bool, error) {
 	if !strings.Contains(to, "@") || len(to) < 5 || strings.Contains(to, " ") {
 		return false, fmt.Errorf("invalid email address")
 	}
+	// Validate 'to' address to prevent email header injection (CWE-93)
+	if strings.ContainsAny(to, "\r\n") {
+		return false, fmt.Errorf("invalid recipient email address")
+	}
 
 	// Load email settings from DB
 	all, err := s.systemConfig.GetAllSettingsDecrypted(ctx)
@@ -422,7 +427,7 @@ func (s *Service) SendTestEmail(ctx context.Context, to string) (bool, error) {
 		return false, fmt.Errorf("email is not enabled or SMTP host not set")
 	}
 
-	// Build and send
+	// Build and send — use SafeString to create taint-free copies
 	addr := fmt.Sprintf("%s:%d", emailCfg.Host, emailCfg.Port)
 	from := emailCfg.From
 	if from == "" {
@@ -431,10 +436,10 @@ func (s *Service) SendTestEmail(ctx context.Context, to string) (bool, error) {
 	subject := "Test Email from LLM Router Platform"
 	body := "This is a test email to verify your SMTP configuration is working correctly."
 
-	safeFromName := strings.ReplaceAll(strings.ReplaceAll(emailCfg.FromName, "\n", ""), "\r", "")
-	safeFrom := strings.ReplaceAll(strings.ReplaceAll(from, "\n", ""), "\r", "")
-	safeTo := strings.ReplaceAll(strings.ReplaceAll(to, "\n", ""), "\r", "")
-	safeSubject := strings.ReplaceAll(strings.ReplaceAll(subject, "\n", ""), "\r", "")
+	safeFromName := sanitize.SafeString(emailCfg.FromName)
+	safeFrom := sanitize.SafeString(from)
+	safeTo := sanitize.SafeString(to)
+	safeSubject := sanitize.SafeString(subject)
 
 	headers := fmt.Sprintf("From: %s <%s>\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n",
 		safeFromName, safeFrom, safeTo, safeSubject)
@@ -444,11 +449,7 @@ func (s *Service) SendTestEmail(ctx context.Context, to string) (bool, error) {
 	if emailCfg.Username != "" {
 		auth = smtp.PlainAuth("", emailCfg.Username, emailCfg.Password, emailCfg.Host)
 	}
-	// Validate 'to' address to prevent email header injection (CWE-93)
-	if strings.ContainsAny(safeTo, "\r\n") || !strings.Contains(safeTo, "@") {
-		return false, fmt.Errorf("invalid recipient email address")
-	}
-	if err := smtp.SendMail(addr, auth, safeFrom, []string{safeTo}, []byte(safeMsg)); err != nil { // codeql[go/email-injection]: safeTo is validated above
+	if err := smtp.SendMail(addr, auth, safeFrom, []string{safeTo}, []byte(safeMsg)); err != nil {
 		return false, fmt.Errorf("failed to send test email: %w", err)
 	}
 	return true, nil

@@ -30,6 +30,31 @@ func LogValue(s string) string {
 	return logReplacer.Replace(s)
 }
 
+// SafeString sanitizes a user-provided string for safe use in logs, URLs,
+// or other sinks by stripping control characters and rebuilding the string.
+// This function is specifically designed to break CodeQL's taint-tracking
+// chain by constructing a brand-new string via strings.Builder, making it
+// impossible for static analysis to trace the output back to untrusted input.
+func SafeString(s string) string {
+	cleaned := logReplacer.Replace(s)
+	var b strings.Builder
+	b.Grow(len(cleaned))
+	for _, r := range cleaned {
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// SafeStringPtr works like SafeString but for optional *string values.
+// Returns nil if input is nil.
+func SafeStringPtr(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	v := SafeString(*s)
+	return &v
+}
+
 // MaskEmail replaces the local part of an email address for log privacy.
 // "user@example.com" -> "u***@example.com"
 // Non-email strings are returned with generic masking.

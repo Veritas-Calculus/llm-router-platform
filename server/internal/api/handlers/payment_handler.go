@@ -168,7 +168,7 @@ func (h *PaymentHandler) WechatPayNotify(c *gin.Context) {
 		return
 	}
 
-	h.logger.Info("wechat pay notification processed", zap.String("order_no", sanitize.LogValue(orderNo)))
+	h.logger.Info("wechat pay notification processed", zap.String("order_no", sanitize.SafeString(orderNo)))
 	// WeChat Pay expects a specific response format
 	c.JSON(http.StatusOK, gin.H{"code": "SUCCESS", "message": ""})
 }
@@ -187,12 +187,12 @@ func (h *PaymentHandler) AlipayNotify(c *gin.Context) {
 
 	orderNo, err := h.alipay.HandleNotify(c.Request.Form)
 	if err != nil {
-		h.logger.Error("alipay notification failed", zap.Error(err), zap.String("order_no", sanitize.LogValue(orderNo)))
+		h.logger.Error("alipay notification failed", zap.Error(err), zap.String("order_no", sanitize.SafeString(orderNo)))
 		c.String(http.StatusBadRequest, "fail")
 		return
 	}
 
-	h.logger.Info("alipay notification processed", zap.String("order_no", sanitize.LogValue(orderNo)))
+	h.logger.Info("alipay notification processed", zap.String("order_no", sanitize.SafeString(orderNo)))
 	// Alipay expects "success" as plain text response
 	c.String(http.StatusOK, "success")
 }

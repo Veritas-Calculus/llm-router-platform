@@ -239,10 +239,11 @@ func setupErrorMasking(srv *handler.Server, logger *zap.Logger) {
 		graphqlErrorsTotal.WithLabelValues("internal").Inc()
 		requestID := ""
 		if gc, gcErr := directives.GinContextFromContext(ctx); gcErr == nil {
-			requestID = gc.GetHeader("X-Request-ID")
+			requestID = sanitize.SafeString(gc.GetHeader("X-Request-ID"))
 		}
+		safeMsg := sanitize.SafeString(msg)
 		logger.Warn("graphql internal error masked",
-			zap.String("original_error", sanitize.LogValue(msg)),
+			zap.String("original_error", safeMsg),
 			zap.String("request_id", requestID),
 		)
 		gqlErr.Message = fmt.Sprintf("internal error [%s]", requestID)
