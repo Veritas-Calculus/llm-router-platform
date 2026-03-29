@@ -86,7 +86,7 @@ func (s *Service) Verify(ctx context.Context, token string, remoteIP string) err
 	if !result.Success {
 		s.logger.Warn("turnstile verification failed",
 			zap.Strings("errors", result.ErrorCodes),
-			zap.String("remote_ip", sanitize.MaskIP(remoteIP)))
+			zap.String("remote_ip", sanitize.LogValue(sanitize.MaskIP(remoteIP))))
 		return fmt.Errorf("CAPTCHA verification failed, please try again")
 	}
 

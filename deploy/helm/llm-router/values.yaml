@@ -226,9 +226,9 @@ serviceMonitor:
 postgresql:
   enabled: true
   auth:
-    postgresPassword: ""       # PLACEHOLDER — override via --set or existingSecret (never deploy empty)
+    postgresPassword: "CHANGE_ME"  # REQUIRED — override via --set or existingSecret (never deploy default)
     username: llm_router       # app user
-    password: ""               # PLACEHOLDER — override via --set or existingSecret (never deploy empty)
+    password: "CHANGE_ME"          # REQUIRED — override via --set or existingSecret (never deploy default)
     database: llm_router
   primary:
     persistence:
@@ -257,7 +257,7 @@ redis:
   architecture: standalone     # standalone | replication
   auth:
     enabled: true
-    password: ""               # PLACEHOLDER — override via --set or existingSecret (never deploy empty)
+    password: "CHANGE_ME"          # REQUIRED — override via --set or existingSecret (never deploy default)
   master:
     persistence:
       enabled: true

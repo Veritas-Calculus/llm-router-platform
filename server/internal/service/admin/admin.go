@@ -444,7 +444,11 @@ func (s *Service) SendTestEmail(ctx context.Context, to string) (bool, error) {
 	if emailCfg.Username != "" {
 		auth = smtp.PlainAuth("", emailCfg.Username, emailCfg.Password, emailCfg.Host)
 	}
-	if err := smtp.SendMail(addr, auth, safeFrom, []string{safeTo}, []byte(safeMsg)); err != nil {
+	// Validate 'to' address to prevent email header injection (CWE-93)
+	if strings.ContainsAny(safeTo, "\r\n") || !strings.Contains(safeTo, "@") {
+		return false, fmt.Errorf("invalid recipient email address")
+	}
+	if err := smtp.SendMail(addr, auth, safeFrom, []string{safeTo}, []byte(safeMsg)); err != nil { // codeql[go/email-injection]: safeTo is validated above
 		return false, fmt.Errorf("failed to send test email: %w", err)
 	}
 	return true, nil

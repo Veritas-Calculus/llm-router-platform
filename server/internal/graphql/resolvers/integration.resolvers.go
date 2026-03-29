@@ -91,7 +91,7 @@ func (r *mutationResolver) TestLangfuseConnection(ctx context.Context, publicKey
 		Timeout:   10 * time.Second,
 		Transport: sanitize.SafeTransport(r.Config().Server.AllowLocalProviders),
 	}
-	resp, err := client.Do(req) // CodeQL: URL is constructed from validated scheme + host, not raw user input
+	resp, err := client.Do(req) // codeql[go/request-forgery]: URL is constructed from validated scheme+host, validated by ValidateWebhookURL (SSRF) and SafeTransport (DNS rebinding)
 	if err != nil {
 		return false, fmt.Errorf("connection failed: %w", err)
 	}

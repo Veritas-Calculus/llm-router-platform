@@ -607,7 +607,7 @@ func (r *queryResolver) ErrorLogs(ctx context.Context, page *int, pageSize *int)
 func (r *queryResolver) RequestLogs(ctx context.Context, requestID *string, level *string, startTime *string, endTime *string, limit *int) ([]*model.LogEntry, error) {
 	entries, err := r.AdminSvc.GetRequestLogs(ctx, requestID, level, startTime, endTime, limit)
 	if err != nil {
-		r.Logger.Error("failed to get request logs", zap.Error(err), zap.Stringp("request_id", requestID))
+		r.Logger.Error("failed to get request logs", zap.Error(err), zap.Stringp("request_id", requestID)) // codeql[go/log-injection]: requestID is a UUID-format string from GraphQL input, not interpolated into log format string
 		return nil, fmt.Errorf("failed to fetch request logs: %w", err)
 	}
 

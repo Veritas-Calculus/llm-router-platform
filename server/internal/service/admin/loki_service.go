@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"time"
 
+	"llm-router-platform/pkg/sanitize"
+
 	"go.uber.org/zap"
 )
 
@@ -78,7 +80,11 @@ func (s *Service) GetRequestLogs(ctx context.Context, requestID *string, level *
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		s.logger.Error("failed to query loki", zap.Error(err), zap.Stringp("request_id", requestID))
+		ridSafe := ""
+		if requestID != nil {
+			ridSafe = sanitize.LogValue(*requestID)
+		}
+		s.logger.Error("failed to query loki", zap.Error(err), zap.String("request_id", ridSafe))
 		return nil, fmt.Errorf("failed to query log storage")
 	}
 	defer func() { _ = resp.Body.Close() }()

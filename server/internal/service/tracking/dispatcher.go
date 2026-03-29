@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"llm-router-platform/internal/models"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/getsentry/sentry-go"
 	"go.uber.org/zap"
@@ -99,8 +100,8 @@ func (d *Dispatcher) pushToSentrySDK(log *models.ErrorLog) {
 	})
 
 	d.logger.Debug("sentry event captured",
-		zap.String("provider", log.Provider),
-		zap.String("model", log.Model),
+		zap.String("provider", sanitize.LogValue(log.Provider)),
+		zap.String("model", sanitize.LogValue(log.Model)),
 		zap.Int("status_code", log.StatusCode),
 	)
 }
@@ -133,13 +134,13 @@ func (d *Dispatcher) pushToLoki(log *models.ErrorLog, cfg models.IntegrationConf
 	}
 
 	d.logger.Info("pushing to loki",
-		zap.String("endpoint", strings.ReplaceAll(strings.ReplaceAll(endpoint, "\n", ""), "\r", "")),
-		zap.String("trajectory_id", strings.ReplaceAll(strings.ReplaceAll(log.TrajectoryID, "\n", ""), "\r", "")),
-		zap.String("trace_id", strings.ReplaceAll(strings.ReplaceAll(log.TraceID, "\n", ""), "\r", "")),
-		zap.String("model", strings.ReplaceAll(strings.ReplaceAll(log.Model, "\n", ""), "\r", "")),
+		zap.String("endpoint", sanitize.LogValue(strings.ReplaceAll(strings.ReplaceAll(endpoint, "\n", ""), "\r", ""))),
+		zap.String("trajectory_id", sanitize.LogValue(strings.ReplaceAll(strings.ReplaceAll(log.TrajectoryID, "\n", ""), "\r", ""))),
+		zap.String("trace_id", sanitize.LogValue(strings.ReplaceAll(strings.ReplaceAll(log.TraceID, "\n", ""), "\r", ""))),
+		zap.String("model", sanitize.LogValue(strings.ReplaceAll(strings.ReplaceAll(log.Model, "\n", ""), "\r", ""))),
 	)
 }
 
 func (d *Dispatcher) pushToLangfuse(log *models.ErrorLog, cfg models.IntegrationConfig) {
-	d.logger.Info("pushing to langfuse", zap.String("trajectory_id", strings.ReplaceAll(strings.ReplaceAll(log.TrajectoryID, "\n", ""), "\r", "")))
+	d.logger.Info("pushing to langfuse", zap.String("trajectory_id", sanitize.LogValue(strings.ReplaceAll(strings.ReplaceAll(log.TrajectoryID, "\n", ""), "\r", ""))))
 }

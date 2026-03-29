@@ -24,7 +24,7 @@ func AdminIPWhitelist(whitelist string, logger *zap.Logger) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		if !CheckIPAllowed(c.ClientIP(), whitelistedSNs, logger) {
-			logger.Warn("Admin access blocked from non-whitelisted IP", zap.String("ip", sanitize.MaskIP(c.ClientIP())))
+			logger.Warn("Admin access blocked from non-whitelisted IP", zap.String("ip", sanitize.LogValue(sanitize.MaskIP(c.ClientIP()))))
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Forbidden: IP not inside admin whitelist"})
 			return
 		}
@@ -55,8 +55,8 @@ func TenantAPIKeyWhitelist(logger *zap.Logger) gin.HandlerFunc {
 		if len(whitelistedSNs) > 0 {
 			if !CheckIPAllowed(c.ClientIP(), whitelistedSNs, logger) {
 				logger.Warn("API key access blocked from non-whitelisted IP", 
-					zap.String("ip", sanitize.MaskIP(c.ClientIP())), 
-					zap.String("project_id", project.ID.String()))
+					zap.String("ip", sanitize.LogValue(sanitize.MaskIP(c.ClientIP()))), 
+					zap.String("project_id", sanitize.LogValue(project.ID.String())))
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Forbidden: IP not inside tenant whitelist"})
 				return
 			}
@@ -71,7 +71,7 @@ func CheckIPAllowed(clientIP string, subnets []*net.IPNet, logger *zap.Logger) b
 	parsedIP := net.ParseIP(clientIP)
 	if parsedIP == nil {
 		if logger != nil {
-			logger.Warn("Failed to parse client IP", zap.String("ip", sanitize.MaskIP(clientIP)))
+			logger.Warn("Failed to parse client IP", zap.String("ip", sanitize.LogValue(sanitize.MaskIP(clientIP))))
 		}
 		return false
 	}
