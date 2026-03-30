@@ -3,10 +3,10 @@ module llm-router-platform
 go 1.25.0
 
 require (
-	github.com/99designs/gqlgen v0.17.88
+	github.com/99designs/gqlgen v0.17.89
 	github.com/alicebob/miniredis/v2 v2.37.0
-	github.com/getsentry/sentry-go v0.43.0
-	github.com/getsentry/sentry-go/gin v0.43.0
+	github.com/getsentry/sentry-go v0.44.1
+	github.com/getsentry/sentry-go/gin v0.44.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/git-hulk/langfuse-go v0.1.0
 	github.com/go-redis/redis/v8 v8.11.5
