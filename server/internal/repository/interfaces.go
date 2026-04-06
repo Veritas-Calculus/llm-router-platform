@@ -103,12 +103,19 @@ type UsageLogRepo interface {
 	GetByTimeRange(ctx context.Context, start, end time.Time) ([]models.UsageLog, error)
 	GetByOrgOrProjectPaginated(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, start, end time.Time, limit, offset int) ([]models.UsageLog, error)
 	GetByTimeRangePaginated(ctx context.Context, start, end time.Time, limit, offset int) ([]models.UsageLog, error)
+	CountInterruptedByIDAndProject(ctx context.Context, id uuid.UUID, projectID uuid.UUID) (int64, error)
 
 	// SQL-level aggregation
 	AggregateByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) (*UsageSummaryRow, error)
 	AggregateDailyByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) ([]DailyUsageRow, error)
 	AggregateByProviderByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) ([]ProviderUsageRow, error)
 	AggregateByModelByTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) ([]ModelUsageRow, error)
+}
+
+// ErrorLogRepo defines the interface for error log data access.
+type ErrorLogRepo interface {
+	Create(ctx context.Context, log *models.ErrorLog) error
+	GetByID(ctx context.Context, id uuid.UUID) (*models.ErrorLog, error)
 }
 
 // HealthHistoryRepo defines the interface for health history data access.
@@ -262,4 +269,5 @@ var (
 	_ TransactionRepo        = (*TransactionRepository)(nil)
 	_ ConfigRepo             = (*ConfigRepository)(nil)
 	_ RoutingRuleRepo        = (*RoutingRuleRepository)(nil)
+	_ ErrorLogRepo           = (*ErrorLogRepository)(nil)
 )

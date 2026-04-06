@@ -294,6 +294,16 @@ func (r *UsageLogRepository) CountByOrgOrProject(ctx context.Context, orgID *uui
 	return count, nil
 }
 
+// CountInterruptedByIDAndProject returns the number of usage logs matching
+// the given ID, project, and a non-200 status code (i.e. interrupted streams).
+func (r *UsageLogRepository) CountInterruptedByIDAndProject(ctx context.Context, id uuid.UUID, projectID uuid.UUID) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&models.UsageLog{}).
+		Where("id = ? AND project_id = ? AND status_code != ?", id, projectID, 200).
+		Count(&count).Error
+	return count, err
+}
+
 // GetOrgIDByProjectID looks up the organization ID for a given project.
 func (r *UsageLogRepository) GetOrgIDByProjectID(ctx context.Context, projectID uuid.UUID) (uuid.UUID, error) {
 	var project models.Project

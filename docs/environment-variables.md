@@ -33,7 +33,23 @@
 | `CORS_ORIGINS` | _(空)_ | 允许的 CORS 源，逗号分隔。空=禁止跨域，`*`=全部允许 |
 | `SERVER_READ_TIMEOUT_SECONDS` | `30` | HTTP 读超时 |
 | `SERVER_WRITE_TIMEOUT_SECONDS` | `600` | HTTP 写超时 (需大于 LLM 流式最长回复) |
-| `ALLOW_LOCAL_PROVIDERS` | `false` | 允许 Provider URL 指向私有 IP |
+| `ALLOW_LOCAL_PROVIDERS` | `false` | 允许 Provider URL 指向私有 IP (开发环境可设为 true) |
+| `FRONTEND_URL` | `http://localhost:5173` | 前端地址 (用于邮件中的链接等) |
+
+## Logging
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `LOG_LEVEL` | `info` | 日志级别 (`debug` / `info` / `warn` / `error`) |
+| `LOG_FORMAT` | `json` | 日志格式 (`json` / `text`) |
+| `LOKI_URL` | _(空)_ | Loki 推送地址 (如 `http://loki:3100`) |
+
+## Proxy Pool
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `PROXY_POOL_ENABLED` | `false` | 启用代理池 |
+| `PROXY_POOL_URL` | _(空)_ | 代理池获取 URL |
 
 ## Database
 
@@ -154,6 +170,7 @@
 | `WECHAT_PAY_SERIAL_NO` | — | 商户证书序列号 |
 | `WECHAT_PAY_PRIVATE_KEY` | — | 商户私钥 (PEM) |
 | `WECHAT_PAY_NOTIFY_URL` | — | 异步通知回调地址 |
+| `WECHAT_PAY_PLATFORM_CERT` | — | 微信支付平台证书 PEM (用于验证回调签名) |
 
 ### Alipay
 
@@ -197,9 +214,16 @@
 | `SENTRY_DSN` | — | Sentry DSN |
 | `SENTRY_ENVIRONMENT` | `production` | Sentry 环境标签 |
 | `SENTRY_SAMPLE_RATE` | `1.0` | Sentry 采样率 (0.0-1.0) |
+| `METRICS_ALLOW_UNAUTHENTICATED` | `false` | 允许无认证访问 Prometheus 指标端点 |
 | `OTEL_ENABLED` | `false` | 启用 OpenTelemetry 分布式追踪 |
 | `OTEL_ENDPOINT` | _(空)_ | OTLP Exporter 地址 |
 | `OTEL_SERVICE_NAME` | `llm-router-platform` | 服务名 |
+
+## Cache
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `CACHE_HIT_COST_RATIO` | `0.1` | 缓存命中时的成本比例 (0.0-1.0) |
 
 ## Data Retention
 

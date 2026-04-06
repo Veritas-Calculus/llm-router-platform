@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"llm-router-platform/internal/models"
+	"llm-router-platform/internal/repository"
 	"llm-router-platform/internal/service/billing"
 	"llm-router-platform/internal/service/dlp"
 	"llm-router-platform/internal/service/memory"
@@ -33,18 +34,19 @@ import (
 
 // ChatHandler handles chat completion endpoints.
 type ChatHandler struct {
-	router     *router.Router
-	billing    *billing.Service
-	memory     *memory.Service
-	subService *billing.SubscriptionService
-	balance    *billing.BalanceService
-	obsInfo    observability.Service
-	db         *gorm.DB
-	logger     *zap.Logger
-	dispatcher *tracking.Dispatcher
-	cache      *semantic.SemanticCacheService
-	redis      *redis.Client
-	safety     safety.Classifier
+	router       *router.Router
+	billing      *billing.Service
+	memory       *memory.Service
+	subService   *billing.SubscriptionService
+	balance      *billing.BalanceService
+	obsInfo      observability.Service
+	usageRepo    *repository.UsageLogRepository
+	errorLogRepo *repository.ErrorLogRepository
+	logger       *zap.Logger
+	dispatcher   *tracking.Dispatcher
+	cache        *semantic.SemanticCacheService
+	redis        *redis.Client
+	safety       safety.Classifier
 }
 
 // NewChatHandler creates a new chat handler.
@@ -53,18 +55,19 @@ func NewChatHandler(r *router.Router, b *billing.Service, m *memory.Service, sub
 		safetyClassifier = &safety.NoopClassifier{}
 	}
 	return &ChatHandler{
-		router:     r,
-		billing:    b,
-		memory:     m,
-		subService: sub,
-		balance:    bal,
-		obsInfo:    obs,
-		db:         db,
-		logger:     logger,
-		dispatcher: tracking.NewDispatcher(db, logger),
-		cache:      cacheService,
-		redis:      redisClient,
-		safety:     safetyClassifier,
+		router:       r,
+		billing:      b,
+		memory:       m,
+		subService:   sub,
+		balance:      bal,
+		obsInfo:      obs,
+		usageRepo:    repository.NewUsageLogRepository(db),
+		errorLogRepo: repository.NewErrorLogRepository(db),
+		logger:       logger,
+		dispatcher:   tracking.NewDispatcher(db, logger),
+		cache:        cacheService,
+		redis:        redisClient,
+		safety:       safetyClassifier,
 	}
 }
 
@@ -505,8 +508,8 @@ func (h *ChatHandler) applyStreamResume(c *gin.Context, req *ChatCompletionReque
 	}
 
 	var count int64
-	if h.db != nil {
-		h.db.Model(&models.UsageLog{}).Where("id = ? AND project_id = ? AND status_code != ?", resumeID, projectObj.ID, http.StatusOK).Count(&count)
+	if h.usageRepo != nil {
+		count, _ = h.usageRepo.CountInterruptedByIDAndProject(c.Request.Context(), resumeID, projectObj.ID)
 	}
 	if count > 0 {
 		resumeContext := "System Protocol: The previous generation was interrupted due to a network or upstream error. Please continue writing seamlessly from exactly where you left off. Do not repeat anything that was already written. End of System Protocol."
@@ -819,9 +822,9 @@ func (h *ChatHandler) handleNonStreamResponse(c *gin.Context, req ChatCompletion
 	})
 }
 
-// saveErrorLog extracts provider.ProviderError and saves an ErrorLog to tracking context.
+// saveErrorLog extracts provider.ProviderError and saves an ErrorLog via the repository.
 func (h *ChatHandler) saveErrorLog(ctx context.Context, err error, trajectoryID, traceID, providerName, modelName string) {
-	if h.db == nil {
+	if h.errorLogRepo == nil {
 		return
 	}
 
@@ -840,7 +843,7 @@ func (h *ChatHandler) saveErrorLog(ctx context.Context, err error, trajectoryID,
 			ResponseBody: sanitizedBody,
 			CreatedAt:    time.Now(),
 		}
-		if dbErr := h.db.Create(errLog).Error; dbErr != nil {
+		if dbErr := h.errorLogRepo.Create(ctx, errLog); dbErr != nil {
 			h.logger.Error("failed to save error log", zap.Error(dbErr))
 		} else {
 			h.dispatcher.ReportRouteError(ctx, errLog)

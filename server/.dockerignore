@@ -1,0 +1,12 @@
+.git
+.env
+.env.local
+.env.development
+.env.production
+*.md
+!.env.example
+bin/
+coverage.*
+**/*_test.go
+.vscode/
+.idea/

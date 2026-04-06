@@ -42,13 +42,9 @@ func NewPerKeyRateLimiter(redisClient *redis.Client, logger *zap.Logger) *PerKey
 }
 
 // Limit applies per-API-key rate limits (minute + daily).
+// When Redis is unavailable, per-minute limits use an in-memory sliding counter.
 func (l *PerKeyRateLimiter) Limit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if l.redis == nil {
-			c.Next()
-			return
-		}
-
 		keyVal, exists := c.Get("api_key")
 		if !exists {
 			c.Next()
@@ -58,6 +54,11 @@ func (l *PerKeyRateLimiter) Limit() gin.HandlerFunc {
 		apiKey, ok := keyVal.(*models.APIKey)
 		if !ok {
 			c.Next()
+			return
+		}
+
+		if l.redis == nil {
+			l.limitInMemoryFallback(c, apiKey)
 			return
 		}
 
@@ -110,7 +111,6 @@ func (l *PerKeyRateLimiter) Limit() gin.HandlerFunc {
 		if apiKey.TokenLimit > 0 {
 			tpmKey := fmt.Sprintf("rl:tpm:%s:%d", apiKey.ID.String(), time.Now().Unix()/60)
 
-			// Fast GET to see if we've already exceeded TPM
 			currentStr := l.redis.Get(ctx, tpmKey).Val()
 			currentTokens, _ := strconv.ParseInt(currentStr, 10, 64)
 
@@ -132,6 +132,25 @@ func (l *PerKeyRateLimiter) Limit() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// limitInMemoryFallback applies in-memory rate limiting for per-key limits
+// when Redis is unavailable (per-minute only; daily/TPM require Redis).
+func (l *PerKeyRateLimiter) limitInMemoryFallback(c *gin.Context, apiKey *models.APIKey) {
+	if apiKey.RateLimit > 0 {
+		key := fmt.Sprintf("rl:key:%s:m", apiKey.ID.String())
+		exceeded, _ := l.fallbackCheck(key, apiKey.RateLimit, time.Minute)
+		if exceeded {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
+				"error":       "API key rate limit exceeded (fallback)",
+				"limit":       apiKey.RateLimit,
+				"window":      "1m",
+				"retry_after": 60,
+			})
+			return
+		}
+	}
+	c.Next()
 }
 
 // checkSlidingWindow implements a Redis sorted-set sliding window counter.
@@ -221,20 +240,15 @@ func NewPerUserRateLimiter(redisClient *redis.Client, globalDefault int, logger 
 }
 
 // Limit applies per-user rate limiting using the user's configured limit or global default.
+// When Redis is unavailable, uses an in-memory fallback counter.
 func (l *PerUserRateLimiter) Limit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if l.redis == nil {
-			c.Next()
-			return
-		}
-
 		userID := c.GetString("user_id")
 		if userID == "" {
 			c.Next()
 			return
 		}
 
-		// Determine the rate limit: per-user override or global default
 		limit := l.globalDefault
 		if userLimit, exists := c.Get("user_rate_limit"); exists {
 			if ul, ok := userLimit.(int); ok && ul > 0 {
@@ -248,6 +262,12 @@ func (l *PerUserRateLimiter) Limit() gin.HandlerFunc {
 		}
 
 		key := fmt.Sprintf("rl:user:%s:m", userID)
+
+		if l.redis == nil {
+			l.limitInMemoryFallback(c, key, limit)
+			return
+		}
+
 		now := time.Now()
 		windowStart := now.Add(-time.Minute)
 		ctx := context.Background()

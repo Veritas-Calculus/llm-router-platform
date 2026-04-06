@@ -22,6 +22,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 )
 
 // Strategy defines routing strategies.
@@ -85,6 +86,7 @@ type Router struct {
 	mu               sync.Mutex
 	discoveryCache   *modelDiscoveryCache
 	discoveryCacheMu sync.RWMutex
+	cacheSF          singleflight.Group      // Dedup concurrent model-provider cache refreshes
 	circuitBreaker   *CircuitBreaker         // Provider-level circuit breaker (3-state)
 	retryCfg         RetryConfig             // Exponential backoff config
 	logger           *zap.Logger
@@ -163,7 +165,8 @@ func (r *Router) SetRedisClient(client *redis.Client) {
 }
 
 // getModelProviderCache returns a cached map of model name (lowercase) → provider index.
-// Refreshes from DB every 5 minutes.
+// Refreshes from DB every 5 minutes. Uses singleflight to prevent thundering herd
+// when multiple goroutines hit an expired cache simultaneously.
 func (r *Router) getModelProviderCache(providers []models.Provider) map[string]int {
 	r.modelCacheMu.RLock()
 	if r.modelCache != nil && time.Since(r.modelCache.fetchedAt) < cacheTTL {
@@ -173,29 +176,41 @@ func (r *Router) getModelProviderCache(providers []models.Provider) map[string]i
 	}
 	r.modelCacheMu.RUnlock()
 
-	// Build the cache from DB
-	result := make(map[string]int)
-	for i := range providers {
-		dbModels, err := r.modelRepo.GetByProvider(context.Background(), providers[i].ID)
-		if err != nil {
-			continue
+	v, _, _ := r.cacheSF.Do("model-provider-cache", func() (interface{}, error) {
+		// Double-check: another goroutine may have refreshed while we waited.
+		r.modelCacheMu.RLock()
+		if r.modelCache != nil && time.Since(r.modelCache.fetchedAt) < cacheTTL {
+			cached := r.modelCache.modelToProviderIdx
+			r.modelCacheMu.RUnlock()
+			return cached, nil
 		}
-		for _, m := range dbModels {
-			if m.IsActive {
-				result[strings.ToLower(m.Name)] = i
+		r.modelCacheMu.RUnlock()
+
+		result := make(map[string]int)
+		for i := range providers {
+			dbModels, err := r.modelRepo.GetByProvider(context.Background(), providers[i].ID)
+			if err != nil {
+				continue
+			}
+			for _, m := range dbModels {
+				if m.IsActive {
+					result[strings.ToLower(m.Name)] = i
+				}
 			}
 		}
-	}
 
-	r.modelCacheMu.Lock()
-	r.modelCache = &modelProviderCache{
-		modelToProviderIdx: result,
-		fetchedAt:          time.Now(),
-	}
-	r.modelCacheMu.Unlock()
+		r.modelCacheMu.Lock()
+		r.modelCache = &modelProviderCache{
+			modelToProviderIdx: result,
+			fetchedAt:          time.Now(),
+		}
+		r.modelCacheMu.Unlock()
 
-	r.logger.Debug("model-provider cache refreshed", zap.Int("models_cached", len(result)))
-	return result
+		r.logger.Debug("model-provider cache refreshed", zap.Int("models_cached", len(result)))
+		return result, nil
+	})
+
+	return v.(map[string]int)
 }
 
 // getDiscoveryCache returns the cached model→provider map if still valid.

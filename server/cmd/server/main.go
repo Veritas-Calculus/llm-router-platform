@@ -208,13 +208,14 @@ func (app *Application) InitInfrastructure() error {
 		app.logger.Warn("SQL migrations skipped or failed", zap.Error(err))
 	}
 
-	// ── GORM AutoMigrate (always run — additive only: adds tables/columns, never drops) ──
-	// This ensures any new models or fields defined in Go code are reflected in
-	// the database, even if a corresponding SQL migration hasn't been written yet.
-	if err := db.Migrate(); err != nil {
-		return fmt.Errorf("AutoMigrate failed: %w", err)
+	// GORM AutoMigrate — only in non-release mode for dev convenience.
+	// Production schema changes must go through golang-migrate SQL migrations.
+	if app.cfg.Server.Mode != "release" {
+		if err := db.Migrate(); err != nil {
+			return fmt.Errorf("AutoMigrate failed: %w", err)
+		}
+		app.logger.Info("database schema synchronization completed (AutoMigrate)")
 	}
-	app.logger.Info("database schema synchronization completed")
 
 	// Seed data
 	app.seedData()

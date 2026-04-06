@@ -94,6 +94,14 @@ Resolve the PostgreSQL user and database from subchart or config.
 {{- end }}
 
 {{/*
+Web selector labels — distinct from server so services route correctly.
+*/}}
+{{- define "llm-router.web.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "llm-router.name" . }}-web
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
 Resolve the Redis host.
 Bitnami Redis standalone uses "<release>-redis-master" as service name.
 */}}

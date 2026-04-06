@@ -32,8 +32,9 @@ spec:
       serviceAccountName: {{ include "llm-router.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if .Values.initContainers.waitForDB.enabled }}
+      {{- if or .Values.initContainers.waitForDB.enabled .Values.migration.enabled }}
       initContainers:
+        {{- if .Values.initContainers.waitForDB.enabled }}
         - name: wait-for-db
           image: {{ .Values.initContainers.waitForDB.image }}
           command:
@@ -54,6 +55,20 @@ spec:
                 sleep 1
               done
               echo "PostgreSQL is ready"
+        {{- end }}
+        {{- if .Values.migration.enabled }}
+        - name: migrate
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/migrate", "up"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "llm-router.fullname" . }}
+            - secretRef:
+                name: {{ .Values.existingSecret | default (include "llm-router.fullname" .) }}
+        {{- end }}
       {{- end }}
       containers:
         - name: {{ .Chart.Name }}

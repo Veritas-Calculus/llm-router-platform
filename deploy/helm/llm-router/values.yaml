@@ -208,6 +208,47 @@ secret:
   vaultToken: ""
   vaultTransitKey: ""
 
+# ─── Web Frontend ─────────────────────────────────────────────────
+web:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: ghcr.io/veritas-calculus/llm-router-platform/web
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  port: 80
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+# ─── Database Backup CronJob ─────────────────────────────────────
+backup:
+  enabled: false
+  schedule: "0 2 * * *"   # 2 AM daily
+  image: "postgres:16-alpine"
+  retention: 30            # days to keep backups
+  s3:
+    bucket: ""
+    region: ""
+    endpoint: ""           # for MinIO/S3-compatible
+    existingSecret: ""     # Secret with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+
+# ─── Migration Init Container ────────────────────────────────────
+migration:
+  enabled: true
+
 # ─── Prometheus ServiceMonitor ─────────────────────────────────────
 serviceMonitor:
   enabled: false

@@ -70,7 +70,7 @@ From the project root:
 
 ### GraphQL (gqlgen)
 - **Schema-First:** All types and operations defined in `.graphqls` files under `server/internal/graphql/schema/`.
-- **Directives:** `@auth(requires: ROLE)` for field-level authorization, `@rateLimit(max: N, window: "duration")` for field-level rate limiting.
+- **Directives:** `@auth(role: ROLE)` for field-level authorization, `@rateLimit(max: N, window: "duration")` for field-level rate limiting.
 - **Resolvers:** Business logic in `server/internal/graphql/resolvers/`, calling service layer directly.
 - **Dataloaders:** N+1 query optimization via `server/internal/graphql/dataloaders/`.
 - **Security:** Query depth limit (7), complexity limit (200), introspection disabled in production, error sanitization in release mode.
@@ -116,6 +116,6 @@ From the project root:
 ## User-Specific Context
 - **Local Test URL:** `http://127.0.0.1` (Vite dev server proxies to backend on port 8080)
 - **API Base:** The server runs on port `8080` by default.
-- **Admin Credentials:** `admin@example.com` / `DevAdmin123!` (configured via `ADMIN_EMAIL` and `ADMIN_PASSWORD` env vars).
+- **Admin Credentials:** Configured via `ADMIN_EMAIL` and `ADMIN_PASSWORD` env vars (see `.env.example`).
 - **LLM Compatibility:** Supports OpenAI, Claude, and Gemini providers out of the box.
 - **GraphQL Playground:** Available at `/graphql` in non-release mode.

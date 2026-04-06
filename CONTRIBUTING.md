@@ -13,7 +13,7 @@ Thanks for considering contributing! Here's how to get started.
 
 ```bash
 # Clone
-git clone https://github.com/your-org/llm-router-platform.git
+git clone https://github.com/Veritas-Calculus/llm-router-platform.git
 cd llm-router-platform
 
 # Start infrastructure

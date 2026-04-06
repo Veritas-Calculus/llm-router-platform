@@ -215,7 +215,7 @@ services:
 
   # -- Prometheus ------
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.3.0
     container_name: llm-router-prometheus
     profiles: [ "monitoring" ]
     ports:
@@ -252,7 +252,7 @@ services:
 
   # -- Grafana ------
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.6.0
     container_name: llm-router-grafana
     profiles: [ "monitoring" ]
     ports:

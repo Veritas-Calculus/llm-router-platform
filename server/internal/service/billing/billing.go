@@ -254,18 +254,14 @@ func (s *Service) GetUsageSummary(ctx context.Context, orgID uuid.UUID, projectI
 	now := time.Now()
 	isCurrentMonth := startTime.Year() == now.Year() && startTime.Month() == now.Month()
 
-	// Try Redis cache for current month
-	key := fmt.Sprintf("billing:usage:org:%s:", orgID.String())
-	if projectID != nil {
-		key += "proj:" + projectID.String() + ":"
-	}
-	if channel != nil && *channel != "" {
-		key += "chan:" + *channel + ":"
-	}
-	monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
-	key += monthStr
+	// Redis cache is only populated at the org level (no project/channel dims),
+	// so only attempt a cache hit when no sub-filters are applied.
+	useCache := s.redis != nil && isCurrentMonth && projectID == nil && (channel == nil || *channel == "")
 
-	if s.redis != nil && isCurrentMonth {
+	if useCache {
+		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
+		key := fmt.Sprintf("billing:usage:org:%s:%s", orgID.String(), monthStr)
+
 		res, err := s.redis.HGetAll(ctx, key).Result()
 		if err == nil && len(res) > 0 {
 			reqs, _ := strconv.ParseInt(res["total_requests"], 10, 64)
@@ -282,7 +278,6 @@ func (s *Service) GetUsageSummary(ctx context.Context, orgID uuid.UUID, projectI
 		}
 	}
 
-	// SQL aggregation — no full-row load
 	row, err := s.usageRepo.AggregateByTimeRange(ctx, &orgID, projectID, channel, startTime, endTime)
 	if err != nil {
 		return nil, err
@@ -301,8 +296,9 @@ func (s *Service) GetUsageSummary(ctx context.Context, orgID uuid.UUID, projectI
 		summary.SuccessRate = float64(row.SuccessCount) / float64(row.TotalRequests) * 100
 	}
 
-	// Backfill Redis cache (skip zeros to avoid stale empty entries)
-	if s.redis != nil && isCurrentMonth && summary.TotalRequests > 0 {
+	if useCache && summary.TotalRequests > 0 {
+		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
+		key := fmt.Sprintf("billing:usage:org:%s:%s", orgID.String(), monthStr)
 		pipe := s.redis.Pipeline()
 		pipe.HSet(ctx, key, "total_requests", summary.TotalRequests)
 		pipe.HSet(ctx, key, "total_tokens", summary.TotalTokens)

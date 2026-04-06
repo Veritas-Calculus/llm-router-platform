@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ .Release.Name }}-db-backup
+  name: {{ include "llm-router.fullname" . }}-db-backup
   labels:
     {{- include "llm-router.labels" . | nindent 4 }}
 spec:
@@ -14,11 +14,25 @@ spec:
     spec:
       backoffLimit: 2
       template:
+        metadata:
+          labels:
+            {{- include "llm-router.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
         spec:
           restartPolicy: OnFailure
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
           containers:
             - name: backup
-              image: postgres:16-alpine
+              image: {{ .Values.backup.image | default "postgres:16-alpine" }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+                runAsUser: 10001
+                capabilities:
+                  drop:
+                  - ALL
               command:
                 - /bin/sh
                 - -c
@@ -40,7 +54,6 @@ spec:
                   echo "Backup created: ${BACKUP_FILE} ($(du -h ${BACKUP_FILE} | cut -f1))"
 
                   {{- if .Values.backup.s3.bucket }}
-                  # Upload to S3/MinIO
                   apk add --no-cache aws-cli
                   aws s3 cp "${BACKUP_FILE}" \
                     "s3://{{ .Values.backup.s3.bucket }}/llm-router/${BACKUP_FILE##*/}" \
@@ -49,7 +62,6 @@ spec:
                     {{- end }}
                     --region="{{ .Values.backup.s3.region }}"
 
-                  # Cleanup old backups (keep last N days)
                   CUTOFF_DATE=$(date -d "-{{ .Values.backup.retention }} days" +%Y%m%d 2>/dev/null || date -v-{{ .Values.backup.retention }}d +%Y%m%d)
                   aws s3 ls "s3://{{ .Values.backup.s3.bucket }}/llm-router/" \
                     {{- if .Values.backup.s3.endpoint }}
@@ -68,32 +80,15 @@ spec:
                   {{- end }}
 
                   echo "Backup completed successfully."
+              envFrom:
+                - configMapRef:
+                    name: {{ include "llm-router.fullname" . }}
               env:
-                - name: DB_HOST
-                  valueFrom:
-                    configMapKeyRef:
-                      name: llm-router-config
-                      key: DB_HOST
-                - name: DB_PORT
-                  valueFrom:
-                    configMapKeyRef:
-                      name: llm-router-config
-                      key: DB_PORT
-                - name: DB_USER
-                  valueFrom:
-                    configMapKeyRef:
-                      name: llm-router-config
-                      key: DB_USER
-                - name: DB_NAME
-                  valueFrom:
-                    configMapKeyRef:
-                      name: llm-router-config
-                      key: DB_NAME
                 - name: DB_PASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: llm-router-secrets
-                      key: db-password
+                      name: {{ .Values.existingSecret | default (include "llm-router.fullname" .) }}
+                      key: DB_PASSWORD
                 {{- if .Values.backup.s3.existingSecret }}
                 - name: AWS_ACCESS_KEY_ID
                   valueFrom:
