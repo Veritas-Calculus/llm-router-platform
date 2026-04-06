@@ -163,13 +163,14 @@ type StripeConfig struct {
 
 // WechatPayConfig holds WeChat Pay Native payment configuration.
 type WechatPayConfig struct {
-	Enabled    bool
-	AppID      string // 微信应用 App ID
-	MchID      string // 商户号
-	APIv3Key   string // #nosec G101 -- API v3 密钥
-	SerialNo   string // 商户证书序列号
-	PrivateKey string // #nosec G101 -- 商户私钥 PEM
-	NotifyURL  string // 异步通知地址
+	Enabled         bool
+	AppID           string // 微信应用 App ID
+	MchID           string // 商户号
+	APIv3Key        string // #nosec G101 -- API v3 密钥
+	SerialNo        string // 商户证书序列号
+	PrivateKey      string // #nosec G101 -- 商户私钥 PEM
+	NotifyURL       string // 异步通知地址
+	PlatformCertPEM string // #nosec G101 -- 微信支付平台证书 PEM (用于验证回调签名)
 }
 
 // AlipayConfig holds Alipay payment configuration.
@@ -384,7 +385,8 @@ func Load() (*Config, error) {
 			APIv3Key:   viper.GetString("WECHAT_PAY_API_V3_KEY"),
 			SerialNo:   viper.GetString("WECHAT_PAY_SERIAL_NO"),
 			PrivateKey: viper.GetString("WECHAT_PAY_PRIVATE_KEY"),
-			NotifyURL:  viper.GetString("WECHAT_PAY_NOTIFY_URL"),
+			NotifyURL:       viper.GetString("WECHAT_PAY_NOTIFY_URL"),
+			PlatformCertPEM: viper.GetString("WECHAT_PAY_PLATFORM_CERT"),
 		},
 		Alipay: AlipayConfig{
 			Enabled:         viper.GetBool("ALIPAY_ENABLED"),

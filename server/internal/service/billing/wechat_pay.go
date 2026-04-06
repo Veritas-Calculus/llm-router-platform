@@ -31,12 +31,13 @@ import (
 
 // WechatPayService handles WeChat Pay Native payment processing.
 type WechatPayService struct {
-	cfg         config.WechatPayConfig
-	frontendURL string
-	subRepo     repository.SubscriptionRepo
-	txRepo      repository.TransactionRepo
-	logger      *zap.Logger
-	privateKey  *rsa.PrivateKey
+	cfg            config.WechatPayConfig
+	frontendURL    string
+	subRepo        repository.SubscriptionRepo
+	txRepo         repository.TransactionRepo
+	logger         *zap.Logger
+	privateKey     *rsa.PrivateKey
+	platformPubKey *rsa.PublicKey
 }
 
 // NewWechatPayService creates a new WeChat Pay service instance.
@@ -54,12 +55,22 @@ func NewWechatPayService(
 		txRepo:      txRepo,
 		logger:      logger,
 	}
-	if cfg.Enabled && cfg.PrivateKey != "" {
-		pk, err := parsePrivateKey(cfg.PrivateKey)
-		if err != nil {
-			logger.Error("failed to parse wechat pay private key", zap.Error(err))
-		} else {
-			svc.privateKey = pk
+	if cfg.Enabled {
+		if cfg.PrivateKey != "" {
+			pk, err := parsePrivateKey(cfg.PrivateKey)
+			if err != nil {
+				logger.Error("failed to parse wechat pay private key", zap.Error(err))
+			} else {
+				svc.privateKey = pk
+			}
+		}
+		if cfg.PlatformCertPEM != "" {
+			pubKey, err := parsePublicKey(cfg.PlatformCertPEM)
+			if err != nil {
+				logger.Error("failed to parse wechat pay platform certificate", zap.Error(err))
+			} else {
+				svc.platformPubKey = pubKey
+			}
 		}
 	}
 	return svc
@@ -151,8 +162,43 @@ func (s *WechatPayService) CreateNativeOrder(ctx context.Context, userID uuid.UU
 	return result.CodeURL, orderNo, nil
 }
 
+// verifyNotifySignature verifies the HTTP signature on a WeChat Pay notification
+// using the platform certificate public key per WeChat Pay APIv3 spec.
+func (s *WechatPayService) verifyNotifySignature(body []byte, headers http.Header) error {
+	if s.platformPubKey == nil {
+		return fmt.Errorf("wechat pay platform certificate not configured, cannot verify notification signature")
+	}
+
+	timestamp := headers.Get("Wechatpay-Timestamp")
+	nonce := headers.Get("Wechatpay-Nonce")
+	signature := headers.Get("Wechatpay-Signature")
+
+	if timestamp == "" || nonce == "" || signature == "" {
+		return fmt.Errorf("missing required wechat pay signature headers")
+	}
+
+	message := fmt.Sprintf("%s\n%s\n%s\n", timestamp, nonce, string(body))
+	h := sha256.New()
+	h.Write([]byte(message))
+	hashed := h.Sum(nil)
+
+	sigBytes, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return fmt.Errorf("failed to decode wechat pay signature: %w", err)
+	}
+
+	if err := rsa.VerifyPKCS1v15(s.platformPubKey, crypto.SHA256, hashed, sigBytes); err != nil {
+		return fmt.Errorf("wechat pay notification signature verification failed: %w", err)
+	}
+	return nil
+}
+
 // HandleNotify processes WeChat Pay async notification.
 func (s *WechatPayService) HandleNotify(body []byte, headers http.Header) (string, error) {
+	if err := s.verifyNotifySignature(body, headers); err != nil {
+		return "", err
+	}
+
 	// Parse the notification envelope
 	var notification struct {
 		ID           string `json:"id"`

@@ -175,11 +175,11 @@ func (s *AlipayService) CreatePreCreateOrder(ctx context.Context, userID uuid.UU
 
 // HandleNotify processes Alipay async notification.
 func (s *AlipayService) HandleNotify(formValues url.Values) (string, error) {
-	// Verify signature
-	if s.alipayPubKey != nil {
-		if !s.verifyNotifySign(formValues) {
-			return "", fmt.Errorf("invalid alipay notification signature")
-		}
+	if s.alipayPubKey == nil {
+		return "", fmt.Errorf("alipay public key not configured, cannot verify notification")
+	}
+	if !s.verifyNotifySign(formValues) {
+		return "", fmt.Errorf("invalid alipay notification signature")
 	}
 
 	tradeStatus := formValues.Get("trade_status")

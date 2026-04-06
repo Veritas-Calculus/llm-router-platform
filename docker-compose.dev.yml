@@ -35,6 +35,7 @@ services:
       - ENCRYPTION_KEY=dev-32-byte-encryption-key-here!
       - REGISTRATION_MODE=open
       - CORS_ORIGINS=http://localhost:3000,http://localhost:80
+      - ALLOW_LOCAL_PROVIDERS=true
       - GIN_MODE=debug
       - LOG_LEVEL=debug
 
