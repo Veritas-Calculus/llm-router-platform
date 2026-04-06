@@ -80,8 +80,6 @@ func (d *Dispatcher) pushToSentrySDK(log *models.ErrorLog) {
 			scope.SetTag("trajectory_id", log.TrajectoryID)
 		}
 
-		scope.SetExtra("response_body", log.ResponseBody)
-		scope.SetExtra("headers", log.Headers)
 		scope.SetLevel(sentryLevelFromStatus(log.StatusCode))
 	})
 
@@ -96,6 +94,7 @@ func (d *Dispatcher) pushToSentrySDK(log *models.ErrorLog) {
 			"status_code":   log.StatusCode,
 			"trace_id":      log.TraceID,
 			"response_body": log.ResponseBody,
+			"headers":       log.Headers,
 		},
 	})
 
