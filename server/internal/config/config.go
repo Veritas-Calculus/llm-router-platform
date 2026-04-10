@@ -151,6 +151,11 @@ type EmailConfig struct {
 // FrontendConfig holds frontend-related configuration.
 type FrontendConfig struct {
 	URL string
+	// PublicBackendURL is the externally-visible URL of this backend (e.g.
+	// https://api.example.com). Used to build OAuth/SSO redirect_uri values
+	// so we do not have to trust Host/X-Forwarded-Proto headers. If empty,
+	// falls back to URL.
+	PublicBackendURL string
 }
 
 // StripeConfig holds Stripe payment configuration.
@@ -370,7 +375,8 @@ func Load() (*Config, error) {
 			LokiURL:           viper.GetString("LOKI_URL"),
 		},
 		Frontend: FrontendConfig{
-			URL: viper.GetString("FRONTEND_URL"),
+			URL:              viper.GetString("FRONTEND_URL"),
+			PublicBackendURL: viper.GetString("PUBLIC_BACKEND_URL"),
 		},
 		Stripe: StripeConfig{
 			Enabled:        viper.GetBool("STRIPE_ENABLED"),

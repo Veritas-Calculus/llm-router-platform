@@ -205,8 +205,37 @@ func ValidateWebhookURL(rawURL string, allowHTTP bool, allowLocal bool) error {
 // SafeTransport blocks this by checking the resolved IP inside the dialer.
 func SafeTransport(allowLocal bool) *http.Transport {
 	return &http.Transport{
-		DialContext: newSafeDialContext(allowLocal),
+		DialContext:           newSafeDialContext(allowLocal),
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
 	}
+}
+
+// SafeHTTPClient returns an *http.Client whose Transport rejects connections
+// to private/reserved IP ranges unless allowLocal is true. Use this for every
+// outbound HTTP request that takes its URL from user/tenant input, including
+// webhooks, notifications, provider dispatch, MCP SSE, OAuth token exchange,
+// and health probes.
+func SafeHTTPClient(allowLocal bool, timeout time.Duration) *http.Client {
+	return &http.Client{
+		Transport: SafeTransport(allowLocal),
+		Timeout:   timeout,
+	}
+}
+
+// SafeHTTPClientWithProxy returns an *http.Client that routes traffic through
+// the given proxy URL but still blocks DNS rebinding and private-IP egress at
+// the dial layer. The proxy itself is trusted to be a public address; the
+// inner dialer only validates the final target host.
+func SafeHTTPClientWithProxy(allowLocal bool, timeout time.Duration, proxyURL *url.URL) *http.Client {
+	t := SafeTransport(allowLocal)
+	if proxyURL != nil {
+		t.Proxy = http.ProxyURL(proxyURL)
+	}
+	return &http.Client{Transport: t, Timeout: timeout}
 }
 
 // newSafeDialContext returns a custom DialContext function that resolves the

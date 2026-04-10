@@ -109,7 +109,10 @@ func (s *WechatPayService) CreateNativeOrder(ctx context.Context, userID uuid.UU
 	}
 
 	// Sign the request with WECHATPAY2-SHA256-RSA2048
-	nonce := generateNonce()
+	nonce, err := generateNonce()
+	if err != nil {
+		return "", "", err
+	}
 	timestamp := fmt.Sprintf("%d", time.Now().Unix())
 	signStr := fmt.Sprintf("POST\n/v3/pay/transactions/native\n%s\n%s\n%s\n", timestamp, nonce, string(bodyBytes))
 
@@ -281,7 +284,10 @@ func (s *WechatPayService) QueryOrderStatus(ctx context.Context, orderNo string)
 		return "unknown", err
 	}
 
-	nonce := generateNonce()
+	nonce, err := generateNonce()
+	if err != nil {
+		return "unknown", err
+	}
 	timestamp := fmt.Sprintf("%d", time.Now().Unix())
 	path := fmt.Sprintf("/v3/pay/transactions/out-trade-no/%s?mchid=%s", orderNo, s.cfg.MchID)
 	signStr := fmt.Sprintf("GET\n%s\n%s\n%s\n\n", path, timestamp, nonce)
@@ -364,9 +370,12 @@ func parsePrivateKey(keyPEM string) (*rsa.PrivateKey, error) {
 	return rsaKey, nil
 }
 
-// generateNonce generates a random 32-character hex string.
-func generateNonce() string {
+// generateNonce generates a random 32-character hex string. Returns an error
+// if crypto/rand is unavailable so callers do not silently send zero-nonce.
+func generateNonce() (string, error) {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("wechat pay nonce generation failed: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }

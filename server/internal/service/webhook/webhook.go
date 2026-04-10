@@ -19,6 +19,7 @@ import (
 
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/pkg/sanitize"
 )
 
 // Service defines the interface for webhook operations
@@ -41,18 +42,21 @@ type Service interface {
 }
 
 type service struct {
-	repo   repository.WebhookRepository
-	logger *zap.Logger
-	client *http.Client
+	repo       repository.WebhookRepository
+	logger     *zap.Logger
+	client     *http.Client
+	allowLocal bool
 }
 
-func NewWebhookService(repo repository.WebhookRepository, logger *zap.Logger) Service {
+// NewWebhookService constructs the webhook dispatch service. allowLocal mirrors
+// the server's ALLOW_LOCAL_PROVIDERS flag and controls whether outbound webhook
+// delivery can reach private/reserved IP ranges.
+func NewWebhookService(repo repository.WebhookRepository, logger *zap.Logger, allowLocal bool) Service {
 	return &service{
-		repo:   repo,
-		logger: logger,
-		client: &http.Client{
-			Timeout: 10 * time.Second, // Max time for a webhook dispatch
-		},
+		repo:       repo,
+		logger:     logger,
+		client:     sanitize.SafeHTTPClient(allowLocal, 10*time.Second),
+		allowLocal: allowLocal,
 	}
 }
 
@@ -67,6 +71,10 @@ func generateSecret() (string, error) {
 }
 
 func (s *service) CreateEndpoint(ctx context.Context, projectID uuid.UUID, url string, events []string, description string) (*models.WebhookEndpoint, error) {
+	if err := sanitize.ValidateWebhookURL(url, s.allowLocal, s.allowLocal); err != nil {
+		return nil, fmt.Errorf("invalid webhook URL: %w", err)
+	}
+
 	secret, err := generateSecret()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate webhook secret: %w", err)
@@ -103,6 +111,9 @@ func (s *service) UpdateEndpoint(ctx context.Context, id uuid.UUID, url string, 
 	}
 
 	if url != "" {
+		if err := sanitize.ValidateWebhookURL(url, s.allowLocal, s.allowLocal); err != nil {
+			return nil, fmt.Errorf("invalid webhook URL: %w", err)
+		}
 		endpoint.URL = url
 	}
 	if events != nil {

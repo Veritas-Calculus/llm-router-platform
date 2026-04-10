@@ -280,8 +280,8 @@ func (r *mutationResolver) DeleteRoutingRule(ctx context.Context, id string) (bo
 
 // RoutingRules is the resolver for the routingRules field.
 func (r *queryResolver) RoutingRules(ctx context.Context, page *int, pageSize *int) (*model.RoutingRuleList, error) {
-	limit := valInt(pageSize, 20)
-	offset := (valInt(page, 1) - 1) * limit
+	p, limit := clampPagination(page, pageSize)
+	offset := (p - 1) * limit
 
 	var rules []models.RoutingRule
 	var total int64

@@ -182,8 +182,9 @@ func newTestRouter(providerRepo *mockProviderRepo, keyRepo *mockProviderAPIKeyRe
 		&mockModelRepo{models: make(map[uuid.UUID][]models.Model)},
 		&mockRoutingRuleRepo{rules: []models.RoutingRule{}},
 		provider.NewRegistry(logger),
-		nil, // mcpService
+		nil,  // mcpService
 		logger,
+		true, // allowLocal — tests use httptest localhost servers
 	)
 }
 

@@ -53,14 +53,8 @@ func (r *mutationResolver) UpdateCacheConfig(ctx context.Context, input model.Ca
 
 // SemanticCaches is the resolver for the semanticCaches field.
 func (r *queryResolver) SemanticCaches(ctx context.Context, limit *int, offset *int) ([]*model.SemanticCache, error) {
-	l := 50
-	if limit != nil {
-		l = *limit
-	}
-	o := 0
-	if offset != nil {
-		o = *offset
-	}
+	l := clampLimit(limit, 50, maxPageSize)
+	o := clampOffset(offset, 1_000_000)
 
 	caches, err := r.SemanticCache.ListCaches(ctx, l, o)
 	if err != nil {

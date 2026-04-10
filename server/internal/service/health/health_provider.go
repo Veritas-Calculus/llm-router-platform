@@ -10,6 +10,7 @@ import (
 
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -186,14 +187,12 @@ func (s *Service) checkWithProxy(ctx context.Context, p *models.Provider, apiKey
 		zap.String("provider", p.Name),
 		zap.String("proxy_url", proxyInfo.URL))
 
-	// Create HTTP client with proxy
-	transport := &http.Transport{
-		Proxy: http.ProxyURL(proxyURL),
-	}
-	httpClient := &http.Client{
-		Transport: transport,
-		Timeout:   time.Duration(p.Timeout) * time.Second,
-	}
+	// Create HTTP client with proxy + SSRF dial guard
+	httpClient := sanitize.SafeHTTPClientWithProxy(
+		s.allowLocal,
+		time.Duration(p.Timeout)*time.Second,
+		proxyURL,
+	)
 
 	// Decrypt API key if available
 	var decryptedKey string

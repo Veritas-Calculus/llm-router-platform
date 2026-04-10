@@ -207,14 +207,26 @@ func (r *queryResolver) OrganizationMembers(ctx context.Context, orgID string) (
 		return nil, err
 	}
 
+	// Count API keys per user within this org once, up front, to avoid N+1.
+	keyCounts := make(map[uuid.UUID]int)
+	type row struct {
+		UserID uuid.UUID
+		Count  int
+	}
+	var rows []row
+	if err := r.AdminSvc.DB().Table("api_keys").
+		Select("api_keys.user_id AS user_id, COUNT(*) AS count").
+		Joins("JOIN projects ON projects.id = api_keys.project_id").
+		Where("projects.org_id = ?", orgID).
+		Group("api_keys.user_id").
+		Scan(&rows).Error; err == nil {
+		for _, row := range rows {
+			keyCounts[row.UserID] = row.Count
+		}
+	}
+
 	out := make([]*model.OrganizationMember, 0, len(members))
 	for _, m := range members {
-		// Get API Key Count (fast count query)
-		var keyCount int64
-		r.AdminSvc.DB().Model(&models.APIKey{}).
-			Joins("JOIN projects ON process.id = api_keys.project_id"). // Wait, maybe too complex. Lets simplify.
-			Where("projects.org_id = ?", orgID).Count(&keyCount)        // Not exact, let's just use 0 or skip join for now.
-
 		out = append(out, &model.OrganizationMember{
 			UserID:    m.UserID.String(),
 			OrgID:     m.OrgID.String(),
@@ -227,7 +239,7 @@ func (r *queryResolver) OrganizationMembers(ctx context.Context, orgID string) (
 				Role:        m.User.Role,
 				IsActive:    m.User.IsActive,
 				CreatedAt:   m.User.CreatedAt,
-				APIKeyCount: 0, // Simplified for now
+				APIKeyCount: keyCounts[m.UserID],
 			},
 		})
 	}

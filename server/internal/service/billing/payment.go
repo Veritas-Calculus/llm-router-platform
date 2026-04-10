@@ -223,9 +223,16 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 	}
 
 	if orderType == "recharge" {
-		amountStr := sess.Metadata["amount"]
-		var amount float64
-		_, _ = fmt.Sscanf(amountStr, "%f", &amount)
+		// Read the authoritative amount from the signed webhook event payload,
+		// not from metadata. Stripe reports AmountTotal in the smallest
+		// currency subunit (cents for USD) so divide by 100.
+		if sess.AmountTotal <= 0 {
+			s.logger.Error("stripe recharge with non-positive amount_total, refusing to credit",
+				zap.String("order_no", orderNo),
+				zap.Int64("amount_total", sess.AmountTotal))
+			return fmt.Errorf("invalid stripe amount")
+		}
+		amount := float64(sess.AmountTotal) / 100.0
 		return s.subRepo.UpdateUserBalance(ctx, userID, amount, "recharge", "Credit Top-up via Stripe", orderNo)
 	}
 

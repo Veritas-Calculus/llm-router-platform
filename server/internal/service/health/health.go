@@ -27,9 +27,12 @@ type Service struct {
 	providerRegistry  *provider.Registry
 	proxyService      *proxy.Service
 	logger            *zap.Logger
+	allowLocal        bool
 }
 
-// NewService creates a new health service.
+// NewService creates a new health service. allowLocal mirrors the server's
+// ALLOW_LOCAL_PROVIDERS flag and controls whether health probes may reach
+// private/reserved IPs.
 func NewService(
 	apiKeyRepo *repository.APIKeyRepository,
 	providerKeyRepo *repository.ProviderAPIKeyRepository,
@@ -40,6 +43,7 @@ func NewService(
 	providerRegistry *provider.Registry,
 	proxyService *proxy.Service,
 	logger *zap.Logger,
+	allowLocal bool,
 ) *Service {
 	return &Service{
 		apiKeyRepo:        apiKeyRepo,
@@ -51,6 +55,7 @@ func NewService(
 		providerRegistry:  providerRegistry,
 		proxyService:      proxyService,
 		logger:            logger,
+		allowLocal:        allowLocal,
 	}
 }
 

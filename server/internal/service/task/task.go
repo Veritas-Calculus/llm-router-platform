@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	"llm-router-platform/internal/models"
@@ -159,13 +158,20 @@ func (s *Service) fireWebhook(task *models.AsyncTask) {
 		return
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := sanitize.SafeHTTPClient(s.allowLocalProviders, 10*time.Second)
 
 	const maxRetries = 3
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
 			backoff := time.Duration(1<<uint(attempt-1)) * time.Second // 1s, 2s, 4s
 			time.Sleep(backoff)
+		}
+
+		// Revalidate URL at dispatch time so DNS changes between CreateTask and
+		// fire cannot steer the request at an internal address.
+		if err := sanitize.ValidateWebhookURL(task.WebhookURL, s.allowLocalProviders, s.allowLocalProviders); err != nil {
+			s.logger.Error("task webhook URL failed revalidation", zap.String("task_id", task.ID.String()), zap.Error(err))
+			return
 		}
 
 		resp, err := client.Post(task.WebhookURL, "application/json", bytes.NewReader(body))

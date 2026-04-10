@@ -383,8 +383,7 @@ func (r *queryResolver) Users(ctx context.Context, q *string, page *int, pageSiz
 	if err != nil {
 		return nil, err
 	}
-	p := valInt(page, 1)
-	ps := valInt(pageSize, 20)
+	p, ps := clampPagination(page, pageSize)
 	total := len(users)
 	start := (p - 1) * ps
 	end := start + ps
@@ -487,7 +486,7 @@ func (r *queryResolver) SystemAnomalyDetection(ctx context.Context) (*model.Anom
 
 // RedeemCodes is the resolver for the redeemCodes field.
 func (r *queryResolver) RedeemCodes(ctx context.Context, page *int, pageSize *int) (*model.RedeemCodeConnection, error) {
-	p, ps := valInt(page, 1), valInt(pageSize, 20)
+	p, ps := clampPagination(page, pageSize)
 	codes, total, err := r.RedeemSvc.ListCodes(p, ps)
 	if err != nil {
 		return nil, err
@@ -517,7 +516,7 @@ func (r *queryResolver) RedeemCodes(ctx context.Context, page *int, pageSize *in
 
 // AuditLogs is the resolver for the auditLogs field.
 func (r *queryResolver) AuditLogs(ctx context.Context, page *int, pageSize *int, action *string) (*model.AuditLogConnection, error) {
-	p, ps := valInt(page, 1), valInt(pageSize, 20)
+	p, ps := clampPagination(page, pageSize)
 
 	query := r.AdminSvc.DB().Model(&models.AuditLog{})
 	if action != nil && *action != "" {
@@ -559,17 +558,7 @@ func (r *queryResolver) AuditLogs(ctx context.Context, page *int, pageSize *int,
 
 // ErrorLogs is the resolver for the errorLogs field.
 func (r *queryResolver) ErrorLogs(ctx context.Context, page *int, pageSize *int) (*model.ErrorLogConnection, error) {
-	p := 1
-	if page != nil && *page > 0 {
-		p = *page
-	}
-	ps := 20
-	if pageSize != nil && *pageSize > 0 {
-		ps = *pageSize
-	}
-	if ps > 100 {
-		ps = 100
-	}
+	p, ps := clampPagination(page, pageSize)
 
 	var total int64
 	if err := r.AdminSvc.DB().Model(&models.ErrorLog{}).Count(&total).Error; err != nil {
@@ -606,7 +595,10 @@ func (r *queryResolver) ErrorLogs(ctx context.Context, page *int, pageSize *int)
 
 // RequestLogs is the resolver for the requestLogs field.
 func (r *queryResolver) RequestLogs(ctx context.Context, requestID *string, level *string, startTime *string, endTime *string, limit *int) ([]*model.LogEntry, error) {
-	entries, err := r.AdminSvc.GetRequestLogs(ctx, requestID, level, startTime, endTime, limit)
+	// Clamp limit to avoid unbounded log pulls. Loki / DB queries will honor
+	// whatever is passed in, so we must bound it here.
+	clamped := clampLimit(limit, 100, 1000)
+	entries, err := r.AdminSvc.GetRequestLogs(ctx, requestID, level, startTime, endTime, &clamped)
 	if err != nil {
 		r.Logger.Error("failed to get request logs", zap.Error(err), zap.Stringp("request_id", sanitize.SafeStringPtr(requestID)))
 		return nil, fmt.Errorf("failed to fetch request logs: %w", err)

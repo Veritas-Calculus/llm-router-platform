@@ -13,6 +13,7 @@ import (
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/models"
 	configService "llm-router-platform/internal/service/config"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -72,6 +73,7 @@ func (h *OAuth2Handler) Redirect(c *gin.Context) {
 
 	// Generate state parameter (CSRF protection)
 	state := uuid.New().String()
+	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie("oauth2_state", state, 300, "/", "", true, true) // 5 min, secure, httpOnly
 
 	redirectURL := h.callbackURL(c, provider)
@@ -167,17 +169,25 @@ func (h *OAuth2Handler) Providers(c *gin.Context) {
 
 // ── Internal helpers ───────────────────────────────────────────────
 
-func (h *OAuth2Handler) callbackURL(c *gin.Context, provider string) string {
-	scheme := "https"
-	if c.Request.TLS == nil && !strings.Contains(c.Request.Host, "localhost") {
-		// Check X-Forwarded-Proto
-		if proto := c.GetHeader("X-Forwarded-Proto"); proto != "" {
-			scheme = proto
-		}
-	} else if c.Request.TLS == nil {
-		scheme = "http"
+// callbackURL builds the OAuth2 redirect_uri from the server-side configured
+// public URL. Does NOT read Host or X-Forwarded-Proto from the request — that
+// would let a header-injecting attacker steer the OAuth provider at an
+// attacker-controlled host.
+//
+// Note: the caller argument `c` is kept for call-site symmetry but unused.
+func (h *OAuth2Handler) callbackURL(_ *gin.Context, provider string) string {
+	base := strings.TrimRight(h.publicBackendURL(), "/")
+	return fmt.Sprintf("%s/auth/oauth2/%s/callback", base, provider)
+}
+
+func (h *OAuth2Handler) publicBackendURL() string {
+	if h.cfg.Frontend.PublicBackendURL != "" {
+		return h.cfg.Frontend.PublicBackendURL
 	}
-	return fmt.Sprintf("%s://%s/auth/oauth2/%s/callback", scheme, c.Request.Host, provider)
+	if h.cfg.Frontend.URL != "" {
+		return h.cfg.Frontend.URL
+	}
+	return "http://localhost:8080"
 }
 
 func (h *OAuth2Handler) redirectWithError(c *gin.Context, errMsg string) {
@@ -204,7 +214,7 @@ func (h *OAuth2Handler) exchangeCode(ctx context.Context, provider string, pcfg 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := sanitize.SafeHTTPClient(h.cfg.Server.AllowLocalProviders, 10*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("token exchange request failed: %w", err)
@@ -235,7 +245,7 @@ func (h *OAuth2Handler) getUserInfo(ctx context.Context, provider, accessToken s
 }
 
 func (h *OAuth2Handler) getGitHubUser(ctx context.Context, token string) (email, name, oauthID string, err error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := sanitize.SafeHTTPClient(h.cfg.Server.AllowLocalProviders, 10*time.Second)
 
 	// Get user profile
 	req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user", nil)
@@ -296,7 +306,7 @@ func (h *OAuth2Handler) getGitHubUser(ctx context.Context, token string) (email,
 }
 
 func (h *OAuth2Handler) getGoogleUser(ctx context.Context, token string) (email, name, oauthID string, err error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := sanitize.SafeHTTPClient(h.cfg.Server.AllowLocalProviders, 10*time.Second)
 	req, _ := http.NewRequestWithContext(ctx, "GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
@@ -307,12 +317,19 @@ func (h *OAuth2Handler) getGoogleUser(ctx context.Context, token string) (email,
 	defer func() { _ = resp.Body.Close() }()
 
 	var user struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
-		Name  string `json:"name"`
+		ID            string `json:"id"`
+		Email         string `json:"email"`
+		VerifiedEmail bool   `json:"verified_email"`
+		Name          string `json:"name"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
 		return "", "", "", err
+	}
+
+	// Refuse accounts with unverified primary emails — matches the GitHub
+	// path, which already filters for primary && verified.
+	if !user.VerifiedEmail {
+		return "", "", "", fmt.Errorf("google account email is not verified")
 	}
 
 	return user.Email, user.Name, user.ID, nil
@@ -326,15 +343,28 @@ func (h *OAuth2Handler) findOrCreateUser(email, name, provider, oauthID string) 
 		return &user, nil
 	}
 
-	// Second try: find by email (link accounts)
+	// Second try: an account with this email already exists.
+	//
+	// SECURITY: We refuse to auto-link to an account that has a password hash.
+	// Without this guard an attacker who controls an OAuth identity for the
+	// victim's email address (e.g. because the victim reused it with an IdP
+	// they do not actively use) could silently take over the password account.
+	// The user must explicitly link OAuth from an authenticated session.
 	if err := h.db.Where("email = ?", email).First(&user).Error; err == nil {
-		// Link OAuth to existing account (only if no OAuth provider set yet)
+		if user.PasswordHash != "" && user.OAuthProvider == "" {
+			h.logger.Warn("refusing to auto-link OAuth identity to pre-existing password account",
+				zap.String("email_domain", emailDomain(email)),
+				zap.String("provider", provider))
+			return nil, fmt.Errorf("an account with this email already exists. Please sign in with your password and link your %s account from account settings", provider)
+		}
+
+		// Account is OAuth-only (or already linked to a different OAuth provider):
+		// attach the identity if not set, and opportunistically mark email verified.
 		updates := map[string]interface{}{}
 		if user.OAuthProvider == "" {
 			updates["oauth_provider"] = provider
 			updates["oauth_id"] = oauthID
 		}
-		// OAuth provider has verified the email, mark as verified
 		if !user.EmailVerified {
 			now := time.Now()
 			updates["email_verified"] = true
@@ -377,6 +407,17 @@ func (h *OAuth2Handler) findOrCreateUser(email, name, provider, oauthID string) 
 	}
 
 	return &user, nil
+}
+
+// emailDomain returns the part after "@" in an email address, or an empty
+// string if the address is malformed. Used only for log redaction so the local
+// part does not land in structured logs.
+func emailDomain(email string) string {
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	return parts[1]
 }
 
 func (h *OAuth2Handler) generateJWT(u *models.User) (string, error) {

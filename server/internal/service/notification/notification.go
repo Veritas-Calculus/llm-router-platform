@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"llm-router-platform/pkg/sanitize"
 )
 
 // ChannelType defines the notification channel type.
@@ -54,13 +56,12 @@ type WebhookChannel struct {
 	client *http.Client
 }
 
-// NewWebhookChannel creates a new webhook channel.
-func NewWebhookChannel(url string) *WebhookChannel {
+// NewWebhookChannel creates a new webhook channel. allowLocal controls whether
+// the underlying transport may reach private/reserved IPs (SSRF guard).
+func NewWebhookChannel(url string, allowLocal bool) *WebhookChannel {
 	return &WebhookChannel{
-		url: url,
-		client: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		url:    url,
+		client: sanitize.SafeHTTPClient(allowLocal, 10*time.Second),
 	}
 }
 
@@ -163,12 +164,13 @@ type DingTalkChannel struct {
 	client     *http.Client
 }
 
-// NewDingTalkChannel creates a new DingTalk channel.
-func NewDingTalkChannel(webhookURL, secret string) *DingTalkChannel {
+// NewDingTalkChannel creates a new DingTalk channel. allowLocal gates
+// SSRF-risk egress to private/reserved IPs.
+func NewDingTalkChannel(webhookURL, secret string, allowLocal bool) *DingTalkChannel {
 	return &DingTalkChannel{
 		webhookURL: webhookURL,
 		secret:     secret,
-		client:     &http.Client{Timeout: 10 * time.Second},
+		client:     sanitize.SafeHTTPClient(allowLocal, 10*time.Second),
 	}
 }
 
@@ -244,12 +246,13 @@ type FeishuChannel struct {
 	client     *http.Client
 }
 
-// NewFeishuChannel creates a new Feishu channel.
-func NewFeishuChannel(webhookURL, secret string) *FeishuChannel {
+// NewFeishuChannel creates a new Feishu channel. allowLocal gates SSRF-risk
+// egress to private/reserved IPs.
+func NewFeishuChannel(webhookURL, secret string, allowLocal bool) *FeishuChannel {
 	return &FeishuChannel{
 		webhookURL: webhookURL,
 		secret:     secret,
-		client:     &http.Client{Timeout: 10 * time.Second},
+		client:     sanitize.SafeHTTPClient(allowLocal, 10*time.Second),
 	}
 }
 

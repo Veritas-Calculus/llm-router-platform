@@ -13,6 +13,7 @@ import (
 
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -26,19 +27,19 @@ type AlertNotifier struct {
 	logger          *zap.Logger
 }
 
-// NewAlertNotifier creates a new AlertNotifier.
+// NewAlertNotifier creates a new AlertNotifier. allowLocal controls whether
+// alert webhook delivery may reach private/reserved IP ranges (SSRF guard).
 func NewAlertNotifier(
 	alertRepo *repository.AlertRepository,
 	alertConfigRepo *repository.AlertConfigRepository,
 	logger *zap.Logger,
+	allowLocal bool,
 ) *AlertNotifier {
 	return &AlertNotifier{
 		alertRepo:       alertRepo,
 		alertConfigRepo: alertConfigRepo,
-		webhookClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-		logger: logger,
+		webhookClient:   sanitize.SafeHTTPClient(allowLocal, 10*time.Second),
+		logger:          logger,
 	}
 }
 

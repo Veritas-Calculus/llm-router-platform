@@ -4,6 +4,7 @@ package resolvers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/models"
@@ -79,7 +80,21 @@ func (r *mutationResolver) validateRefreshJWT(tokenStr string) (*jwt.RegisteredC
 	}
 
 	sub, _ := claims["sub"].(string)
-	return &jwt.RegisteredClaims{Subject: sub}, nil
+	out := &jwt.RegisteredClaims{Subject: sub}
+	// Preserve IssuedAt so RotateRefreshToken can enforce TokensInvalidatedAt.
+	if iatRaw, ok := claims["iat"]; ok {
+		switch v := iatRaw.(type) {
+		case float64:
+			out.IssuedAt = jwt.NewNumericDate(time.Unix(int64(v), 0))
+		case int64:
+			out.IssuedAt = jwt.NewNumericDate(time.Unix(v, 0))
+		case json.Number:
+			if n, err := v.Int64(); err == nil {
+				out.IssuedAt = jwt.NewNumericDate(time.Unix(n, 0))
+			}
+		}
+	}
+	return out, nil
 }
 
 // ── Auth helpers ────────────────────────────────────────────────────

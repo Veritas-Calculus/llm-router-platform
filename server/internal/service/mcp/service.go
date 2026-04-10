@@ -16,12 +16,13 @@ import (
 
 // Service handles MCP server lifecycle and tool management.
 type Service struct {
-	repo    repository.MCPRepo
-	clients map[string]Client // name -> MCP client
-	mu      sync.RWMutex
-	logger  *zap.Logger
-	ctx     context.Context    // lifecycle context for background goroutines
-	cancel  context.CancelFunc // cancels all background goroutines on shutdown
+	repo       repository.MCPRepo
+	clients    map[string]Client // name -> MCP client
+	mu         sync.RWMutex
+	logger     *zap.Logger
+	ctx        context.Context    // lifecycle context for background goroutines
+	cancel     context.CancelFunc // cancels all background goroutines on shutdown
+	allowLocal bool               // whether MCP SSE clients may dial private IPs
 }
 
 // Client defines the interface for an MCP client (stdio or sse).
@@ -42,15 +43,17 @@ type Resource struct {
 	MimeType    string `json:"mimeType,omitempty"`
 }
 
-// NewService creates a new MCP service.
-func NewService(repo repository.MCPRepo, logger *zap.Logger) *Service {
+// NewService creates a new MCP service. allowLocal mirrors the server
+// ALLOW_LOCAL_PROVIDERS flag and gates SSRF-sensitive MCP SSE connections.
+func NewService(repo repository.MCPRepo, logger *zap.Logger, allowLocal bool) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{
-		repo:    repo,
-		clients: make(map[string]Client),
-		logger:  logger,
-		ctx:     ctx,
-		cancel:  cancel,
+		repo:       repo,
+		clients:    make(map[string]Client),
+		logger:     logger,
+		ctx:        ctx,
+		cancel:     cancel,
+		allowLocal: allowLocal,
 	}
 }
 
@@ -242,7 +245,7 @@ func (s *Service) connectServer(ctx context.Context, server models.MCPServer) {
 	case "stdio":
 		client, err = NewStdioClient(server, s.logger)
 	case "sse":
-		client, err = NewSSEClient(server, s.logger)
+		client, err = NewSSEClient(server, s.logger, s.allowLocal)
 	default:
 		s.logger.Error("unsupported MCP transport type", zap.String("type", sanitize.LogValue(server.Type)))
 		return

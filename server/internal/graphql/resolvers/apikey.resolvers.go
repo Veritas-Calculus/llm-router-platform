@@ -80,9 +80,17 @@ func (r *mutationResolver) UpdateAPIKey(ctx context.Context, id string, name *st
 		return nil, fmt.Errorf("invalid API key ID")
 	}
 
-	// For security, checking if user owns this project or is admin
-	// Real system would fetch project ID of key and doing `RequireProjectRole`.
-	// Given simplified scope, we delegate to service or mock auth.
+	// Resolve the key's owning project and enforce membership before mutation.
+	existing, err := r.UserSvc.GetAPIKeyByID(ctx, keyID)
+	if err != nil || existing == nil {
+		return nil, fmt.Errorf("API key not found")
+	}
+	if err := r.UserSvc.RequireProjectRole(ctx, uid, existing.ProjectID.String(), "admin", "member"); err != nil {
+		r.Logger.Warn("UpdateAPIKey authorization denied",
+			zap.String("uid", sanitize.LogValue(uid)),
+			zap.String("key_id", keyID.String()))
+		return nil, err
+	}
 
 	key, err := r.UserSvc.UpdateAPIKey(ctx, keyID, name, scopes, rateLimit, tokenLimit, isActive)
 	if err != nil {
@@ -155,10 +163,22 @@ func (r *queryResolver) MyAPIKeys(ctx context.Context, projectID string) ([]*mod
 
 // APIKeyRateLimitStatus is the resolver for the apiKeyRateLimitStatus field.
 func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string) (*model.APIKeyRateLimitStatus, error) {
+	uid, _ := directives.UserIDFromContext(ctx)
+
+	parsedID, err := uuid.Parse(keyID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid API key ID")
+	}
+
 	// Look up API key to get its configured limits
 	var apiKey models.APIKey
-	if err := r.AdminSvc.DB().Where("id = ?", keyID).First(&apiKey).Error; err != nil {
+	if err := r.AdminSvc.DB().Where("id = ?", parsedID).First(&apiKey).Error; err != nil {
 		return nil, fmt.Errorf("API key not found")
+	}
+
+	// Enforce project-level ownership before exposing counters.
+	if err := r.UserSvc.RequireProjectRole(ctx, uid, apiKey.ProjectID.String(), "admin", "member", "readonly"); err != nil {
+		return nil, err
 	}
 
 	result := &model.APIKeyRateLimitStatus{

@@ -297,8 +297,7 @@ func (r *queryResolver) MyRecentUsage(ctx context.Context, page *int, pageSize *
 	}
 	pId := r.resolveProjectID(projectID)
 
-	pg := valInt(page, 1)
-	ps := valInt(pageSize, 20)
+	pg, ps := clampPagination(page, pageSize)
 	logs, total, err := r.Billing.GetRecentUsage(ctx, oId, pId, pg, ps)
 	if err != nil {
 		return &model.UsageConnection{Data: []*model.UsageRecord{}, Total: 0}, nil
@@ -413,7 +412,7 @@ func (r *queryResolver) MyTasks(ctx context.Context, page *int, pageSize *int) (
 	if projectID == nil {
 		return nil, fmt.Errorf("no active project")
 	}
-	p, ps := valInt(page, 1), valInt(pageSize, 20)
+	p, ps := clampPagination(page, pageSize)
 	tasks, total, err := r.TaskService.ListTasks(ctx, *projectID, "", ps, (p-1)*ps)
 	if err != nil {
 		return &model.TaskConnection{Data: []*model.Task{}, Total: 0}, nil

@@ -25,7 +25,7 @@ func TestWebhookChannelSend(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	ch := NewWebhookChannel(ts.URL)
+	ch := NewWebhookChannel(ts.URL, true)
 	payload := &AlertPayload{
 		TargetType: "provider",
 		TargetID:   "test-id",
@@ -49,7 +49,7 @@ func TestWebhookChannelSendFailure(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	ch := NewWebhookChannel(ts.URL)
+	ch := NewWebhookChannel(ts.URL, true)
 	payload := &AlertPayload{
 		TargetType: "provider",
 		TargetID:   "test-id",
@@ -73,8 +73,8 @@ func TestDispatcherMultipleChannels(t *testing.T) {
 
 	logger := zap.NewNop()
 	d := NewDispatcher(logger)
-	d.AddChannel(NewWebhookChannel(ts.URL))
-	d.AddChannel(NewWebhookChannel(ts.URL))
+	d.AddChannel(NewWebhookChannel(ts.URL, true))
+	d.AddChannel(NewWebhookChannel(ts.URL, true))
 
 	payload := &AlertPayload{
 		TargetType: "provider",
@@ -100,7 +100,7 @@ func TestDispatcherSetsDefaults(t *testing.T) {
 
 	logger := zap.NewNop()
 	d := NewDispatcher(logger)
-	d.AddChannel(NewWebhookChannel(ts.URL))
+	d.AddChannel(NewWebhookChannel(ts.URL, true))
 
 	payload := &AlertPayload{
 		TargetType: "test",
@@ -124,7 +124,7 @@ func TestDispatcherSetsDefaults(t *testing.T) {
 }
 
 func TestChannelTypes(t *testing.T) {
-	wh := NewWebhookChannel("http://example.com")
+	wh := NewWebhookChannel("http://example.com", false)
 	if wh.Type() != ChannelWebhook {
 		t.Errorf("expected %s, got %s", ChannelWebhook, wh.Type())
 	}
@@ -134,19 +134,19 @@ func TestChannelTypes(t *testing.T) {
 		t.Errorf("expected %s, got %s", ChannelEmail, em.Type())
 	}
 
-	dt := NewDingTalkChannel("http://example.com", "secret")
+	dt := NewDingTalkChannel("http://example.com", "secret", false)
 	if dt.Type() != ChannelDingTalk {
 		t.Errorf("expected %s, got %s", ChannelDingTalk, dt.Type())
 	}
 
-	fs := NewFeishuChannel("http://example.com", "secret")
+	fs := NewFeishuChannel("http://example.com", "secret", false)
 	if fs.Type() != ChannelFeishu {
 		t.Errorf("expected %s, got %s", ChannelFeishu, fs.Type())
 	}
 }
 
 func TestDingTalkSignURL(t *testing.T) {
-	dt := NewDingTalkChannel("https://oapi.dingtalk.com/robot/send?access_token=xxx", "test-secret")
+	dt := NewDingTalkChannel("https://oapi.dingtalk.com/robot/send?access_token=xxx", "test-secret", false)
 	signed := dt.signURL(dt.webhookURL)
 
 	if signed == dt.webhookURL {
@@ -158,7 +158,7 @@ func TestDingTalkSignURL(t *testing.T) {
 }
 
 func TestFeishuSeverityColor(t *testing.T) {
-	fs := NewFeishuChannel("http://example.com", "")
+	fs := NewFeishuChannel("http://example.com", "", false)
 
 	tests := []struct {
 		severity string

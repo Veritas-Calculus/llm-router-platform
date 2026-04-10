@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"llm-router-platform/internal/models"
+	"llm-router-platform/pkg/sanitize"
 
 	"go.uber.org/zap"
 )
@@ -33,16 +34,14 @@ type SSEClient struct {
 	wg     sync.WaitGroup
 }
 
-// NewSSEClient creates a new SSE-based MCP client.
-func NewSSEClient(server models.MCPServer, logger *zap.Logger) (*SSEClient, error) {
+// NewSSEClient creates a new SSE-based MCP client. allowLocal gates SSRF.
+func NewSSEClient(server models.MCPServer, logger *zap.Logger, allowLocal bool) (*SSEClient, error) {
 	return &SSEClient{
-		server:  server,
-		logger:  logger,
-		pending: make(map[int64]chan *JSONRPCResponse),
-		nextID:  1,
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
+		server:     server,
+		logger:     logger,
+		pending:    make(map[int64]chan *JSONRPCResponse),
+		nextID:     1,
+		httpClient: sanitize.SafeHTTPClient(allowLocal, 60*time.Second),
 	}, nil
 }
 
@@ -56,7 +55,9 @@ func (c *SSEClient) Connect(ctx context.Context) error {
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := http.DefaultClient.Do(req)
+	// Use the safe client (not http.DefaultClient) so the SSE upgrade request
+	// also goes through the SSRF dial guard.
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}

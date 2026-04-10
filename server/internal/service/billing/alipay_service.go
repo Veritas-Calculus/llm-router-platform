@@ -34,13 +34,14 @@ const (
 
 // AlipayService handles Alipay payment processing.
 type AlipayService struct {
-	cfg         config.AlipayConfig
-	frontendURL string
-	subRepo     repository.SubscriptionRepo
-	txRepo      repository.TransactionRepo
-	logger      *zap.Logger
-	privateKey  *rsa.PrivateKey
+	cfg          config.AlipayConfig
+	frontendURL  string
+	subRepo      repository.SubscriptionRepo
+	txRepo       repository.TransactionRepo
+	logger       *zap.Logger
+	privateKey   *rsa.PrivateKey
 	alipayPubKey *rsa.PublicKey
+	httpClient   *http.Client
 }
 
 // NewAlipayService creates a new Alipay service instance.
@@ -57,6 +58,7 @@ func NewAlipayService(
 		subRepo:     subRepo,
 		txRepo:      txRepo,
 		logger:      logger,
+		httpClient:  &http.Client{Timeout: 15 * time.Second},
 	}
 	if cfg.Enabled {
 		if cfg.PrivateKey != "" {
@@ -129,7 +131,12 @@ func (s *AlipayService) CreatePreCreateOrder(ctx context.Context, userID uuid.UU
 		gateway = alipaySandboxGateway
 	}
 
-	resp, err := http.PostForm(gateway, values)
+	req, err := http.NewRequestWithContext(ctx, "POST", gateway, strings.NewReader(values.Encode()))
+	if err != nil {
+		return "", "", fmt.Errorf("failed to build alipay request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return "", "", fmt.Errorf("alipay API request failed: %w", err)
 	}
@@ -250,7 +257,12 @@ func (s *AlipayService) QueryOrderStatus(ctx context.Context, orderNo string) (s
 		gateway = alipaySandboxGateway
 	}
 
-	resp, err := http.PostForm(gateway, values)
+	req, err := http.NewRequestWithContext(ctx, "POST", gateway, strings.NewReader(values.Encode()))
+	if err != nil {
+		return "unknown", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return "unknown", err
 	}

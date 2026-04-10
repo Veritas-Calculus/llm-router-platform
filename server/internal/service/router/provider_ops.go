@@ -15,6 +15,7 @@ import (
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/provider"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -513,10 +514,15 @@ func (r *Router) GetProviderClientWithKey(ctx context.Context, p *models.Provide
 	return r.createProviderClientWithRetry(p.Name, cfg, p.MaxRetries, p.Timeout)
 }
 
-// getHTTPClientProvider returns a function that creates an HTTP client with optional proxy.
+// getHTTPClientProvider returns a function that creates an HTTP client with
+// SSRF dial-time protection, plus optional proxy when the provider is so
+// configured. Always returns a non-nil provider so every provider client
+// picks up SafeTransport — never a bare &http.Client{}.
 func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) config.HTTPClientProvider {
 	if !p.UseProxy {
-		return nil
+		return func() *http.Client {
+			return sanitize.SafeHTTPClient(r.allowLocal, 600*time.Second)
+		}
 	}
 
 	return func() *http.Client {
@@ -534,20 +540,28 @@ func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) 
 		if proxyInfo == nil {
 			proxies, err := r.proxyRepo.GetActive(ctx)
 			if err != nil || len(proxies) == 0 {
-				// Return default client if no proxy available
-				return &http.Client{Timeout: 600 * time.Second}
+				// Fall through to a direct SafeTransport client.
+				return sanitize.SafeHTTPClient(r.allowLocal, 600*time.Second)
 			}
 			proxyInfo = &proxies[0]
 		}
 
 		proxyURL, err := url.Parse(proxyInfo.URL)
 		if err != nil {
-			return &http.Client{Timeout: 600 * time.Second}
+			r.logger.Warn("proxy URL parse failed, falling back to direct SafeTransport", zap.Error(err))
+			return sanitize.SafeHTTPClient(r.allowLocal, 600*time.Second)
 		}
 
-		// Add authentication if available
+		// Add authentication if available. Propagate decrypt errors so we do
+		// not silently send a half-authenticated request to the proxy.
 		if proxyInfo.Username != "" && proxyInfo.Password != "" {
-			password, _ := crypto.Decrypt(proxyInfo.Password)
+			password, decErr := crypto.Decrypt(proxyInfo.Password)
+			if decErr != nil {
+				r.logger.Error("proxy password decryption failed, falling back to direct client",
+					zap.String("proxy_id", proxyInfo.ID.String()),
+					zap.Error(decErr))
+				return sanitize.SafeHTTPClient(r.allowLocal, 600*time.Second)
+			}
 			proxyURL.User = url.UserPassword(proxyInfo.Username, password)
 		}
 
@@ -555,14 +569,7 @@ func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) 
 			zap.String("provider", p.Name),
 			zap.String("proxy_url", proxyInfo.URL))
 
-		transport := &http.Transport{
-			Proxy: http.ProxyURL(proxyURL),
-		}
-
-		return &http.Client{
-			Transport: transport,
-			Timeout:   60 * time.Second,
-		}
+		return sanitize.SafeHTTPClientWithProxy(r.allowLocal, 60*time.Second, proxyURL)
 	}
 }
 
