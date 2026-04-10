@@ -20,7 +20,7 @@
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.2.2",
-    "axios": "^1.13.6",
+    "axios": "^1.15.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "flatted": "^3.4.2",
