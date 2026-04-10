@@ -14,7 +14,7 @@ import (
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -107,7 +107,7 @@ func (r *RateLimiter) Limit() gin.HandlerFunc {
 
 		pipe := r.redisClient.Pipeline()
 		pipe.ZRemRangeByScore(ctx, key, "0", fmt.Sprintf("%d", windowStart))
-		pipe.ZAdd(ctx, key, &redis.Z{Score: float64(now), Member: now})
+		pipe.ZAdd(ctx, key, redis.Z{Score: float64(now), Member: now})
 		countCmd := pipe.ZCard(ctx, key)
 		pipe.Expire(ctx, key, 2*time.Minute)
 

@@ -18,7 +18,7 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/pkg/sanitize"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"

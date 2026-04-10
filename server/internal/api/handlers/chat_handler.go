@@ -28,7 +28,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	semantic "llm-router-platform/internal/service/cache"
 )
 

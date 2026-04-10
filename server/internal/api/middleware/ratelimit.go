@@ -11,7 +11,7 @@ import (
 	"llm-router-platform/internal/models"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -162,7 +162,7 @@ func (l *PerKeyRateLimiter) checkSlidingWindow(ctx context.Context, key string, 
 	pipe := l.redis.Pipeline()
 	pipe.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(windowStart.UnixNano(), 10))
 	countCmd := pipe.ZCard(ctx, key)
-	pipe.ZAdd(ctx, key, &redis.Z{
+	pipe.ZAdd(ctx, key, redis.Z{
 		Score:  float64(now.UnixNano()),
 		Member: fmt.Sprintf("%d", now.UnixNano()),
 	})
@@ -275,7 +275,7 @@ func (l *PerUserRateLimiter) Limit() gin.HandlerFunc {
 		pipe := l.redis.Pipeline()
 		pipe.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(windowStart.UnixNano(), 10))
 		countCmd := pipe.ZCard(ctx, key)
-		pipe.ZAdd(ctx, key, &redis.Z{
+		pipe.ZAdd(ctx, key, redis.Z{
 			Score:  float64(now.UnixNano()),
 			Member: fmt.Sprintf("%d", now.UnixNano()),
 		})

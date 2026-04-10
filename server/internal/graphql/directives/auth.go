@@ -8,7 +8,7 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 
 	"llm-router-platform/internal/api/middleware"
 	"llm-router-platform/internal/graphql/model"

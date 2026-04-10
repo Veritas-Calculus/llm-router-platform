@@ -19,7 +19,7 @@ import (
 	"llm-router-platform/internal/service/mcp"
 	"llm-router-platform/internal/service/provider"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"

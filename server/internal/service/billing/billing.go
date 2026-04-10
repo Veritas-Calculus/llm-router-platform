@@ -10,7 +10,7 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
