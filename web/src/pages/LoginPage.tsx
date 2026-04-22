@@ -67,10 +67,12 @@ function LoginPage() {
 
     try {
       if (isLogin) {
-        const { data } = await loginMut({
+        const result = await loginMut({
           variables: { input: { email: formData.email, password: formData.password, captchaToken } },
         });
-        const resp = (data as any)?.login;
+        if (result.error) throw new Error(result.error.message);
+        const resp = (result.data as any)?.login;
+        if (!resp?.token) throw new Error(t('auth.invalid_credentials'));
         setAuth(resp.token, resp.user);
         toast.success(t('auth.welcome_back'));
       } else {
@@ -83,10 +85,12 @@ function LoginPage() {
         if (inviteRequired && formData.inviteCode) {
           registerInput.inviteCode = formData.inviteCode;
         }
-        const { data } = await registerMut({
+        const result = await registerMut({
           variables: { input: registerInput },
         });
-        const resp = (data as any)?.register;
+        if (result.error) throw new Error(result.error.message);
+        const resp = (result.data as any)?.register;
+        if (!resp?.token) throw new Error(t('auth.registration_failed'));
         setAuth(resp.token, resp.user);
         toast.success(t('auth.account_created'));
       }
