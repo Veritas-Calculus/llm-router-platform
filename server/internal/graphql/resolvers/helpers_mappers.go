@@ -16,9 +16,11 @@ func userToGQL(u *models.User) *model.User {
 	return &model.User{
 		ID: u.ID.String(), Email: u.Email, Name: u.Name,
 		Role: u.Role, IsActive: u.IsActive, Balance: &balance,
-		MonthlyBudgetUsd: &u.MonthlyBudgetUSD,
-		EmailVerified:    u.EmailVerified,
-		CreatedAt:        u.CreatedAt,
+		MonthlyBudgetUsd:      &u.MonthlyBudgetUSD,
+		EmailVerified:         u.EmailVerified,
+		RequirePasswordChange: u.RequirePasswordChange,
+		MfaEnabled:            u.MfaEnabled,
+		CreatedAt:             u.CreatedAt,
 	}
 }
 
