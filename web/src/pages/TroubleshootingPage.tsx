@@ -555,19 +555,19 @@ export default function TroubleshootingPage() {
 
                           {/* Raw JSON */}
                           {log.rawJson && (
-                            <div className="rounded-xl overflow-hidden border border-apple-gray-200">
-                              <div className="px-4 py-2 bg-[#1E1E1E] flex items-center justify-between">
-                                <span className="text-xs font-medium text-[#D4D4D4]">{t('troubleshooting.detail_raw_json')}</span>
+                            <div className="rounded-xl overflow-hidden border border-apple-gray-200 dark:border-white/10">
+                              <div className="px-4 py-2 bg-apple-gray-100 dark:bg-[#1E1E1E] flex items-center justify-between">
+                                <span className="text-xs font-medium text-apple-gray-700 dark:text-[#D4D4D4]">{t('troubleshooting.detail_raw_json')}</span>
                                 <button
                                   onClick={() => {
                                     navigator.clipboard.writeText(JSON.stringify(JSON.parse(log.rawJson), null, 2));
                                   }}
-                                  className="text-[11px] text-apple-blue hover:text-blue-400 font-medium transition-colors"
+                                  className="text-[11px] text-apple-blue hover:text-blue-600 dark:hover:text-blue-400 font-medium transition-colors"
                                 >
                                   {t('troubleshooting.copy')}
                                 </button>
                               </div>
-                              <pre className="p-4 bg-[#1E1E1E] text-[#D4D4D4] text-xs font-mono overflow-x-auto m-0 whitespace-pre-wrap max-h-[300px] overflow-y-auto">
+                              <pre className="p-4 bg-apple-gray-50 dark:bg-[#1E1E1E] text-apple-gray-800 dark:text-[#D4D4D4] text-xs font-mono overflow-x-auto m-0 whitespace-pre-wrap max-h-[300px] overflow-y-auto">
                                 {(() => {
                                   try { return JSON.stringify(JSON.parse(log.rawJson), null, 2); }
                                   catch { return log.rawJson; }

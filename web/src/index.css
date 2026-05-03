@@ -50,18 +50,19 @@
 }
 
 .dark {
-  --theme-bg: #000000;
+  /* Elevated page bg so cards stand above it (was #000 — zero contrast with card). */
+  --theme-bg: #0A0A0B;
   --theme-bg-card: #1C1C1E;
-  --theme-bg-sidebar: #1C1C1E;
+  --theme-bg-sidebar: #141416;
   --theme-bg-input: #2C2C2E;
   --theme-bg-hover: #3A3A3C;
   --theme-text: #F5F5F7;
   --theme-text-secondary: #AEAEB2;
   --theme-text-muted: #8E8E93;
-  --theme-border: #3A3A3C;
-  --theme-border-light: #2C2C2E;
-  --theme-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  --theme-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --theme-border: rgba(255, 255, 255, 0.08);
+  --theme-border-light: rgba(255, 255, 255, 0.05);
+  --theme-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --theme-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
   color-scheme: dark;
 
   /* ── Invert apple-gray scale for dark mode ──────────────── */
@@ -149,21 +150,22 @@
     background-color: rgba(255, 255, 255, 0.8);
   }
   .dark .sidebar-bg {
-    background-color: rgba(28, 28, 30, 0.95);
+    background-color: rgba(20, 20, 22, 0.95);
   }
   .header-bg {
     background-color: rgba(255, 255, 255, 0.8);
   }
   .dark .header-bg {
-    background-color: rgba(28, 28, 30, 0.9);
+    background-color: rgba(20, 20, 22, 0.9);
   }
 
   .card {
     background-color: var(--theme-bg-card);
+    border: 1px solid var(--theme-border-light);
     border-radius: var(--radius-apple-lg);
     box-shadow: var(--theme-shadow);
     padding: 1.5rem;
-    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+    transition: background-color 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
   }
 
   .quick-start-bg {
@@ -559,6 +561,7 @@
     background-color: var(--theme-bg-card) !important;
   }
 
+
   /* bg-white on toggle knobs — keep them white */
   & .pointer-events-none.rounded-full {
     background-color: #FFFFFF !important;
@@ -568,6 +571,60 @@
   & [class*="bg-white\\/"] {
     --tw-bg-opacity: 1;
     background-color: rgba(28, 28, 30, var(--tw-bg-opacity)) !important;
+  }
+
+  /* Hardcoded VS-code-ish dark code blocks already look fine; keep them.
+     But page-bg #1E1E1E inside a #1C1C1E card needs a tiny lift for separation. */
+  & .bg-\[\#1E1E1E\] {
+    background-color: #0E0E0F !important;
+  }
+
+  /* Light amber/red/blue/green status banners — in dark mode soften the
+     bg + lighten text so they sit on a dark card without glaring. */
+  & .bg-amber-50 { background-color: rgba(255, 149, 0, 0.10) !important; }
+  & .bg-amber-100 { background-color: rgba(255, 149, 0, 0.18) !important; }
+  & .border-amber-200 { border-color: rgba(255, 149, 0, 0.30) !important; }
+  & .text-amber-700, & .text-amber-800 { color: #FFCC80 !important; }
+  & .text-amber-600 { color: #FFB74D !important; }
+
+  & .bg-blue-50 { background-color: rgba(0, 122, 255, 0.10) !important; }
+  & .bg-blue-100 { background-color: rgba(0, 122, 255, 0.18) !important; }
+  & .border-blue-200 { border-color: rgba(0, 122, 255, 0.30) !important; }
+  & .text-blue-700, & .text-blue-800, & .text-blue-900 { color: #6BA9FF !important; }
+
+  & .bg-red-50 { background-color: rgba(255, 59, 48, 0.10) !important; }
+  & .bg-red-100 { background-color: rgba(255, 59, 48, 0.18) !important; }
+  & .border-red-200 { border-color: rgba(255, 59, 48, 0.30) !important; }
+  & .text-red-700, & .text-red-800, & .text-red-900 { color: #FF8A80 !important; }
+
+  & .bg-green-50 { background-color: rgba(52, 199, 89, 0.10) !important; }
+  & .bg-green-100 { background-color: rgba(52, 199, 89, 0.18) !important; }
+  & .border-green-200 { border-color: rgba(52, 199, 89, 0.30) !important; }
+  & .text-green-700, & .text-green-800, & .text-green-900 { color: #5DD27F !important; }
+
+  & .bg-yellow-50 { background-color: rgba(255, 204, 0, 0.10) !important; }
+  & .bg-yellow-100 { background-color: rgba(255, 204, 0, 0.18) !important; }
+  & .border-yellow-200 { border-color: rgba(255, 204, 0, 0.30) !important; }
+  & .text-yellow-700, & .text-yellow-800 { color: #FFE066 !important; }
+
+  & .bg-orange-50 { background-color: rgba(255, 149, 0, 0.10) !important; }
+  & .bg-orange-100 { background-color: rgba(255, 149, 0, 0.18) !important; }
+  & .text-orange-700, & .text-orange-800 { color: #FFB74D !important; }
+
+  & .bg-purple-50 { background-color: rgba(175, 82, 222, 0.10) !important; }
+  & .bg-purple-100 { background-color: rgba(175, 82, 222, 0.18) !important; }
+  & .text-purple-700, & .text-purple-800 { color: #D29CFF !important; }
+
+  & .bg-indigo-50 { background-color: rgba(94, 92, 230, 0.10) !important; }
+  & .bg-indigo-100 { background-color: rgba(94, 92, 230, 0.18) !important; }
+  & .text-indigo-700, & .text-indigo-800 { color: #8E8CFF !important; }
+
+  /* Hover states pointing at light grays */
+  & .hover\:bg-gray-50:hover,
+  & .hover\:bg-gray-100:hover,
+  & .hover\:bg-apple-gray-50:hover,
+  & .hover\:bg-apple-gray-100:hover {
+    background-color: rgba(255, 255, 255, 0.05) !important;
   }
 
   /* Shadows need to be stronger in dark mode */
@@ -585,7 +642,20 @@
   }
 
   /* divide-y/x border colors */
-  & .divide-apple-gray-200 > :not(:first-child) {
-    border-color: var(--color-apple-gray-200) !important;
+  & .divide-apple-gray-200 > :not(:first-child),
+  & .divide-gray-200 > :not(:first-child),
+  & .divide-gray-100 > :not(:first-child),
+  & .divide-apple-gray-100 > :not(:first-child) {
+    border-color: var(--theme-border-light) !important;
   }
+}
+
+/* Active segmented-control chip — must beat the generic `.dark .bg-white:not(...)`
+   rule above (specificity (0,5,0) due to chained :not() with attribute selectors).
+   Boost specificity by repeating .dark and adding :where(*) chain. */
+html.dark .bg-apple-gray-100 > .bg-white,
+html.dark .bg-gray-100 > .bg-white,
+html.dark .bg-apple-gray-100 > .bg-white:not(.rounded-full[class*="shadow"]):not([class*="pointer-events-none"]),
+html.dark .bg-gray-100 > .bg-white:not(.rounded-full[class*="shadow"]):not([class*="pointer-events-none"]) {
+  background-color: #3A3A3C !important;
 }

@@ -37,6 +37,7 @@ import {
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/stores/authStore';
+import { useThemeStore } from '@/stores/themeStore';
 import { useTranslation } from '@/lib/i18n';
 import NotificationCenter from '@/components/NotificationCenter';
 import OrgSwitcher from '@/components/OrgSwitcher';
@@ -139,8 +140,8 @@ function NavItem({ item, t }: { item: { key: string; href: string; icon: React.C
         clsx(
           'group flex items-center px-4 py-2.5 text-sm font-medium rounded-xl transition-all duration-200',
           isActive
-            ? 'bg-apple-blue/5 text-apple-blue shadow-sm'
-            : 'text-apple-gray-600 hover:bg-apple-gray-50 hover:text-apple-gray-900'
+            ? 'bg-apple-blue/5 dark:bg-apple-blue/15 text-apple-blue shadow-sm'
+            : 'text-apple-gray-600 dark:text-gray-300 hover:bg-apple-gray-50 dark:hover:bg-white/5 hover:text-apple-gray-900 dark:hover:text-white'
         )
       }
     >
@@ -148,7 +149,9 @@ function NavItem({ item, t }: { item: { key: string; href: string; icon: React.C
         <>
           <item.icon
             className={clsx(
-              isActive ? 'text-apple-blue' : 'text-apple-gray-400 group-hover:text-apple-gray-500',
+              isActive
+                ? 'text-apple-blue'
+                : 'text-apple-gray-400 dark:text-gray-500 group-hover:text-apple-gray-500 dark:group-hover:text-gray-300',
               'mr-3 h-5 w-5 shrink-0 transition-colors'
             )}
             aria-hidden="true"
@@ -169,12 +172,8 @@ function Layout() {
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('theme') === 'dark';
-    }
-    return false;
-  });
+  const { resolvedTheme, setTheme } = useThemeStore();
+  const isDark = resolvedTheme === 'dark';
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   // Load site config
@@ -194,17 +193,8 @@ function Layout() {
   };
 
   const toggleDarkMode = () => {
-    setIsDark((prev) => {
-      const next = !prev;
-      localStorage.setItem('theme', next ? 'dark' : 'light');
-      return next;
-    });
+    setTheme(isDark ? 'light' : 'dark');
   };
-
-  // Apply dark mode class on <html>
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDark);
-  }, [isDark]);
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
@@ -256,7 +246,7 @@ function Layout() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-apple-gray-50 flex">
+    <div className="min-h-screen bg-apple-gray-50 dark:bg-[#0A0A0B] flex">
       {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -273,7 +263,7 @@ function Layout() {
       {/* Sidebar */}
       <aside
         className={clsx(
-          'sidebar-bg fixed inset-y-0 left-0 z-50 w-64 backdrop-blur-xl border-r border-apple-gray-200 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0',
+          'sidebar-bg fixed inset-y-0 left-0 z-50 w-64 backdrop-blur-xl border-r border-apple-gray-200 dark:border-white/10 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0',
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
@@ -282,7 +272,7 @@ function Layout() {
             <div className="w-9 h-9 bg-apple-blue rounded-xl flex items-center justify-center shadow-apple-blue">
               <span className="text-white font-bold text-lg">{siteInitial}</span>
             </div>
-            <span className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-apple-gray-900 to-apple-gray-600">
+            <span className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-apple-gray-900 to-apple-gray-600 dark:from-white dark:to-gray-400">
               {siteName}
             </span>
           </div>
@@ -293,14 +283,14 @@ function Layout() {
           {/* Admin / User View Toggle */}
           {isAdmin && (
             <div className="px-4 pb-3">
-              <div className="flex bg-apple-gray-100 rounded-xl p-1 border border-apple-gray-200">
+              <div className="flex bg-apple-gray-100 dark:bg-white/5 rounded-xl p-1 border border-apple-gray-200 dark:border-white/10">
                 <button
                   onClick={() => { if (adminView) toggleAdminView(); }}
                   className={clsx(
                     'flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200',
                     !adminView
-                      ? 'bg-apple-gray-50 text-apple-blue shadow-sm border border-apple-gray-200'
-                      : 'text-apple-gray-500 hover:text-apple-gray-700'
+                      ? 'bg-apple-gray-50 dark:bg-[#2C2C2E] text-apple-blue shadow-sm border border-apple-gray-200 dark:border-white/10'
+                      : 'text-apple-gray-500 dark:text-gray-400 hover:text-apple-gray-700 dark:hover:text-gray-200'
                   )}
                 >
                   <UserIcon className="w-3.5 h-3.5" />
@@ -311,8 +301,8 @@ function Layout() {
                   className={clsx(
                     'flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200',
                     adminView
-                      ? 'bg-apple-gray-50 text-apple-blue shadow-sm border border-apple-gray-200'
-                      : 'text-apple-gray-500 hover:text-apple-gray-700'
+                      ? 'bg-apple-gray-50 dark:bg-[#2C2C2E] text-apple-blue shadow-sm border border-apple-gray-200 dark:border-white/10'
+                      : 'text-apple-gray-500 dark:text-gray-400 hover:text-apple-gray-700 dark:hover:text-gray-200'
                   )}
                 >
                   <ShieldCheckIcon className="w-3.5 h-3.5" />
@@ -324,9 +314,9 @@ function Layout() {
 
           <nav className="flex-1 px-3 space-y-1 overflow-y-auto pb-4">
             {(showAdminNav ? adminNavGroups : userNavGroups).map((group, idx) => (
-                <div key={group.labelKey} className={idx > 0 ? 'border-t border-apple-gray-100 mt-2 pt-2' : ''}>
+                <div key={group.labelKey} className={idx > 0 ? 'border-t border-apple-gray-100 dark:border-white/5 mt-2 pt-2' : ''}>
                   <div className="pt-3 pb-2 px-4 first:pt-0">
-                    <p className="text-[11px] font-semibold text-apple-gray-400 uppercase tracking-wider">
+                    <p className="text-[11px] font-semibold text-apple-gray-400 dark:text-gray-500 uppercase tracking-wider">
                       {t(group.labelKey)}
                     </p>
                   </div>
@@ -342,11 +332,11 @@ function Layout() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Header */}
-        <header className="header-bg backdrop-blur-md border-b border-apple-gray-200 h-14 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30">
+        <header className="header-bg backdrop-blur-md border-b border-apple-gray-200 dark:border-white/10 h-14 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="p-2 -ml-2 text-apple-gray-600 lg:hidden"
+              className="p-2 -ml-2 text-apple-gray-600 dark:text-gray-300 lg:hidden"
             >
               <Bars3Icon className="w-5 h-5" />
             </button>
@@ -356,14 +346,14 @@ function Layout() {
             <NotificationCenter />
             <button
               onClick={toggleDarkMode}
-              className="p-2 rounded-lg text-apple-gray-600 hover:text-apple-gray-900 hover:bg-apple-gray-50 transition-colors"
+              className="p-2 rounded-lg text-apple-gray-600 dark:text-gray-300 hover:text-apple-gray-900 dark:hover:text-white hover:bg-apple-gray-50 dark:hover:bg-white/5 transition-colors"
               title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {isDark ? <SunIcon className="w-4.5 h-4.5" /> : <MoonIcon className="w-4.5 h-4.5" />}
             </button>
             <button
               onClick={toggleLanguage}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-apple-gray-600 hover:text-apple-gray-900 hover:bg-apple-gray-50 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-apple-gray-600 dark:text-gray-300 hover:text-apple-gray-900 dark:hover:text-white hover:bg-apple-gray-50 dark:hover:bg-white/5 rounded-lg transition-colors"
               title={locale === 'en' ? '切换为中文' : 'Switch to English'}
             >
               <LanguageIcon className="w-4 h-4" />
@@ -373,13 +363,13 @@ function Layout() {
             <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="flex items-center gap-2.5 pl-3 pr-2 py-1.5 rounded-xl hover:bg-apple-gray-50 transition-colors"
+                className="flex items-center gap-2.5 pl-3 pr-2 py-1.5 rounded-xl hover:bg-apple-gray-50 dark:hover:bg-white/5 transition-colors"
               >
                 <div className="hidden sm:block text-right">
-                  <p className="text-sm font-medium text-apple-gray-900 leading-tight">
+                  <p className="text-sm font-medium text-apple-gray-900 dark:text-white leading-tight">
                     {user?.name || 'User'}
                   </p>
-                  <p className="text-[11px] text-apple-gray-500 leading-tight">
+                  <p className="text-[11px] text-apple-gray-500 dark:text-gray-400 leading-tight">
                     {isAdmin ? 'Admin' : 'User'}
                   </p>
                 </div>
@@ -395,23 +385,23 @@ function Layout() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -4, scale: 0.95 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-full mt-2 w-56 bg-apple-gray-50 rounded-xl shadow-lg border border-apple-gray-200 py-2 z-50"
+                    className="absolute right-0 top-full mt-2 w-56 bg-apple-gray-50 dark:bg-[#1C1C1E] rounded-xl shadow-lg border border-apple-gray-200 dark:border-white/10 py-2 z-50"
                   >
-                    <div className="px-4 py-2 border-b border-apple-gray-100">
-                      <p className="text-sm font-semibold text-apple-gray-900 truncate">{user?.name || 'User'}</p>
-                      <p className="text-xs text-apple-gray-500 truncate">{user?.email}</p>
+                    <div className="px-4 py-2 border-b border-apple-gray-100 dark:border-white/10">
+                      <p className="text-sm font-semibold text-apple-gray-900 dark:text-white truncate">{user?.name || 'User'}</p>
+                      <p className="text-xs text-apple-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
                     </div>
                     <button
                       onClick={() => { navigate('/profile'); setIsUserMenuOpen(false); }}
-                      className="w-full text-left px-4 py-2.5 text-sm text-apple-gray-700 hover:bg-apple-gray-50 flex items-center gap-2.5 transition-colors"
+                      className="w-full text-left px-4 py-2.5 text-sm text-apple-gray-700 dark:text-gray-200 hover:bg-apple-gray-50 dark:hover:bg-white/5 flex items-center gap-2.5 transition-colors"
                     >
-                      <UserIcon className="w-4 h-4 text-apple-gray-400" />
+                      <UserIcon className="w-4 h-4 text-apple-gray-400 dark:text-gray-500" />
                       {t('nav.profile')}
                     </button>
-                    <div className="border-t border-apple-gray-100 mt-1 pt-1">
+                    <div className="border-t border-apple-gray-100 dark:border-white/10 mt-1 pt-1">
                       <button
                         onClick={() => { handleLogout(); setIsUserMenuOpen(false); }}
-                        className="w-full text-left px-4 py-2.5 text-sm text-apple-red hover:bg-red-50 flex items-center gap-2.5 transition-colors"
+                        className="w-full text-left px-4 py-2.5 text-sm text-apple-red hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-2.5 transition-colors"
                       >
                         <ArrowRightOnRectangleIcon className="w-4 h-4" />
                         {t('auth.logout')}

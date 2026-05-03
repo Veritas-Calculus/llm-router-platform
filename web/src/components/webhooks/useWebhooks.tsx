@@ -57,7 +57,7 @@ export function useWebhooks() {
         toast((_t) => (
           <div className="flex flex-col">
             <span className="font-medium text-amber-500">{t('webhooks.save_secret')}</span>
-            <span className="text-xs text-gray-400 mt-1 break-all bg-gray-900/50 p-2 rounded border border-gray-700">{data.createWebhookEndpoint.secret}</span>
+            <span className="text-xs text-apple-gray-600 dark:text-gray-400 mt-1 break-all bg-apple-gray-100 dark:bg-gray-900/50 p-2 rounded border border-apple-gray-200 dark:border-gray-700 font-mono">{data.createWebhookEndpoint.secret}</span>
             <span className="text-xs mt-1">{t('webhooks.secret_not_shown')}</span>
           </div>
         ), { duration: 10000 });
