@@ -87,14 +87,16 @@ func (d *Dispatcher) pushToSentrySDK(log *models.ErrorLog) {
 		Message:   fmt.Sprintf("LLM Route Error: %s %s → %d", log.Provider, log.Model, log.StatusCode),
 		Level:     sentryLevelFromStatus(log.StatusCode),
 		Timestamp: log.CreatedAt,
-		Extra: map[string]interface{}{
-			"error_log_id":  log.ID.String(),
-			"provider":      log.Provider,
-			"model":         log.Model,
-			"status_code":   log.StatusCode,
-			"trace_id":      log.TraceID,
-			"response_body": log.ResponseBody,
-			"headers":       log.Headers,
+		Contexts: map[string]sentry.Context{
+			"llm_route": {
+				"error_log_id":  log.ID.String(),
+				"provider":      log.Provider,
+				"model":         log.Model,
+				"status_code":   log.StatusCode,
+				"trace_id":      log.TraceID,
+				"response_body": log.ResponseBody,
+				"headers":       log.Headers,
+			},
 		},
 	})
 
