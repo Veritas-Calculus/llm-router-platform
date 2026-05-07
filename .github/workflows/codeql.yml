@@ -38,6 +38,10 @@ jobs:
           languages: go
           queries: security-and-quality
           config-file: ./.github/codeql/codeql-config.yml
+          # Local model pack registers pkg/sanitize.{SafeString,SafeStringPtr,LogValue}
+          # as log-injection sanitizers (alert #152 was a false positive on
+          # already-sanitized input).
+          packs: +./.github/codeql/extensions
 
       - name: Build Go code
         working-directory: server

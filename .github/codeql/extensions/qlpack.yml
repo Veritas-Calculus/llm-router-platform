@@ -1,0 +1,7 @@
+name: llm-router-platform/go-sanitizers
+version: 0.0.1
+library: true
+extensionTargets:
+  codeql/go-all: '*'
+dataExtensions:
+  - sanitize-model.yml

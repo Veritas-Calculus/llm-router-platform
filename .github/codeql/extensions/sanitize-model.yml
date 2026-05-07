@@ -1,0 +1,20 @@
+extensions:
+  - addsTo:
+      pack: codeql/go-all
+      extensible: sanitizerModel
+    data:
+      # Mark llm-router-platform/pkg/sanitize.SafeString as a sanitizer
+      # for log-injection (CWE-117) taint flow. The function strips ASCII
+      # control characters and rebuilds the string via strings.Builder, so
+      # any newlines that could fake a new log entry are removed before
+      # the value reaches a logging sink. CodeQL's default Go taint
+      # tracker does not see through the rune-by-rune rebuild, producing
+      # a false positive (alert #152 on payment_handler.go:190).
+      #
+      # Format reference:
+      #   https://codeql.github.com/docs/codeql-language-guides/customizing-library-models-for-go/
+      # Columns (sanitizerModel):
+      #   package, type, subtypes, name, signature, ext, input, kind
+      - ["llm-router-platform/pkg/sanitize", "", false, "SafeString", "", "", "Argument[0]", "log-injection"]
+      - ["llm-router-platform/pkg/sanitize", "", false, "SafeStringPtr", "", "", "Argument[0]", "log-injection"]
+      - ["llm-router-platform/pkg/sanitize", "", false, "LogValue", "", "", "Argument[0]", "log-injection"]
