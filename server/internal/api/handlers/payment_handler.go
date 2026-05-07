@@ -163,7 +163,7 @@ func (h *PaymentHandler) WechatPayNotify(c *gin.Context) {
 
 	orderNo, err := h.wechatPay.HandleNotify(payload, c.Request.Header)
 	if err != nil {
-		h.logger.Error("wechat pay notification failed", zap.Error(err))
+		h.logger.Error("wechat pay notification failed", zap.String("error", sanitize.SafeString(err.Error())))
 		c.JSON(http.StatusBadRequest, gin.H{"code": "FAIL", "message": "notification processing failed"})
 		return
 	}
@@ -187,7 +187,9 @@ func (h *PaymentHandler) AlipayNotify(c *gin.Context) {
 
 	orderNo, err := h.alipay.HandleNotify(c.Request.Form)
 	if err != nil {
-		h.logger.Error("alipay notification failed", zap.Error(err), zap.String("order_no", sanitize.SafeString(orderNo)))
+		h.logger.Error("alipay notification failed",
+			zap.String("error", sanitize.SafeString(err.Error())),
+			zap.String("order_no", sanitize.SafeString(orderNo)))
 		c.String(http.StatusBadRequest, "fail")
 		return
 	}
