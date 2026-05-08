@@ -205,7 +205,7 @@ func (app *Application) InitInfrastructure() error {
 
 	// ── SQL Migrations (always run — safe, idempotent, version-tracked) ──
 	if err := database.RunSQLMigrations(&app.cfg.Database, app.logger); err != nil {
-		app.logger.Warn("SQL migrations skipped or failed", zap.Error(err))
+		return fmt.Errorf("SQL migrations failed: %w", err)
 	}
 
 	// GORM AutoMigrate — only in non-release mode for dev convenience.
@@ -217,8 +217,9 @@ func (app *Application) InitInfrastructure() error {
 		app.logger.Info("database schema synchronization completed (AutoMigrate)")
 	}
 
-	// Seed data
-	app.seedData()
+	if err := app.seedData(); err != nil {
+		return err
+	}
 
 	// ── Redis ────────────────────────────────────────────────────────────
 	app.redisClient = app.connectRedis()
@@ -229,17 +230,18 @@ func (app *Application) InitInfrastructure() error {
 // seedData populates default data.  Only the admin account is ensured on
 // startup.  Providers, models, and plans must be configured manually by the
 // administrator through the management UI.
-func (app *Application) seedData() {
+func (app *Application) seedData() error {
 	if app.cfg.Server.Mode == "release" {
 		if err := app.db.SeedDefaultAdminOnly(&app.cfg.Admin); err != nil {
-			app.logger.Error("failed to seed admin user", zap.Error(err))
+			return fmt.Errorf("failed to seed admin user: %w", err)
 		}
 	} else {
 		if err := app.db.SeedDefaultAdmin(&app.cfg.Admin); err != nil {
-			app.logger.Error("failed to seed admin user", zap.Error(err))
+			return fmt.Errorf("failed to seed admin user: %w", err)
 		}
 	}
 	app.logger.Info("provider/model/plan seed data skipped: configure via admin UI")
+	return nil
 }
 
 // connectRedis creates and tests a Redis connection.  Returns nil (with a
@@ -609,7 +611,6 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
 
 // buildLogger creates a zap.Logger that respects the LOG_LEVEL and LOG_FORMAT
 // configuration values.
