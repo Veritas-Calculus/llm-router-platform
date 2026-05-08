@@ -3,6 +3,8 @@ package coupon
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"llm-router-platform/internal/models"
 
@@ -24,11 +26,17 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 
 // Create creates a new coupon.
 func (s *Service) Create(ctx context.Context, c *models.Coupon) error {
+	if err := normalizeAndValidate(c); err != nil {
+		return err
+	}
 	return s.db.WithContext(ctx).Create(c).Error
 }
 
 // Update updates an existing coupon.
 func (s *Service) Update(ctx context.Context, c *models.Coupon) error {
+	if err := normalizeAndValidate(c); err != nil {
+		return err
+	}
 	return s.db.WithContext(ctx).Save(c).Error
 }
 
@@ -56,8 +64,37 @@ func (s *Service) GetAll(ctx context.Context) ([]models.Coupon, error) {
 // GetByCode retrieves a coupon by its code.
 func (s *Service) GetByCode(ctx context.Context, code string) (*models.Coupon, error) {
 	var c models.Coupon
-	if err := s.db.WithContext(ctx).Where("code = ?", code).First(&c).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("code = ?", strings.ToUpper(strings.TrimSpace(code))).First(&c).Error; err != nil {
 		return nil, err
 	}
 	return &c, nil
+}
+
+func normalizeAndValidate(c *models.Coupon) error {
+	c.Code = strings.ToUpper(strings.TrimSpace(c.Code))
+	c.Name = strings.TrimSpace(c.Name)
+	c.Type = strings.ToLower(strings.TrimSpace(c.Type))
+
+	if c.Code == "" {
+		return fmt.Errorf("coupon code is required")
+	}
+	if len(c.Code) > 32 {
+		return fmt.Errorf("coupon code must be 32 characters or fewer")
+	}
+	if c.Name == "" {
+		return fmt.Errorf("coupon name is required")
+	}
+	if c.Type != "percent" && c.Type != "fixed" {
+		return fmt.Errorf("coupon type must be percent or fixed")
+	}
+	if c.DiscountValue <= 0 {
+		return fmt.Errorf("discount value must be positive")
+	}
+	if c.Type == "percent" && c.DiscountValue > 100 {
+		return fmt.Errorf("percentage discount cannot exceed 100")
+	}
+	if c.MinAmount < 0 || c.MaxUses < 0 || c.MaxUsesPerUser < 0 {
+		return fmt.Errorf("coupon limits cannot be negative")
+	}
+	return nil
 }

@@ -61,7 +61,7 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
-	if quotaErr := h.checkProjectQuota(c, projectObj); quotaErr != nil {
+	if quotaErr := h.checkProjectQuota(c, projectObj, userAPIKey); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error": gin.H{
 				"message": *quotaErr,
@@ -85,7 +85,7 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 		latency := time.Since(start)
 		usageLog := &models.UsageLog{
 			UserID:     userAPIKey.UserID,
-			ProjectID:   projectObj.ID,
+			ProjectID:  projectObj.ID,
 			APIKeyID:   userAPIKey.ID,
 			ProviderID: selectedProvider.ID,
 			ModelName:  model,
@@ -101,8 +101,8 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 			usageLog.ErrorMessage = "all API keys failed"
 		}
 		if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
-		h.logger.Warn("billing record failed", zap.Error(err))
-	}
+			h.logger.Warn("billing record failed", zap.Error(err))
+		}
 
 		if err == provider.ErrNotImplemented {
 			c.JSON(http.StatusNotImplemented, gin.H{"error": "image generation not supported by this provider"})
@@ -117,7 +117,7 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 	latency := time.Since(start)
 	usageLog := &models.UsageLog{
 		UserID:     userAPIKey.UserID,
-		ProjectID:   projectObj.ID,
+		ProjectID:  projectObj.ID,
 		APIKeyID:   userAPIKey.ID,
 		ProviderID: selectedProvider.ID,
 		ModelName:  model,

@@ -15,7 +15,7 @@ import {
   PlusIcon,
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation } from '@apollo/client/react';
-import { PLANS_QUERY, MY_BILLING_QUERY, CHANGE_PLAN } from '@/lib/graphql/operations';
+import { PLANS_QUERY, MY_BILLING_QUERY, CHANGE_PLAN, CREATE_CHECKOUT_SESSION } from '@/lib/graphql/operations';
 import { REDEEM_CODE_MUTATION } from '@/lib/graphql/operations/redeem';
 import { useTranslation } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/authStore';
@@ -30,6 +30,7 @@ function SubscriptionPage() {
   const { data: plansData, loading: plansLoading } = useQuery<any>(PLANS_QUERY);
   const { data: billingData, loading: billingLoading, refetch: refetchBilling } = useQuery<any>(MY_BILLING_QUERY);
   const [changePlanMut] = useMutation(CHANGE_PLAN);
+  const [createCheckoutSession] = useMutation(CREATE_CHECKOUT_SESSION);
   const [redeemMut] = useMutation(REDEEM_CODE_MUTATION);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'plans' | 'orders'>('plans');
@@ -42,11 +43,19 @@ function SubscriptionPage() {
   const subscription = billingData?.mySubscription as any;
   const orders = useMemo(() => (billingData?.myOrders || []) as any[], [billingData]);
 
-  const handleChangePlan = async (planId: string) => {
+  const handleChangePlan = async (plan: any) => {
     try {
-      setProcessingId(planId);
+      setProcessingId(plan.id);
+      if (plan.priceMonth > 0) {
+        const { data } = await createCheckoutSession({ variables: { planId: plan.id } });
+        const url = (data as any)?.createCheckoutSession?.url;
+        if (!url) throw new Error('checkout session missing url');
+        window.location.href = url;
+        return;
+      }
+
       await changePlanMut({
-        variables: { planId },
+        variables: { planId: plan.id },
         refetchQueries: [{ query: MY_BILLING_QUERY }],
         awaitRefetchQueries: true,
       });
@@ -249,7 +258,7 @@ function SubscriptionPage() {
                   </div>
                   <div className="p-6 bg-apple-gray-50 border-t border-apple-gray-100">
                     <button
-                      onClick={() => handleChangePlan(plan.id)}
+                      onClick={() => handleChangePlan(plan)}
                       disabled={isCurrent || !!processingId}
                       className={`w-full py-2.5 px-4 rounded-xl font-semibold text-sm transition-all flex justify-center items-center ${
                         isCurrent

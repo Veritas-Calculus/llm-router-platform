@@ -22,7 +22,35 @@ interface Coupon {
   createdAt: string;
 }
 
-const emptyForm = { code: '', name: '', type: 'percent', discountValue: 10, minAmount: 0, maxUses: 0, maxUsesPerUser: 1, isActive: true, expiresAt: '' };
+interface CouponForm {
+  code: string;
+  name: string;
+  type: string;
+  discountValue: string;
+  minAmount: string;
+  maxUses: string;
+  maxUsesPerUser: string;
+  isActive: boolean;
+  expiresAt: string;
+}
+
+const emptyForm: CouponForm = {
+  code: '',
+  name: '',
+  type: 'percent',
+  discountValue: '10',
+  minAmount: '',
+  maxUses: '',
+  maxUsesPerUser: '1',
+  isActive: true,
+  expiresAt: '',
+};
+
+const parseNumberField = (value: string, fallback = 0) => {
+  if (value.trim() === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
 
 function CouponsPage() {
   const { t } = useTranslation();
@@ -39,13 +67,30 @@ function CouponsPage() {
 
   const openCreate = () => { setForm(emptyForm); setEditing(null); setCreating(true); };
   const openEdit = (c: Coupon) => {
-    setForm({ code: c.code, name: c.name, type: c.type, discountValue: c.discountValue, minAmount: c.minAmount, maxUses: c.maxUses, maxUsesPerUser: c.maxUsesPerUser, isActive: c.isActive, expiresAt: c.expiresAt || '' });
+    setForm({
+      code: c.code,
+      name: c.name,
+      type: c.type,
+      discountValue: String(c.discountValue),
+      minAmount: c.minAmount > 0 ? String(c.minAmount) : '',
+      maxUses: c.maxUses > 0 ? String(c.maxUses) : '',
+      maxUsesPerUser: String(c.maxUsesPerUser || 1),
+      isActive: c.isActive,
+      expiresAt: c.expiresAt ? c.expiresAt.slice(0, 10) : '',
+    });
     setEditing(c); setCreating(true);
   };
 
   const handleSubmit = async () => {
     try {
-      const input = { ...form, expiresAt: form.expiresAt || undefined, minAmount: form.minAmount || undefined, maxUses: form.maxUses || undefined, maxUsesPerUser: form.maxUsesPerUser || undefined };
+      const input = {
+        ...form,
+        discountValue: parseNumberField(form.discountValue, 10),
+        minAmount: form.minAmount.trim() === '' ? undefined : parseNumberField(form.minAmount),
+        maxUses: form.maxUses.trim() === '' ? undefined : Math.trunc(parseNumberField(form.maxUses)),
+        maxUsesPerUser: form.maxUsesPerUser.trim() === '' ? undefined : Math.trunc(parseNumberField(form.maxUsesPerUser, 1)),
+        expiresAt: form.expiresAt ? new Date(`${form.expiresAt}T23:59:59`).toISOString() : undefined,
+      };
       if (editing) { await updateCoupon({ variables: { id: editing.id, input } }); }
       else { await createCoupon({ variables: { input } }); }
       setCreating(false); setEditing(null); refetch();
@@ -95,17 +140,27 @@ function CouponsPage() {
             <div>
               <label className="form-label">{t('coupons.discount_value')}</label>
               <input type="number" className="form-input" value={form.discountValue} step={0.01}
-                onChange={e => setForm(f => ({ ...f, discountValue: Number(e.target.value) }))} />
+                onChange={e => setForm(f => ({ ...f, discountValue: e.target.value }))} />
             </div>
             <div>
               <label className="form-label">{t('coupons.min_amount')}</label>
               <input type="number" className="form-input" value={form.minAmount} step={0.01}
-                onChange={e => setForm(f => ({ ...f, minAmount: Number(e.target.value) }))} />
+                onChange={e => setForm(f => ({ ...f, minAmount: e.target.value }))} />
             </div>
             <div>
               <label className="form-label">{t('coupons.max_uses')}</label>
               <input type="number" className="form-input" value={form.maxUses} placeholder="0 = unlimited"
-                onChange={e => setForm(f => ({ ...f, maxUses: Number(e.target.value) }))} />
+                onChange={e => setForm(f => ({ ...f, maxUses: e.target.value }))} />
+            </div>
+            <div>
+              <label className="form-label">{t('coupons.max_uses_per_user')}</label>
+              <input type="number" className="form-input" value={form.maxUsesPerUser}
+                onChange={e => setForm(f => ({ ...f, maxUsesPerUser: e.target.value }))} />
+            </div>
+            <div>
+              <label className="form-label">{t('coupons.expires_at')}</label>
+              <input type="date" className="form-input" value={form.expiresAt}
+                onChange={e => setForm(f => ({ ...f, expiresAt: e.target.value }))} />
             </div>
             <div className="flex items-center gap-2">
               <input type="checkbox" id="coupon-active" checked={form.isActive}

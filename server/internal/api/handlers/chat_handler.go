@@ -72,15 +72,53 @@ func NewChatHandler(r *router.Router, b *billing.Service, m *memory.Service, sub
 	}
 }
 
-// checkProjectQuota verifies the project's organization hasn't exceeded their quota.
-// Returns nil if within quota, or an error message if exceeded.
-func (h *ChatHandler) checkProjectQuota(c *gin.Context, projectObj *models.Project) *string {
-	// 1. Check Subscription-based quota
+// checkProjectQuota verifies subscription quota and falls back to prepaid user balance.
+// Returns nil if the request may proceed, or an error message if access is blocked.
+func (h *ChatHandler) checkProjectQuota(c *gin.Context, projectObj *models.Project, userAPIKey *models.APIKey) *string {
+	ctx := c.Request.Context()
+	hasPrepaidBalance := func() bool {
+		if h.balance == nil || userAPIKey == nil {
+			return false
+		}
+		bal, err := h.balance.GetBalance(ctx, userAPIKey.UserID)
+		if err != nil {
+			h.logger.Warn("prepaid balance check failed", zap.Error(err), zap.String("user_id", userAPIKey.UserID.String()))
+			return false
+		}
+		return bal > 0
+	}
+
 	if h.subService != nil {
-		ok, msg, err := h.subService.CheckQuota(c.Request.Context(), projectObj.OrgID)
+		sub, err := h.subService.GetUserSubscription(ctx, projectObj.OrgID)
+		if err != nil {
+			h.logger.Error("subscription lookup failed", zap.Error(err), zap.String("org_id", projectObj.OrgID.String()))
+			if hasPrepaidBalance() {
+				return nil
+			}
+			msg := "unable to verify subscription"
+			return &msg
+		}
+		if sub == nil {
+			if hasPrepaidBalance() {
+				return nil
+			}
+			msg := "no active subscription or prepaid balance available"
+			return &msg
+		}
+
+		ok, msg, err := h.subService.CheckQuota(ctx, projectObj.OrgID)
 		if err != nil {
 			h.logger.Error("subscription quota check failed", zap.Error(err))
-		} else if !ok {
+			if hasPrepaidBalance() {
+				return nil
+			}
+			msg = "unable to verify subscription"
+			return &msg
+		}
+		if !ok {
+			if hasPrepaidBalance() {
+				return nil
+			}
 			return &msg
 		}
 	}
@@ -143,13 +181,13 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 	}
 
 	projectObj := c.MustGet("project").(*models.Project)
-	if quotaErr := h.checkProjectQuota(c, projectObj); quotaErr != nil {
+	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+	if quotaErr := h.checkProjectQuota(c, projectObj, userAPIKey); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": *quotaErr})
 		return
 	}
 
 	start := time.Now()
-	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 
 	// Handle streaming via existing infrastructure
 	if anthroReq.Stream {
@@ -198,7 +236,7 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 		ResponseTokens: resp.Usage.CompletionTokens,
 		TotalTokens:    resp.Usage.TotalTokens,
 	}
-	if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, projectObj.ID, "Anthropic API: "+anthroReq.Model); err != nil {
+	if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, userAPIKey.UserID, "Anthropic API: "+anthroReq.Model); err != nil {
 		h.logger.Warn("billing deduction failed", zap.Error(err), zap.String("model", sanitize.LogValue(anthroReq.Model)))
 	}
 
@@ -327,7 +365,7 @@ func (h *ChatHandler) handleAnthropicStream(c *gin.Context, anthroReq AnthropicM
 	c.Writer.Flush()
 
 	latency := time.Since(start)
-	if err := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, totalOutput, http.StatusOK, latency.Milliseconds(), ""); err != nil {
+	if err := h.billing.UpdateUsageTokensAndDeduct(c.Request.Context(), usageLog.ID, 0, totalOutput, http.StatusOK, latency.Milliseconds(), "", h.balance, userAPIKey.UserID, "Anthropic stream: "+anthroReq.Model); err != nil {
 		h.logger.Warn("billing update failed", zap.Error(err))
 	}
 }
@@ -438,7 +476,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 	defer trace.End()
 
 	// 5. Quota check
-	if quotaErr := h.checkProjectQuota(c, projectObj); quotaErr != nil {
+	if quotaErr := h.checkProjectQuota(c, projectObj, userAPIKey); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, router_errs.NewRouterError(
 			router_errs.ErrCodeRateLimitExceeded, http.StatusTooManyRequests, "quota_exceeded", *quotaErr, nil,
 		).MapToOpenAIResponse())
@@ -847,7 +885,7 @@ func (h *ChatHandler) handleNonStreamResponse(c *gin.Context, req ChatCompletion
 		MCPCallCount:   result.MCPCallCount,
 		MCPErrorCount:  result.MCPErrorCount,
 	}
-	if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, projectObj.ID, "LLM Request: "+req.Model); err != nil {
+	if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, userAPIKey.UserID, "LLM Request: "+req.Model); err != nil {
 		h.logger.Warn("billing deduction failed", zap.Error(err), zap.String("model", sanitize.LogValue(req.Model)))
 	}
 

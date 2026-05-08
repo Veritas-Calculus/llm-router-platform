@@ -16,6 +16,7 @@ export {
   SET_BUDGET,
   DELETE_BUDGET,
   CHANGE_PLAN,
+  CREATE_CHECKOUT_SESSION,
   CREATE_PLAN,
   UPDATE_PLAN,
 } from './billing';

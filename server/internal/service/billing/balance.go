@@ -9,8 +9,8 @@ import (
 
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
@@ -132,6 +132,14 @@ func (s *BalanceService) AddBalance(ctx context.Context, userID uuid.UUID, amoun
 
 		return tx.Create(transaction).Error
 	})
+}
+
+func (s *BalanceService) GetBalance(ctx context.Context, userID uuid.UUID) (float64, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	return user.Balance, nil
 }
 
 func (s *BalanceService) GetTransactions(ctx context.Context, userID uuid.UUID, limit, offset int) ([]models.Transaction, int64, error) {

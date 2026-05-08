@@ -23,9 +23,11 @@ export const CREATE_PLAN = gql`
     createPlan(input: $input) {
       id
       name
+      description
       priceMonth
       tokenLimit
       rateLimit
+      supportLevel
       features
       isActive
     }
@@ -37,9 +39,11 @@ export const UPDATE_PLAN = gql`
     updatePlan(id: $id, input: $input) {
       id
       name
+      description
       priceMonth
       tokenLimit
       rateLimit
+      supportLevel
       features
       isActive
     }

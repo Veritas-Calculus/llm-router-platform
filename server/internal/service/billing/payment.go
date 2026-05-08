@@ -59,6 +59,12 @@ func (s *PaymentService) CreateCheckoutSession(ctx context.Context, userID uuid.
 	if err != nil {
 		return "", fmt.Errorf("plan not found")
 	}
+	if !plan.IsActive {
+		return "", fmt.Errorf("plan is not available")
+	}
+	if plan.PriceMonth <= 0 {
+		return "", fmt.Errorf("free plans do not require checkout")
+	}
 
 	orderNo := fmt.Sprintf("ORD-%d-%s", time.Now().Unix(), uuid.New().String()[:8])
 
@@ -125,10 +131,10 @@ func (s *PaymentService) CreateRechargeSession(ctx context.Context, userID uuid.
 	orderNo := fmt.Sprintf("RECH-%d-%s", time.Now().Unix(), uuid.New().String()[:8])
 
 	params := &stripe.CheckoutSessionParams{
-		SuccessURL: stripe.String(s.frontendURL + "/billing?payment=success&order_no=" + orderNo),
-		CancelURL:  stripe.String(s.frontendURL + "/billing?payment=cancel"),
+		SuccessURL:         stripe.String(s.frontendURL + "/billing?payment=success&order_no=" + orderNo),
+		CancelURL:          stripe.String(s.frontendURL + "/billing?payment=cancel"),
 		PaymentMethodTypes: stripe.StringSlice([]string{"card"}),
-		Mode: stripe.String(string(stripe.CheckoutSessionModePayment)),
+		Mode:               stripe.String(string(stripe.CheckoutSessionModePayment)),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{
 			{
 				PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
@@ -218,8 +224,13 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 				zap.String("order_no", orderNo))
 			return nil
 		}
+	}
+	markOrderPaid := func() error {
+		if err != nil || order == nil {
+			return nil
+		}
 		order.Status = "paid"
-		_ = s.subRepo.UpdateOrder(ctx, order)
+		return s.subRepo.UpdateOrder(ctx, order)
 	}
 
 	if orderType == "recharge" {
@@ -233,7 +244,10 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 			return fmt.Errorf("invalid stripe amount")
 		}
 		amount := float64(sess.AmountTotal) / 100.0
-		return s.subRepo.UpdateUserBalance(ctx, userID, amount, "recharge", "Credit Top-up via Stripe", orderNo)
+		if err := s.subRepo.UpdateUserBalance(ctx, userID, amount, "recharge", "Credit Top-up via Stripe", orderNo); err != nil {
+			return err
+		}
+		return markOrderPaid()
 	}
 
 	// Default: Subscription fulfillment
@@ -264,9 +278,14 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 	}
 
 	if sub.ID == uuid.Nil {
-		return s.subRepo.Create(ctx, sub)
+		err = s.subRepo.Create(ctx, sub)
+	} else {
+		err = s.subRepo.Update(ctx, sub)
 	}
-	return s.subRepo.Update(ctx, sub)
+	if err != nil {
+		return err
+	}
+	return markOrderPaid()
 }
 
 // CreatePortalSession creates a Stripe billing portal session.

@@ -971,6 +971,8 @@
         "discount": "Discount",
         "min_amount": "Min Amount",
         "max_uses": "Max Uses",
+        "max_uses_per_user": "Max Uses Per User",
+        "expires_at": "Expires At",
         "usage": "Usage",
         "type_percent": "Percentage",
         "type_fixed": "Fixed Amount"

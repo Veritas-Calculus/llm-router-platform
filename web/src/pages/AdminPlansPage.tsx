@@ -19,7 +19,33 @@ interface Plan {
   isActive: boolean;
 }
 
-const emptyForm = { name: '', description: '', priceMonth: 0, tokenLimit: 100000, rateLimit: 10, supportLevel: 'basic', features: '', isActive: true };
+interface PlanForm {
+  name: string;
+  description: string;
+  priceMonth: string;
+  tokenLimit: string;
+  rateLimit: string;
+  supportLevel: string;
+  features: string;
+  isActive: boolean;
+}
+
+const emptyForm: PlanForm = {
+  name: '',
+  description: '',
+  priceMonth: '',
+  tokenLimit: '100000',
+  rateLimit: '10',
+  supportLevel: 'basic',
+  features: '',
+  isActive: true,
+};
+
+const parseNumberField = (value: string, fallback = 0) => {
+  if (value.trim() === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
 
 function AdminPlansPage() {
   const { t } = useTranslation();
@@ -35,13 +61,30 @@ function AdminPlansPage() {
 
   const openCreate = () => { setForm(emptyForm); setEditing(null); setCreating(true); };
   const openEdit = (p: Plan) => {
-    setForm({ name: p.name, description: p.description || '', priceMonth: p.priceMonth, tokenLimit: p.tokenLimit, rateLimit: p.rateLimit, supportLevel: p.supportLevel || 'basic', features: p.features || '', isActive: p.isActive });
+    setForm({
+      name: p.name,
+      description: p.description || '',
+      priceMonth: String(p.priceMonth),
+      tokenLimit: String(p.tokenLimit),
+      rateLimit: String(p.rateLimit),
+      supportLevel: p.supportLevel || 'basic',
+      features: p.features || '',
+      isActive: p.isActive,
+    });
     setEditing(p); setCreating(true);
   };
 
   const handleSubmit = async () => {
     try {
-      const input = { ...form, description: form.description || undefined, supportLevel: form.supportLevel || undefined, features: form.features || undefined };
+      const input = {
+        ...form,
+        priceMonth: parseNumberField(form.priceMonth),
+        tokenLimit: Math.trunc(parseNumberField(form.tokenLimit)),
+        rateLimit: Math.trunc(parseNumberField(form.rateLimit)),
+        description: form.description || undefined,
+        supportLevel: form.supportLevel || undefined,
+        features: form.features || undefined,
+      };
       if (editing) {
         await updatePlan({ variables: { id: editing.id, input } });
       } else {
@@ -78,17 +121,17 @@ function AdminPlansPage() {
             <div>
               <label className="form-label">{t('plans.price_month')}</label>
               <input type="number" className="form-input" value={form.priceMonth} step={0.01}
-                onChange={e => setForm(f => ({ ...f, priceMonth: Number(e.target.value) }))} />
+                onChange={e => setForm(f => ({ ...f, priceMonth: e.target.value }))} />
             </div>
             <div>
               <label className="form-label">{t('plans.token_limit')}</label>
               <input type="number" className="form-input" value={form.tokenLimit}
-                onChange={e => setForm(f => ({ ...f, tokenLimit: Number(e.target.value) }))} />
+                onChange={e => setForm(f => ({ ...f, tokenLimit: e.target.value }))} />
             </div>
             <div>
               <label className="form-label">{t('plans.rate_limit')}</label>
               <input type="number" className="form-input" value={form.rateLimit}
-                onChange={e => setForm(f => ({ ...f, rateLimit: Number(e.target.value) }))} />
+                onChange={e => setForm(f => ({ ...f, rateLimit: e.target.value }))} />
             </div>
             <div className="col-span-2">
               <label className="form-label">{t('plans.description')}</label>

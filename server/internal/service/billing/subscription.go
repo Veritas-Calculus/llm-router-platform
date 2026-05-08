@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,14 +11,15 @@ import (
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // SubscriptionService handles plans and subscriptions.
 type SubscriptionService struct {
-	planRepo    repository.PlanRepo
-	subRepo     repository.SubscriptionRepo
-	usageRepo   repository.UsageLogRepo
-	logger      *zap.Logger
+	planRepo  repository.PlanRepo
+	subRepo   repository.SubscriptionRepo
+	usageRepo repository.UsageLogRepo
+	logger    *zap.Logger
 }
 
 func NewSubscriptionService(
@@ -34,34 +36,16 @@ func NewSubscriptionService(
 	}
 }
 
-// GetUserSubscription returns the user's active subscription.
-// If none exists, it creates a default "Free" subscription.
+// GetUserSubscription returns the org's current subscription, if it has one.
 func (s *SubscriptionService) GetUserSubscription(ctx context.Context, userID uuid.UUID) (*models.Subscription, error) {
 	sub, err := s.subRepo.GetByUserID(ctx, userID)
 	if err == nil {
 		return sub, nil
 	}
-
-	// Create default free subscription
-	freePlan, err := s.planRepo.GetByName(ctx, "Free")
-	if err != nil {
-		return nil, err
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
 	}
-
-	newSub := &models.Subscription{
-		OrgID:             userID,
-		PlanID:            freePlan.ID,
-		Status:            "active",
-		CurrentPeriodStart: time.Now(),
-		CurrentPeriodEnd:   time.Now().AddDate(0, 1, 0), // 1 month
-	}
-
-	if err := s.subRepo.Create(ctx, newSub); err != nil {
-		return nil, err
-	}
-
-	newSub.Plan = *freePlan
-	return newSub, nil
+	return nil, err
 }
 
 // CheckQuota verifies if the user has remaining quota based on their subscription.
@@ -69,6 +53,12 @@ func (s *SubscriptionService) CheckQuota(ctx context.Context, userID uuid.UUID) 
 	sub, err := s.GetUserSubscription(ctx, userID)
 	if err != nil {
 		return false, "unable to verify subscription", err
+	}
+	if sub == nil {
+		return true, "", nil
+	}
+	if sub.Status != "active" && sub.Status != "trialing" {
+		return false, "subscription is not active", nil
 	}
 
 	if sub.Plan.TokenLimit == 0 {
@@ -100,6 +90,9 @@ func (s *SubscriptionService) GetQuotaUsage(ctx context.Context, orgID uuid.UUID
 	if err != nil {
 		return 0, err
 	}
+	if sub == nil {
+		return 0, nil
+	}
 	summary, err := s.usageRepo.AggregateByTimeRange(ctx, &orgID, nil, nil, sub.CurrentPeriodStart, time.Now())
 	if err != nil {
 		return 0, err
@@ -120,10 +113,27 @@ func (s *SubscriptionService) ChangePlan(ctx context.Context, orgID uuid.UUID, p
 	if !plan.IsActive {
 		return nil, fmt.Errorf("plan is not available")
 	}
+	if plan.PriceMonth > 0 {
+		return nil, fmt.Errorf("paid plans require checkout")
+	}
 
 	sub, err := s.GetUserSubscription(ctx, orgID)
 	if err != nil {
 		return nil, err
+	}
+	if sub == nil {
+		sub = &models.Subscription{
+			OrgID:              orgID,
+			PlanID:             planID,
+			Status:             "active",
+			CurrentPeriodStart: time.Now(),
+			CurrentPeriodEnd:   time.Now().AddDate(0, 1, 0),
+		}
+		if err := s.subRepo.Create(ctx, sub); err != nil {
+			return nil, err
+		}
+		sub.Plan = *plan
+		return sub, nil
 	}
 
 	// Update plan and reset billing period

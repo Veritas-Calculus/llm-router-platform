@@ -10,10 +10,10 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -76,12 +76,7 @@ func (s *Service) UpdateUsageTokens(ctx context.Context, logID uuid.UUID, reques
 	log.IsSuccess = statusCode >= 200 && statusCode < 300
 	log.Latency = latencyMs
 
-	if log.ModelID != uuid.Nil {
-		model, err := s.modelRepo.GetByID(ctx, log.ModelID)
-		if err == nil {
-			log.Cost = s.calculateCost(model, log.RequestTokens, log.ResponseTokens)
-		}
-	}
+	s.calculateUsageLogCost(ctx, log)
 
 	err = s.usageRepo.Update(ctx, log)
 
@@ -93,14 +88,77 @@ func (s *Service) UpdateUsageTokens(ctx context.Context, logID uuid.UUID, reques
 	return err
 }
 
+// UpdateUsageTokensAndDeduct finalizes a pre-recorded streaming usage log and
+// deducts the computed cost in the same transaction when billing data is available.
+func (s *Service) UpdateUsageTokensAndDeduct(ctx context.Context, logID uuid.UUID, requestTokens, responseTokens int, statusCode int, latencyMs int64, errorMessage string, balanceSvc *BalanceService, userID uuid.UUID, description string) error {
+	log, err := s.usageRepo.GetByID(ctx, logID)
+	if err != nil {
+		return err
+	}
+
+	log.RequestTokens = requestTokens
+	log.ResponseTokens = responseTokens
+	log.TotalTokens = requestTokens + responseTokens
+	log.StatusCode = statusCode
+	log.ErrorMessage = errorMessage
+	log.IsSuccess = statusCode >= 200 && statusCode < 300
+	log.Latency = latencyMs
+
+	s.calculateUsageLogCost(ctx, log)
+
+	if balanceSvc == nil || !log.IsSuccess || log.Cost <= 0 {
+		err := s.usageRepo.Update(ctx, log)
+		if s.redis != nil && err == nil && log.IsSuccess {
+			s.incrUsageCache(ctx, log)
+		}
+		return err
+	}
+
+	err = balanceSvc.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(log).Error; err != nil {
+			return err
+		}
+
+		var user models.User
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, "id = ?", userID).Error; err != nil {
+			return err
+		}
+
+		user.Balance -= log.Cost
+		if err := tx.Save(&user).Error; err != nil {
+			return err
+		}
+
+		transaction := &models.Transaction{
+			OrgID:       userID,
+			UserID:      userID,
+			Type:        "deduction",
+			Amount:      -log.Cost,
+			Balance:     user.Balance,
+			Description: description,
+			ReferenceID: log.ID.String(),
+		}
+		if err := tx.Create(transaction).Error; err != nil {
+			return err
+		}
+
+		balanceSvc.sendLowBalanceAlert(ctx, userID, user.Email, user.Name, user.Balance)
+		return nil
+	})
+
+	if s.redis != nil && err == nil {
+		s.incrUsageCache(ctx, log)
+	}
+	if err != nil {
+		billingRecordErrorsTotal.WithLabelValues("update_usage_and_deduct").Inc()
+	}
+
+	return err
+}
+
 // RecordUsage records API usage.
 func (s *Service) RecordUsage(ctx context.Context, log *models.UsageLog) error {
-	if log.ModelID != uuid.Nil {
-		model, err := s.modelRepo.GetByID(ctx, log.ModelID)
-		if err == nil {
-			log.Cost = s.calculateCost(model, log.RequestTokens, log.ResponseTokens)
-		}
-	}
+	s.calculateUsageLogCost(ctx, log)
 
 	err := s.usageRepo.Create(ctx, log)
 
@@ -123,12 +181,7 @@ func (s *Service) RecordUsage(ctx context.Context, log *models.UsageLog) error {
 // If balanceSvc is nil or cost is zero, it behaves identically to RecordUsage.
 func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog, balanceSvc *BalanceService, userID uuid.UUID, description string) error {
 	// Calculate cost first (outside transaction — read-only)
-	if log.ModelID != uuid.Nil {
-		model, err := s.modelRepo.GetByID(ctx, log.ModelID)
-		if err == nil {
-			log.Cost = s.calculateCost(model, log.RequestTokens, log.ResponseTokens)
-		}
-	}
+	s.calculateUsageLogCost(ctx, log)
 
 	// If no balance service or zero cost, fall back to simple insert
 	if balanceSvc == nil || log.Cost <= 0 {
@@ -186,6 +239,29 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 	}
 
 	return err
+}
+
+func (s *Service) calculateUsageLogCost(ctx context.Context, log *models.UsageLog) {
+	model, err := s.modelForUsageLog(ctx, log)
+	if err != nil || model == nil {
+		return
+	}
+
+	log.ModelID = model.ID
+	log.Cost = s.calculateCost(model, log.RequestTokens, log.ResponseTokens)
+}
+
+func (s *Service) modelForUsageLog(ctx context.Context, log *models.UsageLog) (*models.Model, error) {
+	if s.modelRepo == nil {
+		return nil, nil
+	}
+	if log.ModelID != uuid.Nil {
+		return s.modelRepo.GetByID(ctx, log.ModelID)
+	}
+	if log.ModelName != "" {
+		return s.modelRepo.GetByName(ctx, log.ModelName)
+	}
+	return nil, nil
 }
 
 // sendLowBalanceAlert sends a low-balance warning email if the user's balance drops below $1,

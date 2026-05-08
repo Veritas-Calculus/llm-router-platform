@@ -41,6 +41,12 @@ export const CHANGE_PLAN = gql`
   }
 `;
 
+export const CREATE_CHECKOUT_SESSION = gql`
+  mutation CreateCheckoutSession($planId: ID!) {
+    createCheckoutSession(planId: $planId) { url }
+  }
+`;
+
 // ── Admin: Plans ──
 export const CREATE_RECHARGE_SESSION = gql`
   mutation CreateRechargeSession($amount: Float!) {
@@ -50,12 +56,12 @@ export const CREATE_RECHARGE_SESSION = gql`
 
 export const CREATE_PLAN = gql`
   mutation CreatePlan($input: PlanInput!) {
-    createPlan(input: $input) { id name priceMonth isActive }
+    createPlan(input: $input) { id name description priceMonth tokenLimit rateLimit supportLevel features isActive }
   }
 `;
 
 export const UPDATE_PLAN = gql`
   mutation UpdatePlan($id: ID!, $input: PlanInput!) {
-    updatePlan(id: $id, input: $input) { id name priceMonth isActive }
+    updatePlan(id: $id, input: $input) { id name description priceMonth tokenLimit rateLimit supportLevel features isActive }
   }
 `;

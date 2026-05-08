@@ -73,7 +73,7 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
-	if quotaErr := h.checkProjectQuota(c, projectObj); quotaErr != nil {
+	if quotaErr := h.checkProjectQuota(c, projectObj, userAPIKey); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error": gin.H{
 				"message": *quotaErr,

@@ -936,6 +936,8 @@
         "discount": "折扣",
         "min_amount": "最低金额",
         "max_uses": "最大使用次数",
+        "max_uses_per_user": "每用户最大使用次数",
+        "expires_at": "过期时间",
         "usage": "已使用",
         "type_percent": "百分比",
         "type_fixed": "固定金额"

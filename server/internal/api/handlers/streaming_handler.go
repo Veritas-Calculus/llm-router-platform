@@ -100,7 +100,7 @@ func (h *ChatHandler) finalizeStream(ctx context.Context, req *provider.ChatRequ
 		errStr = sanitize.TruncateErrorMessage(streamErr.Error())
 	}
 
-	if err := h.billing.UpdateUsageTokens(context.Background(), logID, promptTokens, completionTokens, statusCode, time.Since(start).Milliseconds(), errStr); err != nil {
+	if err := h.billing.UpdateUsageTokensAndDeduct(context.Background(), logID, promptTokens, completionTokens, statusCode, time.Since(start).Milliseconds(), errStr, h.balance, userAPIKey.UserID, "LLM Stream: "+req.Model); err != nil {
 		h.logger.Warn("billing update failed after stream", zap.Error(err))
 	}
 

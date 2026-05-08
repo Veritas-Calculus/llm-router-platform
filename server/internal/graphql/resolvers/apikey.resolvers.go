@@ -247,7 +247,17 @@ func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string)
 	if r.SubscriptionSvc != nil {
 		var proj struct{ OrgID uuid.UUID }
 		if err := r.AdminSvc.DB().Table("projects").Select("org_id").Where("id = ?", apiKey.ProjectID).First(&proj).Error; err == nil {
-			if allowed, msg, _ := r.SubscriptionSvc.CheckQuota(ctx, proj.OrgID); !allowed {
+			sub, err := r.SubscriptionSvc.GetUserSubscription(ctx, proj.OrgID)
+			if err != nil {
+				result.Status = "quota_exceeded"
+				result.StatusReason = "unable to verify subscription"
+			} else if sub == nil {
+				var user struct{ Balance float64 }
+				if err := r.AdminSvc.DB().Table("users").Select("balance").Where("id = ?", apiKey.UserID).First(&user).Error; err != nil || user.Balance <= 0 {
+					result.Status = "quota_exceeded"
+					result.StatusReason = "no active subscription or prepaid balance available"
+				}
+			} else if allowed, msg, _ := r.SubscriptionSvc.CheckQuota(ctx, proj.OrgID); !allowed {
 				result.Status = "quota_exceeded"
 				result.StatusReason = msg
 			}

@@ -118,6 +118,24 @@ func (r *mutationResolver) ChangePlan(ctx context.Context, planID string) (*mode
 	}, nil
 }
 
+// CreateCheckoutSession is the resolver for the createCheckoutSession field.
+func (r *mutationResolver) CreateCheckoutSession(ctx context.Context, planID string) (*model.CheckoutSession, error) {
+	orgID, err := r.resolveOrgID(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	pid, err := uuid.Parse(planID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid plan ID")
+	}
+
+	url, err := r.Payment.CreateCheckoutSession(ctx, orgID, pid)
+	if err != nil {
+		return nil, err
+	}
+	return &model.CheckoutSession{URL: url}, nil
+}
+
 // CreateRechargeSession is the resolver for the createRechargeSession field.
 func (r *mutationResolver) CreateRechargeSession(ctx context.Context, amount float64) (*model.CheckoutSession, error) {
 	if amount < 1.0 {
@@ -189,8 +207,9 @@ func (r *mutationResolver) CreatePlan(ctx context.Context, input model.PlanInput
 		features = &plan.Features
 	}
 	return &model.Plan{
-		ID: plan.ID.String(), Name: plan.Name, PriceMonth: plan.PriceMonth,
-		TokenLimit: int(plan.TokenLimit), RateLimit: plan.RateLimit,
+		ID: plan.ID.String(), Name: plan.Name, Description: plan.Description,
+		PriceMonth: plan.PriceMonth, TokenLimit: int(plan.TokenLimit),
+		RateLimit: plan.RateLimit, SupportLevel: plan.SupportLevel,
 		Features: features, IsActive: plan.IsActive,
 	}, nil
 }
@@ -226,8 +245,9 @@ func (r *mutationResolver) UpdatePlan(ctx context.Context, id string, input mode
 		features = &plan.Features
 	}
 	return &model.Plan{
-		ID: plan.ID.String(), Name: plan.Name, PriceMonth: plan.PriceMonth,
-		TokenLimit: int(plan.TokenLimit), RateLimit: plan.RateLimit,
+		ID: plan.ID.String(), Name: plan.Name, Description: plan.Description,
+		PriceMonth: plan.PriceMonth, TokenLimit: int(plan.TokenLimit),
+		RateLimit: plan.RateLimit, SupportLevel: plan.SupportLevel,
 		Features: features, IsActive: plan.IsActive,
 	}, nil
 }
@@ -343,9 +363,15 @@ func (r *queryResolver) MyBudgetStatus(ctx context.Context, orgID *string) (*mod
 	if b != nil {
 		budget = budgetToGQL(b)
 	}
+	if s == nil {
+		return &model.BudgetStatus{Budget: budget}, nil
+	}
 	return &model.BudgetStatus{
-		Budget: budget, CurrentSpend: s.CurrentSpend,
-		PercentUsed: s.UsagePercent, IsOverBudget: s.IsOverBudget,
+		Budget:          budget,
+		CurrentSpend:    s.CurrentSpend,
+		RemainingBudget: s.RemainingUSD,
+		PercentUsed:     s.UsagePercent,
+		IsOverBudget:    s.IsOverBudget,
 	}, nil
 }
 
