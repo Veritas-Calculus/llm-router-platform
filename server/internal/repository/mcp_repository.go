@@ -27,7 +27,7 @@ func (r *MCPRepository) CreateServer(ctx context.Context, server *models.MCPServ
 // GetServerByID retrieves an MCP server by ID.
 func (r *MCPRepository) GetServerByID(ctx context.Context, id uuid.UUID) (*models.MCPServer, error) {
 	var server models.MCPServer
-	if err := r.db.WithContext(ctx).First(&server, "id = ?", id).Error; err != nil {
+	if err := r.db.WithContext(ctx).Preload("Tools").First(&server, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
 	return &server, nil

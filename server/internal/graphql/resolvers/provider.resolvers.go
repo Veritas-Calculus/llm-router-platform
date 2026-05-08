@@ -24,6 +24,9 @@ func (r *mutationResolver) CreateProvider(ctx context.Context, input model.Creat
 	if err := sanitize.ValidateWebhookURL(input.BaseURL, true, allowLocalProviderURLs); err != nil {
 		return nil, fmt.Errorf("invalid base URL: %w", err)
 	}
+	if existing, err := r.Router.GetProviderByName(ctx, input.Name); err == nil && existing != nil {
+		return nil, fmt.Errorf("provider %q already exists", input.Name)
+	}
 
 	p := &models.Provider{
 		Name:           input.Name,

@@ -6,7 +6,7 @@ export const MY_TASKS_QUERY = gql`
   query MyTasks($page: Int, $pageSize: Int) {
     myTasks(page: $page, pageSize: $pageSize) {
       data {
-        id type status progress result error createdAt updatedAt completedAt
+        id type status progress result error createdAt startedAt completedAt
       }
       total
     }

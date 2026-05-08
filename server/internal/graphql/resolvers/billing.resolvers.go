@@ -358,6 +358,9 @@ func (r *queryResolver) MyBudgetStatus(ctx context.Context, orgID *string) (*mod
 	if err != nil {
 		return nil, err
 	}
+	if s == nil {
+		return nil, nil
+	}
 	b := r.BudgetService.GetBudget(ctx, oId)
 	var budget *model.Budget
 	if b != nil {

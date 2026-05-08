@@ -4,7 +4,7 @@ FROM --platform=$BUILDPLATFORM node:25-alpine AS builder
 WORKDIR /app
 
 # Copy package files and npm config
-COPY package*.json .npmrc ./
+COPY web/package*.json web/.npmrc ./
 
 # Install dependencies
 RUN npm ci
@@ -17,8 +17,9 @@ ARG VITE_SENTRY_ENVIRONMENT="production"
 ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
 ENV VITE_SENTRY_ENVIRONMENT=$VITE_SENTRY_ENVIRONMENT
 
-# Copy source code
-COPY . .
+# Copy source code and the GraphQL schema used by the build-time validator
+COPY web/ .
+COPY server/internal/graphql/schema /server/internal/graphql/schema
 
 # Build
 RUN npm run build
@@ -38,7 +39,7 @@ RUN addgroup -g 10001 -S appgroup && \
     adduser -u 10001 -S appuser -G appgroup -h /app -s /sbin/nologin
 
 # Copy full nginx config (handles non-root paths internally)
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY web/nginx.conf /etc/nginx/nginx.conf
 # Remove default server block config (ours is in the main nginx.conf)
 RUN rm -f /etc/nginx/conf.d/default.conf
 

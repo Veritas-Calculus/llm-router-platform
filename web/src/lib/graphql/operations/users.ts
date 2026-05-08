@@ -17,12 +17,14 @@ export const USER_DETAIL_QUERY = gql`
   query UserDetail($id: ID!, $days: Int) {
     user(id: $id) {
       id email name role isActive
-      requestQuota usedQuota
-      monthlyTokenLimit usedMonthlyTokens
-      createdAt lastLoginAt
+      createdAt apiKeys
+      monthlyTokenLimit monthlyBudgetUsd
+      usageMonth {
+        totalRequests totalTokens totalCost avgLatency successRate errorCount
+      }
     }
     userUsage(id: $id, days: $days) {
-      date requests tokens cost
+      date requests totalTokens totalCost
     }
     userApiKeys(id: $id) {
       id name keyPrefix isActive lastUsedAt createdAt expiresAt
@@ -45,7 +47,7 @@ export const UPDATE_USER_ROLE = gql`
 export const UPDATE_USER_QUOTA = gql`
   mutation UpdateUserQuota($id: ID!, $input: QuotaInput!) {
     updateUserQuota(id: $id, input: $input) {
-      id requestQuota monthlyTokenLimit
+      id monthlyTokenLimit monthlyBudgetUsd
     }
   }
 `;

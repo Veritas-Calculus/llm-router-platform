@@ -1,4 +1,4 @@
-.PHONY: all build test clean run dev docker-build docker-up docker-down lint setup helm-lint
+.PHONY: all build test clean run dev docker-build docker-up docker-down lint setup helm-lint web-validate-gql
 
 # Variables
 BINARY_NAME=llm-router-server
@@ -51,6 +51,10 @@ dev:
 web-install:
 	@echo "Installing web dependencies..."
 	cd web && npm install
+
+web-validate-gql:
+	@echo "Validating frontend GraphQL operations..."
+	cd web && npm run validate:gql
 
 web-build:
 	@echo "Building web..."
@@ -144,6 +148,7 @@ help:
 	@echo "  dev               - Run in development mode"
 	@echo "  setup             - One-click project init (new developers)"
 	@echo "  web-install       - Install web dependencies"
+	@echo "  web-validate-gql  - Validate frontend GraphQL operations against backend schema"
 	@echo "  web-build         - Build web frontend"
 	@echo "  web-dev           - Run web dev server"
 	@echo "  docker-build      - Build Docker images"

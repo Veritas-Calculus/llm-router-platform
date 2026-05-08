@@ -208,23 +208,27 @@ func setupErrorMasking(srv *handler.Server, logger *zap.Logger) {
 		msg := gqlErr.Message
 
 		clientErrors := map[string]bool{
-			"unauthorized: authentication required": true,
-			"forbidden: admin access required":      true,
-			"forbidden: IP not inside admin whitelist": true,
-			"invalid credentials":                   true,
-			"invalid email or password":             true,
-			"account is disabled":                   true,
-			"email already registered":              true,
-			"invalid or expired token":              true,
-			"invalid or expired reset token":        true,
-			"insufficient balance":                  true,
-			"rate limit exceeded":                   true,
-			"rate limit exceeded: try again later":  true,
-			"forbidden: access denied":              true,
-			"account not found":                     true,
+			"unauthorized: authentication required":                  true,
+			"forbidden: admin access required":                       true,
+			"forbidden: IP not inside admin whitelist":               true,
+			"invalid credentials":                                    true,
+			"invalid email or password":                              true,
+			"account is disabled":                                    true,
+			"email already registered":                               true,
+			"invalid or expired token":                               true,
+			"invalid or expired reset token":                         true,
+			"insufficient balance":                                   true,
+			"rate limit exceeded":                                    true,
+			"rate limit exceeded: try again later":                   true,
+			"forbidden: access denied":                               true,
+			"account not found":                                      true,
+			"context canceled":                                       true,
+			"no organization found for user":                         true,
+			"payments are currently disabled":                        true,
+			"record not found":                                       true,
 			"too many failed login attempts, please try again later": true,
 		}
-		if clientErrors[msg] {
+		if clientErrors[msg] || isClientGraphQLError(msg) {
 			graphqlErrorsTotal.WithLabelValues("client").Inc()
 			return gqlErr
 		}
@@ -250,6 +254,38 @@ func setupErrorMasking(srv *handler.Server, logger *zap.Logger) {
 		gqlErr.Extensions = map[string]interface{}{"request_id": requestID}
 		return gqlErr
 	})
+}
+
+func isClientGraphQLError(msg string) bool {
+	clientPrefixes := []string{
+		"Cannot query field ",
+		"Unknown argument ",
+		"Variable ",
+		"Expected type ",
+		"invalid base URL:",
+		"invalid org ID",
+		"invalid project ID",
+		"provider not found",
+		"server not found",
+	}
+	for _, prefix := range clientPrefixes {
+		if strings.HasPrefix(msg, prefix) {
+			return true
+		}
+	}
+
+	clientFragments := []string{
+		"cannot use string as Int",
+		"already exists",
+		"is required but not provided",
+	}
+	for _, fragment := range clientFragments {
+		if strings.Contains(msg, fragment) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // selectionDepth computes the maximum nesting depth of a selection set.

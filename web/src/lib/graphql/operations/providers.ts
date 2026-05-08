@@ -35,7 +35,7 @@ export const PROVIDER_API_KEYS_QUERY = gql`
 export const PROVIDER_HEALTH_QUERY = gql`
   query ProviderHealthStatus($providerId: ID!) {
     providerHealth(providerId: $providerId) {
-      providerId providerName isHealthy latency lastChecked activeKeyCount totalKeyCount
+      id name baseUrl isActive isHealthy useProxy responseTime lastCheck successRate errorMessage
     }
   }
 `;

@@ -32,7 +32,7 @@ function UserDetailPage() {
         if (!u) return null;
         return {
             ...u, name: u.name, email: u.email, role: u.role, is_active: u.isActive,
-            created_at: u.createdAt, api_keys: u.apiKeyCount,
+            created_at: u.createdAt, api_keys: u.apiKeys ?? u.apiKeyCount ?? 0,
             monthly_token_limit: u.monthlyTokenLimit || 0, monthly_budget_usd: u.monthlyBudgetUsd || 0,
             usage_month: u.usageMonth ? {
                 total_requests: u.usageMonth.totalRequests, total_tokens: u.usageMonth.totalTokens,
@@ -41,7 +41,7 @@ function UserDetailPage() {
         };
     }, [data]);
     const usage = useMemo(() =>
-        (data?.userDailyUsage || []).map((d: any) => ({ date: d.date, requests: d.requests, tokens: d.tokens, cost: d.cost })),
+        (data?.userUsage || []).map((d: any) => ({ date: d.date, requests: d.requests, tokens: d.totalTokens, cost: d.totalCost })),
     [data]);
     const apiKeys = useMemo(() =>
         (data?.userApiKeys || []).map((k: any) => ({

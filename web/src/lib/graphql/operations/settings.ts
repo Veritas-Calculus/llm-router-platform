@@ -61,7 +61,7 @@ export const MY_SETTINGS_QUERY = gql`
   query MySettings {
     me { id email name role createdAt }
     mySubscription { id planName status currentPeriodEnd }
-    myBudgetStatus { used limit percentage isOverBudget }
+    myBudgetStatus { currentSpend remainingBudget percentUsed isOverBudget }
     myAnomalyDetection { hasAnomaly message }
   }
 `;

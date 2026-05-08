@@ -129,9 +129,16 @@ func proxyToGQL(p *models.Proxy) *model.Proxy {
 		s := p.UpstreamProxyID.String()
 		upID = &s
 	}
+	var lastChecked *time.Time
+	if !p.LastChecked.IsZero() {
+		lastChecked = &p.LastChecked
+	}
 	return &model.Proxy{
 		ID: p.ID.String(), URL: p.URL, Type: p.Type,
 		Region: p.Region, IsActive: p.IsActive,
+		Weight: p.Weight, SuccessCount: safeGQLInt(p.SuccessCount),
+		FailureCount: safeGQLInt(p.FailureCount), AvgLatency: p.AvgLatency,
+		LastChecked: lastChecked, HasAuth: p.HasAuth(),
 		UpstreamProxyID: upID, CreatedAt: p.CreatedAt,
 	}
 }
@@ -150,11 +157,29 @@ func mcpServerToGQL(s *models.MCPServer) *model.McpServer {
 	if len(s.Args) > 0 {
 		_ = json.Unmarshal(s.Args, &args)
 	}
+	status := s.Status
+	if status == "" {
+		status = "disconnected"
+	}
+	var lastError *string
+	if s.LastError != "" {
+		lastError = &s.LastError
+	}
+	var lastCheckedAt *time.Time
+	if !s.LastCheckedAt.IsZero() {
+		lastCheckedAt = &s.LastCheckedAt
+	}
+	tools := make([]*model.McpTool, len(s.Tools))
+	for i := range s.Tools {
+		tools[i] = mcpToolToGQL(&s.Tools[i])
+	}
 	return &model.McpServer{
 		ID: s.ID.String(), Name: s.Name, Type: s.Type,
 		Command: &s.Command, URL: &s.URL,
 		Args: args, IsActive: s.IsActive,
-		Status: "active", CreatedAt: s.CreatedAt,
+		Status: status, LastError: lastError,
+		LastCheckedAt: lastCheckedAt, Tools: tools,
+		CreatedAt: s.CreatedAt,
 	}
 }
 
@@ -167,7 +192,7 @@ func mcpToolToGQL(t *models.MCPTool) *model.McpTool {
 	return &model.McpTool{
 		ID: t.ID.String(), ServerID: t.ServerID.String(),
 		Name: t.Name, Description: t.Description,
-		InputSchema: schema, IsActive: true,
+		InputSchema: schema, IsActive: t.IsActive,
 	}
 }
 

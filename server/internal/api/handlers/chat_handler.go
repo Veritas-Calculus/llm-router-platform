@@ -660,7 +660,7 @@ func (h *ChatHandler) lookupSemanticCache(c *gin.Context, messages []provider.Me
 				return promptHash, promptEmbedding, semanticHit
 			}
 		} else {
-			h.logger.Warn("Failed to generate embedding for semantic cache", zap.Error(embErr2))
+			h.logger.Debug("semantic cache embedding generation skipped", zap.Error(embErr2))
 		}
 	} else {
 		h.logger.Debug("No embedding provider available for semantic cache (requires text-embedding-3-small)")

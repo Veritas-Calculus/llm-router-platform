@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+*.md
+**/node_modules/
+**/dist/
+**/coverage/
+.vscode/
+.idea/
+
+server/**
+!server/
+!server/internal/
+!server/internal/graphql/
+!server/internal/graphql/schema/
+!server/internal/graphql/schema/**

@@ -149,7 +149,8 @@ services:
   web:
     image: ghcr.io/veritas-calculus/llm-router-platform/web:latest
     build:
-      context: ./web
+      context: .
+      dockerfile: web/Dockerfile
       args:
         VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
         VITE_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}

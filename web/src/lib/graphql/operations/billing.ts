@@ -25,7 +25,7 @@ export const PLANS_QUERY = gql`
 
 export const SET_BUDGET = gql`
   mutation SetBudget($input: BudgetInput!) {
-    setBudget(input: $input) { id monthlyLimit alertThreshold }
+    setBudget(input: $input) { id monthlyLimitUsd alertThreshold }
   }
 `;
 
