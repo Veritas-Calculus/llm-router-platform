@@ -6,12 +6,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"llm-router-platform/pkg/sanitize"
 
 	"go.uber.org/zap"
 )
+
+var ansiEscapePattern = regexp.MustCompile(`(?:\x1b\[[0-?]*[ -/]*[@-~])|(?:\[[0-9;]*m)`)
 
 // LogEntry is the service-layer representation of a parsed log line
 type LogEntry struct {
@@ -70,7 +75,7 @@ func (s *Service) GetRequestLogs(ctx context.Context, requestID *string, level *
 	q.Set("start", fmt.Sprintf("%d", startNs))
 	q.Set("end", fmt.Sprintf("%d", endNs))
 	q.Set("limit", fmt.Sprintf("%d", queryLimit))
-	q.Set("direction", "forward")
+	q.Set("direction", queryDirection(requestID))
 	reqURL.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL.String(), nil)
@@ -78,7 +83,7 @@ func (s *Service) GetRequestLogs(ctx context.Context, requestID *string, level *
 		return nil, fmt.Errorf("failed to create loki request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := sanitize.SafeHTTPClient(true, 10*time.Second).Do(req)
 	if err != nil {
 		ridSafe := ""
 		if requestID != nil {
@@ -153,28 +158,36 @@ func clampLimit(limit *int, defaultVal, maxVal int) int {
 // buildLogQLQuery constructs a LogQL query string with optional filters.
 func buildLogQLQuery(requestID *string, level *string) string {
 	query := `{container="llm-router-server"}`
-	if requestID != nil && *requestID != "" {
-		query += fmt.Sprintf(` |= "%s"`, *requestID)
+	if requestID != nil && strings.TrimSpace(*requestID) != "" {
+		query += ` |= ` + strconv.Quote(strings.TrimSpace(*requestID))
 	}
-	if level != nil && *level != "" {
-		query += fmt.Sprintf(` |= "\"level\":\"%s\""`, *level)
+	if level != nil && strings.TrimSpace(*level) != "" {
+		query += ` |= ` + strconv.Quote(fmt.Sprintf(`"level":"%s"`, strings.TrimSpace(*level)))
 	}
 	query += " | json"
 	return query
 }
 
+func queryDirection(requestID *string) string {
+	if requestID != nil && strings.TrimSpace(*requestID) != "" {
+		return "forward"
+	}
+	return "backward"
+}
+
 // parseLogLine parses a single Loki log value pair (timestamp, line) into a LogEntry.
 func parseLogLine(tsStr, line string) *LogEntry {
+	cleanLine := cleanLogLine(line)
 	entry := &LogEntry{
 		Level:   "info",
-		Message: line,
+		Message: cleanLine,
 	}
+	rawCopy := cleanLine
+	entry.RawJSON = &rawCopy
 
 	// Safely parse JSON log line produced by Zap
 	var logLine map[string]interface{}
-	if err := json.Unmarshal([]byte(line), &logLine); err == nil {
-		rawCopy := line
-		entry.RawJSON = &rawCopy
+	if err := json.Unmarshal([]byte(cleanLine), &logLine); err == nil {
 		populateLogEntryFromJSON(entry, logLine)
 	}
 
@@ -187,6 +200,10 @@ func parseLogLine(tsStr, line string) *LogEntry {
 	}
 
 	return entry
+}
+
+func cleanLogLine(line string) string {
+	return strings.TrimSpace(ansiEscapePattern.ReplaceAllString(line, ""))
 }
 
 // populateLogEntryFromJSON extracts structured fields from a parsed JSON log line.

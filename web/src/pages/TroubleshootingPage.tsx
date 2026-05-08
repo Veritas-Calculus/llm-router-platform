@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useMemo } from 'react';
 import { useLazyQuery } from '@apollo/client/react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -46,11 +45,31 @@ const logLevels = [
   { key: 'error', labelKey: 'troubleshooting.level_error', color: 'text-red-700 bg-red-100 border-red-200' },
 ];
 
+type SearchMode = 'recent' | 'trace';
+
+interface LogEntry {
+  timestamp: string;
+  level: string;
+  message?: string | null;
+  requestId?: string | null;
+  caller?: string | null;
+  error?: string | null;
+  method?: string | null;
+  path?: string | null;
+  statusCode?: number | null;
+  latency?: number | null;
+  clientIp?: string | null;
+  userAgent?: string | null;
+  rawJson?: string | null;
+}
+
 export default function TroubleshootingPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [inputValue, setInputValue] = useState(searchParams.get('requestId') || '');
+  const [resultMode, setResultMode] = useState<SearchMode>(searchParams.get('requestId') ? 'trace' : 'recent');
+  const [lastQuery, setLastQuery] = useState(searchParams.get('requestId') || '');
 
   // Time range state
   const [selectedPreset, setSelectedPreset] = useState('30m');
@@ -58,10 +77,10 @@ export default function TroubleshootingPage() {
   const [customEnd, setCustomEnd] = useState('');
   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
   const [resultLimit, setResultLimit] = useState(200);
-  const [selectedLevel, setSelectedLevel] = useState('');
+  const [selectedLevel, setSelectedLevel] = useState(searchParams.get('level') || '');
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
-  const [fetchLogs, { data, loading, error, called }] = useLazyQuery<any>(GET_REQUEST_LOGS, {
+  const [fetchLogs, { data, loading, error, called }] = useLazyQuery<{ requestLogs: LogEntry[] }>(GET_REQUEST_LOGS, {
     fetchPolicy: 'network-only',
   });
 
@@ -88,8 +107,16 @@ export default function TroubleshootingPage() {
     const requestId = searchParams.get('requestId');
     if (requestId) {
       setInputValue(requestId);
+      setResultMode('trace');
+      setLastQuery(requestId);
       fetchLogs({
         variables: { requestId, level: selectedLevel || undefined, ...timeRange, limit: resultLimit },
+      });
+    } else if (searchParams.get('mode') === 'recent') {
+      setResultMode('recent');
+      setLastQuery('');
+      fetchLogs({
+        variables: { level: selectedLevel || undefined, ...timeRange, limit: resultLimit },
       });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -97,9 +124,14 @@ export default function TroubleshootingPage() {
   const handleSearch = () => {
     const trimmed = inputValue.trim();
     const params: Record<string, string> = {};
+    const nextMode: SearchMode = trimmed ? 'trace' : 'recent';
     if (trimmed) params.requestId = trimmed;
+    else params.mode = 'recent';
     if (selectedLevel) params.level = selectedLevel;
     setSearchParams(params);
+    setResultMode(nextMode);
+    setLastQuery(trimmed);
+    setExpandedIdx(null);
     fetchLogs({
       variables: {
         requestId: trimmed || undefined,
@@ -114,13 +146,42 @@ export default function TroubleshootingPage() {
     if (e.key === 'Enter') handleSearch();
   };
 
-  const logs = data?.requestLogs || [];
+  const logs: LogEntry[] = data?.requestLogs || [];
+  const isInputTraceMode = inputValue.trim().length > 0;
+
+  const formatRawLog = (raw?: string | null) => {
+    if (!raw) return '';
+    try { return JSON.stringify(JSON.parse(raw), null, 2); }
+    catch { return raw; }
+  };
+
+  const getLogSummary = (log: LogEntry) => {
+    const message = log.message?.trim();
+    if (message) return message;
+
+    const raw = formatRawLog(log.rawJson).trim();
+    if (raw) return raw;
+
+    return t('troubleshooting.empty_log_line');
+  };
+
+  const hasStructuredDetails = (log: LogEntry) => Boolean(
+    log.requestId || log.method || log.path || log.statusCode != null ||
+    log.latency != null || log.clientIp || log.caller || log.userAgent || log.error
+  );
 
   const currentPresetLabel = useMemo(() => {
     if (selectedPreset === 'custom') return t('troubleshooting.time_custom');
     const p = timePresets.find((p) => p.key === selectedPreset);
     return p ? t(p.labelKey) : selectedPreset;
   }, [selectedPreset, t]);
+
+  const resultLabel = useMemo(() => {
+    if (resultMode === 'trace' && lastQuery) {
+      return t('troubleshooting.results_trace_count', { count: logs.length, id: lastQuery });
+    }
+    return t('troubleshooting.results_recent_count', { count: logs.length });
+  }, [lastQuery, logs.length, resultMode, t]);
 
   const getLevelIcon = (level: string) => {
     switch (level?.toLowerCase()) {
@@ -141,12 +202,12 @@ export default function TroubleshootingPage() {
       case 'error':
       case 'fatal':
       case 'dpanic':
-        return 'border-red-200 bg-red-50/60';
+        return 'border-red-200 bg-red-50/60 dark:border-red-500/30 dark:bg-red-500/10';
       case 'warn':
       case 'warning':
-        return 'border-amber-200 bg-amber-50/60';
+        return 'border-amber-200 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-500/10';
       default:
-        return 'border-gray-200 bg-white';
+        return 'border-gray-200 bg-white dark:border-white/10 dark:bg-[#1C1C1E]';
     }
   };
 
@@ -177,7 +238,7 @@ export default function TroubleshootingPage() {
       {/* Search Bar */}
       <div className="card p-5 space-y-4">
         {/* Main search row */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1 relative">
             <MagnifyingGlassIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-apple-gray-400" />
             <input
@@ -192,7 +253,7 @@ export default function TroubleshootingPage() {
           <button
             onClick={handleSearch}
             disabled={loading}
-            className="px-6 py-3 bg-apple-blue text-white text-sm font-semibold rounded-xl shadow-sm hover:bg-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="w-full sm:w-auto px-6 py-3 bg-apple-blue text-white text-sm font-semibold rounded-xl shadow-sm hover:bg-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {loading ? (
               <>
@@ -200,7 +261,7 @@ export default function TroubleshootingPage() {
                 {t('troubleshooting.searching')}
               </>
             ) : (
-              t('troubleshooting.search')
+              isInputTraceMode ? t('troubleshooting.trace_request') : t('troubleshooting.view_recent')
             )}
           </button>
         </div>
@@ -430,7 +491,7 @@ export default function TroubleshootingPage() {
           >
             <div className="flex items-center justify-between">
               <p className="text-sm text-apple-gray-500">
-                {t('troubleshooting.results_count', { count: logs.length })}
+                {resultLabel}
                 {logs.length >= resultLimit && (
                   <span className="ml-1 text-amber-600 font-medium">
                     ({t('troubleshooting.limit_reached')})
@@ -446,61 +507,76 @@ export default function TroubleshootingPage() {
               </button>
             </div>
 
-            {logs.map((log: any, idx: number) => {
+            {logs.map((log, idx) => {
               const isExpanded = expandedIdx === idx;
               const hasMethod = !!log.method;
-              const statusColor = log.statusCode >= 500 ? 'text-red-600' : log.statusCode >= 400 ? 'text-amber-600' : 'text-green-600';
+              const level = log.level || 'info';
+              const summary = getLogSummary(log);
+              const rawLog = formatRawLog(log.rawJson);
+              const hasDetails = hasStructuredDetails(log);
+              const statusCode = log.statusCode ?? null;
+              const statusColor = statusCode == null ? 'text-apple-gray-600' : statusCode >= 500 ? 'text-red-600' : statusCode >= 400 ? 'text-amber-600' : 'text-green-600';
 
               return (
                 <motion.div
-                  key={idx}
+                  key={`${log.timestamp}-${idx}`}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: Math.min(idx * 0.02, 0.5) }}
-                  className={`card border ${getLevelStyles(log.level)} transition-all hover:shadow-md cursor-pointer`}
+                  className={clsx(
+                    'overflow-hidden rounded-xl border shadow-sm transition-all hover:shadow-md cursor-pointer',
+                    getLevelStyles(level)
+                  )}
                   onClick={() => setExpandedIdx(isExpanded ? null : idx)}
                 >
                   {/* Compact Header */}
-                  <div className="p-4">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {getLevelIcon(log.level)}
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-widest border ${getLevelBadge(log.level)}`}>
-                          {log.level}
-                        </span>
-                        {hasMethod && (
-                          <>
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
-                              {log.method}
-                            </span>
-                            <span className="text-xs font-mono text-apple-gray-600 truncate max-w-[300px]">
-                              {log.path}
-                            </span>
-                            {log.statusCode && (
-                              <span className={`text-xs font-bold ${statusColor}`}>
-                                {log.statusCode}
-                              </span>
-                            )}
-                          </>
-                        )}
-                        {log.clientIp && (
-                          <span className="text-[11px] font-mono text-apple-gray-400">
-                            {log.clientIp}
+                  <div className="px-4 py-3">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {getLevelIcon(level)}
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-widest border ${getLevelBadge(level)}`}>
+                            {level}
                           </span>
-                        )}
+                          {hasMethod && (
+                            <>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                                {log.method}
+                              </span>
+                              <span className="text-xs font-mono text-apple-gray-600 truncate max-w-[300px]">
+                                {log.path}
+                              </span>
+                              {statusCode != null && (
+                                <span className={`text-xs font-bold ${statusColor}`}>
+                                  {statusCode}
+                                </span>
+                              )}
+                            </>
+                          )}
+                          {log.caller && (
+                            <span className="text-[11px] font-mono text-apple-gray-400 truncate max-w-[260px]">
+                              {log.caller}
+                            </span>
+                          )}
+                          {log.clientIp && (
+                            <span className="text-[11px] font-mono text-apple-gray-400">
+                              {log.clientIp}
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="mt-2 text-sm text-apple-gray-800 font-medium break-words whitespace-pre-wrap">
+                          {summary}
+                        </p>
                       </div>
-                      <div className="flex items-center gap-2">
+
+                      <div className="flex items-center gap-2 flex-shrink-0 pt-0.5 self-end sm:self-auto">
                         <span className="text-xs text-apple-gray-400 font-mono whitespace-nowrap">
                           {new Date(log.timestamp).toLocaleString()}
                         </span>
                         <ChevronDownIcon className={clsx('w-4 h-4 text-apple-gray-400 transition-transform', isExpanded && 'rotate-180')} />
                       </div>
                     </div>
-
-                    {/* Log Message */}
-                    <p className="text-sm text-apple-gray-800 font-medium break-words whitespace-pre-wrap pl-7">
-                      {log.message}
-                    </p>
                   </div>
 
                   {/* Expanded Detail Panel */}
@@ -514,34 +590,40 @@ export default function TroubleshootingPage() {
                         className="overflow-hidden border-t border-apple-gray-100"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="p-4 bg-apple-gray-50/80 space-y-4">
+                        <div className="p-4 bg-apple-gray-50/80 dark:bg-white/[0.03] space-y-4">
                           {/* Request Details Grid */}
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                            {log.requestId && (
-                              <DetailField label="Request ID" value={log.requestId} mono />
-                            )}
-                            {log.method && (
-                              <DetailField label={t('troubleshooting.detail_method')} value={log.method} />
-                            )}
-                            {log.path && (
-                              <DetailField label={t('troubleshooting.detail_path')} value={log.path} mono />
-                            )}
-                            {log.statusCode != null && (
-                              <DetailField label={t('troubleshooting.detail_status')} value={String(log.statusCode)} className={statusColor} />
-                            )}
-                            {log.latency != null && (
-                              <DetailField label={t('troubleshooting.detail_latency')} value={`${(log.latency * 1000).toFixed(2)} ms`} />
-                            )}
-                            {log.clientIp && (
-                              <DetailField label={t('troubleshooting.detail_client_ip')} value={log.clientIp} mono />
-                            )}
-                            {log.caller && (
-                              <DetailField label={t('troubleshooting.detail_caller')} value={log.caller} mono />
-                            )}
-                            {log.userAgent && (
-                              <DetailField label={t('troubleshooting.detail_user_agent')} value={log.userAgent} mono className="col-span-2 sm:col-span-3 md:col-span-4" />
-                            )}
-                          </div>
+                          {hasDetails ? (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                              {log.requestId && (
+                                <DetailField label="Request ID" value={log.requestId} mono />
+                              )}
+                              {log.method && (
+                                <DetailField label={t('troubleshooting.detail_method')} value={log.method} />
+                              )}
+                              {log.path && (
+                                <DetailField label={t('troubleshooting.detail_path')} value={log.path} mono />
+                              )}
+                              {statusCode != null && (
+                                <DetailField label={t('troubleshooting.detail_status')} value={String(statusCode)} valueClassName={statusColor} />
+                              )}
+                              {log.latency != null && (
+                                <DetailField label={t('troubleshooting.detail_latency')} value={`${(log.latency * 1000).toFixed(2)} ms`} />
+                              )}
+                              {log.clientIp && (
+                                <DetailField label={t('troubleshooting.detail_client_ip')} value={log.clientIp} mono />
+                              )}
+                              {log.caller && (
+                                <DetailField label={t('troubleshooting.detail_caller')} value={log.caller} mono />
+                              )}
+                              {log.userAgent && (
+                                <DetailField label={t('troubleshooting.detail_user_agent')} value={log.userAgent} mono className="col-span-2 sm:col-span-3 md:col-span-4" />
+                              )}
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-apple-gray-200 bg-white/70 dark:bg-white/[0.04] px-3 py-2">
+                              <p className="text-xs text-apple-gray-500">{t('troubleshooting.no_structured_fields')}</p>
+                            </div>
+                          )}
 
                           {/* Error Detail */}
                           {log.error && (
@@ -553,28 +635,32 @@ export default function TroubleshootingPage() {
                             </div>
                           )}
 
-                          {/* Raw JSON */}
-                          {log.rawJson && (
-                            <div className="rounded-xl overflow-hidden border border-apple-gray-200 dark:border-white/10">
-                              <div className="px-4 py-2 bg-apple-gray-100 dark:bg-[#1E1E1E] flex items-center justify-between">
-                                <span className="text-xs font-medium text-apple-gray-700 dark:text-[#D4D4D4]">{t('troubleshooting.detail_raw_json')}</span>
+                          {/* Raw Log */}
+                          <div className="rounded-xl overflow-hidden border border-apple-gray-200 dark:border-white/10">
+                            <div className="px-4 py-2 bg-apple-gray-100 dark:bg-[#1E1E1E] flex items-center justify-between">
+                              <span className="text-xs font-medium text-apple-gray-700 dark:text-[#D4D4D4]">{t('troubleshooting.detail_raw_log')}</span>
+                              {rawLog && (
                                 <button
                                   onClick={() => {
-                                    navigator.clipboard.writeText(JSON.stringify(JSON.parse(log.rawJson), null, 2));
+                                    navigator.clipboard.writeText(rawLog);
                                   }}
                                   className="text-[11px] text-apple-blue hover:text-blue-600 dark:hover:text-blue-400 font-medium transition-colors"
                                 >
                                   {t('troubleshooting.copy')}
                                 </button>
-                              </div>
-                              <pre className="p-4 bg-apple-gray-50 dark:bg-[#1E1E1E] text-apple-gray-800 dark:text-[#D4D4D4] text-xs font-mono overflow-x-auto m-0 whitespace-pre-wrap max-h-[300px] overflow-y-auto">
-                                {(() => {
-                                  try { return JSON.stringify(JSON.parse(log.rawJson), null, 2); }
-                                  catch { return log.rawJson; }
-                                })()}
-                              </pre>
+                              )}
                             </div>
-                          )}
+                            {rawLog ? (
+                              <pre className="p-4 bg-apple-gray-50 dark:bg-[#1E1E1E] text-apple-gray-800 dark:text-[#D4D4D4] text-xs font-mono overflow-x-auto m-0 whitespace-pre-wrap max-h-[300px] overflow-y-auto">
+                                {rawLog}
+                              </pre>
+                            ) : (
+                              <div className="p-4 bg-apple-gray-50 dark:bg-[#1E1E1E] text-xs text-apple-gray-500">
+                                {t('troubleshooting.no_raw_log')}
+                              </div>
+                            )}
+                          </div>
+
                         </div>
                       </motion.div>
                     )}
@@ -590,11 +676,11 @@ export default function TroubleshootingPage() {
 }
 
 /* ── Detail Field Component ─────────────────────────────────────────── */
-function DetailField({ label, value, mono, className }: { label: string; value: string; mono?: boolean; className?: string }) {
+function DetailField({ label, value, mono, className, valueClassName }: { label: string; value: string; mono?: boolean; className?: string; valueClassName?: string }) {
   return (
     <div className={className}>
       <p className="text-[10px] font-bold uppercase tracking-wider text-apple-gray-400 mb-0.5">{label}</p>
-      <p className={clsx('text-sm text-apple-gray-800 break-all', mono && 'font-mono text-xs')}>{value}</p>
+      <p className={clsx('text-sm text-apple-gray-800 break-all', mono && 'font-mono text-xs', valueClassName)}>{value}</p>
     </div>
   );
 }
