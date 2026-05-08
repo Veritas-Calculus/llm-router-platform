@@ -48,9 +48,6 @@ COPY --from=builder /app/server /app/server
 COPY --from=builder /app/migrate /app/migrate
 COPY --from=builder /app/migrations /app/migrations
 
-# Copy config if exists
-COPY --from=builder /app/.env.example /app/.env.example
-
 # Ensure appuser owns the workdir
 RUN chown -R appuser:appgroup /app
 

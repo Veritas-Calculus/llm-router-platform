@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +26,35 @@ func TestConfigFromEnv(t *testing.T) {
 
 	assert.Equal(t, "9000", os.Getenv("SERVER_PORT"))
 	assert.Equal(t, "test", os.Getenv("SERVER_MODE"))
+}
+
+func TestLoadFindsRootEnvFromServerDirectory(t *testing.T) {
+	root := t.TempDir()
+	serverDir := filepath.Join(root, "server")
+	webDir := filepath.Join(root, "web")
+	assert.NoError(t, os.Mkdir(serverDir, 0o755))
+	assert.NoError(t, os.Mkdir(webDir, 0o755))
+	assert.NoError(t, os.WriteFile(filepath.Join(root, "Makefile"), []byte("test:\n"), 0o644))
+	assert.NoError(t, os.WriteFile(filepath.Join(root, ".env"), []byte(strings.Join([]string{
+		"SERVER_PORT=9100",
+		"DB_PASSWORD=rootpass",
+		"REDIS_PASSWORD=redispass",
+		"JWT_SECRET=test-jwt-secret-key-at-least-32-characters",
+		"ENCRYPTION_KEY=dev-32-byte-encryption-key-here!",
+		"ADMIN_PASSWORD=DevAdmin123!",
+	}, "\n")), 0o600))
+	assert.NoError(t, os.WriteFile(filepath.Join(serverDir, ".env"), []byte("SERVER_PORT=9200\n"), 0o600))
+
+	originalWd, err := os.Getwd()
+	assert.NoError(t, err)
+	assert.NoError(t, os.Chdir(serverDir))
+	t.Cleanup(func() { _ = os.Chdir(originalWd) })
+	t.Setenv("LLM_ROUTER_ENV_FILE", "")
+
+	cfg, err := Load()
+	assert.NoError(t, err)
+	assert.Equal(t, "9100", cfg.Server.Port)
+	assert.Equal(t, "rootpass", cfg.Database.Password)
 }
 
 func TestServerConfig(t *testing.T) {

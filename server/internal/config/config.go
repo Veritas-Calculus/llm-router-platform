@@ -4,6 +4,8 @@ package config
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -75,9 +77,9 @@ type DatabaseConfig struct {
 	Password               string // #nosec G101 -- internal config, never serialized to API responses
 	Name                   string
 	SSLMode                string
-	MaxOpenConns           int    // Maximum number of open connections to the database
-	MaxIdleConns           int    // Maximum number of idle connections in the pool
-	ConnMaxLifetimeMinutes int    // Maximum lifetime of a connection in minutes
+	MaxOpenConns           int // Maximum number of open connections to the database
+	MaxIdleConns           int // Maximum number of idle connections in the pool
+	ConnMaxLifetimeMinutes int // Maximum lifetime of a connection in minutes
 }
 
 // RedisConfig holds Redis connection configuration.
@@ -86,7 +88,7 @@ type RedisConfig struct {
 	Port       string
 	Password   string // #nosec G101 -- internal config, never serialized to API responses
 	DB         int
-	TLSEnabled bool   // Enable TLS for Redis connection (recommended for production)
+	TLSEnabled bool // Enable TLS for Redis connection (recommended for production)
 }
 
 // EncryptionConfig holds encryption configuration for sensitive data.
@@ -250,13 +252,18 @@ type ObservabilityConfig struct {
 	LokiURL           string
 }
 
-// Load reads configuration from environment variables and .env file.
+// Load reads configuration from environment variables and the repository-root
+// .env file. Commands may run from the repo root or from server/, so config
+// discovery walks upward to keep a single .env as the source of truth.
 func Load() (*Config, error) {
-	viper.SetConfigFile(".env")
+	viper.Reset()
+	if envFile := findEnvFile(); envFile != "" {
+		viper.SetConfigFile(envFile)
+	}
 	viper.AutomaticEnv()
 
-	// Try to read .env file, but don't fail if it doesn't exist
-	// When running in Docker, environment variables are set directly
+	// Try to read .env, but don't fail if it doesn't exist. In Docker and
+	// Kubernetes, environment variables may be injected directly.
 	if err := viper.ReadInConfig(); err != nil {
 		// Ignore all config file errors - env vars will be used instead
 		// This handles both ConfigFileNotFoundError and os.PathError
@@ -385,12 +392,12 @@ func Load() (*Config, error) {
 			WebhookSecret:  viper.GetString("STRIPE_WEBHOOK_SECRET"),
 		},
 		WechatPay: WechatPayConfig{
-			Enabled:    viper.GetBool("WECHAT_PAY_ENABLED"),
-			AppID:      viper.GetString("WECHAT_PAY_APP_ID"),
-			MchID:      viper.GetString("WECHAT_PAY_MCH_ID"),
-			APIv3Key:   viper.GetString("WECHAT_PAY_API_V3_KEY"),
-			SerialNo:   viper.GetString("WECHAT_PAY_SERIAL_NO"),
-			PrivateKey: viper.GetString("WECHAT_PAY_PRIVATE_KEY"),
+			Enabled:         viper.GetBool("WECHAT_PAY_ENABLED"),
+			AppID:           viper.GetString("WECHAT_PAY_APP_ID"),
+			MchID:           viper.GetString("WECHAT_PAY_MCH_ID"),
+			APIv3Key:        viper.GetString("WECHAT_PAY_API_V3_KEY"),
+			SerialNo:        viper.GetString("WECHAT_PAY_SERIAL_NO"),
+			PrivateKey:      viper.GetString("WECHAT_PAY_PRIVATE_KEY"),
 			NotifyURL:       viper.GetString("WECHAT_PAY_NOTIFY_URL"),
 			PlatformCertPEM: viper.GetString("WECHAT_PAY_PLATFORM_CERT"),
 		},
@@ -478,6 +485,60 @@ func validatePort(value, envName string) []string {
 	return nil
 }
 
+func findEnvFile() string {
+	if explicit := strings.TrimSpace(os.Getenv("LLM_ROUTER_ENV_FILE")); explicit != "" {
+		return explicit
+	}
+
+	if cwd, err := os.Getwd(); err == nil {
+		if repoEnv := findRepoRootEnv(cwd); repoEnv != "" {
+			return repoEnv
+		}
+	}
+
+	for _, candidate := range []string{".env", "../.env"} {
+		if fileExists(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func findRepoRootEnv(start string) string {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return ""
+	}
+	for {
+		envPath := filepath.Join(dir, ".env")
+		if isRepoRoot(dir) && fileExists(envPath) {
+			return envPath
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+func isRepoRoot(dir string) bool {
+	return fileExists(filepath.Join(dir, "Makefile")) &&
+		dirExists(filepath.Join(dir, "server")) &&
+		dirExists(filepath.Join(dir, "web"))
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
 // validateEmail returns validation errors for email configuration.
 func (c *Config) validateEmail() []string {
 	if !c.Email.Enabled {
@@ -525,7 +586,7 @@ func setDefaults() {
 	viper.SetDefault("EMAIL_ENABLED", false)
 	viper.SetDefault("EMAIL_SMTP_PORT", 587)
 	viper.SetDefault("EMAIL_FROM_NAME", "LLM Router")
-	viper.SetDefault("FRONTEND_URL", "http://localhost:5173")
+	viper.SetDefault("FRONTEND_URL", "http://localhost")
 	viper.SetDefault("OPENAI_BASE_URL", "https://api.openai.com/v1")
 	viper.SetDefault("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 	viper.SetDefault("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
@@ -535,13 +596,13 @@ func setDefaults() {
 	viper.SetDefault("HEALTH_CHECK_TIMEOUT", 10)
 	viper.SetDefault("HEALTH_CHECK_RETRY_COUNT", 3)
 	viper.SetDefault("HEALTH_CHECK_FAILURE_THRESHOLD", 3)
-	viper.SetDefault("JWT_EXPIRES_IN", "1h") // Short-lived access tokens; use refresh tokens for renewal
+	viper.SetDefault("JWT_EXPIRES_IN", "1h")           // Short-lived access tokens; use refresh tokens for renewal
 	viper.SetDefault("JWT_REFRESH_EXPIRES_IN", "168h") // 7 days
 	viper.SetDefault("RATE_LIMIT_REQUESTS_PER_MINUTE", 60)
 	viper.SetDefault("LOG_LEVEL", "info")
 	viper.SetDefault("LOG_FORMAT", "json")
 	viper.SetDefault("ADMIN_NAME", "Administrator")
-	viper.SetDefault("ADMIN_IP_WHITELIST", "")      // Empty = deny by default in strict mode, or open if explicitly handled
+	viper.SetDefault("ADMIN_IP_WHITELIST", "")    // Empty = deny by default in strict mode, or open if explicitly handled
 	viper.SetDefault("REGISTRATION_MODE", "open") // open by default; set to "invite" or "closed" as needed
 	viper.SetDefault("INVITE_CODE", "")           // required when mode=invite
 	viper.SetDefault("CLEANUP_HEALTH_RETENTION_DAYS", 30)

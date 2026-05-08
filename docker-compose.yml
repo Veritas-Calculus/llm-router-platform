@@ -63,6 +63,9 @@ services:
     image: ghcr.io/veritas-calculus/llm-router-platform/server:latest
     build: ./server
     container_name: llm-router-server
+    env_file:
+      - path: .env
+        required: false
     # Server port is now internal-only, proxied by web container
     environment:
       - SERVER_PORT=8080

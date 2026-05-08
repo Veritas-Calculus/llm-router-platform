@@ -1,6 +1,6 @@
 # 环境变量参考
 
-> 所有变量通过 `server/.env` 文件或容器环境变量配置。示例文件: `server/.env.example`
+> 所有本地变量统一放在仓库根目录 `.env`，示例文件为根目录 `.env.example`。不要再创建 `server/.env`；后端从仓库根目录或 `server/` 子目录启动时都会向上查找根 `.env`。容器、Kubernetes 等环境也可以直接注入环境变量。需要显式指定文件时可设置 `LLM_ROUTER_ENV_FILE=/path/to/.env`。
 
 ## 目录
 
@@ -34,7 +34,7 @@
 | `SERVER_READ_TIMEOUT_SECONDS` | `30` | HTTP 读超时 |
 | `SERVER_WRITE_TIMEOUT_SECONDS` | `600` | HTTP 写超时 (需大于 LLM 流式最长回复) |
 | `ALLOW_LOCAL_PROVIDERS` | `false` | 允许 Provider URL 指向私有 IP (开发环境可设为 true) |
-| `FRONTEND_URL` | `http://localhost:5173` | 前端地址 (用于邮件中的链接等) |
+| `FRONTEND_URL` | `http://localhost` | 前端地址 (用于邮件中的链接等；本地 Vite 开发可设为 `http://localhost:3000`) |
 
 ## Logging
 

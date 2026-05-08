@@ -1,6 +1,7 @@
 
 .api_key_cache
 .DS_Store
+AGENTS.md
 .env
 .env.*.local
 .env.local

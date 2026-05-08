@@ -173,19 +173,21 @@ llm-router-platform/
 git clone https://github.com/Veritas-Calculus/llm-router-platform.git
 cd llm-router-platform
 
-# 配置后端安全密钥
-cp server/.env.example server/.env
-# 修改 ENCRYPTION_KEY, JWT_SECRET, 配置相关 Redis 等连接串
+# 配置项目环境变量（唯一来源：仓库根目录 .env）
+cp .env.example .env
+# 修改 ENCRYPTION_KEY, JWT_SECRET, DB/Redis 密码、ADMIN_PASSWORD 等
 
 # 拉起包含 Postgres, Redis 在内的一整套生态
-docker-compose up -d
+docker compose up -d
 ```
-控制台可以通过 `http://localhost` 访问，网关代理的 API 地址在 `http://localhost:8080` (端口映射一致)。
+控制台可以通过 `http://localhost` 访问；管理 API 为 `http://localhost/graphql`，OpenAI 兼容网关地址为 `http://localhost/v1`。
 
 ### 手动构建 (研发阶段)
 
 ```bash
 # Backend (提供 API Endpoint 和 GQL 管理接口)
+cp .env.example .env  # 如已创建可跳过；后端会从仓库根目录读取 .env
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis
 cd server
 go mod download
 go run cmd/server/main.go
@@ -219,6 +221,7 @@ go run cmd/migrate/main.go up
 | [GraphQL Guide](docs/graphql-guide.md) | 管理 API 使用指南与示例 |
 | [Architecture](docs/architecture.md) | 系统架构图、请求生命周期、数据模型 |
 | [Environment Variables](docs/environment-variables.md) | 全部环境变量参考 (80+) |
+| [Admin Password Reset](docs/admin-password-reset.md) | 管理员忘记密码与运维重置流程 |
 | [Feature Gates](docs/feature-gates.md) | 运行时功能开关操作手册 |
 | [Database Schema](docs/database-schema.md) | 核心表结构与 ER 图 |
 | [SSO Integration](docs/sso-integration.md) | OAuth2 + OIDC/SAML 企业 SSO 集成 |

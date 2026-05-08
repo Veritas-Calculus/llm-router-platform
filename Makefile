@@ -63,7 +63,7 @@ web-dev:
 # One-click project setup for new developers
 setup:
 	@echo "=== LLM Router Platform — Initial Setup ==="
-	@test -f server/.env || (cp server/.env.example server/.env && echo "✓ Created server/.env from .env.example")
+	@test -f .env || (cp .env.example .env && echo "✓ Created .env from .env.example")
 	@echo "→ Installing backend dependencies..."
 	cd server && go mod download
 	@echo "→ Installing frontend dependencies..."

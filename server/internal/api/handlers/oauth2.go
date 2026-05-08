@@ -149,7 +149,7 @@ func (h *OAuth2Handler) Callback(c *gin.Context) {
 	// Redirect to frontend with token
 	frontendURL := h.cfg.Frontend.URL
 	if frontendURL == "" {
-		frontendURL = "http://localhost:5173"
+		frontendURL = "http://localhost"
 	}
 	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/oauth/callback?token=%s", frontendURL, token))
 }
@@ -193,7 +193,7 @@ func (h *OAuth2Handler) publicBackendURL() string {
 func (h *OAuth2Handler) redirectWithError(c *gin.Context, errMsg string) {
 	frontendURL := h.cfg.Frontend.URL
 	if frontendURL == "" {
-		frontendURL = "http://localhost:5173"
+		frontendURL = "http://localhost"
 	}
 	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?error=%s", frontendURL, errMsg))
 }

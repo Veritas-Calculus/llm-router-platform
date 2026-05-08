@@ -11,6 +11,8 @@
 | 认证 | `Authorization: Bearer <JWT_TOKEN>` |
 | 公开操作 | `login`, `register`, `registrationMode`, `siteConfig` 无需认证 |
 
+Docker Compose 默认通过 Web 容器代理到 `http://localhost/graphql`；本地只启动后端时可直接访问 `http://localhost:8080/graphql`。
+
 ---
 
 ## 认证流程
@@ -30,7 +32,7 @@ mutation {
 ### 2. 携带 Token 请求
 
 ```bash
-curl -X POST http://localhost:8080/graphql \
+curl -X POST http://localhost/graphql \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer eyJhbG..." \
   -d '{"query": "{ me { id name email role } }"}'

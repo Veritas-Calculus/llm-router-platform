@@ -266,7 +266,7 @@ func (h *SSOHandler) Callback(c *gin.Context) {
 		oauthID = tokenResp.Sub
 		groups = append(groups, tokenResp.Groups...)
 	case "saml":
-        // SAML parsing is mock-only for this phase, typically uses CrewJam/saml
+		// SAML parsing is mock-only for this phase, typically uses CrewJam/saml
 		h.redirectWithError(c, "SAML parsing not fully implemented in this demo")
 		return
 	}
@@ -292,7 +292,7 @@ func (h *SSOHandler) Callback(c *gin.Context) {
 
 	frontendURL := h.cfg.Frontend.URL
 	if frontendURL == "" {
-		frontendURL = "http://localhost:5173"
+		frontendURL = "http://localhost"
 	}
 	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/oauth/callback?token=%s", frontendURL, token))
 }
@@ -439,7 +439,7 @@ func (h *SSOHandler) publicBackendURL() string {
 func (h *SSOHandler) redirectWithError(c *gin.Context, errMsg string) {
 	frontendURL := h.cfg.Frontend.URL
 	if frontendURL == "" {
-		frontendURL = "http://localhost:5173"
+		frontendURL = "http://localhost"
 	}
 	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?error=%s", frontendURL, errMsg))
 }
