@@ -13,9 +13,9 @@ import (
 	"llm-router-platform/internal/service/user"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
@@ -187,6 +187,19 @@ func (m *AuthMiddleware) APIKey() gin.HandlerFunc {
 			return
 		}
 
+		if strings.Count(apiKey, ".") == 2 {
+			projectObj, key, err := m.validatePlaygroundToken(c.Request.Context(), apiKey)
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+				return
+			}
+			c.Set("project", projectObj)
+			c.Set("api_key", key)
+			c.Set("project_id", projectObj.ID.String())
+			c.Next()
+			return
+		}
+
 		projectObj, key, err := m.userService.ValidateAPIKey(c.Request.Context(), apiKey)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -198,6 +211,54 @@ func (m *AuthMiddleware) APIKey() gin.HandlerFunc {
 		c.Set("project_id", projectObj.ID.String())
 		c.Next()
 	}
+}
+
+func (m *AuthMiddleware) validatePlaygroundToken(ctx context.Context, tokenStr string) (*models.Project, *models.APIKey, error) {
+	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return m.jwtSecret, nil
+	})
+	if err != nil || !token.Valid {
+		return nil, nil, fmt.Errorf("invalid API key")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, nil, fmt.Errorf("invalid API key")
+	}
+
+	tokenType, _ := claims["type"].(string)
+	if tokenType != "playground_api_key" {
+		return nil, nil, fmt.Errorf("invalid API key")
+	}
+
+	sub, _ := claims["sub"].(string)
+	if _, err := uuid.Parse(sub); err != nil {
+		return nil, nil, fmt.Errorf("invalid API key")
+	}
+
+	keyIDStr, _ := claims["api_key_id"].(string)
+	keyID, err := uuid.Parse(keyIDStr)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid API key")
+	}
+
+	projectObj, key, err := m.userService.ValidateAPIKeyByID(ctx, keyID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if projectID, _ := claims["project_id"].(string); projectID != "" && projectID != key.ProjectID.String() {
+		return nil, nil, fmt.Errorf("invalid API key")
+	}
+
+	if err := m.userService.RequireProjectRole(ctx, sub, key.ProjectID.String(), "OWNER", "ADMIN", "MEMBER"); err != nil {
+		return nil, nil, err
+	}
+
+	return projectObj, key, nil
 }
 
 // AdminOnly restricts access to admin users.

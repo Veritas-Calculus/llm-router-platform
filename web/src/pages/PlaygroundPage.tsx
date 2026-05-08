@@ -20,6 +20,7 @@ import { useTranslation } from '@/lib/i18n';
 
 import {
   usePlayground,
+  MANUAL_API_KEY_VALUE,
   ChatPane,
   StatsBar,
   ChatImageThumbnail,
@@ -80,11 +81,56 @@ export default function PlaygroundPage() {
             <label className="block text-xs font-medium text-apple-gray-700 mb-1.5">
               <KeyIcon className="w-3.5 h-3.5 inline-block mr-1" /><span className="dark:text-gray-300">API Key</span>
             </label>
-            <input
-              type="password" placeholder="sk-..." value={pg.apiKey}
-              onChange={(e) => pg.setApiKey(e.target.value)}
-              className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100"
-            />
+            {pg.orgs.length > 1 && (
+              <select
+                value={pg.selectedOrgId}
+                onChange={(e) => pg.setSelectedOrgId(e.target.value)}
+                className="mb-2 w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100"
+              >
+                {pg.orgs.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}
+              </select>
+            )}
+            {pg.projects.length > 1 && (
+              <select
+                value={pg.selectedProjectId}
+                onChange={(e) => pg.setSelectedProjectId(e.target.value)}
+                className="mb-2 w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100"
+              >
+                {pg.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
+            )}
+            <select
+              value={pg.apiKeyMode === 'manual' ? MANUAL_API_KEY_VALUE : pg.selectedApiKeyId}
+              onChange={(e) => {
+                if (e.target.value === MANUAL_API_KEY_VALUE) {
+                  pg.setApiKeyMode('manual');
+                } else {
+                  pg.setApiKeyMode('saved');
+                  pg.setSelectedApiKeyId(e.target.value);
+                }
+              }}
+              disabled={pg.apiKeysLoading || (!pg.selectedProjectId && pg.apiKeyMode !== 'manual')}
+              className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 disabled:opacity-50"
+            >
+              {pg.activeApiKeys.length === 0 && <option value="">{pg.apiKeysLoading ? 'Loading API keys...' : 'No active API keys'}</option>}
+              {pg.activeApiKeys.map(key => (
+                <option key={key.id} value={key.id}>{key.name} ({key.keyPrefix}...)</option>
+              ))}
+              <option value={MANUAL_API_KEY_VALUE}>Paste a key manually...</option>
+            </select>
+            {pg.apiKeyMode === 'manual' ? (
+              <input
+                type="password" placeholder="llm_..." value={pg.apiKey}
+                onChange={(e) => pg.setApiKey(e.target.value)}
+                className="mt-2 w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100"
+              />
+            ) : pg.selectedApiKey ? (
+              <div className="mt-1.5 text-[11px] text-apple-gray-500 dark:text-gray-400">
+                {pg.tokenLoading ? 'Preparing secure Playground token...' : `Using ${pg.selectedApiKey.keyPrefix}...`}
+              </div>
+            ) : (
+              <p className="mt-1.5 text-[11px] text-apple-gray-500 dark:text-gray-400">Create or select an active key to load models.</p>
+            )}
           </div>
 
           {/* Model A */}
@@ -92,16 +138,34 @@ export default function PlaygroundPage() {
             <label className="block text-xs font-medium text-apple-gray-700 mb-1.5">
               {pg.compareMode ? 'Model A' : 'Model'}
             </label>
-            <select value={pg.selectedModel} onChange={(e) => pg.setSelectedModel(e.target.value)} disabled={pg.models.length === 0}
-              className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 disabled:opacity-50">
-              {pg.models.length === 0
-                ? <option value="">{t('playground.no_models')}</option>
-                : pg.models.map(m => (
+            {pg.modelsLoading || pg.tokenLoading ? (
+              <select disabled
+                className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 disabled:opacity-50">
+                <option value="">Loading models...</option>
+              </select>
+            ) : pg.models.length > 0 ? (
+              <select value={pg.selectedModel} onChange={(e) => pg.setSelectedModel(e.target.value)}
+                className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100">
+                {pg.models.map(m => (
                   <option key={m.id} value={m.id}>
                     {isVisionModel(m) ? '[VLM] ' : ''}{m.id}
                   </option>
                 ))}
-            </select>
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={pg.selectedModel}
+                onChange={(e) => pg.setSelectedModel(e.target.value)}
+                placeholder="Type model ID, e.g. gpt-4o"
+                className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100"
+              />
+            )}
+            {!pg.modelsLoading && !pg.tokenLoading && pg.models.length === 0 && (
+              <p className="mt-1.5 text-[11px] text-apple-gray-500 dark:text-gray-400">
+                {t('playground.no_models')} from /v1/models; enter a model ID to test directly.
+              </p>
+            )}
             {pg.selectedModelRef && isVisionModel(pg.selectedModelRef) && (
               <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-green-600">
                 <EyeIcon className="w-3.5 h-3.5" />
@@ -128,14 +192,29 @@ export default function PlaygroundPage() {
           {pg.compareMode && (
             <div>
               <label className="block text-xs font-medium text-apple-gray-700 mb-1.5">Model B</label>
-              <select value={pg.compareModel} onChange={(e) => pg.setCompareModel(e.target.value)} disabled={pg.models.length < 2}
-                className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 disabled:opacity-50">
-                {pg.models.filter(m => m.id !== pg.selectedModel).map(m => (
-                  <option key={m.id} value={m.id}>
-                    {isVisionModel(m) ? '[VLM] ' : ''}{m.id}
-                  </option>
-                ))}
-              </select>
+              {pg.modelsLoading || pg.tokenLoading ? (
+                <select disabled
+                  className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 disabled:opacity-50">
+                  <option value="">Loading models...</option>
+                </select>
+              ) : pg.models.length > 1 ? (
+                <select value={pg.compareModel} onChange={(e) => pg.setCompareModel(e.target.value)}
+                  className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100">
+                  {pg.models.filter(m => m.id !== pg.selectedModel).map(m => (
+                    <option key={m.id} value={m.id}>
+                      {isVisionModel(m) ? '[VLM] ' : ''}{m.id}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={pg.compareModel}
+                  onChange={(e) => pg.setCompareModel(e.target.value)}
+                  placeholder="Type another model ID"
+                  className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100"
+                />
+              )}
             </div>
           )}
 

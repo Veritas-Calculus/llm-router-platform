@@ -53,6 +53,7 @@ interface RateLimitStatusData {
     tpmLimit: number;
     dailyCurrent: number;
     dailyLimit: number;
+    statusReason: string;
   };
 }
 
@@ -109,11 +110,13 @@ export function RateLimitStatusCell({ keyId, isActive }: { keyId: string; isActi
   const s = data?.apiKeyRateLimitStatus;
   if (!s) return <span className="text-[10px] text-apple-gray-300">—</span>;
   const badgeBase = STATUS_BADGE_BASE[s.status] || STATUS_BADGE_BASE.ok;
+  const reason = s.statusReason || (s.status === 'quota_exceeded' ? t('api_keys.quota_exceeded_desc') : '');
   return (
     <div className="space-y-1.5">
-      <span className={`inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium border ${badgeBase.className}`}>
+      <span title={reason} className={`inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium border ${badgeBase.className}`}>
         {t(badgeBase.labelKey)}
       </span>
+      {reason && <div className="text-[10px] text-apple-gray-400 max-w-40 leading-snug">{reason}</div>}
       <RateLimitMiniBar current={s.rpmCurrent} limit={s.rpmLimit} label={t('api_keys.rpm')} />
       <RateLimitMiniBar current={s.tpmCurrent} limit={s.tpmLimit} label={t('api_keys.tpm')} />
       <RateLimitMiniBar current={s.dailyCurrent} limit={s.dailyLimit} label={t('api_keys.daily')} />

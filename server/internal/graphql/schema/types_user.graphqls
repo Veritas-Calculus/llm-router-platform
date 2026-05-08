@@ -84,6 +84,7 @@ type ApiKeyRateLimitStatus {
   dailyLimit: Int!
   dailyExceeded: Boolean!
   status: String!
+  statusReason: String!
 }
 
 type ApiKeyWithSecret {
@@ -100,6 +101,13 @@ type ApiKeyWithSecret {
   dailyLimit: Int!
   expiresAt: DateTime
   createdAt: DateTime!
+}
+
+type PlaygroundToken {
+  token: String!
+  expiresAt: DateTime!
+  apiKeyId: ID!
+  projectId: ID!
 }
 
 type UserConnection {

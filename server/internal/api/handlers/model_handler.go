@@ -116,6 +116,7 @@ func (h *ModelHandler) fetchModelsForProvider(ctx context.Context, p models.Prov
 		keys, err := h.router.GetProviderAPIKeys(ctx, p.ID)
 		if err != nil || len(keys) == 0 {
 			h.logger.Debug("no API key available for provider", zap.String("provider", p.Name))
+			h.fallbackModelsFromDB(ctx, p, &result)
 			return result
 		}
 		client, clientErr = h.router.GetProviderClientWithKey(ctx, &p, &keys[0])
@@ -128,6 +129,7 @@ func (h *ModelHandler) fetchModelsForProvider(ctx context.Context, p models.Prov
 			zap.String("provider", p.Name),
 			zap.Error(clientErr))
 		result.err = clientErr
+		h.fallbackModelsFromDB(ctx, p, &result)
 		return result
 	}
 
@@ -142,13 +144,69 @@ func (h *ModelHandler) fetchModelsForProvider(ctx context.Context, p models.Prov
 			zap.String("provider", p.Name),
 			zap.Error(err))
 		result.err = err
+		h.fallbackModelsFromDB(ctx, p, &result)
 		return result
+	}
+
+	if len(fetchedModels) == 0 {
+		h.fallbackModelsFromDB(ctx, p, &result)
+		if len(result.models) > 0 {
+			return result
+		}
 	}
 
 	// Cache the full model info (with extra upstream metadata)
 	h.setCachedModels(p.Name, fetchedModels)
 	result.models = fetchedModels
 	return result
+}
+
+func (h *ModelHandler) fallbackModelsFromDB(ctx context.Context, p models.Provider, result *fetchModelsResult) {
+	dbModels, err := h.router.GetModelsByProvider(ctx, p.ID)
+	if err != nil {
+		h.logger.Debug("failed to load configured models from database",
+			zap.String("provider", p.Name),
+			zap.Error(err))
+		return
+	}
+
+	result.models = configuredModelsToProviderInfo(dbModels)
+	if len(result.models) > 0 {
+		h.setCachedModels(p.Name, result.models)
+	}
+}
+
+func configuredModelsToProviderInfo(dbModels []models.Model) []provider.ModelInfo {
+	out := make([]provider.ModelInfo, 0, len(dbModels))
+	for _, m := range dbModels {
+		if !m.IsActive || m.Name == "" {
+			continue
+		}
+		name := m.Name
+		displayName := m.DisplayName
+		if displayName == "" {
+			displayName = name
+		}
+
+		extra := map[string]json.RawMessage{}
+		if m.MaxTokens > 0 {
+			if raw, err := json.Marshal(m.MaxTokens); err == nil {
+				extra["max_tokens"] = raw
+			}
+		}
+		if displayName != name {
+			if raw, err := json.Marshal(displayName); err == nil {
+				extra["display_name"] = raw
+			}
+		}
+
+		out = append(out, provider.ModelInfo{
+			ID:    name,
+			Name:  displayName,
+			Extra: extra,
+		})
+	}
+	return out
 }
 
 // ListProviders returns available providers with their models.
@@ -390,22 +448,22 @@ func (h *ModelHandler) findAndFormatModel(ctx context.Context, modelID string, a
 
 // visionModelPatterns contains substrings that indicate a model supports vision.
 var visionModelPatterns = []string{
-	"-vl-", "-vl/", "/vl-",           // qwen/qwen3-vl-8b, etc.
-	"-vision",                          // gpt-4-vision-preview
-	"vision-",                          // vision-* models
-	"4o",                               // gpt-4o (multimodal)
-	"gemini-pro",                       // Gemini Pro Vision
-	"gemini-1.5",                       // Gemini 1.5 (multimodal)
-	"gemini-2",                         // Gemini 2.x (multimodal)
-	"claude-3",                         // Claude 3 (vision)
-	"claude-4",                         // Claude 4 (vision)
-	"pixtral",                          // Mistral Pixtral (vision)
-	"llava",                            // LLaVA models
-	"cogvlm",                           // CogVLM models
-	"internvl",                         // InternVL models
-	"minicpm-v",                        // MiniCPM-V models
-	"phi-3-vision", "phi-3.5-vision",   // Phi-3 Vision
-	"glm-4v", "glm-4.6v", "glm-4.7v",  // GLM-4V models
+	"-vl-", "-vl/", "/vl-", // qwen/qwen3-vl-8b, etc.
+	"-vision",                        // gpt-4-vision-preview
+	"vision-",                        // vision-* models
+	"4o",                             // gpt-4o (multimodal)
+	"gemini-pro",                     // Gemini Pro Vision
+	"gemini-1.5",                     // Gemini 1.5 (multimodal)
+	"gemini-2",                       // Gemini 2.x (multimodal)
+	"claude-3",                       // Claude 3 (vision)
+	"claude-4",                       // Claude 4 (vision)
+	"pixtral",                        // Mistral Pixtral (vision)
+	"llava",                          // LLaVA models
+	"cogvlm",                         // CogVLM models
+	"internvl",                       // InternVL models
+	"minicpm-v",                      // MiniCPM-V models
+	"phi-3-vision", "phi-3.5-vision", // Phi-3 Vision
+	"glm-4v", "glm-4.6v", "glm-4.7v", // GLM-4V models
 }
 
 // inferModelCapabilities enriches a model's response map with capability
@@ -448,4 +506,3 @@ func inferModelCapabilities(modelID string, m map[string]interface{}) {
 		m["type"] = "llm"
 	}
 }
-

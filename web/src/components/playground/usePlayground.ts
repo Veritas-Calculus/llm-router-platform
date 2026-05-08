@@ -1,9 +1,65 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useMutation, useQuery } from '@apollo/client/react';
+import { CREATE_PLAYGROUND_TOKEN, MY_API_KEYS, MY_ORGANIZATIONS, MY_PROJECTS } from '@/lib/graphql/operations';
 import type { Message, ModelRef, UsageStats, ImageAttachment, ContentPart } from './types';
 import { estimateTokens, estimateMessageTokens, isVisionModel, isTTSModel, runCompletion } from './utils';
 
+export const MANUAL_API_KEY_VALUE = '__manual__';
+
+async function readResponseError(res: Response): Promise<string> {
+  const text = (await res.text().catch(() => '')).trim();
+  if (!text) return res.statusText || 'request failed';
+
+  try {
+    const payload = JSON.parse(text) as {
+      error?: string | { message?: string };
+      message?: string;
+    };
+    if (typeof payload.error === 'string') return payload.error;
+    if (payload.error?.message) return payload.error.message;
+    if (payload.message) return payload.message;
+  } catch {
+    // Plain text errors are common for gateway/proxy 404s.
+  }
+
+  return text.length > 180 ? `${text.slice(0, 180)}...` : text;
+}
+
+interface PlaygroundOrganization {
+  id: string;
+  name: string;
+}
+
+interface PlaygroundProject {
+  id: string;
+  orgId: string;
+  name: string;
+}
+
+interface PlaygroundApiKey {
+  id: string;
+  projectId: string;
+  name: string;
+  keyPrefix: string;
+  isActive: boolean;
+  scopes: string;
+  expiresAt: string | null;
+}
+
 export interface PlaygroundState {
   apiKey: string; setApiKey: (v: string) => void;
+  apiKeyMode: 'saved' | 'manual'; setApiKeyMode: (v: 'saved' | 'manual') => void;
+  orgs: PlaygroundOrganization[];
+  projects: PlaygroundProject[];
+  apiKeys: PlaygroundApiKey[];
+  activeApiKeys: PlaygroundApiKey[];
+  selectedOrgId: string; setSelectedOrgId: (v: string) => void;
+  selectedProjectId: string; setSelectedProjectId: (v: string) => void;
+  selectedApiKeyId: string; setSelectedApiKeyId: (v: string) => void;
+  selectedApiKey: PlaygroundApiKey | undefined;
+  apiKeysLoading: boolean;
+  tokenLoading: boolean;
+  modelsLoading: boolean;
   models: ModelRef[]; selectedModel: string; setSelectedModel: (v: string) => void;
   compareModel: string; setCompareModel: (v: string) => void;
   compareMode: boolean;
@@ -47,7 +103,15 @@ export interface PlaygroundState {
 }
 
 export function usePlayground(): PlaygroundState {
-  const [apiKey, setApiKey] = useState('');
+  const [apiKeyMode, setApiKeyMode] = useState<'saved' | 'manual'>('saved');
+  const [manualApiKey, setManualApiKey] = useState('');
+  const [playgroundToken, setPlaygroundToken] = useState('');
+  const [playgroundTokenExpiresAt, setPlaygroundTokenExpiresAt] = useState('');
+  const [selectedOrgId, setSelectedOrgId] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [selectedApiKeyId, setSelectedApiKeyId] = useState('');
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const [models, setModels] = useState<ModelRef[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [compareModel, setCompareModel] = useState('');
@@ -85,6 +149,41 @@ export function usePlayground(): PlaygroundState {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const { data: orgData, loading: orgsLoading } = useQuery<{ myOrganizations: PlaygroundOrganization[] }>(MY_ORGANIZATIONS);
+  const orgs = useMemo(() => orgData?.myOrganizations ?? [], [orgData]);
+
+  const { data: projectData, loading: projectsLoading } = useQuery<{ myProjects: PlaygroundProject[] }>(MY_PROJECTS, {
+    variables: { orgId: selectedOrgId },
+    skip: !selectedOrgId,
+  });
+  const projects = useMemo(() => projectData?.myProjects ?? [], [projectData]);
+
+  const { data: apiKeyData, loading: keysLoading } = useQuery<{ myApiKeys: PlaygroundApiKey[] }>(MY_API_KEYS, {
+    variables: { projectId: selectedProjectId },
+    skip: !selectedProjectId,
+  });
+  const apiKeys = useMemo(() => apiKeyData?.myApiKeys ?? [], [apiKeyData]);
+  const activeApiKeys = useMemo(() => {
+    const now = Date.now();
+    return apiKeys.filter(key => {
+      if (!key.isActive) return false;
+      if (!key.expiresAt) return true;
+      const expiresAt = Date.parse(key.expiresAt);
+      return Number.isNaN(expiresAt) || expiresAt > now;
+    });
+  }, [apiKeys]);
+  const selectedApiKey = activeApiKeys.find(key => key.id === selectedApiKeyId);
+  const apiKeysLoading = orgsLoading || projectsLoading || keysLoading;
+  const apiKey = apiKeyMode === 'manual' ? manualApiKey : playgroundToken;
+  const [createPlaygroundToken] = useMutation<{
+    createPlaygroundToken: {
+      token: string;
+      expiresAt: string;
+      apiKeyId: string;
+      projectId: string;
+    };
+  }>(CREATE_PLAYGROUND_TOKEN);
+
   const selectedModelRef = models.find(m => m.id === selectedModel);
   const modelSupportsVision = selectedModelRef ? isVisionModel(selectedModelRef) : false;
 
@@ -94,33 +193,126 @@ export function usePlayground(): PlaygroundState {
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   useEffect(() => {
-    if (apiKey) {
-      fetchModels(apiKey);
-    } else {
-      setModels([]);
-      setSelectedModel('');
+    if (orgs.length > 0 && !selectedOrgId) {
+      setSelectedOrgId(orgs[0].id);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKey]);
+  }, [orgs, selectedOrgId]);
 
-  const fetchModels = async (key: string) => {
+  useEffect(() => {
+    if (projects.length > 0) {
+      if (!selectedProjectId || !projects.some(project => project.id === selectedProjectId)) {
+        setSelectedProjectId(projects[0].id);
+      }
+    } else if (selectedProjectId) {
+      setSelectedProjectId('');
+    }
+  }, [projects, selectedProjectId]);
+
+  useEffect(() => {
+    if (apiKeyMode === 'manual') return;
+    if (activeApiKeys.length > 0) {
+      if (!selectedApiKeyId || !activeApiKeys.some(key => key.id === selectedApiKeyId)) {
+        setSelectedApiKeyId(activeApiKeys[0].id);
+      }
+    } else if (apiKeyData) {
+      setSelectedApiKeyId('');
+      setPlaygroundToken('');
+      setPlaygroundTokenExpiresAt('');
+    }
+  }, [activeApiKeys, apiKeyData, apiKeyMode, selectedApiKeyId]);
+
+  const refreshPlaygroundToken = useCallback(async (keyId = selectedApiKeyId) => {
+    if (!keyId) return '';
+    setTokenLoading(true);
+    try {
+      const { data } = await createPlaygroundToken({ variables: { apiKeyId: keyId } });
+      const tokenInfo = data?.createPlaygroundToken;
+      if (!tokenInfo?.token) {
+        throw new Error('Unable to prepare the selected API key for Playground.');
+      }
+      setPlaygroundToken(tokenInfo.token);
+      setPlaygroundTokenExpiresAt(tokenInfo.expiresAt);
+      return tokenInfo.token;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to prepare the selected API key.';
+      setErrorMsg(msg);
+      setPlaygroundToken('');
+      setPlaygroundTokenExpiresAt('');
+      return '';
+    } finally {
+      setTokenLoading(false);
+    }
+  }, [createPlaygroundToken, selectedApiKeyId]);
+
+  useEffect(() => {
+    if (apiKeyMode !== 'saved') {
+      setPlaygroundToken('');
+      setPlaygroundTokenExpiresAt('');
+      return;
+    }
+    if (!selectedApiKeyId) {
+      setPlaygroundToken('');
+      setPlaygroundTokenExpiresAt('');
+      return;
+    }
+    void refreshPlaygroundToken(selectedApiKeyId);
+  }, [apiKeyMode, refreshPlaygroundToken, selectedApiKeyId]);
+
+  const getRequestToken = useCallback(async () => {
+    if (apiKeyMode === 'manual') return manualApiKey.trim();
+    if (!selectedApiKeyId) return '';
+    const expiresAt = Date.parse(playgroundTokenExpiresAt);
+    const shouldRefresh = !playgroundToken || !expiresAt || Number.isNaN(expiresAt) || expiresAt - Date.now() < 60_000;
+    return shouldRefresh ? refreshPlaygroundToken(selectedApiKeyId) : playgroundToken;
+  }, [apiKeyMode, manualApiKey, playgroundToken, playgroundTokenExpiresAt, refreshPlaygroundToken, selectedApiKeyId]);
+
+  const fetchModels = useCallback(async (key: string) => {
+    setModelsLoading(true);
     try {
       const res = await fetch('/v1/models', { headers: { Authorization: `Bearer ${key}` } });
       if (res.ok) {
         const data = await res.json();
         if (data.data) {
-          setModels(data.data);
-          if (data.data.length > 0 && !selectedModel) setSelectedModel(data.data[0].id);
-          const ttsCandidate = data.data.find((m: ModelRef) => isTTSModel(m));
-          if (ttsCandidate && !ttsModel) setTtsModel(ttsCandidate.id);
+          const nextModels = data.data as ModelRef[];
+          setModels(nextModels);
+          setSelectedModel(prev => {
+            if (prev && nextModels.some(m => m.id === prev)) return prev;
+            return nextModels[0]?.id ?? '';
+          });
+          setCompareModel(prev => {
+            if (prev && nextModels.some(m => m.id === prev)) return prev;
+            return '';
+          });
+          setTtsModel(prev => {
+            if (prev && nextModels.some(m => m.id === prev)) return prev;
+            const ttsCandidate = nextModels.find((m: ModelRef) => isTTSModel(m));
+            return ttsCandidate?.id ?? '';
+          });
         }
       } else {
-        setErrorMsg('Failed to fetch models. Check your API Key.');
+        const reason = await readResponseError(res);
+        setErrorMsg(`Failed to fetch models (${res.status}): ${reason}`);
+        setModels([]);
+        setSelectedModel('');
       }
-    } catch {
-      setErrorMsg('Network error while fetching models.');
+    } catch (err: unknown) {
+      const reason = err instanceof Error ? err.message : 'request failed';
+      setErrorMsg(`Network error while fetching models: ${reason}`);
+      setModels([]);
+      setSelectedModel('');
+    } finally {
+      setModelsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (apiKey) {
+      void fetchModels(apiKey);
+    } else {
+      setModels([]);
+      setSelectedModel('');
+    }
+  }, [apiKey, fetchModels]);
 
   /* ── Image handling ── */
 
@@ -184,6 +376,8 @@ export function usePlayground(): PlaygroundState {
   const transcribeAudio = useCallback(async (blob: Blob) => {
     setIsTranscribing(true);
     try {
+      const requestToken = await getRequestToken();
+      if (!requestToken) throw new Error('Configure an API Key first.');
       const formData = new FormData();
       const ext = blob.type.includes('webm') ? 'webm' : blob.type.includes('mp4') ? 'm4a' : 'wav';
       formData.append('file', blob, `recording.${ext}`);
@@ -191,7 +385,7 @@ export function usePlayground(): PlaygroundState {
       formData.append('response_format', 'json');
       const res = await fetch('/v1/audio/transcriptions', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}` },
+        headers: { Authorization: `Bearer ${requestToken}` },
         body: formData,
       });
       if (!res.ok) {
@@ -208,7 +402,7 @@ export function usePlayground(): PlaygroundState {
     } finally {
       setIsTranscribing(false);
     }
-  }, [apiKey, sttModel]);
+  }, [getRequestToken, sttModel]);
 
   const startRecording = useCallback(async () => {
     if (hasBrowserSTT && !sttModel) {
@@ -238,7 +432,8 @@ export function usePlayground(): PlaygroundState {
       recognition.start();
       setIsRecording(true);
     } else {
-      if (!apiKey) { setErrorMsg('Configure an API Key first.'); return; }
+      if (apiKeyMode === 'manual' && !manualApiKey.trim()) { setErrorMsg('Configure an API Key first.'); return; }
+      if (apiKeyMode === 'saved' && !selectedApiKeyId) { setErrorMsg('Select an API Key first.'); return; }
       if (!sttModel) { setErrorMsg('Select an STT model in Settings, or use a browser that supports Web Speech API.'); return; }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -259,7 +454,7 @@ export function usePlayground(): PlaygroundState {
         console.error('Microphone access error:', err);
       }
     }
-  }, [apiKey, sttModel, hasBrowserSTT, transcribeAudio]);
+  }, [apiKeyMode, manualApiKey, selectedApiKeyId, sttModel, hasBrowserSTT, transcribeAudio]);
 
   const stopRecording = useCallback(() => {
     if (speechRecognitionRef.current) {
@@ -275,7 +470,9 @@ export function usePlayground(): PlaygroundState {
   /* ── TTS ── */
 
   const playTTS = useCallback(async (text: string, msgIdx: number) => {
-    if (!apiKey || !text.trim()) return;
+    if (!text.trim()) return;
+    const requestToken = await getRequestToken();
+    if (!requestToken) { setErrorMsg('Configure an API Key first.'); return; }
     if (ttsAudioRef.current) {
       ttsAudioRef.current.pause();
       ttsAudioRef.current = null;
@@ -288,7 +485,7 @@ export function usePlayground(): PlaygroundState {
     try {
       const res = await fetch('/v1/audio/speech', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${requestToken}` },
         body: JSON.stringify({ model: ttsModel || 'tts-1', input: text.slice(0, 4096), voice: 'alloy' }),
       });
       if (!res.ok) {
@@ -310,13 +507,14 @@ export function usePlayground(): PlaygroundState {
     } finally {
       setLoadingTTSIdx(null);
     }
-  }, [apiKey, playingTTSIdx, ttsModel]);
+  }, [getRequestToken, playingTTSIdx, ttsModel]);
 
   /* ── Send / Stop / Clear ── */
 
   const handleSend = async () => {
     if ((!input.trim() && attachments.length === 0) || isStreaming) return;
-    if (!apiKey) { setErrorMsg('Configure an API Key first.'); if (!showSettings) setShowSettings(true); return; }
+    const requestToken = await getRequestToken();
+    if (!requestToken) { setErrorMsg('Configure an API Key first.'); if (!showSettings) setShowSettings(true); return; }
     if (!selectedModel) { setErrorMsg('Select a model.'); return; }
     if (compareMode && !compareModel) { setErrorMsg('Select a comparison model.'); return; }
 
@@ -350,7 +548,7 @@ export function usePlayground(): PlaygroundState {
     abortControllerRef.current = new AbortController();
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
-    const runA = runCompletion(apiKey, selectedModel, apiMsgs, temperature, maxTokens, abortControllerRef.current.signal, (content) => {
+    const runA = runCompletion(requestToken, selectedModel, apiMsgs, temperature, maxTokens, abortControllerRef.current.signal, (content) => {
       setMessages(prev => { const u = [...prev]; u[u.length - 1] = { role: 'assistant', content }; return u; });
     }).then(s => { setStats(s); }).catch(err => {
       if (err.name !== 'AbortError') setErrorMsg(err.message);
@@ -361,7 +559,7 @@ export function usePlayground(): PlaygroundState {
       abortControllerBRef.current = new AbortController();
       setMessagesB(prev => [...prev, { role: 'assistant', content: '' }]);
 
-      const runB = runCompletion(apiKey, compareModel, apiMsgs, temperature, maxTokens, abortControllerBRef.current.signal, (content) => {
+      const runB = runCompletion(requestToken, compareModel, apiMsgs, temperature, maxTokens, abortControllerBRef.current.signal, (content) => {
         setMessagesB(prev => { const u = [...prev]; u[u.length - 1] = { role: 'assistant', content }; return u; });
       }).then(s => { setStatsB(s); }).catch(err => {
         if (err.name !== 'AbortError') setErrorMsg(err.message);
@@ -396,7 +594,17 @@ export function usePlayground(): PlaygroundState {
   };
 
   return {
-    apiKey, setApiKey,
+    apiKey, setApiKey: setManualApiKey,
+    apiKeyMode, setApiKeyMode,
+    orgs, projects,
+    apiKeys, activeApiKeys,
+    selectedOrgId, setSelectedOrgId,
+    selectedProjectId, setSelectedProjectId,
+    selectedApiKeyId, setSelectedApiKeyId,
+    selectedApiKey,
+    apiKeysLoading,
+    tokenLoading,
+    modelsLoading,
     models, selectedModel, setSelectedModel,
     compareModel, setCompareModel,
     compareMode,

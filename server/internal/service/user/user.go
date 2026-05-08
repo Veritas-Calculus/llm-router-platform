@@ -426,6 +426,21 @@ func (s *Service) ValidateAPIKey(ctx context.Context, rawKey string) (*models.Pr
 		return nil, nil, errors.New("invalid API key")
 	}
 
+	return s.validateAPIKeyRecord(ctx, apiKey)
+}
+
+// ValidateAPIKeyByID validates a stored API key without requiring the one-time
+// raw secret. It is used for short-lived authenticated playground tokens.
+func (s *Service) ValidateAPIKeyByID(ctx context.Context, id uuid.UUID) (*models.Project, *models.APIKey, error) {
+	apiKey, err := s.apiKeyRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, nil, errors.New("invalid API key")
+	}
+
+	return s.validateAPIKeyRecord(ctx, apiKey)
+}
+
+func (s *Service) validateAPIKeyRecord(ctx context.Context, apiKey *models.APIKey) (*models.Project, *models.APIKey, error) {
 	if !apiKey.IsActive {
 		return nil, nil, errors.New("API key is disabled")
 	}

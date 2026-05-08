@@ -398,7 +398,8 @@
         "ok": "正常",
         "near_limit": "接近上限",
         "rate_limited": "已限速",
-        "quota_exceeded": "配额已满",
+        "quota_exceeded": "套餐额度已满",
+        "quota_exceeded_desc": "组织当前套餐的月度 Token 配额已用完，不是该 API 密钥的 RPM/TPM 已打满。",
         "revoke_key": "吊销 API 密钥",
         "delete_key": "删除 API 密钥",
         "copy_clipboard": "复制到剪贴板"

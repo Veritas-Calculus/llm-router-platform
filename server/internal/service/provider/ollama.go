@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"llm-router-platform/internal/config"
@@ -17,10 +18,13 @@ import (
 
 // OllamaClient implements the Client interface for Ollama (OpenAI-compatible).
 type OllamaClient struct {
-	apiKey     string
-	baseURL    string
-	httpClient *http.Client
-	logger     *zap.Logger
+	apiKey        string
+	baseURL       string
+	nativeBaseURL string
+	httpClient    *http.Client
+	logger        *zap.Logger
+	loadedMu      sync.Mutex
+	loadedModels  map[string]time.Time
 }
 
 // NewOllamaClient creates a new Ollama client.
@@ -32,22 +36,33 @@ func NewOllamaClient(cfg *config.ProviderConfig, logger *zap.Logger) *OllamaClie
 		httpClient = cfg.HTTPClient()
 	}
 
-	// Ensure baseURL ends with /v1 for OpenAI compatibility if not already present
-	baseURL := cfg.BaseURL
+	inputBaseURL := strings.TrimSuffix(cfg.BaseURL, "/")
+	nativeBaseURL := ollamaNativeBaseURL(inputBaseURL)
+
+	// Ensure baseURL ends with /v1 for OpenAI compatibility if not already present.
+	baseURL := inputBaseURL
 	if !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
 		baseURL = strings.TrimSuffix(baseURL, "/") + "/v1"
 	}
 
 	return &OllamaClient{
-		apiKey:     cfg.APIKey,
-		baseURL:    baseURL,
-		httpClient: httpClient,
-		logger:     logger,
+		apiKey:        cfg.APIKey,
+		baseURL:       baseURL,
+		nativeBaseURL: nativeBaseURL,
+		httpClient:    httpClient,
+		logger:        logger,
+		loadedModels:  make(map[string]time.Time),
 	}
 }
 
 // Chat sends a chat completion request to Ollama.
 func (c *OllamaClient) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, error) {
+	if req != nil {
+		if err := c.ensureModelLoaded(ctx, req.Model); err != nil {
+			return nil, err
+		}
+	}
+
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, err
@@ -70,7 +85,12 @@ func (c *OllamaClient) Chat(ctx context.Context, req *ChatRequest) (*ChatRespons
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, errors.New(string(bodyBytes))
+		return nil, &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       bodyBytes,
+			Message:    "Ollama chat completion error",
+		}
 	}
 
 	var result ChatResponse
@@ -187,6 +207,12 @@ func (c *OllamaClient) CheckHealth(ctx context.Context) (bool, time.Duration, er
 
 // StreamChat sends a streaming chat completion request to Ollama.
 func (c *OllamaClient) StreamChat(ctx context.Context, req *ChatRequest) (<-chan StreamChunk, error) {
+	if req != nil {
+		if err := c.ensureModelLoaded(ctx, req.Model); err != nil {
+			return nil, err
+		}
+	}
+
 	req.Stream = true
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -210,11 +236,86 @@ func (c *OllamaClient) StreamChat(ctx context.Context, req *ChatRequest) (<-chan
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		return nil, errors.New(string(respBody))
+		return nil, &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       respBody,
+			Message:    "Ollama streaming chat completion error",
+		}
 	}
 
 	chunks := make(chan StreamChunk)
 	go processSSEStream(ctx, resp.Body, chunks, c.logger)
 
 	return chunks, nil
+}
+
+func ollamaNativeBaseURL(baseURL string) string {
+	root := strings.TrimSuffix(baseURL, "/")
+	if strings.HasSuffix(root, "/v1") {
+		root = strings.TrimSuffix(root, "/v1")
+	}
+	return root
+}
+
+func (c *OllamaClient) ensureModelLoaded(ctx context.Context, model string) error {
+	model = strings.TrimSpace(model)
+	if model == "" || c.isModelRecentlyEnsured(model) {
+		return nil
+	}
+
+	payload := map[string]interface{}{
+		"model":      model,
+		"prompt":     "",
+		"stream":     false,
+		"keep_alive": localModelKeepAlive,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.nativeBaseURL+"/api/generate", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		respBody, _ := io.ReadAll(resp.Body)
+		return &ProviderError{
+			StatusCode: resp.StatusCode,
+			Headers:    resp.Header,
+			Body:       respBody,
+			Message:    "Ollama model preload error",
+		}
+	}
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+	c.markModelEnsured(model)
+	return nil
+}
+
+func (c *OllamaClient) isModelRecentlyEnsured(model string) bool {
+	c.loadedMu.Lock()
+	defer c.loadedMu.Unlock()
+
+	loadedAt, ok := c.loadedModels[model]
+	return ok && time.Since(loadedAt) < localModelEnsureTTL
+}
+
+func (c *OllamaClient) markModelEnsured(model string) {
+	c.loadedMu.Lock()
+	defer c.loadedMu.Unlock()
+
+	c.loadedModels[model] = time.Now()
 }

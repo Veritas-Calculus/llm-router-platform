@@ -54,6 +54,13 @@ func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *mo
 	}
 
 	currentKey := apiKey
+	if currentKey == nil {
+		var err error
+		currentKey, err = r.selectAPIKey(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var lastErr error
 
 	for attempt := 0; attempt < maxRetries && currentKey != nil; attempt++ {
@@ -285,6 +292,13 @@ func (r *Router) executeWithKeyRetry(ctx context.Context, p *models.Provider, ap
 	}
 
 	currentKey := apiKey
+	if currentKey == nil {
+		var err error
+		currentKey, err = r.selectAPIKey(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var lastErr error
 
 	for attempt := 0; attempt < maxRetries && currentKey != nil; attempt++ {
@@ -435,6 +449,13 @@ func (r *Router) ExecuteStreamChat(ctx context.Context, p *models.Provider, apiK
 	}
 
 	currentKey := apiKey
+	if currentKey == nil {
+		var err error
+		currentKey, err = r.selectAPIKey(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var lastErr error
 
 	for attempt := 0; attempt < maxRetries && currentKey != nil; attempt++ {

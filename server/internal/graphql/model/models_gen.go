@@ -157,6 +157,7 @@ type APIKeyRateLimitStatus struct {
 	DailyLimit    int    `json:"dailyLimit"`
 	DailyExceeded bool   `json:"dailyExceeded"`
 	Status        string `json:"status"`
+	StatusReason  string `json:"statusReason"`
 }
 
 type APIKeyWithSecret struct {
@@ -738,6 +739,13 @@ type PlanInput struct {
 	SupportLevel *string `json:"supportLevel,omitempty"`
 	IsActive     *bool   `json:"isActive,omitempty"`
 	Features     *string `json:"features,omitempty"`
+}
+
+type PlaygroundToken struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	APIKeyID  string    `json:"apiKeyId"`
+	ProjectID string    `json:"projectId"`
 }
 
 type Project struct {

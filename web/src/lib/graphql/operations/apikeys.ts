@@ -30,6 +30,17 @@ export const CREATE_API_KEY = gql`
   }
 `;
 
+export const CREATE_PLAYGROUND_TOKEN = gql`
+  mutation CreatePlaygroundToken($apiKeyId: ID!) {
+    createPlaygroundToken(apiKeyId: $apiKeyId) {
+      token
+      expiresAt
+      apiKeyId
+      projectId
+    }
+  }
+`;
+
 export const UPDATE_API_KEY = gql`
   mutation UpdateApiKey($id: ID!, $name: String, $scopes: String, $rateLimit: Int, $tokenLimit: Int, $isActive: Boolean) {
     updateApiKey(id: $id, name: $name, scopes: $scopes, rateLimit: $rateLimit, tokenLimit: $tokenLimit, isActive: $isActive) {
@@ -64,7 +75,7 @@ export const API_KEY_RATE_LIMIT_STATUS = gql`
       keyId rpmCurrent rpmLimit rpmExceeded
       tpmCurrent tpmLimit tpmExceeded
       dailyCurrent dailyLimit dailyExceeded
-      status
+      status statusReason
     }
   }
 `;

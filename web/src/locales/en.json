@@ -398,7 +398,8 @@
         "ok": "OK",
         "near_limit": "Near Limit",
         "rate_limited": "Rate Limited",
-        "quota_exceeded": "Quota Exceeded",
+        "quota_exceeded": "Plan Quota Exceeded",
+        "quota_exceeded_desc": "The organization's monthly plan token quota is exhausted; this is separate from this key's RPM/TPM limits.",
         "revoke_key": "Revoke API key",
         "delete_key": "Delete API key",
         "copy_clipboard": "Copy to clipboard"

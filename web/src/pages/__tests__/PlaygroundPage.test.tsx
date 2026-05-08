@@ -14,6 +14,11 @@ vi.mock('remark-gfm', () => ({
     default: () => {},
 }));
 
+vi.mock('@apollo/client/react', () => ({
+    useQuery: vi.fn(() => ({ data: null, loading: false })),
+    useMutation: vi.fn(() => [vi.fn(), { loading: false }]),
+}));
+
 describe('PlaygroundPage', () => {
     beforeEach(() => { vi.clearAllMocks(); });
 
@@ -24,11 +29,12 @@ describe('PlaygroundPage', () => {
         });
     });
 
-    it('should show settings sidebar with API key input', async () => {
+    it('should show settings sidebar with API key selector', async () => {
         const { container } = render(<PlaygroundPage />);
         await waitFor(() => {
             expect(container.textContent).toContain('Settings');
-            expect(container.querySelector('input[type="password"]')).toBeInTheDocument();
+            expect(container.textContent).toContain('Paste a key manually');
+            expect(container.querySelector('select')).toBeInTheDocument();
         });
     });
 

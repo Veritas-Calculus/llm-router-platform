@@ -129,6 +129,7 @@ type Mutation {
 
   # ── API Keys & Projects ──
   createApiKey(projectId: ID!, name: String!, scopes: String, rateLimit: Int, tokenLimit: Int): ApiKeyWithSecret! @auth
+  createPlaygroundToken(apiKeyId: ID!): PlaygroundToken! @auth
   updateApiKey(id: ID!, name: String, scopes: String, rateLimit: Int, tokenLimit: Int, isActive: Boolean): ApiKey! @auth
   revokeApiKey(projectId: ID!, id: ID!): ApiKey! @auth
   deleteApiKey(projectId: ID!, id: ID!): Boolean! @auth

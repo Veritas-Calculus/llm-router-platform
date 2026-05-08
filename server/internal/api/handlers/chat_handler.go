@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	router_errs "llm-router-platform/internal/errors"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/internal/service/billing"
@@ -19,7 +21,6 @@ import (
 	"llm-router-platform/internal/service/router"
 	"llm-router-platform/internal/service/safety"
 	"llm-router-platform/internal/service/tracking"
-	router_errs "llm-router-platform/internal/errors"
 	"llm-router-platform/pkg/sanitize"
 	"llm-router-platform/pkg/tokencount"
 
@@ -90,13 +91,13 @@ func (h *ChatHandler) checkProjectQuota(c *gin.Context, projectObj *models.Proje
 
 // AnthropicMessagesRequest represents an Anthropic messages request.
 type AnthropicMessagesRequest struct {
-	Model       string                  `json:"model" binding:"required"`
-	Messages    []AnthropicMessage      `json:"messages" binding:"required"`
-	MaxTokens   int                     `json:"max_tokens" binding:"required"`
-	Temperature *float64                `json:"temperature,omitempty"`
-	System      string                  `json:"system,omitempty"`
-	Stream      bool                    `json:"stream,omitempty"`
-	Tools       []AnthropicTool         `json:"tools,omitempty"`
+	Model       string             `json:"model" binding:"required"`
+	Messages    []AnthropicMessage `json:"messages" binding:"required"`
+	MaxTokens   int                `json:"max_tokens" binding:"required"`
+	Temperature *float64           `json:"temperature,omitempty"`
+	System      string             `json:"system,omitempty"`
+	Stream      bool               `json:"stream,omitempty"`
+	Tools       []AnthropicTool    `json:"tools,omitempty"`
 }
 
 type AnthropicMessage struct {
@@ -152,7 +153,7 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 
 	// Handle streaming via existing infrastructure
 	if anthroReq.Stream {
-		h.handleAnthropicStream(c, anthroReq, providerReq, selectedProvider, userAPIKey, projectObj, start)
+		h.handleAnthropicStream(c, anthroReq, providerReq, selectedProvider, apiKey, userAPIKey, projectObj, start)
 		return
 	}
 
@@ -234,7 +235,7 @@ func mapAnthropicMessages(anthroReq AnthropicMessagesRequest) []provider.Message
 }
 
 // handleAnthropicStream handles the streaming path for Anthropic-compatible requests.
-func (h *ChatHandler) handleAnthropicStream(c *gin.Context, anthroReq AnthropicMessagesRequest, providerReq *provider.ChatRequest, selectedProvider *models.Provider, userAPIKey *models.APIKey, projectObj *models.Project, start time.Time) {
+func (h *ChatHandler) handleAnthropicStream(c *gin.Context, anthroReq AnthropicMessagesRequest, providerReq *provider.ChatRequest, selectedProvider *models.Provider, apiKey *models.ProviderAPIKey, userAPIKey *models.APIKey, projectObj *models.Project, start time.Time) {
 	usageLog := &models.UsageLog{
 		UserID:     userAPIKey.UserID,
 		ProjectID:  projectObj.ID,
@@ -249,7 +250,7 @@ func (h *ChatHandler) handleAnthropicStream(c *gin.Context, anthroReq AnthropicM
 		h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", sanitize.LogValue(anthroReq.Model)))
 	}
 
-	streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, nil, providerReq, 3)
+	streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
 	if err != nil {
 		h.logger.Error("anthropic stream failed", zap.Error(err))
 		if billingErr := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), err.Error()); billingErr != nil {
@@ -267,12 +268,12 @@ func (h *ChatHandler) handleAnthropicStream(c *gin.Context, anthroReq AnthropicM
 	msgStartEvent := gin.H{
 		"type": "message_start",
 		"message": gin.H{
-			"id":    "msg_" + uuid.New().String()[:8],
-			"type":  "message",
-			"role":  "assistant",
-			"model": anthroReq.Model,
+			"id":      "msg_" + uuid.New().String()[:8],
+			"type":    "message",
+			"role":    "assistant",
+			"model":   anthroReq.Model,
 			"content": []interface{}{},
-			"usage": gin.H{"input_tokens": 0, "output_tokens": 0},
+			"usage":   gin.H{"input_tokens": 0, "output_tokens": 0},
 		},
 	}
 	data, _ := json.Marshal(msgStartEvent)
@@ -347,7 +348,7 @@ type ChatCompletionRequest struct {
 
 // MessageRequest represents a message in the request.
 type MessageRequest struct {
-	Role    string                  `json:"role" binding:"required"`
+	Role    string                   `json:"role" binding:"required"`
 	Content provider.FlexibleContent `json:"content" binding:"required"`
 }
 
@@ -457,7 +458,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	// 8. Streaming path
 	if req.Stream {
-		h.handleStreamPath(c, req, providerReq, selectedProvider, userAPIKey, projectObj, start, trace, promptHash, promptEmbedding)
+		h.handleStreamPath(c, req, providerReq, selectedProvider, apiKey, userAPIKey, projectObj, start, trace, promptHash, promptEmbedding)
 		return
 	}
 
@@ -687,8 +688,56 @@ func (h *ChatHandler) handleCacheHit(c *gin.Context, cacheHit *models.SemanticCa
 	return true
 }
 
+func upstreamFailureMessage(prefix string, err error) string {
+	detail := upstreamErrorDetail(err)
+	if detail == "" {
+		return prefix
+	}
+	return prefix + ": " + detail
+}
+
+func upstreamErrorDetail(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	var providerErr *provider.ProviderError
+	if errors.As(err, &providerErr) && len(providerErr.Body) > 0 {
+		if detail := providerErrorPayloadMessage(providerErr.Body); detail != "" {
+			return sanitize.TruncateErrorMessage(detail)
+		}
+	}
+
+	msg := strings.TrimSpace(err.Error())
+	if idx := strings.Index(msg, "{"); idx >= 0 {
+		if detail := providerErrorPayloadMessage([]byte(msg[idx:])); detail != "" {
+			return sanitize.TruncateErrorMessage(detail)
+		}
+	}
+	return sanitize.TruncateErrorMessage(msg)
+}
+
+func providerErrorPayloadMessage(body []byte) string {
+	var payload struct {
+		Error   interface{} `json:"error"`
+		Message string      `json:"message"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	switch e := payload.Error.(type) {
+	case string:
+		return strings.TrimSpace(e)
+	case map[string]interface{}:
+		if msg, ok := e["message"].(string); ok {
+			return strings.TrimSpace(msg)
+		}
+	}
+	return strings.TrimSpace(payload.Message)
+}
+
 // handleStreamPath handles the streaming chat path (pre-record, establish stream, delegate).
-func (h *ChatHandler) handleStreamPath(c *gin.Context, req ChatCompletionRequest, providerReq *provider.ChatRequest, selectedProvider *models.Provider, userAPIKey *models.APIKey, projectObj *models.Project, start time.Time, trace observability.Trace, promptHash string, promptEmbedding []float32) {
+func (h *ChatHandler) handleStreamPath(c *gin.Context, req ChatCompletionRequest, providerReq *provider.ChatRequest, selectedProvider *models.Provider, apiKey *models.ProviderAPIKey, userAPIKey *models.APIKey, projectObj *models.Project, start time.Time, trace observability.Trace, promptHash string, promptEmbedding []float32) {
 	usageLog := &models.UsageLog{
 		UserID:     userAPIKey.UserID,
 		ProjectID:  projectObj.ID,
@@ -702,7 +751,7 @@ func (h *ChatHandler) handleStreamPath(c *gin.Context, req ChatCompletionRequest
 		h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", sanitize.LogValue(req.Model)))
 	}
 
-	streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, nil, providerReq, 3)
+	streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
 	if err != nil {
 		h.saveErrorLog(c.Request.Context(), err, req.TrajectoryID, trace.GetID(), selectedProvider.Name, req.Model)
 		h.logger.Error("failed to establish stream", zap.Error(err))
@@ -713,7 +762,7 @@ func (h *ChatHandler) handleStreamPath(c *gin.Context, req ChatCompletionRequest
 		}
 
 		c.JSON(http.StatusBadGateway, router_errs.NewRouterError(
-			router_errs.ErrCodeInternalSystemError, http.StatusBadGateway, "server_error", "upstream provider error: stream failed to initialize", err,
+			router_errs.ErrCodeInternalSystemError, http.StatusBadGateway, "server_error", upstreamFailureMessage("upstream provider error: stream failed to initialize", err), err,
 		).MapToOpenAIResponse())
 		return
 	}
@@ -758,7 +807,7 @@ func (h *ChatHandler) handleNonStreamResponse(c *gin.Context, req ChatCompletion
 			zap.Error(err),
 		)
 		c.JSON(http.StatusBadGateway, router_errs.NewRouterError(
-			router_errs.ErrCodeInternalSystemError, http.StatusBadGateway, "server_error", "upstream provider error: request failed", err,
+			router_errs.ErrCodeInternalSystemError, http.StatusBadGateway, "server_error", upstreamFailureMessage("upstream provider error: request failed", err), err,
 		).MapToOpenAIResponse())
 		return
 	}

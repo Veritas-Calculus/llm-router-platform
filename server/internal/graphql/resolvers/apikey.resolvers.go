@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -68,6 +69,53 @@ func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, n
 		DailyLimit: key.DailyLimit,
 		ExpiresAt:  &key.ExpiresAt,
 		CreatedAt:  key.CreatedAt,
+	}, nil
+}
+
+// CreatePlaygroundToken is the resolver for the createPlaygroundToken field.
+func (r *mutationResolver) CreatePlaygroundToken(ctx context.Context, apiKeyID string) (*model.PlaygroundToken, error) {
+	uid, _ := directives.UserIDFromContext(ctx)
+	keyID, err := uuid.Parse(apiKeyID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid API key ID")
+	}
+
+	key, err := r.UserSvc.GetAPIKeyByID(ctx, keyID)
+	if err != nil || key == nil {
+		return nil, fmt.Errorf("API key not found")
+	}
+
+	if err := r.UserSvc.RequireProjectRole(ctx, uid, key.ProjectID.String(), "OWNER", "ADMIN", "MEMBER"); err != nil {
+		return nil, err
+	}
+	if !key.IsActive {
+		return nil, fmt.Errorf("API key is disabled")
+	}
+	if !key.ExpiresAt.IsZero() && key.ExpiresAt.Before(time.Now()) {
+		return nil, fmt.Errorf("API key has expired")
+	}
+
+	now := time.Now()
+	expiresAt := now.Add(15 * time.Minute)
+	claims := jwt.MapClaims{
+		"sub":        uid,
+		"type":       "playground_api_key",
+		"api_key_id": key.ID.String(),
+		"project_id": key.ProjectID.String(),
+		"exp":        expiresAt.Unix(),
+		"iat":        now.Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString([]byte(r.Config().JWT.Secret))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create playground token")
+	}
+
+	return &model.PlaygroundToken{
+		Token:     signed,
+		ExpiresAt: expiresAt,
+		APIKeyID:  key.ID.String(),
+		ProjectID: key.ProjectID.String(),
 	}, nil
 }
 
@@ -182,11 +230,12 @@ func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string)
 	}
 
 	result := &model.APIKeyRateLimitStatus{
-		KeyID:      keyID,
-		RpmLimit:   apiKey.RateLimit,
-		TpmLimit:   int(apiKey.TokenLimit),
-		DailyLimit: apiKey.DailyLimit,
-		Status:     "ok",
+		KeyID:        keyID,
+		RpmLimit:     apiKey.RateLimit,
+		TpmLimit:     int(apiKey.TokenLimit),
+		DailyLimit:   apiKey.DailyLimit,
+		Status:       "ok",
+		StatusReason: "",
 	}
 
 	if r.RedisClient() != nil {
@@ -198,8 +247,9 @@ func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string)
 	if r.SubscriptionSvc != nil {
 		var proj struct{ OrgID uuid.UUID }
 		if err := r.AdminSvc.DB().Table("projects").Select("org_id").Where("id = ?", apiKey.ProjectID).First(&proj).Error; err == nil {
-			if allowed, _, _ := r.SubscriptionSvc.CheckQuota(ctx, proj.OrgID); !allowed {
+			if allowed, msg, _ := r.SubscriptionSvc.CheckQuota(ctx, proj.OrgID); !allowed {
 				result.Status = "quota_exceeded"
+				result.StatusReason = msg
 			}
 		}
 	}
@@ -276,4 +326,3 @@ func computeRateLimitStatus(result *model.APIKeyRateLimitStatus, apiKey *models.
 		result.Status = "near_limit"
 	}
 }
-

@@ -1,8 +1,15 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"llm-router-platform/internal/config"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -289,4 +296,99 @@ func TestFlexibleContentNullPreserved(t *testing.T) {
 	marshaled, err := fc.MarshalJSON()
 	require.NoError(t, err)
 	assert.Equal(t, "null", string(marshaled))
+}
+
+func TestLMStudioListModelsUsesNativeAPI(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"models":[{"type":"llm","key":"google/gemma-4-26b-a4b","display_name":"Gemma 4 26B A4B","max_context_length":8192,"loaded_instances":[]}]}`)
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := NewLMStudioClient(&config.ProviderConfig{BaseURL: server.URL + "/v1"}, zap.NewNop())
+	models, err := client.ListModels(context.Background())
+	require.NoError(t, err)
+	require.Len(t, models, 1)
+
+	assert.Equal(t, "google/gemma-4-26b-a4b", models[0].ID)
+	assert.Equal(t, "Gemma 4 26B A4B", models[0].Name)
+	assert.JSONEq(t, `false`, string(models[0].Extra["loaded"]))
+	assert.JSONEq(t, `8192`, string(models[0].Extra["max_tokens"]))
+}
+
+func TestLMStudioChatAutoLoadsModel(t *testing.T) {
+	loadCalled := false
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"models":[{"type":"llm","key":"local/test","display_name":"Local Test","loaded_instances":[]}]}`)
+	})
+	mux.HandleFunc("/api/v1/models/load", func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		var payload map[string]interface{}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		assert.Equal(t, "local/test", payload["model"])
+		loadCalled = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"type":"llm","instance_id":"local/test","status":"loaded"}`)
+	})
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		require.True(t, loadCalled, "LM Studio model should load before chat request")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"chatcmpl-test","model":"local/test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := NewLMStudioClient(&config.ProviderConfig{BaseURL: server.URL + "/v1"}, zap.NewNop())
+	resp, err := client.Chat(context.Background(), &ChatRequest{
+		Model:    "local/test",
+		Messages: []Message{{Role: "user", Content: StringContent("hi")}},
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "chatcmpl-test", resp.ID)
+	assert.True(t, loadCalled)
+}
+
+func TestOllamaChatPreloadsModel(t *testing.T) {
+	preloadCalled := false
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/generate", func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.Contains(t, string(body), `"model":"llama3.2"`)
+		assert.Contains(t, string(body), `"prompt":""`)
+		assert.Contains(t, string(body), `"keep_alive":"30m"`)
+		preloadCalled = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"model":"llama3.2","done":true}`)
+	})
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		require.True(t, preloadCalled, "Ollama model should preload before chat request")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"chatcmpl-test","model":"llama3.2","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	})
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := NewOllamaClient(&config.ProviderConfig{BaseURL: strings.TrimSuffix(server.URL, "/")}, zap.NewNop())
+	resp, err := client.Chat(context.Background(), &ChatRequest{
+		Model:    "llama3.2",
+		Messages: []Message{{Role: "user", Content: StringContent("hi")}},
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "chatcmpl-test", resp.ID)
+	assert.True(t, preloadCalled)
 }

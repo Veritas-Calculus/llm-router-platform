@@ -159,6 +159,7 @@ type ComplexityRoot struct {
 		RpmExceeded   func(childComplexity int) int
 		RpmLimit      func(childComplexity int) int
 		Status        func(childComplexity int) int
+		StatusReason  func(childComplexity int) int
 		TpmCurrent    func(childComplexity int) int
 		TpmExceeded   func(childComplexity int) int
 		TpmLimit      func(childComplexity int) int
@@ -548,6 +549,7 @@ type ComplexityRoot struct {
 		CreateModel                  func(childComplexity int, providerID string, input model.ModelInput) int
 		CreateNotificationChannel    func(childComplexity int, input model.NotificationChannelInput) int
 		CreatePlan                   func(childComplexity int, input model.PlanInput) int
+		CreatePlaygroundToken        func(childComplexity int, apiKeyID string) int
 		CreatePromptTemplate         func(childComplexity int, input model.PromptTemplateInput) int
 		CreatePromptVersion          func(childComplexity int, input model.PromptVersionInput) int
 		CreateProvider               func(childComplexity int, input model.CreateProviderInput) int
@@ -683,6 +685,13 @@ type ComplexityRoot struct {
 		RateLimit    func(childComplexity int) int
 		SupportLevel func(childComplexity int) int
 		TokenLimit   func(childComplexity int) int
+	}
+
+	PlaygroundToken struct {
+		APIKeyID  func(childComplexity int) int
+		ExpiresAt func(childComplexity int) int
+		ProjectID func(childComplexity int) int
+		Token     func(childComplexity int) int
 	}
 
 	Project struct {
@@ -1233,6 +1242,7 @@ type MutationResolver interface {
 	VerifyAndEnableMfa(ctx context.Context, code string) (bool, error)
 	DisableMfa(ctx context.Context, code string) (bool, error)
 	CreateAPIKey(ctx context.Context, projectID string, name string, scopes *string, rateLimit *int, tokenLimit *int) (*model.APIKeyWithSecret, error)
+	CreatePlaygroundToken(ctx context.Context, apiKeyID string) (*model.PlaygroundToken, error)
 	UpdateAPIKey(ctx context.Context, id string, name *string, scopes *string, rateLimit *int, tokenLimit *int, isActive *bool) (*model.APIKey, error)
 	RevokeAPIKey(ctx context.Context, projectID string, id string) (*model.APIKey, error)
 	DeleteAPIKey(ctx context.Context, projectID string, id string) (bool, error)
@@ -1992,6 +2002,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ApiKeyRateLimitStatus.Status(childComplexity), true
+	case "ApiKeyRateLimitStatus.statusReason":
+		if e.ComplexityRoot.ApiKeyRateLimitStatus.StatusReason == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyRateLimitStatus.StatusReason(childComplexity), true
 	case "ApiKeyRateLimitStatus.tpmCurrent":
 		if e.ComplexityRoot.ApiKeyRateLimitStatus.TpmCurrent == nil {
 			break
@@ -3797,6 +3813,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.CreatePlan(childComplexity, args["input"].(model.PlanInput)), true
+	case "Mutation.createPlaygroundToken":
+		if e.ComplexityRoot.Mutation.CreatePlaygroundToken == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_createPlaygroundToken_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.CreatePlaygroundToken(childComplexity, args["apiKeyId"].(string)), true
 	case "Mutation.createPromptTemplate":
 		if e.ComplexityRoot.Mutation.CreatePromptTemplate == nil {
 			break
@@ -4912,6 +4939,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Plan.TokenLimit(childComplexity), true
+
+	case "PlaygroundToken.apiKeyId":
+		if e.ComplexityRoot.PlaygroundToken.APIKeyID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PlaygroundToken.APIKeyID(childComplexity), true
+	case "PlaygroundToken.expiresAt":
+		if e.ComplexityRoot.PlaygroundToken.ExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PlaygroundToken.ExpiresAt(childComplexity), true
+	case "PlaygroundToken.projectId":
+		if e.ComplexityRoot.PlaygroundToken.ProjectID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PlaygroundToken.ProjectID(childComplexity), true
+	case "PlaygroundToken.token":
+		if e.ComplexityRoot.PlaygroundToken.Token == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PlaygroundToken.Token(childComplexity), true
 
 	case "Project.createdAt":
 		if e.ComplexityRoot.Project.CreatedAt == nil {
@@ -7785,6 +7837,7 @@ type Mutation {
 
   # ── API Keys & Projects ──
   createApiKey(projectId: ID!, name: String!, scopes: String, rateLimit: Int, tokenLimit: Int): ApiKeyWithSecret! @auth
+  createPlaygroundToken(apiKeyId: ID!): PlaygroundToken! @auth
   updateApiKey(id: ID!, name: String, scopes: String, rateLimit: Int, tokenLimit: Int, isActive: Boolean): ApiKey! @auth
   revokeApiKey(projectId: ID!, id: ID!): ApiKey! @auth
   deleteApiKey(projectId: ID!, id: ID!): Boolean! @auth
@@ -9269,6 +9322,7 @@ type ApiKeyRateLimitStatus {
   dailyLimit: Int!
   dailyExceeded: Boolean!
   status: String!
+  statusReason: String!
 }
 
 type ApiKeyWithSecret {
@@ -9285,6 +9339,13 @@ type ApiKeyWithSecret {
   dailyLimit: Int!
   expiresAt: DateTime
   createdAt: DateTime!
+}
+
+type PlaygroundToken {
+  token: String!
+  expiresAt: DateTime!
+  apiKeyId: ID!
+  projectId: ID!
 }
 
 type UserConnection {
@@ -9683,6 +9744,17 @@ func (ec *executionContext) field_Mutation_createPlan_args(ctx context.Context, 
 		return nil, err
 	}
 	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_createPlaygroundToken_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "apiKeyId", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["apiKeyId"] = arg0
 	return args, nil
 }
 
@@ -14245,6 +14317,35 @@ func (ec *executionContext) _ApiKeyRateLimitStatus_status(ctx context.Context, f
 }
 
 func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ApiKeyRateLimitStatus",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ApiKeyRateLimitStatus_statusReason(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyRateLimitStatus) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ApiKeyRateLimitStatus_statusReason,
+		func(ctx context.Context) (any, error) {
+			return obj.StatusReason, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ApiKeyRateLimitStatus_statusReason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "ApiKeyRateLimitStatus",
 		Field:      field,
@@ -22830,6 +22931,75 @@ func (ec *executionContext) fieldContext_Mutation_createApiKey(ctx context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_createPlaygroundToken(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_createPlaygroundToken,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().CreatePlaygroundToken(ctx, fc.Args["apiKeyId"].(string))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				role, err := ec.unmarshalORole2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐRole(ctx, "USER")
+				if err != nil {
+					var zeroVal *model.PlaygroundToken
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.PlaygroundToken
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, role)
+			}
+
+			next = directive1
+			return next
+		},
+		ec.marshalNPlaygroundToken2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐPlaygroundToken,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_createPlaygroundToken(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "token":
+				return ec.fieldContext_PlaygroundToken_token(ctx, field)
+			case "expiresAt":
+				return ec.fieldContext_PlaygroundToken_expiresAt(ctx, field)
+			case "apiKeyId":
+				return ec.fieldContext_PlaygroundToken_apiKeyId(ctx, field)
+			case "projectId":
+				return ec.fieldContext_PlaygroundToken_projectId(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type PlaygroundToken", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_createPlaygroundToken_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_updateApiKey(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -30803,6 +30973,122 @@ func (ec *executionContext) fieldContext_Plan_features(_ context.Context, field 
 	return fc, nil
 }
 
+func (ec *executionContext) _PlaygroundToken_token(ctx context.Context, field graphql.CollectedField, obj *model.PlaygroundToken) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PlaygroundToken_token,
+		func(ctx context.Context) (any, error) {
+			return obj.Token, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PlaygroundToken_token(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PlaygroundToken",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PlaygroundToken_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.PlaygroundToken) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PlaygroundToken_expiresAt,
+		func(ctx context.Context) (any, error) {
+			return obj.ExpiresAt, nil
+		},
+		nil,
+		ec.marshalNDateTime2timeᚐTime,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PlaygroundToken_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PlaygroundToken",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type DateTime does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PlaygroundToken_apiKeyId(ctx context.Context, field graphql.CollectedField, obj *model.PlaygroundToken) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PlaygroundToken_apiKeyId,
+		func(ctx context.Context) (any, error) {
+			return obj.APIKeyID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PlaygroundToken_apiKeyId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PlaygroundToken",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PlaygroundToken_projectId(ctx context.Context, field graphql.CollectedField, obj *model.PlaygroundToken) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_PlaygroundToken_projectId,
+		func(ctx context.Context) (any, error) {
+			return obj.ProjectID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_PlaygroundToken_projectId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PlaygroundToken",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Project_id(ctx context.Context, field graphql.CollectedField, obj *model.Project) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -34297,6 +34583,8 @@ func (ec *executionContext) fieldContext_Query_apiKeyRateLimitStatus(ctx context
 				return ec.fieldContext_ApiKeyRateLimitStatus_dailyExceeded(ctx, field)
 			case "status":
 				return ec.fieldContext_ApiKeyRateLimitStatus_status(ctx, field)
+			case "statusReason":
+				return ec.fieldContext_ApiKeyRateLimitStatus_statusReason(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type ApiKeyRateLimitStatus", field.Name)
 		},
@@ -50499,6 +50787,11 @@ func (ec *executionContext) _ApiKeyRateLimitStatus(ctx context.Context, sel ast.
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "statusReason":
+			out.Values[i] = ec._ApiKeyRateLimitStatus_statusReason(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -53009,6 +53302,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "createPlaygroundToken":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createPlaygroundToken(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "updateApiKey":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_updateApiKey(ctx, field)
@@ -53996,6 +54296,60 @@ func (ec *executionContext) _Plan(ctx context.Context, sel ast.SelectionSet, obj
 			}
 		case "features":
 			out.Values[i] = ec._Plan_features(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var playgroundTokenImplementors = []string{"PlaygroundToken"}
+
+func (ec *executionContext) _PlaygroundToken(ctx context.Context, sel ast.SelectionSet, obj *model.PlaygroundToken) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, playgroundTokenImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PlaygroundToken")
+		case "token":
+			out.Values[i] = ec._PlaygroundToken_token(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._PlaygroundToken_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "apiKeyId":
+			out.Values[i] = ec._PlaygroundToken_apiKeyId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "projectId":
+			out.Values[i] = ec._PlaygroundToken_projectId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -60408,6 +60762,20 @@ func (ec *executionContext) marshalNPlan2ᚖllmᚑrouterᚑplatformᚋinternal�
 func (ec *executionContext) unmarshalNPlanInput2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐPlanInput(ctx context.Context, v any) (model.PlanInput, error) {
 	res, err := ec.unmarshalInputPlanInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNPlaygroundToken2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐPlaygroundToken(ctx context.Context, sel ast.SelectionSet, v model.PlaygroundToken) graphql.Marshaler {
+	return ec._PlaygroundToken(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPlaygroundToken2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐPlaygroundToken(ctx context.Context, sel ast.SelectionSet, v *model.PlaygroundToken) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PlaygroundToken(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNProject2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐProject(ctx context.Context, sel ast.SelectionSet, v model.Project) graphql.Marshaler {
