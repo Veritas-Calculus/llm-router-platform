@@ -12,6 +12,11 @@ type Model {
   pricePerSecond: Float
   pricePerImage: Float
   pricePerMinute: Float
+  providerInputCostPer1k: Float!
+  providerOutputCostPer1k: Float!
+  providerCostPerSecond: Float
+  providerCostPerImage: Float
+  providerCostPerMinute: Float
   maxTokens: Int!
   isActive: Boolean!
   createdAt: DateTime!
@@ -25,6 +30,11 @@ input ModelInput {
   pricePerSecond: Float
   pricePerImage: Float
   pricePerMinute: Float
+  providerInputCostPer1k: Float
+  providerOutputCostPer1k: Float
+  providerCostPerSecond: Float
+  providerCostPerImage: Float
+  providerCostPerMinute: Float
   maxTokens: Int
   isActive: Boolean
 }

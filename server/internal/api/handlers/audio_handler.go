@@ -110,13 +110,15 @@ func (h *ChatHandler) TranscribeAudio(c *gin.Context) {
 
 	latency := time.Since(start)
 	usageLog := &models.UsageLog{
-		UserID:     userAPIKey.UserID,
-		ProjectID:  projectObj.ID,
-		APIKeyID:   userAPIKey.ID,
-		ProviderID: selectedProvider.ID,
-		ModelName:  model,
-		Latency:    latency.Milliseconds(),
-		StatusCode: http.StatusOK,
+		UserID:         userAPIKey.UserID,
+		ProjectID:      projectObj.ID,
+		Channel:        userAPIKey.Channel,
+		APIKeyID:       userAPIKey.ID,
+		ProviderID:     selectedProvider.ID,
+		ModelName:      model,
+		BytesProcessed: int64(len(fileBytes)),
+		Latency:        latency.Milliseconds(),
+		StatusCode:     http.StatusOK,
 	}
 	if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
 		h.logger.Warn("billing record failed", zap.Error(err))

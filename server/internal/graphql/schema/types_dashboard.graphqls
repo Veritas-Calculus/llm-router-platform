@@ -76,6 +76,54 @@ type RevenueChartPoint {
   transactions: Int!
 }
 
+type FinancialDashboard {
+  periodStart: DateTime!
+  periodEnd: DateTime!
+  cashRevenue: Float!
+  netCashRevenue: Float!
+  subscriptionRevenue: Float!
+  topUpRevenue: Float!
+  usageRevenue: Float!
+  providerCost: Float!
+  grossProfit: Float!
+  grossMargin: Float!
+  refundAmount: Float!
+  creditGrants: Float!
+  outstandingBalance: Float!
+  paidOrders: Int!
+  activeSubscriptions: Int!
+  payingCustomers: Int!
+  arpu: Float!
+  daily: [FinancialDailyPoint!]!
+  paymentBreakdown: [FinancialBreakdown!]!
+  providerBreakdown: [FinancialProviderBreakdown!]!
+}
+
+type FinancialDailyPoint {
+  date: String!
+  cashRevenue: Float!
+  usageRevenue: Float!
+  providerCost: Float!
+  grossProfit: Float!
+  orders: Int!
+  requests: Int!
+}
+
+type FinancialBreakdown {
+  name: String!
+  amount: Float!
+  count: Int!
+}
+
+type FinancialProviderBreakdown {
+  providerName: String!
+  requests: Int!
+  usageRevenue: Float!
+  providerCost: Float!
+  grossProfit: Float!
+  grossMargin: Float!
+}
+
 type UserGrowthPoint {
   date: String!
   newUsers: Int!

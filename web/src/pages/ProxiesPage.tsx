@@ -9,12 +9,14 @@ import {
 import ProxyTable from '@/components/proxies/ProxyTable';
 import ProxyFormModal from '@/components/proxies/ProxyFormModal';
 import BatchImportModal from '@/components/proxies/BatchImportModal';
+import ProxyPoolsPanel from '@/components/proxies/ProxyPoolsPanel';
 import { useProxies } from '@/hooks/useProxies';
 
 function ProxiesPage() {
   const {
     fileInputRef,
     proxies,
+    proxyPools,
     loading,
     showModal,
     showBatchModal,
@@ -24,6 +26,8 @@ function ProxiesPage() {
     saving,
     batchInput,
     setBatchInput,
+    batchPoolId,
+    setBatchPoolId,
     batchImporting,
     testingId,
     testingAll,
@@ -31,6 +35,11 @@ function ProxiesPage() {
     deleteConfirmId,
     setDeleteConfirmId,
     deleting,
+    poolDraft,
+    setPoolDraft,
+    creatingPool,
+    updatingPoolId,
+    deletingPoolId,
     openCreateModal,
     openEditModal,
     openBatchModal,
@@ -43,6 +52,9 @@ function ProxiesPage() {
     handleConfirmDelete,
     handleToggle,
     handleFileUpload,
+    handleCreatePool,
+    handleTogglePool,
+    handleDeletePool,
   } = useProxies();
 
   if (loading) {
@@ -80,6 +92,18 @@ function ProxiesPage() {
         )}
       </div>
 
+      <ProxyPoolsPanel
+        proxyPools={proxyPools}
+        poolDraft={poolDraft}
+        creatingPool={creatingPool}
+        updatingPoolId={updatingPoolId}
+        deletingPoolId={deletingPoolId}
+        onDraftChange={setPoolDraft}
+        onCreatePool={handleCreatePool}
+        onTogglePool={handleTogglePool}
+        onDeletePool={handleDeletePool}
+      />
+
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card overflow-x-auto">
         {proxies.length === 0 ? (
           <div className="text-center py-16">
@@ -116,6 +140,7 @@ function ProxiesPage() {
         editingProxy={editingProxy}
         formData={formData}
         proxies={proxies}
+        proxyPools={proxyPools}
         saving={saving}
         onFormChange={setFormData}
         onSubmit={handleSubmit}
@@ -125,8 +150,11 @@ function ProxiesPage() {
       <BatchImportModal
         isOpen={showBatchModal}
         batchInput={batchInput}
+        proxyPools={proxyPools}
+        selectedPoolId={batchPoolId}
         importing={batchImporting}
         onInputChange={setBatchInput}
+        onPoolChange={setBatchPoolId}
         onImport={handleBatchImport}
         onClose={closeBatchModal}
       />

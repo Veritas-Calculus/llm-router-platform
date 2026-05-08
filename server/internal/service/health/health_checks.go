@@ -78,7 +78,7 @@ func (s *Service) CheckSingleAPIKey(ctx context.Context, id uuid.UUID) (*APIKeyH
 	}
 
 	// Create client dynamically using the provider API key
-	client, err := s.getProviderClient(p, key)
+	client, err := s.getProviderClient(ctx, p, key)
 	if err != nil {
 		return &APIKeyHealthStatus{
 			ID:        key.ID,

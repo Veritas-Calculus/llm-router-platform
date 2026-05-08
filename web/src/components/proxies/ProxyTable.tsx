@@ -82,6 +82,7 @@ export default function ProxyTable({
             <th className="table-header">URL</th>
             <th className="table-header">Type</th>
             <th className="table-header">Region</th>
+            <th className="table-header">Pool</th>
             <th className="table-header">Status</th>
             <th className="table-header">Health</th>
             <th className="table-header">Success Rate</th>
@@ -119,6 +120,15 @@ export default function ProxyTable({
                 </td>
                 <td className="table-cell uppercase text-sm">{proxy.type}</td>
                 <td className="table-cell">{proxy.region || '-'}</td>
+                <td className="table-cell">
+                  {proxy.pool_name ? (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-50 text-apple-blue text-xs font-medium">
+                      {proxy.pool_name}
+                    </span>
+                  ) : (
+                    <span className="text-apple-gray-400">-</span>
+                  )}
+                </td>
                 <td className="table-cell">
                   <button
                     onClick={() => onToggle(proxy.id)}

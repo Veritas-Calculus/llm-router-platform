@@ -100,25 +100,18 @@ func (s *Service) CheckSingleProvider(ctx context.Context, id uuid.UUID) (*Provi
 			zap.Bool("use_proxy", p.UseProxy))
 
 		// Create client dynamically
-		client, err := s.getProviderClient(p, apiKey)
+		client, err := s.getProviderClient(ctx, p, apiKey)
 		if err != nil {
 			healthy = false
 			errorMsg = "failed to create provider client: " + err.Error()
 			s.logger.Error("failed to create provider client", zap.Error(err))
 		} else {
-			// Check health using proxy if enabled
-			if p.UseProxy {
-				s.logger.Info("checking health with proxy", zap.String("provider", p.Name))
-				healthy, latency, errorMsg = s.checkWithProxy(ctx, p, apiKey)
+			healthy, latency, err = client.CheckHealth(ctx)
+			if err != nil {
+				errorMsg = err.Error()
+				s.logger.Error("health check failed", zap.String("provider", p.Name), zap.Error(err))
 			} else {
-				s.logger.Info("checking health directly", zap.String("provider", p.Name))
-				healthy, latency, err = client.CheckHealth(ctx)
-				if err != nil {
-					errorMsg = err.Error()
-					s.logger.Error("health check failed", zap.String("provider", p.Name), zap.Error(err))
-				} else {
-					s.logger.Info("health check completed", zap.String("provider", p.Name), zap.Bool("healthy", healthy), zap.Duration("latency", latency))
-				}
+				s.logger.Info("health check completed", zap.String("provider", p.Name), zap.Bool("healthy", healthy), zap.Duration("latency", latency))
 			}
 		}
 	}

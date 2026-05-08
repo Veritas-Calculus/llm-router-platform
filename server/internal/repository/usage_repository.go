@@ -130,7 +130,7 @@ func (r *UsageLogRepository) AggregateByTimeRange(ctx context.Context, orgID *uu
 	query := r.db.WithContext(ctx).Model(&models.UsageLog{}).
 		Select(`COUNT(usage_logs.id) AS total_requests,
 				COALESCE(SUM(usage_logs.total_tokens), 0) AS total_tokens,
-				COALESCE(SUM(usage_logs.cost), 0) AS total_cost,
+				COALESCE(SUM(COALESCE(usage_logs.customer_charge, usage_logs.cost, 0)), 0) AS total_cost,
 				COALESCE(AVG(usage_logs.latency), 0) AS avg_latency,
 				COALESCE(SUM(CASE WHEN usage_logs.status_code >= 200 AND usage_logs.status_code < 300 THEN 1 ELSE 0 END), 0) AS success_count,
 				COALESCE(SUM(CASE WHEN usage_logs.status_code < 200 OR usage_logs.status_code >= 300 THEN 1 ELSE 0 END), 0) AS error_count,
@@ -169,7 +169,7 @@ func (r *UsageLogRepository) AggregateDailyByTimeRange(ctx context.Context, orgI
 		Select(`TO_CHAR(usage_logs.created_at, 'YYYY-MM-DD') AS date,
 				COUNT(usage_logs.id) AS requests,
 				COALESCE(SUM(usage_logs.total_tokens), 0) AS tokens,
-				COALESCE(SUM(usage_logs.cost), 0) AS cost`).
+				COALESCE(SUM(COALESCE(usage_logs.customer_charge, usage_logs.cost, 0)), 0) AS cost`).
 		Where("usage_logs.created_at >= ? AND usage_logs.created_at <= ?", start, end).
 		Group("TO_CHAR(usage_logs.created_at, 'YYYY-MM-DD')").
 		Order("date")
@@ -210,7 +210,7 @@ func (r *UsageLogRepository) AggregateByProviderByTimeRange(ctx context.Context,
 				COALESCE(providers.name, '') AS provider_name,
 				COUNT(usage_logs.id) AS requests,
 				COALESCE(SUM(usage_logs.total_tokens), 0) AS tokens,
-				COALESCE(SUM(usage_logs.cost), 0) AS cost,
+				COALESCE(SUM(COALESCE(usage_logs.customer_charge, usage_logs.cost, 0)), 0) AS cost,
 				CASE WHEN COUNT(usage_logs.id) > 0
 					THEN COALESCE(SUM(CASE WHEN usage_logs.status_code >= 200 AND usage_logs.status_code < 300 THEN 1 ELSE 0 END), 0) * 100.0 / COUNT(usage_logs.id)
 					ELSE 0 END AS success_rate,
@@ -238,11 +238,11 @@ func (r *UsageLogRepository) AggregateByProviderByTimeRange(ctx context.Context,
 type ModelUsageRow struct {
 	ModelID      uuid.UUID `json:"model_id"`
 	ModelName    string    `json:"model_name"`
-	Requests     int64    `json:"requests"`
-	InputTokens  int64    `json:"input_tokens"`
-	OutputTokens int64    `json:"output_tokens"`
-	TotalTokens  int64    `json:"total_tokens"`
-	Cost         float64  `json:"cost"`
+	Requests     int64     `json:"requests"`
+	InputTokens  int64     `json:"input_tokens"`
+	OutputTokens int64     `json:"output_tokens"`
+	TotalTokens  int64     `json:"total_tokens"`
+	Cost         float64   `json:"cost"`
 }
 
 // AggregateByModelByTimeRange returns usage grouped by model name (SQL GROUP BY).
@@ -254,7 +254,7 @@ func (r *UsageLogRepository) AggregateByModelByTimeRange(ctx context.Context, or
 				COALESCE(SUM(usage_logs.request_tokens), 0) AS input_tokens,
 				COALESCE(SUM(usage_logs.response_tokens), 0) AS output_tokens,
 				COALESCE(SUM(usage_logs.total_tokens), 0) AS total_tokens,
-				COALESCE(SUM(usage_logs.cost), 0) AS cost`).
+				COALESCE(SUM(COALESCE(usage_logs.customer_charge, usage_logs.cost, 0)), 0) AS cost`).
 		Where("usage_logs.created_at >= ? AND usage_logs.created_at <= ?", start, end).
 		Where("usage_logs.model_name != ''").
 		Group("usage_logs.model_id, usage_logs.model_name")

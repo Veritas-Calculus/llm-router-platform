@@ -44,7 +44,9 @@ func NewService(proxyRepo *repository.ProxyRepository, logger *zap.Logger) *Serv
 }
 
 // Create adds a new proxy.
-func (s *Service) Create(ctx context.Context, proxyURL, proxyType, region, username, password string, upstreamProxyID *uuid.UUID) (*models.Proxy, error) {
+func (s *Service) Create(ctx context.Context, proxyURL, proxyType, region, username, password string, upstreamProxyID *uuid.UUID, poolID *uuid.UUID) (*models.Proxy, error) {
+	proxyURL, username, password = splitProxyCredentials(proxyURL, proxyType, username, password)
+
 	// Encrypt password if provided
 	encryptedPassword := password
 	if password != "" {
@@ -54,6 +56,7 @@ func (s *Service) Create(ctx context.Context, proxyURL, proxyType, region, usern
 	}
 
 	proxy := &models.Proxy{
+		PoolID:          poolID,
 		URL:             proxyURL,
 		Type:            proxyType,
 		Region:          region,
@@ -87,7 +90,9 @@ func (s *Service) GetByID(ctx context.Context, id uuid.UUID) (*models.Proxy, err
 }
 
 // Update updates a proxy.
-func (s *Service) Update(ctx context.Context, id uuid.UUID, proxyURL, proxyType, region string, isActive bool, username, password string, upstreamProxyID *uuid.UUID) (*models.Proxy, error) {
+func (s *Service) Update(ctx context.Context, id uuid.UUID, proxyURL, proxyType, region string, isActive bool, username, password string, upstreamProxyID *uuid.UUID, poolID *uuid.UUID) (*models.Proxy, error) {
+	proxyURL, username, password = splitProxyCredentials(proxyURL, proxyType, username, password)
+
 	proxy, err := s.proxyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -99,6 +104,7 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, proxyURL, proxyType,
 	proxy.IsActive = isActive
 	proxy.Username = username
 	proxy.UpstreamProxyID = upstreamProxyID
+	proxy.PoolID = poolID
 	if password != "" {
 		// Encrypt password before storing
 		if encrypted, err := crypto.Encrypt(password); err == nil {
@@ -112,6 +118,86 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, proxyURL, proxyType,
 		return nil, err
 	}
 	return proxy, nil
+}
+
+func splitProxyCredentials(proxyURL, proxyType, username, password string) (string, string, string) {
+	normalized := proxyURL
+	addedScheme := false
+	scheme := proxyType
+	if scheme == "" {
+		scheme = "http"
+	}
+	if !strings.Contains(normalized, "://") {
+		normalized = scheme + "://" + normalized
+		addedScheme = true
+	}
+	parsed, err := url.Parse(normalized)
+	if err != nil || parsed.User == nil {
+		return proxyURL, username, password
+	}
+	if username == "" {
+		username = parsed.User.Username()
+	}
+	if password == "" {
+		password, _ = parsed.User.Password()
+	}
+	parsed.User = nil
+	cleanURL := parsed.String()
+	if addedScheme {
+		cleanURL = strings.TrimPrefix(cleanURL, scheme+"://")
+	}
+	return cleanURL, username, password
+}
+
+// CreatePool creates a proxy pool.
+func (s *Service) CreatePool(ctx context.Context, name, description, strategy string) (*models.ProxyPool, error) {
+	if strategy == "" {
+		strategy = "weighted"
+	}
+	pool := &models.ProxyPool{
+		Name:        strings.TrimSpace(name),
+		Description: strings.TrimSpace(description),
+		IsActive:    true,
+		Strategy:    strategy,
+	}
+	if err := s.proxyRepo.CreatePool(ctx, pool); err != nil {
+		return nil, err
+	}
+	return pool, nil
+}
+
+// UpdatePool updates a proxy pool.
+func (s *Service) UpdatePool(ctx context.Context, id uuid.UUID, name, description, strategy string, isActive bool) (*models.ProxyPool, error) {
+	pool, err := s.proxyRepo.GetPoolByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	pool.Name = strings.TrimSpace(name)
+	pool.Description = strings.TrimSpace(description)
+	pool.Strategy = strategy
+	pool.IsActive = isActive
+	if pool.Strategy == "" {
+		pool.Strategy = "weighted"
+	}
+	if err := s.proxyRepo.UpdatePool(ctx, pool); err != nil {
+		return nil, err
+	}
+	return pool, nil
+}
+
+// DeletePool deletes a proxy pool and unassigns its proxies.
+func (s *Service) DeletePool(ctx context.Context, id uuid.UUID) error {
+	return s.proxyRepo.DeletePool(ctx, id)
+}
+
+// GetPools returns all proxy pools.
+func (s *Service) GetPools(ctx context.Context) ([]models.ProxyPool, error) {
+	return s.proxyRepo.GetPools(ctx)
+}
+
+// GetPoolByID returns a proxy pool.
+func (s *Service) GetPoolByID(ctx context.Context, id uuid.UUID) (*models.ProxyPool, error) {
+	return s.proxyRepo.GetPoolByID(ctx, id)
 }
 
 // Delete removes a proxy.

@@ -74,6 +74,7 @@ func (d *Database) Migrate() error {
 		&models.Provider{},
 		&models.Model{},
 		&models.ProviderAPIKey{},
+		&models.ProxyPool{},
 		&models.Proxy{},
 		&models.UsageLog{},
 		&models.HealthHistory{},

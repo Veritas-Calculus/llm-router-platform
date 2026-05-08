@@ -6,6 +6,7 @@ import ProviderInfoCard from '@/components/providers/ProviderInfoCard';
 import ApiKeyTable from '@/components/providers/ApiKeyTable';
 import ModelTable from '@/components/providers/ModelTable';
 import LocalProviderCard from '@/components/providers/LocalProviderCard';
+import ProxyTopologyGraph from '@/components/providers/ProxyTopologyGraph';
 import { useProviders } from '@/hooks/useProviders';
 import { useTranslation } from '@/lib/i18n';
 import toast from 'react-hot-toast';
@@ -327,6 +328,8 @@ function ProvidersPage() {
     setSelectedProvider,
     apiKeys,
     proxies,
+    proxyPools,
+    proxyTopology,
     loading,
     testing,
     healthStatus,
@@ -445,10 +448,17 @@ function ProvidersPage() {
                   />
                 )}
 
+                <ProxyTopologyGraph
+                  topology={proxyTopology}
+                  selectedProviderId={selectedProvider.id}
+                />
+
                 {selectedProvider.requires_api_key && (
                   <ApiKeyTable
                     providerName={selectedProvider.name}
                     apiKeys={apiKeys}
+                    proxies={proxies}
+                    proxyPools={proxyPools}
                     onAddKey={handleAddKey}
                     onUpdateKey={handleUpdateKey}
                     onToggleKey={handleToggleKey}

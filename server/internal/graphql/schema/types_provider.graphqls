@@ -20,6 +20,8 @@ type Provider {
 type ProviderApiKey {
   id: ID!
   providerId: ID!
+  proxyId: ID
+  proxyPoolId: ID
   alias: String!
   keyPrefix: String!
   isActive: Boolean!
@@ -50,12 +52,16 @@ input ProviderApiKeyInput {
   priority: Int
   weight: Float
   rateLimit: Int
+  proxyId: ID
+  proxyPoolId: ID
 }
 
 input UpdateProviderApiKeyInput {
   priority: Int
   weight: Float
   rateLimit: Int
+  proxyId: ID
+  proxyPoolId: ID
 }
 
 input CreateProviderInput {

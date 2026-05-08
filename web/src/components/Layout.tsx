@@ -35,6 +35,7 @@ import {
   BoltIcon,
   BellAlertIcon,
   MagnifyingGlassIcon,
+  BanknotesIcon,
 } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
@@ -95,6 +96,7 @@ const adminNavGroups = [
   {
     labelKey: 'nav.group_commerce',
     items: [
+      { key: 'nav.finance', href: '/admin/finance', icon: BanknotesIcon },
       { key: 'nav.admin_plans', href: '/admin/plans', icon: SparklesIcon },
       { key: 'nav.promotions', href: '/admin/promotions', icon: TicketIcon },
     ],

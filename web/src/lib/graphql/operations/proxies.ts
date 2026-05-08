@@ -5,7 +5,48 @@ import { gql } from '@apollo/client';
 export const PROXIES_QUERY = gql`
   query Proxies {
     proxies {
-      id url type region isActive weight successCount failureCount avgLatency lastChecked createdAt hasAuth upstreamProxyId
+      id poolId poolName url type region isActive weight successCount failureCount avgLatency lastChecked createdAt hasAuth upstreamProxyId
+    }
+  }
+`;
+
+export const PROXY_POOLS_QUERY = gql`
+  query ProxyPools {
+    proxyPools {
+      id name description isActive strategy proxyCount activeProxyCount createdAt
+    }
+  }
+`;
+
+export const PROXY_TOPOLOGY_QUERY = gql`
+  query ProxyTopology {
+    proxyTopology {
+      directAccounts
+      proxiedAccounts
+      providers {
+        provider { id name baseUrl isActive useProxy defaultProxyId requiresApiKey }
+        models
+        accounts {
+          label
+          bindingSource
+          apiKey {
+            id providerId proxyId proxyPoolId alias keyPrefix isActive priority weight rateLimit usageCount lastUsedAt createdAt
+          }
+          proxyPool { id name description isActive strategy proxyCount activeProxyCount createdAt }
+          candidateProxies {
+            id poolId poolName url type region isActive weight successCount failureCount avgLatency lastChecked createdAt hasAuth upstreamProxyId
+          }
+          route {
+            id type label status detail
+          }
+        }
+      }
+      proxyPools {
+        pool { id name description isActive strategy proxyCount activeProxyCount createdAt }
+        proxies {
+          id poolId poolName url type region isActive weight successCount failureCount avgLatency lastChecked createdAt hasAuth upstreamProxyId
+        }
+      }
     }
   }
 `;
@@ -13,8 +54,30 @@ export const PROXIES_QUERY = gql`
 export const CREATE_PROXY = gql`
   mutation CreateProxy($input: ProxyInput!) {
     createProxy(input: $input) {
-      id url type region isActive weight successCount failureCount avgLatency lastChecked createdAt hasAuth upstreamProxyId
+      id poolId poolName url type region isActive weight successCount failureCount avgLatency lastChecked createdAt hasAuth upstreamProxyId
     }
+  }
+`;
+
+export const CREATE_PROXY_POOL = gql`
+  mutation CreateProxyPool($input: ProxyPoolInput!) {
+    createProxyPool(input: $input) {
+      id name description isActive strategy proxyCount activeProxyCount createdAt
+    }
+  }
+`;
+
+export const UPDATE_PROXY_POOL = gql`
+  mutation UpdateProxyPool($id: ID!, $input: ProxyPoolInput!) {
+    updateProxyPool(id: $id, input: $input) {
+      id name description isActive strategy proxyCount activeProxyCount createdAt
+    }
+  }
+`;
+
+export const DELETE_PROXY_POOL = gql`
+  mutation DeleteProxyPool($id: ID!) {
+    deleteProxyPool(id: $id)
   }
 `;
 
@@ -22,7 +85,7 @@ export const BATCH_CREATE_PROXIES = gql`
   mutation BatchCreateProxies($input: BatchProxyInput!) {
     batchCreateProxies(input: $input) {
       success failed errors
-      proxies { id url type region isActive weight successCount failureCount avgLatency lastChecked createdAt hasAuth upstreamProxyId }
+      proxies { id poolId poolName url type region isActive weight successCount failureCount avgLatency lastChecked createdAt hasAuth upstreamProxyId }
     }
   }
 `;
@@ -30,7 +93,7 @@ export const BATCH_CREATE_PROXIES = gql`
 export const UPDATE_PROXY = gql`
   mutation UpdateProxy($id: ID!, $input: ProxyInput!) {
     updateProxy(id: $id, input: $input) {
-      id url type region isActive weight successCount failureCount avgLatency lastChecked createdAt hasAuth upstreamProxyId
+      id poolId poolName url type region isActive weight successCount failureCount avgLatency lastChecked createdAt hasAuth upstreamProxyId
     }
   }
 `;

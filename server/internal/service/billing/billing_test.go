@@ -54,9 +54,58 @@ func TestCostCalculation(t *testing.T) {
 	assert.InDelta(t, 0.15, totalCost, 0.001)
 }
 
+func TestCalculateCustomerChargeIncludesMeteredDimensions(t *testing.T) {
+	svc := &Service{}
+	model := &models.Model{
+		InputPricePer1K:  0.01,
+		OutputPricePer1K: 0.02,
+		PricePerSecond:   0.001,
+		PricePerImage:    0.04,
+		PricePerMinute:   0.03,
+	}
+	log := &models.UsageLog{
+		RequestTokens:  1000,
+		ResponseTokens: 500,
+		DurationMs:     90000,
+		ItemCount:      2,
+	}
+
+	cost := svc.calculateCustomerCharge(model, log)
+
+	assert.InDelta(t, 0.235, cost, 0.0001)
+}
+
+func TestCalculateProviderCostFallsBackWhenRatesMissing(t *testing.T) {
+	svc := &Service{}
+	model := &models.Model{}
+	log := &models.UsageLog{RequestTokens: 1000}
+
+	cost := svc.calculateProviderCost(model, log, 0.42)
+
+	assert.InDelta(t, 0.42, cost, 0.0001)
+}
+
+func TestCalculateProviderCostUsesProviderRates(t *testing.T) {
+	svc := &Service{}
+	model := &models.Model{
+		ProviderInputCostPer1K:  0.004,
+		ProviderOutputCostPer1K: 0.008,
+		ProviderCostPerImage:    0.02,
+	}
+	log := &models.UsageLog{
+		RequestTokens:  1000,
+		ResponseTokens: 500,
+		ItemCount:      2,
+	}
+
+	cost := svc.calculateProviderCost(model, log, 0.50)
+
+	assert.InDelta(t, 0.048, cost, 0.0001)
+}
+
 func TestUsageLogModel(t *testing.T) {
 	log := models.UsageLog{
-		ProjectID:         uuid.New(),
+		ProjectID:      uuid.New(),
 		APIKeyID:       uuid.New(),
 		ProviderID:     uuid.New(),
 		RequestTokens:  100,

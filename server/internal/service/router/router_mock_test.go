@@ -108,10 +108,25 @@ func (m *mockProxyRepo) Create(_ context.Context, _ *models.Proxy) error { retur
 func (m *mockProxyRepo) GetByID(_ context.Context, _ uuid.UUID) (*models.Proxy, error) {
 	return nil, errors.New("not found")
 }
+func (m *mockProxyRepo) GetByPoolID(_ context.Context, _ uuid.UUID) ([]models.Proxy, error) {
+	return nil, nil
+}
+func (m *mockProxyRepo) GetActiveByPoolID(_ context.Context, _ uuid.UUID) ([]models.Proxy, error) {
+	return nil, nil
+}
 func (m *mockProxyRepo) GetActive(_ context.Context) ([]models.Proxy, error) { return nil, nil }
 func (m *mockProxyRepo) GetAll(_ context.Context) ([]models.Proxy, error)    { return nil, nil }
 func (m *mockProxyRepo) Update(_ context.Context, _ *models.Proxy) error     { return nil }
 func (m *mockProxyRepo) Delete(_ context.Context, _ uuid.UUID) error         { return nil }
+func (m *mockProxyRepo) CreatePool(_ context.Context, _ *models.ProxyPool) error {
+	return nil
+}
+func (m *mockProxyRepo) GetPools(_ context.Context) ([]models.ProxyPool, error) { return nil, nil }
+func (m *mockProxyRepo) GetPoolByID(_ context.Context, _ uuid.UUID) (*models.ProxyPool, error) {
+	return nil, errors.New("not found")
+}
+func (m *mockProxyRepo) UpdatePool(_ context.Context, _ *models.ProxyPool) error { return nil }
+func (m *mockProxyRepo) DeletePool(_ context.Context, _ uuid.UUID) error         { return nil }
 
 type mockModelRepo struct {
 	models map[uuid.UUID][]models.Model // providerID -> models
@@ -133,6 +148,14 @@ func (m *mockModelRepo) GetByName(_ context.Context, name string) (*models.Model
 			if mods[i].Name == name {
 				return &mods[i], nil
 			}
+		}
+	}
+	return nil, errors.New("not found")
+}
+func (m *mockModelRepo) GetByProviderAndName(_ context.Context, providerID uuid.UUID, name string) (*models.Model, error) {
+	for i := range m.models[providerID] {
+		if m.models[providerID][i].Name == name {
+			return &m.models[providerID][i], nil
 		}
 	}
 	return nil, errors.New("not found")

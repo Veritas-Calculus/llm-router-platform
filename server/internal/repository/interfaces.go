@@ -77,6 +77,7 @@ type ProviderAPIKeyRepo interface {
 type ModelRepo interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Model, error)
 	GetByName(ctx context.Context, name string) (*models.Model, error)
+	GetByProviderAndName(ctx context.Context, providerID uuid.UUID, name string) (*models.Model, error)
 	GetByProvider(ctx context.Context, providerID uuid.UUID) ([]models.Model, error)
 	GetByProviderSorted(ctx context.Context, providerID uuid.UUID) ([]models.Model, error)
 	Create(ctx context.Context, m *models.Model) error
@@ -88,10 +89,17 @@ type ModelRepo interface {
 type ProxyRepo interface {
 	Create(ctx context.Context, proxy *models.Proxy) error
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Proxy, error)
+	GetByPoolID(ctx context.Context, poolID uuid.UUID) ([]models.Proxy, error)
+	GetActiveByPoolID(ctx context.Context, poolID uuid.UUID) ([]models.Proxy, error)
 	GetActive(ctx context.Context) ([]models.Proxy, error)
 	GetAll(ctx context.Context) ([]models.Proxy, error)
 	Update(ctx context.Context, proxy *models.Proxy) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	CreatePool(ctx context.Context, pool *models.ProxyPool) error
+	GetPools(ctx context.Context) ([]models.ProxyPool, error)
+	GetPoolByID(ctx context.Context, id uuid.UUID) (*models.ProxyPool, error)
+	UpdatePool(ctx context.Context, pool *models.ProxyPool) error
+	DeletePool(ctx context.Context, id uuid.UUID) error
 }
 
 // UsageLogRepo defines the interface for usage log data access.

@@ -43,6 +43,7 @@ type Query {
   adminDashboard: AdminDashboard! @auth(role: ADMIN)
   adminUsageByUser(days: Int = 30): [AdminUsageByUser!]! @auth(role: ADMIN)
   adminRevenueChart(days: Int = 30): [RevenueChartPoint!]! @auth(role: ADMIN)
+  adminFinancialDashboard(days: Int = 30): FinancialDashboard! @auth(role: ADMIN)
   adminUserGrowth(days: Int = 30): [UserGrowthPoint!]! @auth(role: ADMIN)
 
   # ── Plans（需要登录）──
@@ -58,6 +59,8 @@ type Query {
   models(providerId: ID!): [Model!]! @auth(role: ADMIN)
   providerHealth(providerId: ID!): ProviderHealth! @auth(role: ADMIN)
   proxies: [Proxy!]! @auth(role: ADMIN)
+  proxyPools: [ProxyPool!]! @auth(role: ADMIN)
+  proxyTopology: ProxyTopology! @auth(role: ADMIN)
   alerts(status: String): AlertConnection! @auth(role: ADMIN)
   alertConfig(targetType: String!, targetId: ID!): AlertConfig @auth(role: ADMIN)
   healthApiKeys: [ApiKeyHealth!]! @auth(role: ADMIN)
@@ -189,6 +192,9 @@ type Mutation {
 
   # ── Admin: Proxies ──
   createProxy(input: ProxyInput!): Proxy! @auth(role: ADMIN)
+  createProxyPool(input: ProxyPoolInput!): ProxyPool! @auth(role: ADMIN)
+  updateProxyPool(id: ID!, input: ProxyPoolInput!): ProxyPool! @auth(role: ADMIN)
+  deleteProxyPool(id: ID!): Boolean! @auth(role: ADMIN)
   batchCreateProxies(input: BatchProxyInput!): BatchProxyResult! @auth(role: ADMIN)
   updateProxy(id: ID!, input: ProxyInput!): Proxy! @auth(role: ADMIN)
   deleteProxy(id: ID!): Boolean! @auth(role: ADMIN)

@@ -11,6 +11,7 @@ import (
 	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/models"
+	adminService "llm-router-platform/internal/service/admin"
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/pkg/sanitize"
 	"strings"
@@ -207,7 +208,7 @@ func (r *queryResolver) AdminDashboard(ctx context.Context) (*model.AdminDashboa
 	totalRevenue, revenueMonth := r.AdminSvc.RevenueStats(ctx, monthStart)
 
 	// System usage summary
-	sysSummary, _ := r.Billing.GetSystemUsageSummary(ctx, nil, monthStart, now)
+	sysSummary, _ := r.Billing.GetSystemUsageSummary(ctx, nil, time.Time{}, now)
 	totalReq, totalTokens, errorCount, mcpCalls, mcpErrors := 0, 0, 0, 0, 0
 	totalCost, successRate, avgLatency := 0.0, 0.0, 0.0
 	if sysSummary != nil {
@@ -275,7 +276,7 @@ func (r *queryResolver) AdminUsageByUser(ctx context.Context, days *int) ([]*mod
 	var rows []row
 	err := r.AdminSvc.DB().WithContext(ctx).
 		Table("usage_logs").
-		Select("usage_logs.user_id, users.name as user_name, users.email, COUNT(*) as requests, COALESCE(SUM(usage_logs.total_tokens), 0) as tokens, COALESCE(SUM(usage_logs.cost), 0) as cost").
+		Select("usage_logs.user_id, users.name as user_name, users.email, COUNT(*) as requests, COALESCE(SUM(usage_logs.total_tokens), 0) as tokens, COALESCE(SUM(COALESCE(usage_logs.customer_charge, usage_logs.cost, 0)), 0) as cost").
 		Joins("LEFT JOIN users ON users.id = usage_logs.user_id").
 		Where("usage_logs.created_at >= ?", since).
 		Group("usage_logs.user_id, users.name, users.email").
@@ -312,10 +313,10 @@ func (r *queryResolver) AdminRevenueChart(ctx context.Context, days *int) ([]*mo
 	}
 	var rows []row
 	err := r.AdminSvc.DB().WithContext(ctx).
-		Table("transactions").
-		Select("TO_CHAR(created_at, 'YYYY-MM-DD') as date, COALESCE(SUM(amount), 0) as revenue, COUNT(*) as transactions").
-		Where("type = ? AND amount > 0 AND created_at >= ?", "recharge", since).
-		Group("TO_CHAR(created_at, 'YYYY-MM-DD')").
+		Table("orders").
+		Select("TO_CHAR(COALESCE(updated_at, created_at), 'YYYY-MM-DD') as date, COALESCE(SUM(amount), 0) as revenue, COUNT(*) as transactions").
+		Where("status = ? AND amount > 0 AND COALESCE(updated_at, created_at) >= ?", "paid", since).
+		Group("TO_CHAR(COALESCE(updated_at, created_at), 'YYYY-MM-DD')").
 		Order("date ASC").
 		Scan(&rows).Error
 	if err != nil {
@@ -331,6 +332,74 @@ func (r *queryResolver) AdminRevenueChart(ctx context.Context, days *int) ([]*mo
 		}
 	}
 	return out, nil
+}
+
+// AdminFinancialDashboard is the resolver for the adminFinancialDashboard field.
+func (r *queryResolver) AdminFinancialDashboard(ctx context.Context, days *int) (*model.FinancialDashboard, error) {
+	financial, err := r.AdminSvc.FinancialDashboard(ctx, valInt(days, 30))
+	if err != nil {
+		return nil, err
+	}
+	return financialDashboardToGQL(financial), nil
+}
+
+func financialDashboardToGQL(in *adminService.FinancialDashboard) *model.FinancialDashboard {
+	daily := make([]*model.FinancialDailyPoint, len(in.Daily))
+	for i, point := range in.Daily {
+		daily[i] = &model.FinancialDailyPoint{
+			Date:         point.Date,
+			CashRevenue:  point.CashRevenue,
+			UsageRevenue: point.UsageRevenue,
+			ProviderCost: point.ProviderCost,
+			GrossProfit:  point.GrossProfit,
+			Orders:       point.Orders,
+			Requests:     point.Requests,
+		}
+	}
+
+	payments := make([]*model.FinancialBreakdown, len(in.PaymentBreakdown))
+	for i, item := range in.PaymentBreakdown {
+		payments[i] = &model.FinancialBreakdown{
+			Name:   item.Name,
+			Amount: item.Amount,
+			Count:  item.Count,
+		}
+	}
+
+	providers := make([]*model.FinancialProviderBreakdown, len(in.ProviderBreakdown))
+	for i, item := range in.ProviderBreakdown {
+		providers[i] = &model.FinancialProviderBreakdown{
+			ProviderName: item.ProviderName,
+			Requests:     item.Requests,
+			UsageRevenue: item.UsageRevenue,
+			ProviderCost: item.ProviderCost,
+			GrossProfit:  item.GrossProfit,
+			GrossMargin:  item.GrossMargin,
+		}
+	}
+
+	return &model.FinancialDashboard{
+		PeriodStart:         in.PeriodStart,
+		PeriodEnd:           in.PeriodEnd,
+		CashRevenue:         in.CashRevenue,
+		NetCashRevenue:      in.NetCashRevenue,
+		SubscriptionRevenue: in.SubscriptionRevenue,
+		TopUpRevenue:        in.TopUpRevenue,
+		UsageRevenue:        in.UsageRevenue,
+		ProviderCost:        in.ProviderCost,
+		GrossProfit:         in.GrossProfit,
+		GrossMargin:         in.GrossMargin,
+		RefundAmount:        in.RefundAmount,
+		CreditGrants:        in.CreditGrants,
+		OutstandingBalance:  in.OutstandingBalance,
+		PaidOrders:          in.PaidOrders,
+		ActiveSubscriptions: in.ActiveSubscriptions,
+		PayingCustomers:     in.PayingCustomers,
+		Arpu:                in.ARPU,
+		Daily:               daily,
+		PaymentBreakdown:    payments,
+		ProviderBreakdown:   providers,
+	}
 }
 
 // AdminUserGrowth is the resolver for the adminUserGrowth field.

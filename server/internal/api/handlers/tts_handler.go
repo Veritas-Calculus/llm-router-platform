@@ -90,6 +90,7 @@ func (h *ChatHandler) SynthesizeSpeech(c *gin.Context) {
 		usageLog := &models.UsageLog{
 			UserID:     userAPIKey.UserID,
 			ProjectID:  projectObj.ID,
+			Channel:    userAPIKey.Channel,
 			APIKeyID:   userAPIKey.ID,
 			ProviderID: selectedProvider.ID,
 			ModelName:  req.Model,
@@ -122,6 +123,7 @@ func (h *ChatHandler) SynthesizeSpeech(c *gin.Context) {
 	usageLog := &models.UsageLog{
 		UserID:     userAPIKey.UserID,
 		ProjectID:  projectObj.ID,
+		Channel:    userAPIKey.Channel,
 		APIKeyID:   userAPIKey.ID,
 		ProviderID: selectedProvider.ID,
 		ModelName:  req.Model,

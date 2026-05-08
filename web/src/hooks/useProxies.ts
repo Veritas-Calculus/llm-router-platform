@@ -1,12 +1,16 @@
 import { useState, useCallback, useRef, useMemo } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import toast from 'react-hot-toast';
-import { Proxy } from '@/lib/types';
+import { Proxy, ProxyPool } from '@/lib/types';
 import {
   PROXIES_QUERY,
+  PROXY_POOLS_QUERY,
   CREATE_PROXY,
+  CREATE_PROXY_POOL,
   BATCH_CREATE_PROXIES,
   UPDATE_PROXY,
+  UPDATE_PROXY_POOL,
+  DELETE_PROXY_POOL,
   DELETE_PROXY,
   TOGGLE_PROXY_STATUS,
   TEST_PROXY,
@@ -29,16 +33,24 @@ interface ProxyFormData {
   username: string;
   password: string;
   upstream_proxy_id: string;
+  pool_id: string;
+}
+
+interface ProxyPoolDraft {
+  name: string;
+  description: string;
+  strategy: string;
 }
 
 const emptyForm: ProxyFormData = {
-  url: '', type: 'http', region: '', username: '', password: '', upstream_proxy_id: '',
+  url: '', type: 'http', region: '', username: '', password: '', upstream_proxy_id: '', pool_id: '',
 };
 
 // Map GraphQL camelCase → snake_case for backward compat
 function mapProxy(d: any): Proxy {
   return {
-    id: d.id, url: d.url, type: d.type, region: d.region,
+    id: d.id, pool_id: d.poolId, pool_name: d.poolName,
+    url: d.url, type: d.type, region: d.region,
     is_active: d.isActive, weight: d.weight,
     success_count: d.successCount, failure_count: d.failureCount,
     avg_latency: d.avgLatency, last_checked: d.lastChecked,
@@ -47,10 +59,21 @@ function mapProxy(d: any): Proxy {
   };
 }
 
+function mapProxyPool(d: any): ProxyPool {
+  return {
+    id: d.id, name: d.name, description: d.description || '',
+    is_active: d.isActive, strategy: d.strategy || 'weighted',
+    proxy_count: d.proxyCount || 0, active_proxy_count: d.activeProxyCount || 0,
+    created_at: d.createdAt,
+  };
+}
+
 export function useProxies() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { data, loading, refetch } = useQuery<any>(PROXIES_QUERY);
+  const { data: poolsData, refetch: refetchPools } = useQuery<any>(PROXY_POOLS_QUERY);
   const proxies = useMemo(() => (data?.proxies || []).map(mapProxy), [data]);
+  const proxyPools = useMemo(() => (poolsData?.proxyPools || []).map(mapProxyPool), [poolsData]);
 
   const [showModal, setShowModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -58,28 +81,40 @@ export function useProxies() {
   const [formData, setFormData] = useState<ProxyFormData>({ ...emptyForm });
   const [saving, setSaving] = useState(false);
   const [batchInput, setBatchInput] = useState('');
+  const [batchPoolId, setBatchPoolId] = useState('');
   const [batchImporting, setBatchImporting] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testingAll, setTestingAll] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [poolDraft, setPoolDraft] = useState<ProxyPoolDraft>({ name: '', description: '', strategy: 'weighted' });
+  const [creatingPool, setCreatingPool] = useState(false);
+  const [updatingPoolId, setUpdatingPoolId] = useState<string | null>(null);
+  const [deletingPoolId, setDeletingPoolId] = useState<string | null>(null);
 
   // ── Mutations ──
   const [createProxyMut] = useMutation(CREATE_PROXY);
+  const [createPoolMut] = useMutation(CREATE_PROXY_POOL);
   const [batchCreateMut] = useMutation(BATCH_CREATE_PROXIES);
   const [updateProxyMut] = useMutation(UPDATE_PROXY);
+  const [updatePoolMut] = useMutation(UPDATE_PROXY_POOL);
+  const [deletePoolMut] = useMutation(DELETE_PROXY_POOL);
   const [deleteProxyMut] = useMutation(DELETE_PROXY);
   const [toggleProxyMut] = useMutation(TOGGLE_PROXY_STATUS);
   const [testProxyMut] = useMutation(TEST_PROXY);
   const [testAllMut] = useMutation(TEST_ALL_PROXIES);
+
+  const refetchProxyState = useCallback(async () => {
+    await Promise.all([refetch(), refetchPools()]);
+  }, [refetch, refetchPools]);
 
   const closeModal = useCallback(() => {
     setShowModal(false); setEditingProxy(null); setFormData({ ...emptyForm });
   }, []);
 
   const closeBatchModal = useCallback(() => {
-    setShowBatchModal(false); setBatchInput('');
+    setShowBatchModal(false); setBatchInput(''); setBatchPoolId('');
   }, []);
 
   const openCreateModal = useCallback(() => {
@@ -92,12 +127,13 @@ export function useProxies() {
       url: proxy.url, type: proxy.type, region: proxy.region || '',
       username: proxy.username || '', password: '',
       upstream_proxy_id: proxy.upstream_proxy_id || '',
+      pool_id: proxy.pool_id || '',
     });
     setShowModal(true);
   }, []);
 
   const openBatchModal = useCallback(() => {
-    setBatchInput(''); setShowBatchModal(true);
+    setBatchInput(''); setBatchPoolId(''); setShowBatchModal(true);
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -108,6 +144,7 @@ export function useProxies() {
         url: formData.url, type: formData.type, region: formData.region || undefined,
         username: formData.username || undefined, password: formData.password || undefined,
         upstreamProxyId: formData.upstream_proxy_id || undefined,
+        poolId: formData.pool_id || undefined,
       };
       if (editingProxy) {
         await updateProxyMut({ variables: { id: editingProxy.id, input } });
@@ -116,11 +153,11 @@ export function useProxies() {
         await createProxyMut({ variables: { input } });
         toast.success('Proxy created');
       }
-      await refetch();
+      await refetchProxyState();
       closeModal();
     } catch { toast.error(editingProxy ? 'Failed to update proxy' : 'Failed to create proxy'); }
     finally { setSaving(false); }
-  }, [formData, editingProxy, closeModal, createProxyMut, updateProxyMut, refetch]);
+  }, [formData, editingProxy, closeModal, createProxyMut, updateProxyMut, refetchProxyState]);
 
   const handleBatchImport = useCallback(async () => {
     const lines = batchInput.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
@@ -138,14 +175,16 @@ export function useProxies() {
     });
     setBatchImporting(true);
     try {
-      const { data: result } = await batchCreateMut({ variables: { input: { proxies: proxiesToCreate } } });
+      const { data: result } = await batchCreateMut({
+        variables: { input: { proxies: proxiesToCreate, poolId: batchPoolId || undefined } },
+      });
       const r = (result as any)?.batchCreateProxies;
-      if (r?.success > 0) { toast.success(`Successfully added ${r.success} proxies`); await refetch(); }
+      if (r?.success > 0) { toast.success(`Successfully added ${r.success} proxies`); await refetchProxyState(); }
       if (r?.failed > 0) toast.error(`Failed to add ${r.failed} proxies`);
       if (r?.success > 0) closeBatchModal();
     } catch { toast.error('Failed to import proxies'); }
     finally { setBatchImporting(false); }
-  }, [batchInput, closeBatchModal, batchCreateMut, refetch]);
+  }, [batchInput, batchPoolId, closeBatchModal, batchCreateMut, refetchProxyState]);
 
   const handleTestProxy = useCallback(async (id: string) => {
     setTestingId(id);
@@ -157,10 +196,10 @@ export function useProxies() {
         if (r.isHealthy) toast.success(`Proxy healthy - ${r.latencyMs || r.latency}ms`);
         else toast.error(`Proxy unhealthy: ${r.error || 'Connection failed'}`);
       }
-      await refetch();
+      await refetchProxyState();
     } catch { toast.error('Failed to test proxy'); }
     finally { setTestingId(null); }
-  }, [testProxyMut, refetch]);
+  }, [testProxyMut, refetchProxyState]);
 
   const handleTestAllProxies = useCallback(async () => {
     setTestingAll(true);
@@ -177,29 +216,81 @@ export function useProxies() {
       setTestResults(newResults);
       if (unhealthy === 0) toast.success(`All ${healthy} proxies are healthy`);
       else toast.error(`${unhealthy} of ${healthy + unhealthy} proxies are unhealthy`);
-      await refetch();
+      await refetchProxyState();
     } catch { toast.error('Failed to test proxies'); }
     finally { setTestingAll(false); }
-  }, [testAllMut, refetch]);
+  }, [testAllMut, refetchProxyState]);
 
   const handleConfirmDelete = useCallback(async (id: string) => {
     setDeleting(true);
     try {
       await deleteProxyMut({ variables: { id } });
-      await refetch();
+      await refetchProxyState();
       toast.success('Proxy deleted');
       setDeleteConfirmId(null);
     } catch { toast.error('Failed to delete proxy'); }
     finally { setDeleting(false); }
-  }, [deleteProxyMut, refetch]);
+  }, [deleteProxyMut, refetchProxyState]);
 
   const handleToggle = useCallback(async (id: string) => {
     try {
       const { data: result } = await toggleProxyMut({ variables: { id } });
-      await refetch();
+      await refetchProxyState();
       toast.success(`Proxy ${(result as any)?.toggleProxyStatus?.isActive ? 'enabled' : 'disabled'}`);
     } catch { toast.error('Failed to toggle proxy'); }
-  }, [toggleProxyMut, refetch]);
+  }, [toggleProxyMut, refetchProxyState]);
+
+  const handleCreatePool = useCallback(async () => {
+    const name = poolDraft.name.trim();
+    if (!name) { toast.error('Please enter a pool name'); return; }
+    setCreatingPool(true);
+    try {
+      await createPoolMut({
+        variables: {
+          input: {
+            name,
+            description: poolDraft.description.trim(),
+            strategy: poolDraft.strategy || 'weighted',
+            isActive: true,
+          },
+        },
+      });
+      setPoolDraft({ name: '', description: '', strategy: 'weighted' });
+      await refetchPools();
+      toast.success('Proxy pool created');
+    } catch { toast.error('Failed to create proxy pool'); }
+    finally { setCreatingPool(false); }
+  }, [poolDraft, createPoolMut, refetchPools]);
+
+  const handleTogglePool = useCallback(async (pool: ProxyPool) => {
+    setUpdatingPoolId(pool.id);
+    try {
+      await updatePoolMut({
+        variables: {
+          id: pool.id,
+          input: {
+            name: pool.name,
+            description: pool.description,
+            strategy: pool.strategy || 'weighted',
+            isActive: !pool.is_active,
+          },
+        },
+      });
+      await refetchPools();
+      toast.success(`Proxy pool ${pool.is_active ? 'disabled' : 'enabled'}`);
+    } catch { toast.error('Failed to update proxy pool'); }
+    finally { setUpdatingPoolId(null); }
+  }, [updatePoolMut, refetchPools]);
+
+  const handleDeletePool = useCallback(async (id: string) => {
+    setDeletingPoolId(id);
+    try {
+      await deletePoolMut({ variables: { id } });
+      await refetchProxyState();
+      toast.success('Proxy pool deleted');
+    } catch { toast.error('Failed to delete proxy pool'); }
+    finally { setDeletingPoolId(null); }
+  }, [deletePoolMut, refetchProxyState]);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -211,11 +302,13 @@ export function useProxies() {
   }, []);
 
   return {
-    fileInputRef, proxies, loading, showModal, showBatchModal, editingProxy,
-    formData, setFormData, saving, batchInput, setBatchInput, batchImporting,
+    fileInputRef, proxies, proxyPools, loading, showModal, showBatchModal, editingProxy,
+    formData, setFormData, saving, batchInput, setBatchInput, batchPoolId, setBatchPoolId, batchImporting,
     testingId, testingAll, testResults, deleteConfirmId, setDeleteConfirmId, deleting,
+    poolDraft, setPoolDraft, creatingPool, updatingPoolId, deletingPoolId,
     openCreateModal, openEditModal, openBatchModal, closeModal, closeBatchModal,
     handleSubmit, handleBatchImport, handleTestProxy, handleTestAllProxies,
     handleConfirmDelete, handleToggle, handleFileUpload,
+    handleCreatePool, handleTogglePool, handleDeletePool,
   };
 }

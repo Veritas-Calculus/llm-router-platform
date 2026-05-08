@@ -27,7 +27,7 @@ export const DELETE_PROVIDER = gql`
 export const PROVIDER_API_KEYS_QUERY = gql`
   query ProviderApiKeys($providerId: ID!) {
     providerApiKeys(providerId: $providerId) {
-      id providerId alias keyPrefix isActive priority weight rateLimit usageCount lastUsedAt createdAt
+      id providerId proxyId proxyPoolId alias keyPrefix isActive priority weight rateLimit usageCount lastUsedAt createdAt
     }
   }
 `;
@@ -63,7 +63,7 @@ export const TOGGLE_PROVIDER_PROXY = gql`
 export const CREATE_PROVIDER_API_KEY = gql`
   mutation CreateProviderApiKey($providerId: ID!, $input: ProviderApiKeyInput!) {
     createProviderApiKey(providerId: $providerId, input: $input) {
-      id providerId alias keyPrefix isActive priority weight rateLimit usageCount createdAt
+      id providerId proxyId proxyPoolId alias keyPrefix isActive priority weight rateLimit usageCount createdAt
     }
   }
 `;
@@ -71,7 +71,7 @@ export const CREATE_PROVIDER_API_KEY = gql`
 export const UPDATE_PROVIDER_API_KEY = gql`
   mutation UpdateProviderApiKey($providerId: ID!, $keyId: ID!, $input: UpdateProviderApiKeyInput!) {
     updateProviderApiKey(providerId: $providerId, keyId: $keyId, input: $input) {
-      id isActive priority weight
+      id proxyId proxyPoolId isActive priority weight rateLimit
     }
   }
 `;
@@ -94,7 +94,10 @@ export const MODELS_QUERY = gql`
   query Models($providerId: ID!) {
     models(providerId: $providerId) {
       id providerId name displayName inputPricePer1k outputPricePer1k
-      pricePerSecond pricePerImage pricePerMinute maxTokens isActive createdAt
+      pricePerSecond pricePerImage pricePerMinute
+      providerInputCostPer1k providerOutputCostPer1k
+      providerCostPerSecond providerCostPerImage providerCostPerMinute
+      maxTokens isActive createdAt
     }
   }
 `;
@@ -102,7 +105,8 @@ export const MODELS_QUERY = gql`
 export const CREATE_MODEL = gql`
   mutation CreateModel($providerId: ID!, $input: ModelInput!) {
     createModel(providerId: $providerId, input: $input) {
-      id name displayName inputPricePer1k outputPricePer1k maxTokens isActive
+      id name displayName inputPricePer1k outputPricePer1k
+      providerInputCostPer1k providerOutputCostPer1k maxTokens isActive
     }
   }
 `;
@@ -110,7 +114,8 @@ export const CREATE_MODEL = gql`
 export const UPDATE_MODEL = gql`
   mutation UpdateModel($id: ID!, $input: ModelInput!) {
     updateModel(id: $id, input: $input) {
-      id name displayName inputPricePer1k outputPricePer1k maxTokens isActive
+      id name displayName inputPricePer1k outputPricePer1k
+      providerInputCostPer1k providerOutputCostPer1k maxTokens isActive
     }
   }
 `;

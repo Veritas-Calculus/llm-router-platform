@@ -29,14 +29,40 @@ interface ModelItem {
   displayName: string;
   inputPricePer1k: number;
   outputPricePer1k: number;
+  pricePerSecond?: number | null;
+  pricePerImage?: number | null;
+  pricePerMinute?: number | null;
+  providerInputCostPer1k: number;
+  providerOutputCostPer1k: number;
+  providerCostPerSecond?: number | null;
+  providerCostPerImage?: number | null;
+  providerCostPerMinute?: number | null;
   maxTokens: number;
   isActive: boolean;
 }
 
+const initialModelForm = {
+  name: '',
+  displayName: '',
+  inputPricePer1k: 0,
+  outputPricePer1k: 0,
+  pricePerSecond: 0,
+  pricePerImage: 0,
+  pricePerMinute: 0,
+  providerInputCostPer1k: 0,
+  providerOutputCostPer1k: 0,
+  providerCostPerSecond: 0,
+  providerCostPerImage: 0,
+  providerCostPerMinute: 0,
+  maxTokens: 4096,
+};
+
+const fmtRate = (value?: number | null) => `$${Number(value || 0).toFixed(4)}`;
+
 export default function ModelTable({ providerId, providerName }: ModelTableProps) {
   const { t } = useTranslation();
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newModel, setNewModel] = useState({ name: '', displayName: '', inputPricePer1k: 0, outputPricePer1k: 0, maxTokens: 4096 });
+  const [newModel, setNewModel] = useState(initialModelForm);
   const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; modelId: string }>({ isOpen: false, modelId: '' });
 
   const { data, loading, refetch } = useQuery<{ models: ModelItem[] }>(MODELS_QUERY, {
@@ -45,7 +71,7 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
   });
 
   const [createModel, { loading: creating }] = useMutation(CREATE_MODEL, {
-    onCompleted: () => { refetch(); setShowAddModal(false); setNewModel({ name: '', displayName: '', inputPricePer1k: 0, outputPricePer1k: 0, maxTokens: 4096 }); },
+    onCompleted: () => { refetch(); setShowAddModal(false); setNewModel(initialModelForm); },
   });
 
   const [deleteModel, { loading: deleting }] = useMutation(DELETE_MODEL, {
@@ -82,6 +108,14 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
           displayName: newModel.displayName.trim() || newModel.name.trim(),
           inputPricePer1k: newModel.inputPricePer1k,
           outputPricePer1k: newModel.outputPricePer1k,
+          pricePerSecond: newModel.pricePerSecond,
+          pricePerImage: newModel.pricePerImage,
+          pricePerMinute: newModel.pricePerMinute,
+          providerInputCostPer1k: newModel.providerInputCostPer1k,
+          providerOutputCostPer1k: newModel.providerOutputCostPer1k,
+          providerCostPerSecond: newModel.providerCostPerSecond,
+          providerCostPerImage: newModel.providerCostPerImage,
+          providerCostPerMinute: newModel.providerCostPerMinute,
           maxTokens: newModel.maxTokens,
         },
       },
@@ -130,11 +164,11 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-apple-gray-200">
             <thead>
-              <tr>
-                <th className="table-header">{t('providers.model_name')}</th>
-                <th className="table-header">{t('providers.input_price')}</th>
-                <th className="table-header">{t('providers.output_price')}</th>
-                <th className="table-header">{t('providers.max_tokens')}</th>
+	              <tr>
+	                <th className="table-header">{t('providers.model_name')}</th>
+	                <th className="table-header">{t('providers.customer_price')}</th>
+	                <th className="table-header">{t('providers.provider_cost')}</th>
+	                <th className="table-header">{t('providers.max_tokens')}</th>
                 <th className="table-header">{t('common.status')}</th>
                 <th className="table-header text-right">{t('common.actions')}</th>
               </tr>
@@ -149,15 +183,21 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
                         {m.name}
                       </code>
                     )}
-                  </td>
-                  <td className="table-cell text-sm">
-                    <span className="text-apple-gray-700">${m.inputPricePer1k.toFixed(4)}</span>
-                    <span className="text-apple-gray-400 text-xs"> /1K</span>
-                  </td>
-                  <td className="table-cell text-sm">
-                    <span className="text-apple-gray-700">${m.outputPricePer1k.toFixed(4)}</span>
-                    <span className="text-apple-gray-400 text-xs"> /1K</span>
-                  </td>
+	                  </td>
+	                  <td className="table-cell text-sm">
+	                    <span className="text-apple-gray-700">{fmtRate(m.inputPricePer1k)}</span>
+	                    <span className="text-apple-gray-400 text-xs"> in</span>
+	                    <span className="text-apple-gray-300 mx-1">/</span>
+	                    <span className="text-apple-gray-700">{fmtRate(m.outputPricePer1k)}</span>
+	                    <span className="text-apple-gray-400 text-xs"> out</span>
+	                  </td>
+	                  <td className="table-cell text-sm">
+	                    <span className="text-apple-gray-700">{fmtRate(m.providerInputCostPer1k)}</span>
+	                    <span className="text-apple-gray-400 text-xs"> in</span>
+	                    <span className="text-apple-gray-300 mx-1">/</span>
+	                    <span className="text-apple-gray-700">{fmtRate(m.providerOutputCostPer1k)}</span>
+	                    <span className="text-apple-gray-400 text-xs"> out</span>
+	                  </td>
                   <td className="table-cell text-sm text-apple-gray-500">
                     {m.maxTokens.toLocaleString()}
                   </td>
@@ -199,7 +239,7 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
       {/* Add Model Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4">
+          <div className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-semibold text-apple-gray-900 mb-4">{t('providers.add_model')}</h2>
             <div className="space-y-4">
               <div>
@@ -222,25 +262,107 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
                   placeholder="GPT-4o"
                 />
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="label">{t('providers.input_price')}</label>
-                  <input
-                    type="number" step="0.0001" min="0"
-                    value={newModel.inputPricePer1k}
-                    onChange={(e) => setNewModel((prev) => ({ ...prev, inputPricePer1k: parseFloat(e.target.value) || 0 }))}
-                    className="input"
-                  />
+              <div>
+                <p className="text-sm font-medium text-apple-gray-700 mb-2">{t('providers.customer_price')}</p>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <div>
+                    <label className="label">{t('providers.input_price')}</label>
+                    <input
+                      type="number" step="0.0001" min="0"
+                      value={newModel.inputPricePer1k}
+                      onChange={(e) => setNewModel((prev) => ({ ...prev, inputPricePer1k: parseFloat(e.target.value) || 0 }))}
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">{t('providers.output_price')}</label>
+                    <input
+                      type="number" step="0.0001" min="0"
+                      value={newModel.outputPricePer1k}
+                      onChange={(e) => setNewModel((prev) => ({ ...prev, outputPricePer1k: parseFloat(e.target.value) || 0 }))}
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">{t('providers.price_per_second')}</label>
+                    <input
+                      type="number" step="0.0001" min="0"
+                      value={newModel.pricePerSecond}
+                      onChange={(e) => setNewModel((prev) => ({ ...prev, pricePerSecond: parseFloat(e.target.value) || 0 }))}
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">{t('providers.price_per_image')}</label>
+                    <input
+                      type="number" step="0.0001" min="0"
+                      value={newModel.pricePerImage}
+                      onChange={(e) => setNewModel((prev) => ({ ...prev, pricePerImage: parseFloat(e.target.value) || 0 }))}
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">{t('providers.price_per_minute')}</label>
+                    <input
+                      type="number" step="0.0001" min="0"
+                      value={newModel.pricePerMinute}
+                      onChange={(e) => setNewModel((prev) => ({ ...prev, pricePerMinute: parseFloat(e.target.value) || 0 }))}
+                      className="input"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="label">{t('providers.output_price')}</label>
-                  <input
-                    type="number" step="0.0001" min="0"
-                    value={newModel.outputPricePer1k}
-                    onChange={(e) => setNewModel((prev) => ({ ...prev, outputPricePer1k: parseFloat(e.target.value) || 0 }))}
-                    className="input"
-                  />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-apple-gray-700 mb-2">{t('providers.provider_cost')}</p>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <div>
+                    <label className="label">{t('providers.input_cost')}</label>
+                    <input
+                      type="number" step="0.0001" min="0"
+                      value={newModel.providerInputCostPer1k}
+                      onChange={(e) => setNewModel((prev) => ({ ...prev, providerInputCostPer1k: parseFloat(e.target.value) || 0 }))}
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">{t('providers.output_cost')}</label>
+                    <input
+                      type="number" step="0.0001" min="0"
+                      value={newModel.providerOutputCostPer1k}
+                      onChange={(e) => setNewModel((prev) => ({ ...prev, providerOutputCostPer1k: parseFloat(e.target.value) || 0 }))}
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">{t('providers.cost_per_second')}</label>
+                    <input
+                      type="number" step="0.0001" min="0"
+                      value={newModel.providerCostPerSecond}
+                      onChange={(e) => setNewModel((prev) => ({ ...prev, providerCostPerSecond: parseFloat(e.target.value) || 0 }))}
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">{t('providers.cost_per_image')}</label>
+                    <input
+                      type="number" step="0.0001" min="0"
+                      value={newModel.providerCostPerImage}
+                      onChange={(e) => setNewModel((prev) => ({ ...prev, providerCostPerImage: parseFloat(e.target.value) || 0 }))}
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">{t('providers.cost_per_minute')}</label>
+                    <input
+                      type="number" step="0.0001" min="0"
+                      value={newModel.providerCostPerMinute}
+                      onChange={(e) => setNewModel((prev) => ({ ...prev, providerCostPerMinute: parseFloat(e.target.value) || 0 }))}
+                      className="input"
+                    />
+                  </div>
                 </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="label">{t('providers.max_tokens')}</label>
                   <input

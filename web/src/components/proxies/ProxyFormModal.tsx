@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Proxy } from '@/lib/types';
+import { Proxy, ProxyPool } from '@/lib/types';
 
 interface ProxyFormData {
   url: string;
@@ -8,6 +8,7 @@ interface ProxyFormData {
   username: string;
   password: string;
   upstream_proxy_id: string;
+  pool_id: string;
 }
 
 interface ProxyFormModalProps {
@@ -15,6 +16,7 @@ interface ProxyFormModalProps {
   editingProxy: Proxy | null;
   formData: ProxyFormData;
   proxies: Proxy[];
+  proxyPools: ProxyPool[];
   saving: boolean;
   onFormChange: (data: ProxyFormData) => void;
   onSubmit: () => void;
@@ -26,6 +28,7 @@ export default function ProxyFormModal({
   editingProxy,
   formData,
   proxies,
+  proxyPools,
   saving,
   onFormChange,
   onSubmit,
@@ -80,6 +83,22 @@ export default function ProxyFormModal({
                 placeholder="e.g., US-West"
               />
             </div>
+          </div>
+          <div>
+            <label htmlFor="pool" className="label">Proxy Pool</label>
+            <select
+              id="pool"
+              value={formData.pool_id}
+              onChange={(e) => onFormChange({ ...formData, pool_id: e.target.value })}
+              className="input"
+            >
+              <option value="">Unassigned</option>
+              {proxyPools.map((pool) => (
+                <option key={pool.id} value={pool.id}>
+                  {pool.name} ({pool.active_proxy_count}/{pool.proxy_count})
+                </option>
+              ))}
+            </select>
           </div>
           <div className="border-t border-apple-gray-200 pt-4 mt-2">
             <p className="text-sm font-medium text-apple-gray-700 mb-3">

@@ -202,6 +202,8 @@ export interface Provider {
 export interface ProviderApiKey {
   id: string;
   provider_id: string;
+  proxy_id?: string | null;
+  proxy_pool_id?: string | null;
   alias: string;
   key_prefix: string;
   is_active: boolean;
@@ -228,6 +230,8 @@ export interface ProviderHealthStatus {
 
 export interface Proxy {
   id: string;
+  pool_id?: string | null;
+  pool_name?: string | null;
   url: string;
   type: string;
   region: string;
@@ -241,6 +245,52 @@ export interface Proxy {
   username?: string;
   has_auth?: boolean;
   upstream_proxy_id?: string;
+}
+
+export interface ProxyPool {
+  id: string;
+  name: string;
+  description: string;
+  is_active: boolean;
+  strategy: string;
+  proxy_count: number;
+  active_proxy_count: number;
+  created_at: string;
+}
+
+export interface ProxyTopologyRouteStep {
+  id: string;
+  type: string;
+  label: string;
+  status: string;
+  detail?: string | null;
+}
+
+export interface ProviderAccountTopologyNode {
+  apiKey?: ProviderApiKey | null;
+  label: string;
+  bindingSource: string;
+  proxyPool?: ProxyPool | null;
+  candidateProxies: Proxy[];
+  route: ProxyTopologyRouteStep[];
+}
+
+export interface ProviderTopologyNode {
+  provider: Provider;
+  models: string[];
+  accounts: ProviderAccountTopologyNode[];
+}
+
+export interface ProxyPoolTopologyNode {
+  pool: ProxyPool;
+  proxies: Proxy[];
+}
+
+export interface ProxyTopology {
+  providers: ProviderTopologyNode[];
+  proxyPools: ProxyPoolTopologyNode[];
+  directAccounts: number;
+  proxiedAccounts: number;
 }
 
 export interface UsageRecord {

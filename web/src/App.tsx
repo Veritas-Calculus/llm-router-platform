@@ -29,6 +29,7 @@ const UserDashboardPage = lazy(() => import('@/pages/UserDashboardPage'));
 
 // Admin pages
 const AdminDashboardPage = lazy(() => import('@/pages/DashboardPage'));
+const FinancePage = lazy(() => import('@/pages/FinancePage'));
 const UsersPage = lazy(() => import('@/pages/UsersPage'));
 const UserDetailPage = lazy(() => import('@/pages/UserDetailPage'));
 const AnnouncementsPage = lazy(() => import('@/pages/AnnouncementsPage'));
@@ -160,6 +161,7 @@ function App() {
 
           {/* ── Admin pages ── */}
           <Route path="admin/dashboard" element={<AdminRoute><AdminDashboardPage /></AdminRoute>} />
+          <Route path="admin/finance" element={<AdminRoute><FinancePage /></AdminRoute>} />
           <Route path="admin/analytics" element={<AdminRoute><AnalyticsPage /></AdminRoute>} />
           <Route path="admin/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
           <Route path="admin/users/:id" element={<AdminRoute><UserDetailPage /></AdminRoute>} />

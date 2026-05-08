@@ -507,6 +507,15 @@ func (r *Router) GetProviderClient(name string) (provider.Client, bool) {
 // GetProviderClientWithKey creates a provider client dynamically using the provided API key from database.
 // This is the preferred method as API keys are stored encrypted in the database.
 func (r *Router) GetProviderClientWithKey(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey) (provider.Client, error) {
+	proxyInfo, err := r.resolveProxyForRequest(ctx, p, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	httpClientProvider, err := r.getHTTPClientProvider(p, proxyInfo)
+	if err != nil {
+		return nil, err
+	}
+
 	// For providers that don't require API keys
 	if !p.RequiresAPIKey || apiKey == nil {
 		// Try to get from registry first (for local providers like Ollama, LM Studio)
@@ -516,7 +525,7 @@ func (r *Router) GetProviderClientWithKey(ctx context.Context, p *models.Provide
 		// Create a client without API key
 		cfg := &config.ProviderConfig{
 			BaseURL:    p.BaseURL,
-			HTTPClient: r.getHTTPClientProvider(ctx, p),
+			HTTPClient: httpClientProvider,
 		}
 		return r.createProviderClientWithRetry(p.Name, cfg, p.MaxRetries, p.Timeout)
 	}
@@ -530,7 +539,7 @@ func (r *Router) GetProviderClientWithKey(ctx context.Context, p *models.Provide
 	cfg := &config.ProviderConfig{
 		APIKey:     decryptedKey,
 		BaseURL:    p.BaseURL,
-		HTTPClient: r.getHTTPClientProvider(ctx, p),
+		HTTPClient: httpClientProvider,
 	}
 
 	return r.createProviderClientWithRetry(p.Name, cfg, p.MaxRetries, p.Timeout)
@@ -540,59 +549,140 @@ func (r *Router) GetProviderClientWithKey(ctx context.Context, p *models.Provide
 // SSRF dial-time protection, plus optional proxy when the provider is so
 // configured. Always returns a non-nil provider so every provider client
 // picks up SafeTransport — never a bare &http.Client{}.
-func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) config.HTTPClientProvider {
-	if !p.UseProxy {
+func (r *Router) getHTTPClientProvider(p *models.Provider, proxyInfo *models.Proxy) (config.HTTPClientProvider, error) {
+	if proxyInfo == nil {
 		return func() *http.Client {
 			return sanitize.SafeHTTPClient(allowLocalProviderEgress, 600*time.Second)
-		}
+		}, nil
+	}
+
+	proxyURL, err := r.proxyURL(proxyInfo)
+	if err != nil {
+		return nil, err
 	}
 
 	return func() *http.Client {
-		var proxyInfo *models.Proxy
-
-		// Use provider's default proxy if set
-		if p.DefaultProxyID != nil {
-			proxy, err := r.proxyRepo.GetByID(ctx, *p.DefaultProxyID)
-			if err == nil && proxy.IsActive {
-				proxyInfo = proxy
-			}
-		}
-
-		// If no default proxy or it's inactive, get any active proxy
-		if proxyInfo == nil {
-			proxies, err := r.proxyRepo.GetActive(ctx)
-			if err != nil || len(proxies) == 0 {
-				// Fall through to a direct SafeTransport client.
-				return sanitize.SafeHTTPClient(allowLocalProviderEgress, 600*time.Second)
-			}
-			proxyInfo = &proxies[0]
-		}
-
-		proxyURL, err := url.Parse(proxyInfo.URL)
-		if err != nil {
-			r.logger.Warn("proxy URL parse failed, falling back to direct SafeTransport", zap.Error(err))
-			return sanitize.SafeHTTPClient(allowLocalProviderEgress, 600*time.Second)
-		}
-
-		// Add authentication if available. Propagate decrypt errors so we do
-		// not silently send a half-authenticated request to the proxy.
-		if proxyInfo.Username != "" && proxyInfo.Password != "" {
-			password, decErr := crypto.Decrypt(proxyInfo.Password)
-			if decErr != nil {
-				r.logger.Error("proxy password decryption failed, falling back to direct client",
-					zap.String("proxy_id", proxyInfo.ID.String()),
-					zap.Error(decErr))
-				return sanitize.SafeHTTPClient(allowLocalProviderEgress, 600*time.Second)
-			}
-			proxyURL.User = url.UserPassword(proxyInfo.Username, password)
-		}
-
-		r.logger.Debug("using proxy for provider",
+		r.logger.Debug("using proxy for upstream provider request",
 			zap.String("provider", p.Name),
+			zap.String("proxy_id", proxyInfo.ID.String()),
 			zap.String("proxy_url", proxyInfo.URL))
 
 		return sanitize.SafeHTTPClientWithProxy(allowLocalProviderEgress, 60*time.Second, proxyURL)
+	}, nil
+}
+
+// resolveProxyForRequest picks the effective proxy for a provider/API-key pair.
+// Explicit account bindings fail closed; provider-level proxy mode falls back to
+// another active proxy, but never to direct egress.
+func (r *Router) resolveProxyForRequest(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey) (*models.Proxy, error) {
+	if apiKey != nil {
+		if apiKey.ProxyID != nil {
+			proxyInfo, err := r.proxyRepo.GetByID(ctx, *apiKey.ProxyID)
+			if err != nil {
+				return nil, fmt.Errorf("bound proxy unavailable: %w", err)
+			}
+			if !proxyInfo.IsActive {
+				return nil, fmt.Errorf("bound proxy is inactive")
+			}
+			return proxyInfo, nil
+		}
+		if apiKey.ProxyPoolID != nil {
+			pool, err := r.proxyRepo.GetPoolByID(ctx, *apiKey.ProxyPoolID)
+			if err != nil {
+				return nil, fmt.Errorf("bound proxy pool unavailable: %w", err)
+			}
+			if !pool.IsActive {
+				return nil, fmt.Errorf("bound proxy pool is inactive")
+			}
+			proxies, err := r.proxyRepo.GetActiveByPoolID(ctx, *apiKey.ProxyPoolID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load bound proxy pool: %w", err)
+			}
+			proxyInfo := selectWeightedProxy(proxies)
+			if proxyInfo == nil {
+				return nil, fmt.Errorf("bound proxy pool has no active proxies")
+			}
+			return proxyInfo, nil
+		}
 	}
+
+	if !p.UseProxy {
+		return nil, nil
+	}
+
+	if p.DefaultProxyID != nil {
+		proxyInfo, err := r.proxyRepo.GetByID(ctx, *p.DefaultProxyID)
+		if err == nil && proxyInfo.IsActive {
+			return proxyInfo, nil
+		}
+		r.logger.Warn("provider default proxy unavailable, trying active proxy pool",
+			zap.String("provider", p.Name),
+			zap.String("proxy_id", p.DefaultProxyID.String()),
+			zap.Error(err))
+	}
+
+	proxies, err := r.proxyRepo.GetActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load active proxies: %w", err)
+	}
+	proxyInfo := selectWeightedProxy(proxies)
+	if proxyInfo == nil {
+		return nil, fmt.Errorf("provider requires proxy but no active proxy is available")
+	}
+	return proxyInfo, nil
+}
+
+func (r *Router) proxyURL(proxyInfo *models.Proxy) (*url.URL, error) {
+	proxyURL, err := url.Parse(normalizeProxyURL(proxyInfo))
+	if err != nil {
+		return nil, fmt.Errorf("invalid proxy URL: %w", err)
+	}
+
+	if proxyInfo.Username != "" && proxyInfo.Password != "" {
+		password, decErr := crypto.Decrypt(proxyInfo.Password)
+		if decErr != nil {
+			return nil, fmt.Errorf("proxy password decryption failed: %w", decErr)
+		}
+		proxyURL.User = url.UserPassword(proxyInfo.Username, password)
+	}
+
+	return proxyURL, nil
+}
+
+func normalizeProxyURL(proxyInfo *models.Proxy) string {
+	if strings.Contains(proxyInfo.URL, "://") {
+		return proxyInfo.URL
+	}
+	switch proxyInfo.Type {
+	case "socks5":
+		return "socks5://" + proxyInfo.URL
+	case "https":
+		return "https://" + proxyInfo.URL
+	default:
+		return "http://" + proxyInfo.URL
+	}
+}
+
+func selectWeightedProxy(proxies []models.Proxy) *models.Proxy {
+	if len(proxies) == 0 {
+		return nil
+	}
+	var totalWeight float64
+	for _, p := range proxies {
+		totalWeight += p.Weight
+	}
+	if totalWeight <= 0 {
+		return &proxies[secureRandomInt(len(proxies))]
+	}
+	random := secureRandomFloat64() * totalWeight
+	var cumulative float64
+	for i := range proxies {
+		cumulative += proxies[i].Weight
+		if random <= cumulative {
+			return &proxies[i]
+		}
+	}
+	return &proxies[len(proxies)-1]
 }
 
 // createProviderClient creates a provider client based on provider name.

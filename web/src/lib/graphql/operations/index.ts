@@ -2,6 +2,7 @@
 export * from './auth';
 export * from './dashboard';
 export * from './adminDashboard';
+export * from './finance';
 export * from './userDashboard';
 export * from './users';
 export * from './providers';

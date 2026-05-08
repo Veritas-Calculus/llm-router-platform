@@ -248,7 +248,10 @@ func (s *Service) calculateUsageLogCost(ctx context.Context, log *models.UsageLo
 	}
 
 	log.ModelID = model.ID
-	log.Cost = s.calculateCost(model, log.RequestTokens, log.ResponseTokens)
+	customerCharge := s.calculateCustomerCharge(model, log)
+	log.Cost = customerCharge
+	log.CustomerCharge = customerCharge
+	log.ProviderCost = s.calculateProviderCost(model, log, customerCharge)
 }
 
 func (s *Service) modelForUsageLog(ctx context.Context, log *models.UsageLog) (*models.Model, error) {
@@ -257,6 +260,11 @@ func (s *Service) modelForUsageLog(ctx context.Context, log *models.UsageLog) (*
 	}
 	if log.ModelID != uuid.Nil {
 		return s.modelRepo.GetByID(ctx, log.ModelID)
+	}
+	if log.ProviderID != uuid.Nil && log.ModelName != "" {
+		if model, err := s.modelRepo.GetByProviderAndName(ctx, log.ProviderID, log.ModelName); err == nil {
+			return model, nil
+		}
 	}
 	if log.ModelName != "" {
 		return s.modelRepo.GetByName(ctx, log.ModelName)
@@ -306,11 +314,41 @@ func (s *Service) incrUsageCache(ctx context.Context, log *models.UsageLog) {
 	_, _ = pipe.Exec(ctx)
 }
 
-// calculateCost calculates the cost for token usage.
-func (s *Service) calculateCost(model *models.Model, inputTokens, outputTokens int) float64 {
-	inputCost := float64(inputTokens) / 1000 * model.InputPricePer1K
-	outputCost := float64(outputTokens) / 1000 * model.OutputPricePer1K
-	return inputCost + outputCost
+// calculateCustomerCharge calculates the customer-facing charge for every populated metering dimension.
+func (s *Service) calculateCustomerCharge(model *models.Model, log *models.UsageLog) float64 {
+	inputCost := float64(log.RequestTokens) / 1000 * model.InputPricePer1K
+	outputCost := float64(log.ResponseTokens) / 1000 * model.OutputPricePer1K
+
+	durationSeconds := float64(log.DurationMs) / 1000
+	secondCost := durationSeconds * model.PricePerSecond
+	minuteCost := durationSeconds / 60 * model.PricePerMinute
+	imageCost := float64(log.ItemCount) * model.PricePerImage
+
+	return inputCost + outputCost + secondCost + minuteCost + imageCost
+}
+
+// calculateProviderCost calculates upstream provider cost. If provider-side
+// rates are not configured yet, fall back to the customer charge so margin is
+// conservative instead of falsely showing 100%.
+func (s *Service) calculateProviderCost(model *models.Model, log *models.UsageLog, fallback float64) float64 {
+	hasProviderRates := model.ProviderInputCostPer1K > 0 ||
+		model.ProviderOutputCostPer1K > 0 ||
+		model.ProviderCostPerSecond > 0 ||
+		model.ProviderCostPerImage > 0 ||
+		model.ProviderCostPerMinute > 0
+	if !hasProviderRates {
+		return fallback
+	}
+
+	inputCost := float64(log.RequestTokens) / 1000 * model.ProviderInputCostPer1K
+	outputCost := float64(log.ResponseTokens) / 1000 * model.ProviderOutputCostPer1K
+
+	durationSeconds := float64(log.DurationMs) / 1000
+	secondCost := durationSeconds * model.ProviderCostPerSecond
+	minuteCost := durationSeconds / 60 * model.ProviderCostPerMinute
+	imageCost := float64(log.ItemCount) * model.ProviderCostPerImage
+
+	return inputCost + outputCost + secondCost + minuteCost + imageCost
 }
 
 // UsageSummary represents aggregated usage data.

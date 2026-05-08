@@ -1,11 +1,15 @@
 import { motion } from 'framer-motion';
 import { ArrowPathIcon, DocumentArrowUpIcon } from '@heroicons/react/24/outline';
+import { ProxyPool } from '@/lib/types';
 
 interface BatchImportModalProps {
   isOpen: boolean;
   batchInput: string;
+  proxyPools: ProxyPool[];
+  selectedPoolId: string;
   importing: boolean;
   onInputChange: (value: string) => void;
+  onPoolChange: (value: string) => void;
   onImport: () => void;
   onClose: () => void;
 }
@@ -13,8 +17,11 @@ interface BatchImportModalProps {
 export default function BatchImportModal({
   isOpen,
   batchInput,
+  proxyPools,
+  selectedPoolId,
   importing,
   onInputChange,
+  onPoolChange,
   onImport,
   onClose,
 }: BatchImportModalProps) {
@@ -36,6 +43,22 @@ export default function BatchImportModal({
           Enter one proxy per line. Format: <code className="bg-apple-gray-100 px-1 rounded">URL [type] [region]</code>
         </p>
         <div className="space-y-4">
+          <div>
+            <label htmlFor="batchProxyPool" className="label">Proxy Pool</label>
+            <select
+              id="batchProxyPool"
+              value={selectedPoolId}
+              onChange={(e) => onPoolChange(e.target.value)}
+              className="input"
+            >
+              <option value="">Unassigned</option>
+              {proxyPools.map((pool) => (
+                <option key={pool.id} value={pool.id}>
+                  {pool.name} ({pool.active_proxy_count}/{pool.proxy_count})
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <textarea
               value={batchInput}

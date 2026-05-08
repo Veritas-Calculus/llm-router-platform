@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"llm-router-platform/internal/config"
-	configService "llm-router-platform/internal/service/config"
 	"llm-router-platform/internal/models"
+	configService "llm-router-platform/internal/service/config"
 	"llm-router-platform/pkg/sanitize"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -699,16 +699,16 @@ func (s *Service) TotalUserCount(ctx context.Context) int64 {
 	return count
 }
 
-// RevenueStats returns total revenue and period revenue from transactions.
+// RevenueStats returns total revenue and period revenue from completed paid orders.
 func (s *Service) RevenueStats(ctx context.Context, periodStart time.Time) (totalRevenue, periodRevenue float64) {
-	s.db.WithContext(ctx).Model(&models.Transaction{}).
-		Where("type = ?", "recharge").
+	s.db.WithContext(ctx).Model(&models.Order{}).
+		Where("status = ?", "paid").
 		Where("amount > 0").
 		Select("COALESCE(SUM(amount), 0)").Scan(&totalRevenue)
-	s.db.WithContext(ctx).Model(&models.Transaction{}).
-		Where("type = ?", "recharge").
+	s.db.WithContext(ctx).Model(&models.Order{}).
+		Where("status = ?", "paid").
 		Where("amount > 0").
-		Where("created_at >= ?", periodStart).
+		Where("COALESCE(updated_at, created_at) >= ?", periodStart).
 		Select("COALESCE(SUM(amount), 0)").Scan(&periodRevenue)
 	return
 }

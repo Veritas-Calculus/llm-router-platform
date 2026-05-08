@@ -9,14 +9,14 @@ import (
 // Plan represents a subscription tier.
 type Plan struct {
 	BaseModel
-	Name           string  `gorm:"uniqueIndex;not null" json:"name"`
-	Description    string  `json:"description"`
-	PriceMonth     float64 `gorm:"not null" json:"price_month"` // Monthly price in USD
-	TokenLimit     int64   `gorm:"not null" json:"token_limit"` // Tokens per month
-	RateLimit      int     `gorm:"not null" json:"rate_limit"`  // Requests per minute
-	SupportLevel   string  `gorm:"default:'standard'" json:"support_level"`
-	IsActive       bool    `gorm:"default:true" json:"is_active"`
-	Features       string  `gorm:"type:text" json:"features"` // JSON string or comma-separated list
+	Name         string  `gorm:"uniqueIndex;not null" json:"name"`
+	Description  string  `json:"description"`
+	PriceMonth   float64 `gorm:"not null" json:"price_month"` // Monthly price in USD
+	TokenLimit   int64   `gorm:"not null" json:"token_limit"` // Tokens per month
+	RateLimit    int     `gorm:"not null" json:"rate_limit"`  // Requests per minute
+	SupportLevel string  `gorm:"default:'standard'" json:"support_level"`
+	IsActive     bool    `gorm:"default:true" json:"is_active"`
+	Features     string  `gorm:"type:text" json:"features"` // JSON string or comma-separated list
 }
 
 // Subscription represents an organization's active plan.
@@ -30,9 +30,9 @@ type Subscription struct {
 	CancelAtPeriodEnd    bool      `gorm:"default:false" json:"cancel_at_period_end"`
 	StripeCustomerID     string    `gorm:"index" json:"stripe_customer_id"`
 	StripeSubscriptionID string    `gorm:"uniqueIndex" json:"stripe_subscription_id"`
-	
+
 	Organization Organization `gorm:"foreignKey:OrgID" json:"-"`
-	Plan Plan `gorm:"foreignKey:PlanID" json:"plan"`
+	Plan         Plan         `gorm:"foreignKey:PlanID" json:"plan"`
 }
 
 // Order represents a payment order.
@@ -75,31 +75,33 @@ type UsageLog struct {
 	RequestTokens  int       `gorm:"column:request_tokens" json:"input_tokens"`
 	ResponseTokens int       `gorm:"column:response_tokens" json:"output_tokens"`
 	TotalTokens    int       `json:"total_tokens"`
-	DurationMs     int64     `json:"duration_ms,omitempty"`      // TTS/Audio duration in milliseconds
-	ItemCount      int       `json:"item_count,omitempty"`       // Number of items (images, frames)
+	DurationMs     int64     `json:"duration_ms,omitempty"`     // TTS/Audio duration in milliseconds
+	ItemCount      int       `json:"item_count,omitempty"`      // Number of items (images, frames)
 	BytesProcessed int64     `json:"bytes_processed,omitempty"` // File size in bytes
-	Cost           float64   `json:"cost"`
+	Cost           float64   `json:"cost"`                      // Backward-compatible customer charge
+	CustomerCharge float64   `gorm:"default:0" json:"customer_charge"`
+	ProviderCost   float64   `gorm:"default:0" json:"provider_cost"`
 	Latency        int64     `gorm:"column:latency" json:"latency_ms"`
 	StatusCode     int       `json:"status_code"`
 	ErrorMessage   string    `json:"error_message,omitempty"`
-	
-	// MCP stats
-	MCPCallCount   int       `gorm:"default:0" json:"mcp_call_count"`
-	MCPErrorCount  int       `gorm:"default:0" json:"mcp_error_count"`
 
-	IsSuccess      bool      `gorm:"-" json:"is_success"`
+	// MCP stats
+	MCPCallCount  int `gorm:"default:0" json:"mcp_call_count"`
+	MCPErrorCount int `gorm:"default:0" json:"mcp_error_count"`
+
+	IsSuccess bool `gorm:"-" json:"is_success"`
 }
 
 // Budget represents monthly spending limits for an organization or project.
 type Budget struct {
 	BaseModel
-	OrgID           uuid.UUID  `gorm:"type:uuid;not null;uniqueIndex" json:"org_id"`
-	ProjectID       *uuid.UUID `gorm:"type:uuid;index" json:"project_id,omitempty"`
-	APIKeyID        *uuid.UUID `gorm:"type:uuid;index" json:"api_key_id,omitempty"`
-	MonthlyLimitUSD float64    `gorm:"not null" json:"monthly_limit_usd"`
-	AlertThreshold  float64    `gorm:"default:0.8" json:"alert_threshold"`
-	EnforceHardLimit bool      `gorm:"default:false" json:"enforce_hard_limit"` // true = block requests on over-budget
-	IsActive        bool       `gorm:"default:true" json:"is_active"`
-	WebhookURL      string     `json:"webhook_url,omitempty"`
-	Email           string     `json:"email,omitempty"`
+	OrgID            uuid.UUID  `gorm:"type:uuid;not null;uniqueIndex" json:"org_id"`
+	ProjectID        *uuid.UUID `gorm:"type:uuid;index" json:"project_id,omitempty"`
+	APIKeyID         *uuid.UUID `gorm:"type:uuid;index" json:"api_key_id,omitempty"`
+	MonthlyLimitUSD  float64    `gorm:"not null" json:"monthly_limit_usd"`
+	AlertThreshold   float64    `gorm:"default:0.8" json:"alert_threshold"`
+	EnforceHardLimit bool       `gorm:"default:false" json:"enforce_hard_limit"` // true = block requests on over-budget
+	IsActive         bool       `gorm:"default:true" json:"is_active"`
+	WebhookURL       string     `json:"webhook_url,omitempty"`
+	Email            string     `json:"email,omitempty"`
 }

@@ -5,14 +5,16 @@ import {
   CheckCircleIcon,
   XCircleIcon,
 } from '@heroicons/react/24/outline';
-import { ProviderApiKey } from '@/lib/types';
+import { ProviderApiKey, Proxy, ProxyPool } from '@/lib/types';
 import ConfirmModal from '@/components/ConfirmModal';
 
 interface ApiKeyTableProps {
   providerName: string;
   apiKeys: ProviderApiKey[];
-  onAddKey: (data: { api_key: string; alias: string; priority: number; weight: number; rate_limit: number }) => Promise<void>;
-  onUpdateKey: (keyId: string, data: { priority: number; weight: number; rate_limit: number }) => Promise<void>;
+  proxies: Proxy[];
+  proxyPools: ProxyPool[];
+  onAddKey: (data: { api_key: string; alias: string; priority: number; weight: number; rate_limit: number; proxy_id?: string; proxy_pool_id?: string }) => Promise<void>;
+  onUpdateKey: (keyId: string, data: { priority: number; weight: number; rate_limit: number; proxy_id?: string; proxy_pool_id?: string }) => Promise<void>;
   onToggleKey: (key: ProviderApiKey) => void;
   onDeleteKey: (keyId: string) => Promise<void>;
 }
@@ -20,16 +22,18 @@ interface ApiKeyTableProps {
 export default function ApiKeyTable({
   providerName,
   apiKeys,
+  proxies,
+  proxyPools,
   onAddKey,
   onUpdateKey,
   onToggleKey,
   onDeleteKey,
 }: ApiKeyTableProps) {
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newKey, setNewKey] = useState({ api_key: '', alias: '', priority: 1, weight: 1.0, rate_limit: 0 });
+  const [newKey, setNewKey] = useState({ api_key: '', alias: '', priority: 1, weight: 1.0, rate_limit: 0, binding: '' });
   const [adding, setAdding] = useState(false);
   const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
-  const [editKeyData, setEditKeyData] = useState({ priority: 1, weight: 1.0, rate_limit: 0 });
+  const [editKeyData, setEditKeyData] = useState({ priority: 1, weight: 1.0, rate_limit: 0, binding: '' });
   const [updatingKey, setUpdatingKey] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; keyId: string }>({ isOpen: false, keyId: '' });
   const [processing, setProcessing] = useState(false);
@@ -48,13 +52,18 @@ export default function ApiKeyTable({
     if (!trimmedKey) return;
     setAdding(true);
     try {
+      const binding = parseBinding(newKey.binding);
       await onAddKey({
-        ...newKey,
         api_key: trimmedKey,
         alias: newKey.alias.trim() || `${providerName} primary`,
+        priority: newKey.priority,
+        weight: newKey.weight,
+        rate_limit: newKey.rate_limit,
+        proxy_id: binding.proxy_id,
+        proxy_pool_id: binding.proxy_pool_id,
       });
       setShowAddModal(false);
-      setNewKey({ api_key: '', alias: '', priority: 1, weight: 1.0, rate_limit: 0 });
+      setNewKey({ api_key: '', alias: '', priority: 1, weight: 1.0, rate_limit: 0, binding: '' });
     } finally {
       setAdding(false);
     }
@@ -66,6 +75,7 @@ export default function ApiKeyTable({
       priority: key.priority || 1,
       weight: key.weight || 1.0,
       rate_limit: key.rate_limit || 0,
+      binding: bindingValue(key),
     });
   };
 
@@ -73,7 +83,14 @@ export default function ApiKeyTable({
     if (!editingKeyId) return;
     setUpdatingKey(true);
     try {
-      await onUpdateKey(editingKeyId, editKeyData);
+      const binding = parseBinding(editKeyData.binding);
+      await onUpdateKey(editingKeyId, {
+        priority: editKeyData.priority,
+        weight: editKeyData.weight,
+        rate_limit: editKeyData.rate_limit,
+        proxy_id: binding.proxy_id,
+        proxy_pool_id: binding.proxy_pool_id,
+      });
       setEditingKeyId(null);
     } finally {
       setUpdatingKey(false);
@@ -121,6 +138,7 @@ export default function ApiKeyTable({
               <tr>
                 <th className="table-header">Alias</th>
                 <th className="table-header w-48">Config</th>
+                <th className="table-header">Binding</th>
                 <th className="table-header">Status</th>
                 <th className="table-header">Usage</th>
                 <th className="table-header">Last Used</th>
@@ -167,6 +185,12 @@ export default function ApiKeyTable({
                             placeholder="0 = unltd"
                           />
                         </div>
+                        <BindingSelect
+                          value={editKeyData.binding}
+                          proxies={proxies}
+                          proxyPools={proxyPools}
+                          onChange={(binding) => setEditKeyData(p => ({ ...p, binding }))}
+                        />
                       </div>
                     ) : (
                       <div className="space-y-1 text-xs text-apple-gray-600">
@@ -175,6 +199,9 @@ export default function ApiKeyTable({
                         <div><span className="text-apple-gray-400 w-16 inline-block">Rate Limit:</span> <span className="font-medium">{key.rate_limit ? `${key.rate_limit} RPS` : 'Unlimited'}</span></div>
                       </div>
                     )}
+                  </td>
+                  <td className="table-cell text-sm text-apple-gray-600">
+                    {bindingLabel(key, proxies, proxyPools)}
                   </td>
                   <td className="table-cell">
                     <button
@@ -295,6 +322,15 @@ export default function ApiKeyTable({
                   />
                 </div>
               </div>
+              <div>
+                <label className="label">Proxy Binding</label>
+                <BindingSelect
+                  value={newKey.binding}
+                  proxies={proxies}
+                  proxyPools={proxyPools}
+                  onChange={(binding) => setNewKey((prev) => ({ ...prev, binding }))}
+                />
+              </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={() => setShowAddModal(false)} className="btn btn-secondary">Cancel</button>
@@ -317,5 +353,61 @@ export default function ApiKeyTable({
         loading={processing}
       />
     </div>
+  );
+}
+
+function bindingValue(key: ProviderApiKey): string {
+  if (key.proxy_id) return `proxy:${key.proxy_id}`;
+  if (key.proxy_pool_id) return `pool:${key.proxy_pool_id}`;
+  return '';
+}
+
+function parseBinding(binding: string): { proxy_id?: string; proxy_pool_id?: string } {
+  if (binding.startsWith('proxy:')) return { proxy_id: binding.slice('proxy:'.length) };
+  if (binding.startsWith('pool:')) return { proxy_pool_id: binding.slice('pool:'.length) };
+  return {};
+}
+
+function bindingLabel(key: ProviderApiKey, proxies: Proxy[], proxyPools: ProxyPool[]): string {
+  if (key.proxy_id) {
+    const proxy = proxies.find((p) => p.id === key.proxy_id);
+    return proxy ? `Proxy: ${proxy.url}` : 'Missing proxy';
+  }
+  if (key.proxy_pool_id) {
+    const pool = proxyPools.find((p) => p.id === key.proxy_pool_id);
+    return pool ? `Pool: ${pool.name}` : 'Missing pool';
+  }
+  return 'Provider default';
+}
+
+function BindingSelect({
+  value,
+  proxies,
+  proxyPools,
+  onChange,
+}: {
+  value: string;
+  proxies: Proxy[];
+  proxyPools: ProxyPool[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="input text-xs py-1.5 px-2"
+    >
+      <option value="">Provider default</option>
+      {proxyPools.map((pool) => (
+        <option key={pool.id} value={`pool:${pool.id}`}>
+          Pool: {pool.name} ({pool.active_proxy_count}/{pool.proxy_count})
+        </option>
+      ))}
+      {proxies.map((proxy) => (
+        <option key={proxy.id} value={`proxy:${proxy.id}`}>
+          Proxy: {proxy.url}{proxy.region ? ` (${proxy.region})` : ''}
+        </option>
+      ))}
+    </select>
   );
 }

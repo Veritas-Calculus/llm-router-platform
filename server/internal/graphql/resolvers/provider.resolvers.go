@@ -183,8 +183,13 @@ func (r *mutationResolver) CreateProviderAPIKey(ctx context.Context, providerID 
 	if input.RateLimit != nil {
 		rl = *input.RateLimit
 	}
+	proxyID, proxyPoolID, err := providerKeyProxyBinding(input.ProxyID, input.ProxyPoolID)
+	if err != nil {
+		return nil, err
+	}
 	key := &models.ProviderAPIKey{
-		ProviderID: pid, Alias: input.Alias, EncryptedAPIKey: encrypted,
+		ProviderID: pid, ProxyID: proxyID, ProxyPoolID: proxyPoolID,
+		Alias: input.Alias, EncryptedAPIKey: encrypted,
 		KeyPrefix: keyPrefix, IsActive: true, Priority: prio, Weight: weight, RateLimit: rl,
 	}
 	if err := r.Router.CreateProviderAPIKey(ctx, key); err != nil {
@@ -209,10 +214,41 @@ func (r *mutationResolver) UpdateProviderAPIKey(ctx context.Context, providerID 
 	if input.RateLimit != nil {
 		key.RateLimit = *input.RateLimit
 	}
+	if input.ProxyID != nil || input.ProxyPoolID != nil {
+		proxyID, proxyPoolID, err := providerKeyProxyBinding(input.ProxyID, input.ProxyPoolID)
+		if err != nil {
+			return nil, err
+		}
+		key.ProxyID = proxyID
+		key.ProxyPoolID = proxyPoolID
+	}
 	if err := r.Router.UpdateProviderAPIKey(ctx, key); err != nil {
 		return nil, err
 	}
 	return providerAPIKeyToGQL(key), nil
+}
+
+func providerKeyProxyBinding(proxyIDInput *string, proxyPoolIDInput *string) (*uuid.UUID, *uuid.UUID, error) {
+	hasProxy := proxyIDInput != nil && strings.TrimSpace(*proxyIDInput) != ""
+	hasPool := proxyPoolIDInput != nil && strings.TrimSpace(*proxyPoolIDInput) != ""
+	if hasProxy && hasPool {
+		return nil, nil, fmt.Errorf("API key can bind to either a proxy or a proxy pool, not both")
+	}
+	if hasProxy {
+		id, err := uuid.Parse(strings.TrimSpace(*proxyIDInput))
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid proxy id")
+		}
+		return &id, nil, nil
+	}
+	if hasPool {
+		id, err := uuid.Parse(strings.TrimSpace(*proxyPoolIDInput))
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid proxy pool id")
+		}
+		return nil, &id, nil
+	}
+	return nil, nil, nil
 }
 
 // ToggleProviderAPIKey is the resolver for the toggleProviderApiKey field.
@@ -259,6 +295,21 @@ func (r *mutationResolver) CreateModel(ctx context.Context, providerID string, i
 	if input.PricePerMinute != nil {
 		m.PricePerMinute = *input.PricePerMinute
 	}
+	if input.ProviderInputCostPer1k != nil {
+		m.ProviderInputCostPer1K = *input.ProviderInputCostPer1k
+	}
+	if input.ProviderOutputCostPer1k != nil {
+		m.ProviderOutputCostPer1K = *input.ProviderOutputCostPer1k
+	}
+	if input.ProviderCostPerSecond != nil {
+		m.ProviderCostPerSecond = *input.ProviderCostPerSecond
+	}
+	if input.ProviderCostPerImage != nil {
+		m.ProviderCostPerImage = *input.ProviderCostPerImage
+	}
+	if input.ProviderCostPerMinute != nil {
+		m.ProviderCostPerMinute = *input.ProviderCostPerMinute
+	}
 	if err := r.AdminSvc.DB().Create(&m).Error; err != nil {
 		return nil, fmt.Errorf("failed to create model: %w", err)
 	}
@@ -299,6 +350,21 @@ func (r *mutationResolver) UpdateModel(ctx context.Context, id string, input mod
 	}
 	if input.PricePerMinute != nil {
 		m.PricePerMinute = *input.PricePerMinute
+	}
+	if input.ProviderInputCostPer1k != nil {
+		m.ProviderInputCostPer1K = *input.ProviderInputCostPer1k
+	}
+	if input.ProviderOutputCostPer1k != nil {
+		m.ProviderOutputCostPer1K = *input.ProviderOutputCostPer1k
+	}
+	if input.ProviderCostPerSecond != nil {
+		m.ProviderCostPerSecond = *input.ProviderCostPerSecond
+	}
+	if input.ProviderCostPerImage != nil {
+		m.ProviderCostPerImage = *input.ProviderCostPerImage
+	}
+	if input.ProviderCostPerMinute != nil {
+		m.ProviderCostPerMinute = *input.ProviderCostPerMinute
 	}
 	if err := r.AdminSvc.DB().Save(&m).Error; err != nil {
 		return nil, fmt.Errorf("failed to update model: %w", err)

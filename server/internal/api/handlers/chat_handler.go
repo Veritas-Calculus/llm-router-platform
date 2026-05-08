@@ -946,6 +946,7 @@ func (h *ChatHandler) handleProviderError(c *gin.Context, err error, start time.
 	usageLog := &models.UsageLog{
 		UserID:     userAPIKey.UserID,
 		ProjectID:  projectObj.ID,
+		Channel:    userAPIKey.Channel,
 		APIKeyID:   userAPIKey.ID,
 		ProviderID: selectedProvider.ID,
 		ModelName:  modelName,

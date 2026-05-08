@@ -86,6 +86,7 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 		usageLog := &models.UsageLog{
 			UserID:     userAPIKey.UserID,
 			ProjectID:  projectObj.ID,
+			Channel:    userAPIKey.Channel,
 			APIKeyID:   userAPIKey.ID,
 			ProviderID: selectedProvider.ID,
 			ModelName:  model,
@@ -115,17 +116,26 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 	gen.End("Image generated successfully", 0, 0)
 
 	latency := time.Since(start)
+	itemCount := len(result.Response.Data)
+	if itemCount == 0 {
+		itemCount = req.N
+	}
+	if itemCount <= 0 {
+		itemCount = 1
+	}
 	usageLog := &models.UsageLog{
 		UserID:     userAPIKey.UserID,
 		ProjectID:  projectObj.ID,
+		Channel:    userAPIKey.Channel,
 		APIKeyID:   userAPIKey.ID,
 		ProviderID: selectedProvider.ID,
 		ModelName:  model,
+		ItemCount:  itemCount,
 		Latency:    latency.Milliseconds(),
 		StatusCode: http.StatusOK,
 	}
-	if err := h.billing.RecordUsage(c.Request.Context(), usageLog); err != nil {
-		h.logger.Warn("billing record failed", zap.Error(err))
+	if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, userAPIKey.UserID, "Image generation: "+model); err != nil {
+		h.logger.Warn("billing deduction failed", zap.Error(err), zap.String("model", sanitize.LogValue(model)))
 	}
 
 	c.JSON(http.StatusOK, result.Response)

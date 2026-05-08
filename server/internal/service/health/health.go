@@ -3,7 +3,10 @@ package health
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"llm-router-platform/internal/config"
@@ -103,7 +106,7 @@ type ProviderHealthStatus struct {
 // ─── Provider Client Helpers ────────────────────────────────────────────
 
 // getProviderClient creates a provider client dynamically using a ProviderAPIKey.
-func (s *Service) getProviderClient(p *models.Provider, apiKey *models.ProviderAPIKey) (provider.Client, error) {
+func (s *Service) getProviderClient(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey) (provider.Client, error) {
 	// First try registry for local providers (Ollama, LM Studio)
 	if client, ok := s.providerRegistry.Get(p.Name); ok {
 		return client, nil
@@ -119,15 +122,114 @@ func (s *Service) getProviderClient(p *models.Provider, apiKey *models.ProviderA
 		}
 	}
 
+	httpClient, err := s.httpClientForProvider(ctx, p, apiKey)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &config.ProviderConfig{
 		APIKey:  decryptedKey,
 		BaseURL: p.BaseURL,
 		HTTPClient: func() *http.Client {
-			return sanitize.SafeHTTPClient(allowLocalProviderHealthEgress, time.Duration(p.Timeout)*time.Second)
+			return httpClient
 		},
 	}
 
 	return s.createProviderClient(p.Name, cfg)
+}
+
+func (s *Service) httpClientForProvider(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey) (*http.Client, error) {
+	proxyInfo, err := s.resolveProxyForProvider(ctx, p, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	if proxyInfo == nil {
+		return sanitize.SafeHTTPClient(allowLocalProviderHealthEgress, time.Duration(p.Timeout)*time.Second), nil
+	}
+	proxyURL, err := healthProxyURL(proxyInfo)
+	if err != nil {
+		return nil, err
+	}
+	return sanitize.SafeHTTPClientWithProxy(allowLocalProviderHealthEgress, time.Duration(p.Timeout)*time.Second, proxyURL), nil
+}
+
+func (s *Service) resolveProxyForProvider(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey) (*models.Proxy, error) {
+	if apiKey != nil {
+		if apiKey.ProxyID != nil {
+			proxyInfo, err := s.proxyRepo.GetByID(ctx, *apiKey.ProxyID)
+			if err != nil {
+				return nil, fmt.Errorf("bound proxy unavailable: %w", err)
+			}
+			if !proxyInfo.IsActive {
+				return nil, fmt.Errorf("bound proxy is inactive")
+			}
+			return proxyInfo, nil
+		}
+		if apiKey.ProxyPoolID != nil {
+			pool, err := s.proxyRepo.GetPoolByID(ctx, *apiKey.ProxyPoolID)
+			if err != nil {
+				return nil, fmt.Errorf("bound proxy pool unavailable: %w", err)
+			}
+			if !pool.IsActive {
+				return nil, fmt.Errorf("bound proxy pool is inactive")
+			}
+			proxies, err := s.proxyRepo.GetActiveByPoolID(ctx, *apiKey.ProxyPoolID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load bound proxy pool: %w", err)
+			}
+			if len(proxies) == 0 {
+				return nil, fmt.Errorf("bound proxy pool has no active proxies")
+			}
+			return &proxies[0], nil
+		}
+	}
+
+	if !p.UseProxy {
+		return nil, nil
+	}
+	if p.DefaultProxyID != nil {
+		proxyInfo, err := s.proxyRepo.GetByID(ctx, *p.DefaultProxyID)
+		if err == nil && proxyInfo.IsActive {
+			return proxyInfo, nil
+		}
+	}
+	proxies, err := s.proxyRepo.GetActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load active proxies: %w", err)
+	}
+	if len(proxies) == 0 {
+		return nil, fmt.Errorf("provider requires proxy but no active proxy is available")
+	}
+	return &proxies[0], nil
+}
+
+func healthProxyURL(proxyInfo *models.Proxy) (*url.URL, error) {
+	proxyURL, err := url.Parse(healthNormalizeProxyURL(proxyInfo))
+	if err != nil {
+		return nil, err
+	}
+	if proxyInfo.Username != "" && proxyInfo.Password != "" {
+		password, err := crypto.Decrypt(proxyInfo.Password)
+		if err != nil {
+			return nil, err
+		}
+		proxyURL.User = url.UserPassword(proxyInfo.Username, password)
+	}
+	return proxyURL, nil
+}
+
+func healthNormalizeProxyURL(proxyInfo *models.Proxy) string {
+	if strings.Contains(proxyInfo.URL, "://") {
+		return proxyInfo.URL
+	}
+	switch proxyInfo.Type {
+	case "socks5":
+		return "socks5://" + proxyInfo.URL
+	case "https":
+		return "https://" + proxyInfo.URL
+	default:
+		return "http://" + proxyInfo.URL
+	}
 }
 
 // createProviderClient creates a provider client based on provider name.

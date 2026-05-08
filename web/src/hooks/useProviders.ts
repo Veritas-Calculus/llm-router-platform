@@ -1,12 +1,14 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import toast from 'react-hot-toast';
-import { Provider, ProviderApiKey, ProviderHealthStatus, Proxy } from '@/lib/types';
+import { Provider, ProviderApiKey, ProviderHealthStatus, Proxy, ProxyPool, ProxyTopology } from '@/lib/types';
 import { t } from '@/lib/i18n';
 import {
   PROVIDERS_QUERY,
   PROVIDER_API_KEYS_QUERY,
   PROXIES_QUERY,
+  PROXY_POOLS_QUERY,
+  PROXY_TOPOLOGY_QUERY,
   CREATE_PROVIDER,
   DELETE_PROVIDER,
   UPDATE_PROVIDER,
@@ -25,15 +27,16 @@ import {
 function mapProvider(d: any): Provider {
   return {
     id: d.id, name: d.name, base_url: d.baseUrl,
-    is_active: d.isActive, priority: d.priority, weight: d.weight,
-    max_retries: d.maxRetries, timeout: d.timeout, use_proxy: d.useProxy,
+    is_active: d.isActive, priority: d.priority ?? 0, weight: d.weight ?? 1,
+    max_retries: d.maxRetries ?? 3, timeout: d.timeout ?? 30, use_proxy: d.useProxy,
     default_proxy_id: d.defaultProxyId, requires_api_key: d.requiresApiKey,
-    created_at: d.createdAt,
+    created_at: d.createdAt || '',
   };
 }
 function mapApiKey(d: any): ProviderApiKey {
   return {
-    id: d.id, provider_id: d.providerId, alias: d.alias,
+    id: d.id, provider_id: d.providerId, proxy_id: d.proxyId,
+    proxy_pool_id: d.proxyPoolId, alias: d.alias,
     key_prefix: d.keyPrefix, is_active: d.isActive, priority: d.priority,
     weight: d.weight, rate_limit: d.rateLimit, usage_count: d.usageCount,
     last_used_at: d.lastUsedAt, created_at: d.createdAt,
@@ -41,12 +44,46 @@ function mapApiKey(d: any): ProviderApiKey {
 }
 function mapProxy(d: any): Proxy {
   return {
-    id: d.id, url: d.url, type: d.type, region: d.region,
+    id: d.id, pool_id: d.poolId, pool_name: d.poolName,
+    url: d.url, type: d.type, region: d.region,
     is_active: d.isActive, weight: d.weight,
     success_count: d.successCount, failure_count: d.failureCount,
     avg_latency: d.avgLatency, last_checked: d.lastChecked,
     created_at: d.createdAt, has_auth: d.hasAuth,
     upstream_proxy_id: d.upstreamProxyId, username: d.username || '',
+  };
+}
+
+function mapProxyPool(d: any): ProxyPool {
+  return {
+    id: d.id, name: d.name, description: d.description || '',
+    is_active: d.isActive, strategy: d.strategy || 'weighted',
+    proxy_count: d.proxyCount || 0, active_proxy_count: d.activeProxyCount || 0,
+    created_at: d.createdAt,
+  };
+}
+
+function mapTopology(d: any): ProxyTopology | null {
+  if (!d) return null;
+  return {
+    directAccounts: d.directAccounts || 0,
+    proxiedAccounts: d.proxiedAccounts || 0,
+    providers: (d.providers || []).map((node: any) => ({
+      provider: mapProvider(node.provider),
+      models: node.models || [],
+      accounts: (node.accounts || []).map((account: any) => ({
+        label: account.label,
+        bindingSource: account.bindingSource,
+        apiKey: account.apiKey ? mapApiKey(account.apiKey) : null,
+        proxyPool: account.proxyPool ? mapProxyPool(account.proxyPool) : null,
+        candidateProxies: (account.candidateProxies || []).map(mapProxy),
+        route: account.route || [],
+      })),
+    })),
+    proxyPools: (d.proxyPools || []).map((node: any) => ({
+      pool: mapProxyPool(node.pool),
+      proxies: (node.proxies || []).map(mapProxy),
+    })),
   };
 }
 
@@ -80,6 +117,10 @@ export function useProviders() {
     fetchPolicy: 'cache-and-network',
   });
   const { data: proxiesData } = useQuery<any>(PROXIES_QUERY);
+  const { data: proxyPoolsData } = useQuery<any>(PROXY_POOLS_QUERY);
+  const { data: topologyData, refetch: refetchTopology } = useQuery<any>(PROXY_TOPOLOGY_QUERY, {
+    fetchPolicy: 'cache-and-network',
+  });
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [localProviders, setLocalProviders] = useState<Provider[]>([]);
 
@@ -97,6 +138,8 @@ export function useProviders() {
     ));
   }, [remoteProviders, localProviders]);
   const proxies = useMemo(() => (proxiesData?.proxies || []).map(mapProxy), [proxiesData]);
+  const proxyPools = useMemo(() => (proxyPoolsData?.proxyPools || []).map(mapProxyPool), [proxyPoolsData]);
+  const proxyTopology = useMemo(() => mapTopology(topologyData?.proxyTopology), [topologyData]);
 
   useEffect(() => {
     if (remoteProviders.length === 0) return;
@@ -162,10 +205,11 @@ export function useProviders() {
         variables: { id: selectedProvider.id, input: { defaultProxyId: proxyId || null } },
       });
       await refetchProviders();
+      await refetchTopology();
       toast.success(proxyId ? 'Default proxy updated' : 'Default proxy cleared');
     } catch { toast.error('Failed to update proxy'); }
     finally { setSavingProxy(false); }
-  }, [selectedProvider, updateProviderMut, refetchProviders]);
+  }, [selectedProvider, updateProviderMut, refetchProviders, refetchTopology]);
 
   const handleCreateProvider = useCallback(async (data: CreateProviderData) => {
     const requiresKey = data.requiresApiKey ?? true;
@@ -225,6 +269,7 @@ export function useProviders() {
     }
 
     const refreshed = await refetchProviders();
+    await refetchTopology();
     if (created?.id) {
       setSelectedProviderId(created.id);
       const refreshedProvider = refreshed.data?.providers?.find((p: any) => p.id === created.id);
@@ -278,27 +323,29 @@ export function useProviders() {
         setTesting(false);
       }
     }
-  }, [createProviderMut, createKeyMut, updateProviderMut, refetchProviders, checkProviderHealthMut]);
+  }, [createProviderMut, createKeyMut, updateProviderMut, refetchProviders, refetchTopology, checkProviderHealthMut]);
 
   const handleDeleteProvider = useCallback(async (id: string) => {
     await deleteProviderMut({ variables: { id } });
     await refetchProviders();
+    await refetchTopology();
     setLocalProviders((prev) => prev.filter((p) => p.id !== id));
     setSelectedProviderId(null);
     toast.success('Provider deleted');
-  }, [deleteProviderMut, refetchProviders]);
+  }, [deleteProviderMut, refetchProviders, refetchTopology]);
 
   const handleToggleProvider = useCallback(async (provider: Provider) => {
     try {
       const { data } = await toggleProviderMut({ variables: { id: provider.id } });
       await refetchProviders();
+      await refetchTopology();
       const isActive = (data as any)?.toggleProvider?.isActive;
       setLocalProviders((prev) => prev.map((p) => (
         p.id === provider.id ? { ...p, is_active: isActive ?? !provider.is_active } : p
       )));
       toast.success(`${provider.name} ${(data as any)?.toggleProvider?.isActive ? 'enabled' : 'disabled'}`);
     } catch { toast.error('Failed to toggle provider'); }
-  }, [toggleProviderMut, refetchProviders]);
+  }, [toggleProviderMut, refetchProviders, refetchTopology]);
 
   const handleTestConnection = useCallback(async () => {
     if (!selectedProvider) return;
@@ -334,9 +381,10 @@ export function useProviders() {
     try {
       const { data } = await toggleProxyMut({ variables: { id: selectedProvider.id } });
       await refetchProviders();
+      await refetchTopology();
       toast.success(`Proxy ${(data as any)?.toggleProviderProxy?.useProxy ? 'enabled' : 'disabled'} for ${selectedProvider.name}`);
     } catch { toast.error('Failed to toggle proxy'); }
-  }, [selectedProvider, toggleProxyMut, refetchProviders]);
+  }, [selectedProvider, toggleProxyMut, refetchProviders, refetchTopology]);
 
   const handleToggleRequiresApiKey = useCallback(async () => {
     if (!selectedProvider) return;
@@ -345,9 +393,10 @@ export function useProviders() {
         variables: { id: selectedProvider.id, input: { requiresApiKey: !selectedProvider.requires_api_key } },
       });
       await refetchProviders();
+      await refetchTopology();
       toast.success(`API Key requirement ${!selectedProvider.requires_api_key ? 'enabled' : 'disabled'}`);
     } catch { toast.error('Failed to update API key requirement'); }
-  }, [selectedProvider, updateProviderMut, refetchProviders]);
+  }, [selectedProvider, updateProviderMut, refetchProviders, refetchTopology]);
 
   const handleUpdateProviderSettings = useCallback(async (input: {
     priority: number;
@@ -377,62 +426,77 @@ export function useProviders() {
         ]);
       }
       await refetchProviders();
+      await refetchTopology();
       toast.success(t('providers.settingsUpdated'));
     } catch (err: any) {
       toast.error(err?.message || t('providers.settingsUpdateFailed'));
     }
-  }, [selectedProvider, updateProviderMut, refetchProviders]);
+  }, [selectedProvider, updateProviderMut, refetchProviders, refetchTopology]);
 
   const handleSaveEndpoint = useCallback(async (url: string) => {
     if (!selectedProvider) return;
     await updateProviderMut({ variables: { id: selectedProvider.id, input: { baseUrl: url } } });
     await refetchProviders();
+    await refetchTopology();
     toast.success('Endpoint updated successfully');
-  }, [selectedProvider, updateProviderMut, refetchProviders]);
+  }, [selectedProvider, updateProviderMut, refetchProviders, refetchTopology]);
 
-  const handleAddKey = useCallback(async (data: { api_key: string; alias: string; priority: number; weight: number; rate_limit: number }) => {
+  const handleAddKey = useCallback(async (data: { api_key: string; alias: string; priority: number; weight: number; rate_limit: number; proxy_id?: string; proxy_pool_id?: string }) => {
     if (!selectedProvider) return;
     await createKeyMut({
       variables: {
         providerId: selectedProvider.id,
-        input: { apiKey: data.api_key, alias: data.alias, priority: data.priority, weight: data.weight, rateLimit: data.rate_limit },
+        input: {
+          apiKey: data.api_key, alias: data.alias,
+          priority: data.priority, weight: data.weight, rateLimit: data.rate_limit,
+          proxyId: data.proxy_id || undefined,
+          proxyPoolId: data.proxy_pool_id || undefined,
+        },
       },
     });
     await refetchKeys();
+    await refetchTopology();
     toast.success('API key added');
-  }, [selectedProvider, createKeyMut, refetchKeys]);
+  }, [selectedProvider, createKeyMut, refetchKeys, refetchTopology]);
 
-  const handleUpdateKey = useCallback(async (keyId: string, data: { priority: number; weight: number; rate_limit: number }) => {
+  const handleUpdateKey = useCallback(async (keyId: string, data: { priority: number; weight: number; rate_limit: number; proxy_id?: string; proxy_pool_id?: string }) => {
     if (!selectedProvider) return;
     await updateKeyMut({
       variables: {
         providerId: selectedProvider.id, keyId,
-        input: { priority: data.priority, weight: data.weight, rateLimit: data.rate_limit },
+        input: {
+          priority: data.priority, weight: data.weight, rateLimit: data.rate_limit,
+          proxyId: data.proxy_id ?? '',
+          proxyPoolId: data.proxy_pool_id ?? '',
+        },
       },
     });
     await refetchKeys();
+    await refetchTopology();
     toast.success('API key updated');
-  }, [selectedProvider, updateKeyMut, refetchKeys]);
+  }, [selectedProvider, updateKeyMut, refetchKeys, refetchTopology]);
 
   const handleToggleKey = useCallback(async (key: ProviderApiKey) => {
     if (!selectedProvider) return;
     try {
       const { data } = await toggleKeyMut({ variables: { providerId: selectedProvider.id, keyId: key.id } });
       await refetchKeys();
+      await refetchTopology();
       toast.success(`API key ${(data as any)?.toggleProviderApiKey?.isActive ? 'enabled' : 'disabled'}`);
     } catch { toast.error('Failed to toggle API key'); }
-  }, [selectedProvider, toggleKeyMut, refetchKeys]);
+  }, [selectedProvider, toggleKeyMut, refetchKeys, refetchTopology]);
 
   const handleDeleteKey = useCallback(async (keyId: string) => {
     if (!selectedProvider) return;
     await deleteKeyMut({ variables: { providerId: selectedProvider.id, keyId } });
     await refetchKeys();
+    await refetchTopology();
     toast.success('API key deleted');
-  }, [selectedProvider, deleteKeyMut, refetchKeys]);
+  }, [selectedProvider, deleteKeyMut, refetchKeys, refetchTopology]);
 
   return {
     providers, selectedProvider, setSelectedProvider,
-    apiKeys, proxies, loading, testing, healthStatus, savingProxy,
+    apiKeys, proxies, proxyPools, proxyTopology, loading, testing, healthStatus, savingProxy,
     handleCreateProvider, handleDeleteProvider,
     handleToggleProvider, handleTestConnection, handleToggleProxy,
     handleProxyChange, handleToggleRequiresApiKey, handleSaveEndpoint,

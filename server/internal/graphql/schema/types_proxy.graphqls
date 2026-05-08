@@ -4,6 +4,8 @@
 
 type Proxy {
   id: ID!
+  poolId: ID
+  poolName: String
   url: String!
   type: String!
   region: String!
@@ -16,6 +18,17 @@ type Proxy {
   createdAt: DateTime!
   hasAuth: Boolean!
   upstreamProxyId: ID
+}
+
+type ProxyPool {
+  id: ID!
+  name: String!
+  description: String!
+  isActive: Boolean!
+  strategy: String!
+  proxyCount: Int!
+  activeProxyCount: Int!
+  createdAt: DateTime!
 }
 
 type ProxyTestResult {
@@ -40,14 +53,58 @@ input ProxyInput {
   username: String
   password: String
   upstreamProxyId: ID
+  poolId: ID
+}
+
+input ProxyPoolInput {
+  name: String!
+  description: String
+  isActive: Boolean
+  strategy: String
 }
 
 input BatchProxyInput {
   proxies: [BatchProxyItem!]!
+  poolId: ID
 }
 
 input BatchProxyItem {
   url: String!
   type: String
   region: String
+}
+
+type ProxyTopology {
+  providers: [ProviderTopologyNode!]!
+  proxyPools: [ProxyPoolTopologyNode!]!
+  directAccounts: Int!
+  proxiedAccounts: Int!
+}
+
+type ProviderTopologyNode {
+  provider: Provider!
+  models: [String!]!
+  accounts: [ProviderAccountTopologyNode!]!
+}
+
+type ProviderAccountTopologyNode {
+  apiKey: ProviderApiKey
+  label: String!
+  bindingSource: String!
+  proxyPool: ProxyPool
+  candidateProxies: [Proxy!]!
+  route: [ProxyTopologyRouteStep!]!
+}
+
+type ProxyPoolTopologyNode {
+  pool: ProxyPool!
+  proxies: [Proxy!]!
+}
+
+type ProxyTopologyRouteStep {
+  id: ID!
+  type: String!
+  label: String!
+  status: String!
+  detail: String
 }

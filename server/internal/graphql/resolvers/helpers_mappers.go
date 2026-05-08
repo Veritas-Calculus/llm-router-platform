@@ -98,32 +98,62 @@ func providerToGQL(p *models.Provider) *model.Provider {
 
 func modelToGQL(m *models.Model) *model.Model {
 	return &model.Model{
-		ID:               m.ID.String(),
-		ProviderID:       m.ProviderID.String(),
-		Name:             m.Name,
-		DisplayName:      m.DisplayName,
-		InputPricePer1k:  m.InputPricePer1K,
-		OutputPricePer1k: m.OutputPricePer1K,
-		PricePerSecond:   &m.PricePerSecond,
-		PricePerImage:    &m.PricePerImage,
-		PricePerMinute:   &m.PricePerMinute,
-		MaxTokens:        m.MaxTokens,
-		IsActive:         m.IsActive,
-		CreatedAt:        m.CreatedAt,
+		ID:                      m.ID.String(),
+		ProviderID:              m.ProviderID.String(),
+		Name:                    m.Name,
+		DisplayName:             m.DisplayName,
+		InputPricePer1k:         m.InputPricePer1K,
+		OutputPricePer1k:        m.OutputPricePer1K,
+		PricePerSecond:          &m.PricePerSecond,
+		PricePerImage:           &m.PricePerImage,
+		PricePerMinute:          &m.PricePerMinute,
+		ProviderInputCostPer1k:  m.ProviderInputCostPer1K,
+		ProviderOutputCostPer1k: m.ProviderOutputCostPer1K,
+		ProviderCostPerSecond:   &m.ProviderCostPerSecond,
+		ProviderCostPerImage:    &m.ProviderCostPerImage,
+		ProviderCostPerMinute:   &m.ProviderCostPerMinute,
+		MaxTokens:               m.MaxTokens,
+		IsActive:                m.IsActive,
+		CreatedAt:               m.CreatedAt,
 	}
 }
 
 func providerAPIKeyToGQL(k *models.ProviderAPIKey) *model.ProviderAPIKey {
+	var proxyID *string
+	if k.ProxyID != nil {
+		s := k.ProxyID.String()
+		proxyID = &s
+	}
+	var proxyPoolID *string
+	if k.ProxyPoolID != nil {
+		s := k.ProxyPoolID.String()
+		proxyPoolID = &s
+	}
+	var lastUsed *time.Time
+	if !k.LastUsedAt.IsZero() {
+		lastUsed = &k.LastUsedAt
+	}
 	return &model.ProviderAPIKey{
 		ID: k.ID.String(), ProviderID: k.ProviderID.String(),
+		ProxyID: proxyID, ProxyPoolID: proxyPoolID,
 		Alias: k.Alias, KeyPrefix: k.KeyPrefix,
 		IsActive: k.IsActive, Priority: k.Priority,
 		Weight: k.Weight, RateLimit: k.RateLimit,
-		CreatedAt: k.CreatedAt,
+		UsageCount: safeGQLInt(k.UsageCount),
+		LastUsedAt: lastUsed, CreatedAt: k.CreatedAt,
 	}
 }
 
 func proxyToGQL(p *models.Proxy) *model.Proxy {
+	var poolID *string
+	if p.PoolID != nil {
+		s := p.PoolID.String()
+		poolID = &s
+	}
+	var poolName *string
+	if p.Pool != nil && p.Pool.Name != "" {
+		poolName = &p.Pool.Name
+	}
 	var upID *string
 	if p.UpstreamProxyID != nil {
 		s := p.UpstreamProxyID.String()
@@ -134,12 +164,28 @@ func proxyToGQL(p *models.Proxy) *model.Proxy {
 		lastChecked = &p.LastChecked
 	}
 	return &model.Proxy{
-		ID: p.ID.String(), URL: p.URL, Type: p.Type,
+		ID: p.ID.String(), PoolID: poolID, PoolName: poolName,
+		URL: p.URL, Type: p.Type,
 		Region: p.Region, IsActive: p.IsActive,
 		Weight: p.Weight, SuccessCount: safeGQLInt(p.SuccessCount),
 		FailureCount: safeGQLInt(p.FailureCount), AvgLatency: p.AvgLatency,
 		LastChecked: lastChecked, HasAuth: p.HasAuth(),
 		UpstreamProxyID: upID, CreatedAt: p.CreatedAt,
+	}
+}
+
+func proxyPoolToGQL(p *models.ProxyPool) *model.ProxyPool {
+	active := 0
+	for i := range p.Proxies {
+		if p.Proxies[i].IsActive {
+			active++
+		}
+	}
+	return &model.ProxyPool{
+		ID: p.ID.String(), Name: p.Name, Description: p.Description,
+		IsActive: p.IsActive, Strategy: p.Strategy,
+		ProxyCount: len(p.Proxies), ActiveProxyCount: active,
+		CreatedAt: p.CreatedAt,
 	}
 }
 

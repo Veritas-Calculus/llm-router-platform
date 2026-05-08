@@ -9,6 +9,8 @@ import (
 // Proxy represents a proxy server.
 type Proxy struct {
 	BaseModel
+	PoolID            *uuid.UUID `gorm:"type:uuid;index" json:"pool_id,omitempty"`
+	Pool              *ProxyPool `gorm:"foreignKey:PoolID" json:"-"`
 	URL               string     `gorm:"not null" json:"url"`
 	Type              string     `gorm:"default:http" json:"type"`
 	Username          string     `json:"username,omitempty"`
@@ -28,4 +30,14 @@ type Proxy struct {
 // HasAuth returns true if the proxy has authentication configured.
 func (p *Proxy) HasAuth() bool {
 	return p.Username != "" && p.Password != ""
+}
+
+// ProxyPool groups proxy nodes for account-level routing.
+type ProxyPool struct {
+	BaseModel
+	Name        string  `gorm:"uniqueIndex;not null" json:"name"`
+	Description string  `json:"description"`
+	IsActive    bool    `gorm:"default:true" json:"is_active"`
+	Strategy    string  `gorm:"default:weighted" json:"strategy"`
+	Proxies     []Proxy `gorm:"foreignKey:PoolID" json:"proxies,omitempty"`
 }

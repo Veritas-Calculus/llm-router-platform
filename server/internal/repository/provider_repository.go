@@ -121,6 +121,8 @@ func (r *ProviderAPIKeyRepository) Create(ctx context.Context, key *models.Provi
 func (r *ProviderAPIKeyRepository) GetActiveByProvider(ctx context.Context, providerID uuid.UUID) ([]models.ProviderAPIKey, error) {
 	var keys []models.ProviderAPIKey
 	if err := r.db.WithContext(ctx).
+		Preload("Proxy").
+		Preload("ProxyPool").
 		Where("provider_id = ? AND is_active = ?", providerID, true).
 		Order("priority ASC, created_at ASC").
 		Find(&keys).Error; err != nil {
@@ -132,7 +134,11 @@ func (r *ProviderAPIKeyRepository) GetActiveByProvider(ctx context.Context, prov
 // GetByProvider retrieves all API keys for a provider (including inactive).
 func (r *ProviderAPIKeyRepository) GetByProvider(ctx context.Context, providerID uuid.UUID) ([]models.ProviderAPIKey, error) {
 	var keys []models.ProviderAPIKey
-	if err := r.db.WithContext(ctx).Where("provider_id = ?", providerID).Find(&keys).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Preload("Proxy").
+		Preload("ProxyPool").
+		Where("provider_id = ?", providerID).
+		Find(&keys).Error; err != nil {
 		return nil, err
 	}
 	return keys, nil
@@ -141,7 +147,11 @@ func (r *ProviderAPIKeyRepository) GetByProvider(ctx context.Context, providerID
 // GetByID retrieves a provider API key by ID.
 func (r *ProviderAPIKeyRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.ProviderAPIKey, error) {
 	var key models.ProviderAPIKey
-	if err := r.db.WithContext(ctx).First(&key, "id = ?", id).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Preload("Provider").
+		Preload("Proxy").
+		Preload("ProxyPool").
+		First(&key, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
 	return &key, nil
@@ -150,7 +160,11 @@ func (r *ProviderAPIKeyRepository) GetByID(ctx context.Context, id uuid.UUID) (*
 // GetAll retrieves all provider API keys.
 func (r *ProviderAPIKeyRepository) GetAll(ctx context.Context) ([]models.ProviderAPIKey, error) {
 	var keys []models.ProviderAPIKey
-	if err := r.db.WithContext(ctx).Preload("Provider").Find(&keys).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Preload("Provider").
+		Preload("Proxy").
+		Preload("ProxyPool").
+		Find(&keys).Error; err != nil {
 		return nil, err
 	}
 	return keys, nil
@@ -189,6 +203,15 @@ func (r *ModelRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Mo
 func (r *ModelRepository) GetByName(ctx context.Context, name string) (*models.Model, error) {
 	var model models.Model
 	if err := r.db.WithContext(ctx).First(&model, "name = ?", name).Error; err != nil {
+		return nil, err
+	}
+	return &model, nil
+}
+
+// GetByProviderAndName retrieves a model by provider and name.
+func (r *ModelRepository) GetByProviderAndName(ctx context.Context, providerID uuid.UUID, name string) (*models.Model, error) {
+	var model models.Model
+	if err := r.db.WithContext(ctx).First(&model, "provider_id = ? AND name = ?", providerID, name).Error; err != nil {
 		return nil, err
 	}
 	return &model, nil

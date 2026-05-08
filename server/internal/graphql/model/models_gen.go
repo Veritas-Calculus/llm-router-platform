@@ -227,6 +227,7 @@ type BackupStatus struct {
 
 type BatchProxyInput struct {
 	Proxies []*BatchProxyItem `json:"proxies"`
+	PoolID  *string           `json:"poolId,omitempty"`
 }
 
 type BatchProxyItem struct {
@@ -492,6 +493,54 @@ type FeatureGate struct {
 	Source      string `json:"source"`
 }
 
+type FinancialBreakdown struct {
+	Name   string  `json:"name"`
+	Amount float64 `json:"amount"`
+	Count  int     `json:"count"`
+}
+
+type FinancialDailyPoint struct {
+	Date         string  `json:"date"`
+	CashRevenue  float64 `json:"cashRevenue"`
+	UsageRevenue float64 `json:"usageRevenue"`
+	ProviderCost float64 `json:"providerCost"`
+	GrossProfit  float64 `json:"grossProfit"`
+	Orders       int     `json:"orders"`
+	Requests     int     `json:"requests"`
+}
+
+type FinancialDashboard struct {
+	PeriodStart         time.Time                     `json:"periodStart"`
+	PeriodEnd           time.Time                     `json:"periodEnd"`
+	CashRevenue         float64                       `json:"cashRevenue"`
+	NetCashRevenue      float64                       `json:"netCashRevenue"`
+	SubscriptionRevenue float64                       `json:"subscriptionRevenue"`
+	TopUpRevenue        float64                       `json:"topUpRevenue"`
+	UsageRevenue        float64                       `json:"usageRevenue"`
+	ProviderCost        float64                       `json:"providerCost"`
+	GrossProfit         float64                       `json:"grossProfit"`
+	GrossMargin         float64                       `json:"grossMargin"`
+	RefundAmount        float64                       `json:"refundAmount"`
+	CreditGrants        float64                       `json:"creditGrants"`
+	OutstandingBalance  float64                       `json:"outstandingBalance"`
+	PaidOrders          int                           `json:"paidOrders"`
+	ActiveSubscriptions int                           `json:"activeSubscriptions"`
+	PayingCustomers     int                           `json:"payingCustomers"`
+	Arpu                float64                       `json:"arpu"`
+	Daily               []*FinancialDailyPoint        `json:"daily"`
+	PaymentBreakdown    []*FinancialBreakdown         `json:"paymentBreakdown"`
+	ProviderBreakdown   []*FinancialProviderBreakdown `json:"providerBreakdown"`
+}
+
+type FinancialProviderBreakdown struct {
+	ProviderName string  `json:"providerName"`
+	Requests     int     `json:"requests"`
+	UsageRevenue float64 `json:"usageRevenue"`
+	ProviderCost float64 `json:"providerCost"`
+	GrossProfit  float64 `json:"grossProfit"`
+	GrossMargin  float64 `json:"grossMargin"`
+}
+
 type GenerateRedeemCodesInput struct {
 	Type         string     `json:"type"`
 	CreditAmount *float64   `json:"creditAmount,omitempty"`
@@ -637,30 +686,40 @@ type MfaSecretInfo struct {
 }
 
 type Model struct {
-	ID               string    `json:"id"`
-	ProviderID       string    `json:"providerId"`
-	Name             string    `json:"name"`
-	DisplayName      string    `json:"displayName"`
-	InputPricePer1k  float64   `json:"inputPricePer1k"`
-	OutputPricePer1k float64   `json:"outputPricePer1k"`
-	PricePerSecond   *float64  `json:"pricePerSecond,omitempty"`
-	PricePerImage    *float64  `json:"pricePerImage,omitempty"`
-	PricePerMinute   *float64  `json:"pricePerMinute,omitempty"`
-	MaxTokens        int       `json:"maxTokens"`
-	IsActive         bool      `json:"isActive"`
-	CreatedAt        time.Time `json:"createdAt"`
+	ID                      string    `json:"id"`
+	ProviderID              string    `json:"providerId"`
+	Name                    string    `json:"name"`
+	DisplayName             string    `json:"displayName"`
+	InputPricePer1k         float64   `json:"inputPricePer1k"`
+	OutputPricePer1k        float64   `json:"outputPricePer1k"`
+	PricePerSecond          *float64  `json:"pricePerSecond,omitempty"`
+	PricePerImage           *float64  `json:"pricePerImage,omitempty"`
+	PricePerMinute          *float64  `json:"pricePerMinute,omitempty"`
+	ProviderInputCostPer1k  float64   `json:"providerInputCostPer1k"`
+	ProviderOutputCostPer1k float64   `json:"providerOutputCostPer1k"`
+	ProviderCostPerSecond   *float64  `json:"providerCostPerSecond,omitempty"`
+	ProviderCostPerImage    *float64  `json:"providerCostPerImage,omitempty"`
+	ProviderCostPerMinute   *float64  `json:"providerCostPerMinute,omitempty"`
+	MaxTokens               int       `json:"maxTokens"`
+	IsActive                bool      `json:"isActive"`
+	CreatedAt               time.Time `json:"createdAt"`
 }
 
 type ModelInput struct {
-	Name             string   `json:"name"`
-	DisplayName      *string  `json:"displayName,omitempty"`
-	InputPricePer1k  *float64 `json:"inputPricePer1k,omitempty"`
-	OutputPricePer1k *float64 `json:"outputPricePer1k,omitempty"`
-	PricePerSecond   *float64 `json:"pricePerSecond,omitempty"`
-	PricePerImage    *float64 `json:"pricePerImage,omitempty"`
-	PricePerMinute   *float64 `json:"pricePerMinute,omitempty"`
-	MaxTokens        *int     `json:"maxTokens,omitempty"`
-	IsActive         *bool    `json:"isActive,omitempty"`
+	Name                    string   `json:"name"`
+	DisplayName             *string  `json:"displayName,omitempty"`
+	InputPricePer1k         *float64 `json:"inputPricePer1k,omitempty"`
+	OutputPricePer1k        *float64 `json:"outputPricePer1k,omitempty"`
+	PricePerSecond          *float64 `json:"pricePerSecond,omitempty"`
+	PricePerImage           *float64 `json:"pricePerImage,omitempty"`
+	PricePerMinute          *float64 `json:"pricePerMinute,omitempty"`
+	ProviderInputCostPer1k  *float64 `json:"providerInputCostPer1k,omitempty"`
+	ProviderOutputCostPer1k *float64 `json:"providerOutputCostPer1k,omitempty"`
+	ProviderCostPerSecond   *float64 `json:"providerCostPerSecond,omitempty"`
+	ProviderCostPerImage    *float64 `json:"providerCostPerImage,omitempty"`
+	ProviderCostPerMinute   *float64 `json:"providerCostPerMinute,omitempty"`
+	MaxTokens               *int     `json:"maxTokens,omitempty"`
+	IsActive                *bool    `json:"isActive,omitempty"`
 }
 
 type ModelStats struct {
@@ -817,26 +876,39 @@ type Provider struct {
 	CreatedAt      time.Time `json:"createdAt"`
 }
 
+type ProviderAccountTopologyNode struct {
+	APIKey           *ProviderAPIKey           `json:"apiKey,omitempty"`
+	Label            string                    `json:"label"`
+	BindingSource    string                    `json:"bindingSource"`
+	ProxyPool        *ProxyPool                `json:"proxyPool,omitempty"`
+	CandidateProxies []*Proxy                  `json:"candidateProxies"`
+	Route            []*ProxyTopologyRouteStep `json:"route"`
+}
+
 type ProviderAPIKey struct {
-	ID         string     `json:"id"`
-	ProviderID string     `json:"providerId"`
-	Alias      string     `json:"alias"`
-	KeyPrefix  string     `json:"keyPrefix"`
-	IsActive   bool       `json:"isActive"`
-	Priority   int        `json:"priority"`
-	Weight     float64    `json:"weight"`
-	RateLimit  int        `json:"rateLimit"`
-	UsageCount int        `json:"usageCount"`
-	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
-	CreatedAt  time.Time  `json:"createdAt"`
+	ID          string     `json:"id"`
+	ProviderID  string     `json:"providerId"`
+	ProxyID     *string    `json:"proxyId,omitempty"`
+	ProxyPoolID *string    `json:"proxyPoolId,omitempty"`
+	Alias       string     `json:"alias"`
+	KeyPrefix   string     `json:"keyPrefix"`
+	IsActive    bool       `json:"isActive"`
+	Priority    int        `json:"priority"`
+	Weight      float64    `json:"weight"`
+	RateLimit   int        `json:"rateLimit"`
+	UsageCount  int        `json:"usageCount"`
+	LastUsedAt  *time.Time `json:"lastUsedAt,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
 }
 
 type ProviderAPIKeyInput struct {
-	APIKey    string   `json:"apiKey"`
-	Alias     string   `json:"alias"`
-	Priority  *int     `json:"priority,omitempty"`
-	Weight    *float64 `json:"weight,omitempty"`
-	RateLimit *int     `json:"rateLimit,omitempty"`
+	APIKey      string   `json:"apiKey"`
+	Alias       string   `json:"alias"`
+	Priority    *int     `json:"priority,omitempty"`
+	Weight      *float64 `json:"weight,omitempty"`
+	RateLimit   *int     `json:"rateLimit,omitempty"`
+	ProxyID     *string  `json:"proxyId,omitempty"`
+	ProxyPoolID *string  `json:"proxyPoolId,omitempty"`
 }
 
 type ProviderHealth struct {
@@ -875,6 +947,12 @@ type ProviderStats struct {
 	TotalCost    float64 `json:"totalCost"`
 }
 
+type ProviderTopologyNode struct {
+	Provider *Provider                      `json:"provider"`
+	Models   []string                       `json:"models"`
+	Accounts []*ProviderAccountTopologyNode `json:"accounts"`
+}
+
 type ProviderUsage struct {
 	ProviderID   string  `json:"providerId"`
 	ProviderName string  `json:"providerName"`
@@ -890,6 +968,8 @@ type ProxiesSummary struct {
 
 type Proxy struct {
 	ID              string     `json:"id"`
+	PoolID          *string    `json:"poolId,omitempty"`
+	PoolName        *string    `json:"poolName,omitempty"`
 	URL             string     `json:"url"`
 	Type            string     `json:"type"`
 	Region          string     `json:"region"`
@@ -923,6 +1003,30 @@ type ProxyInput struct {
 	Username        *string `json:"username,omitempty"`
 	Password        *string `json:"password,omitempty"`
 	UpstreamProxyID *string `json:"upstreamProxyId,omitempty"`
+	PoolID          *string `json:"poolId,omitempty"`
+}
+
+type ProxyPool struct {
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	Description      string    `json:"description"`
+	IsActive         bool      `json:"isActive"`
+	Strategy         string    `json:"strategy"`
+	ProxyCount       int       `json:"proxyCount"`
+	ActiveProxyCount int       `json:"activeProxyCount"`
+	CreatedAt        time.Time `json:"createdAt"`
+}
+
+type ProxyPoolInput struct {
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	IsActive    *bool   `json:"isActive,omitempty"`
+	Strategy    *string `json:"strategy,omitempty"`
+}
+
+type ProxyPoolTopologyNode struct {
+	Pool    *ProxyPool `json:"pool"`
+	Proxies []*Proxy   `json:"proxies"`
 }
 
 type ProxyTestResult struct {
@@ -931,6 +1035,21 @@ type ProxyTestResult struct {
 	IsHealthy bool    `json:"isHealthy"`
 	LatencyMs float64 `json:"latencyMs"`
 	Error     *string `json:"error,omitempty"`
+}
+
+type ProxyTopology struct {
+	Providers       []*ProviderTopologyNode  `json:"providers"`
+	ProxyPools      []*ProxyPoolTopologyNode `json:"proxyPools"`
+	DirectAccounts  int                      `json:"directAccounts"`
+	ProxiedAccounts int                      `json:"proxiedAccounts"`
+}
+
+type ProxyTopologyRouteStep struct {
+	ID     string  `json:"id"`
+	Type   string  `json:"type"`
+	Label  string  `json:"label"`
+	Status string  `json:"status"`
+	Detail *string `json:"detail,omitempty"`
 }
 
 type Query struct {
@@ -1185,9 +1304,11 @@ type UpdateProjectInput struct {
 }
 
 type UpdateProviderAPIKeyInput struct {
-	Priority  *int     `json:"priority,omitempty"`
-	Weight    *float64 `json:"weight,omitempty"`
-	RateLimit *int     `json:"rateLimit,omitempty"`
+	Priority    *int     `json:"priority,omitempty"`
+	Weight      *float64 `json:"weight,omitempty"`
+	RateLimit   *int     `json:"rateLimit,omitempty"`
+	ProxyID     *string  `json:"proxyId,omitempty"`
+	ProxyPoolID *string  `json:"proxyPoolId,omitempty"`
 }
 
 type UpdateRoutingRuleInput struct {
