@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
  
-import { useState, useEffect, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useMutation, useQuery } from '@apollo/client/react';
@@ -10,9 +10,25 @@ import { useAuthStore } from '@/stores/authStore';
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { useTranslation } from '@/lib/i18n';
 
+type LoginLocationState = {
+  from?: {
+    pathname?: string;
+    search?: string;
+    hash?: string;
+  };
+};
+
+type AuthRedirectUser = {
+  require_password_change?: boolean | null;
+  requirePasswordChange?: boolean | null;
+};
+
 function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const setAuth = useAuthStore((state) => state.setAuth);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const authUser = useAuthStore((state) => state.user);
   const { t } = useTranslation();
   const [loginMut] = useMutation(LOGIN);
   const [registerMut] = useMutation(REGISTER);
@@ -44,6 +60,22 @@ function LoginPage() {
   const regMode = regModeData?.registrationMode?.mode ?? 'closed';
   const inviteRequired = regModeData?.registrationMode?.inviteCodeRequired ?? false;
   const registrationOpen = regMode === 'open' || regMode === 'invite';
+  const redirectState = location.state as LoginLocationState | null;
+  const from = redirectState?.from;
+  const postLoginPath = from?.pathname && from.pathname !== '/login'
+    ? `${from.pathname}${from.search ?? ''}${from.hash ?? ''}`
+    : '/dashboard';
+
+  const getPostAuthRedirect = useCallback((user?: AuthRedirectUser | null) => {
+    const requiresPasswordChange = user?.require_password_change ?? user?.requirePasswordChange;
+    return requiresPasswordChange ? '/change-password' : postLoginPath;
+  }, [postLoginPath]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate(getPostAuthRedirect(authUser), { replace: true });
+    }
+  }, [authUser, getPostAuthRedirect, isAuthenticated, navigate]);
 
   // Fetch available OAuth2 providers
   const [oauthProviders, setOauthProviders] = useState<Array<{ id: string; name: string }>>([]);
@@ -66,6 +98,8 @@ function LoginPage() {
     setLoading(true);
 
     try {
+      let authenticatedUser: AuthRedirectUser | null = null;
+
       if (isLogin) {
         const result = await loginMut({
           variables: { input: { email: formData.email, password: formData.password, captchaToken } },
@@ -73,6 +107,7 @@ function LoginPage() {
         if (result.error) throw new Error(result.error.message);
         const resp = (result.data as any)?.login;
         if (!resp?.token) throw new Error(t('auth.invalid_credentials'));
+        authenticatedUser = resp.user;
         setAuth(resp.token, resp.user);
         toast.success(t('auth.welcome_back'));
       } else {
@@ -91,12 +126,11 @@ function LoginPage() {
         if (result.error) throw new Error(result.error.message);
         const resp = (result.data as any)?.register;
         if (!resp?.token) throw new Error(t('auth.registration_failed'));
+        authenticatedUser = resp.user;
         setAuth(resp.token, resp.user);
         toast.success(t('auth.account_created'));
       }
-      // Read from store (just set above) to determine where to navigate
-      const user = useAuthStore.getState().user;
-      navigate(user?.require_password_change ? '/change-password' : '/dashboard');
+      navigate(getPostAuthRedirect(authenticatedUser), { replace: true });
     } catch (err: any) {
       if (isLogin) {
         if (err.message === 'account not found') {

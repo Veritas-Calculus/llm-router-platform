@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { User } from '@/lib/types';
 
+const AUTH_STORAGE_KEY = 'auth-storage';
+
 interface AuthState {
   token: string | null;
   user: User | null;
@@ -50,12 +52,11 @@ export const useAuthStore = create<AuthState>()(
         set({ selectedOrgId: orgId }),
     }),
     {
-      name: 'auth-storage',
-      // Use sessionStorage instead of localStorage to limit XSS exposure:
-      // - Scoped to the current tab (not shared across tabs)
-      // - Cleared when the tab is closed
-      // - Not accessible from other browser windows
-      storage: createJSONStorage(() => sessionStorage),
+      name: AUTH_STORAGE_KEY,
+      // Keep the login session browser-wide so a user can open multiple tabs
+      // without re-entering credentials. Logout still clears every tab through
+      // the storage event listener below.
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         token: state.token,
         user: state.user,
@@ -67,3 +68,13 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.storageArea !== localStorage || event.key !== AUTH_STORAGE_KEY) {
+      return;
+    }
+
+    void useAuthStore.persist.rehydrate();
+  });
+}

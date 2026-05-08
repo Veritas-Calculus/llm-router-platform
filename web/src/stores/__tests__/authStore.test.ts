@@ -9,7 +9,10 @@ describe('authStore', () => {
             user: null,
             isAuthenticated: false,
             isAdmin: false,
+            adminView: false,
+            selectedOrgId: null,
         });
+        localStorage.clear();
     });
 
     it('should start with no authentication', () => {
@@ -106,5 +109,25 @@ describe('authStore', () => {
         expect(state.user?.name).toBe('Updated Name');
         expect(state.isAdmin).toBe(true);
         expect(state.token).toBe('test-token'); // Token unchanged
+    });
+
+    it('should persist auth state in browser storage', () => {
+        const mockUser = {
+            id: 'user-1',
+            email: 'test@example.com',
+            name: 'Test User',
+            role: 'user',
+            is_active: true,
+            require_password_change: false,
+            monthly_token_limit: 0,
+            monthly_budget_usd: 0,
+            created_at: new Date().toISOString(),
+        };
+
+        useAuthStore.getState().setAuth('shared-token', mockUser);
+
+        const persisted = JSON.parse(localStorage.getItem('auth-storage') ?? '{}');
+        expect(persisted.state.token).toBe('shared-token');
+        expect(persisted.state.isAuthenticated).toBe(true);
     });
 });

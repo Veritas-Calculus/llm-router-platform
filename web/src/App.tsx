@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import Layout from '@/components/Layout';
 import OnboardingTour from '@/components/OnboardingTour';
@@ -70,9 +70,11 @@ function PageLoader() {
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, user } = useAuthStore((state) => state);
+  const location = useLocation();
+  const from = { pathname: location.pathname, search: location.search, hash: location.hash };
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from }} />;
   }
 
   if (user?.require_password_change) {
@@ -84,9 +86,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isAdmin, user } = useAuthStore();
+  const location = useLocation();
+  const from = { pathname: location.pathname, search: location.search, hash: location.hash };
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from }} />;
   }
 
   if (user?.require_password_change) {
@@ -102,8 +106,11 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 
 function AuthenticatedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
+  const location = useLocation();
+  const from = { pathname: location.pathname, search: location.search, hash: location.hash };
+
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from }} />;
   }
   return <>{children}</>;
 }
