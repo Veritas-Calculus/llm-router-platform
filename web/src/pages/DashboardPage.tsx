@@ -49,10 +49,11 @@ const fmtTokens = (v: number): string => {
 };
 
 const tooltipStyle = {
-  backgroundColor: '#fff',
-  border: '1px solid #E8E8ED',
+  backgroundColor: 'var(--theme-bg-card)',
+  border: '1px solid var(--theme-border-light)',
   borderRadius: '12px',
-  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+  boxShadow: 'var(--theme-shadow)',
+  color: 'var(--theme-text)',
 };
 
 const COLORS = ['#007AFF', '#34C759', '#FF9500', '#AF52DE', '#FF3B30', '#5AC8FA'];
@@ -224,9 +225,9 @@ function DashboardPage() {
             ) : (
               <ResponsiveContainer width="100%" height="100%" minHeight={256}>
                 <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
-                  <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
-                  <YAxis stroke="#8E8E93" fontSize={12} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--theme-border-light)" />
+                  <XAxis dataKey="date" stroke="var(--theme-text-muted)" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
+                  <YAxis stroke="var(--theme-text-muted)" fontSize={12} />
                   <Tooltip contentStyle={tooltipStyle} />
                   <Line type="monotone" dataKey="requests" stroke="#007AFF" strokeWidth={2} dot={false} />
                 </LineChart>
@@ -246,9 +247,9 @@ function DashboardPage() {
             ) : (
               <ResponsiveContainer width="100%" height="100%" minHeight={256}>
                 <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
-                  <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
-                  <YAxis stroke="#8E8E93" fontSize={12} tickFormatter={(v) => `$${v.toFixed(2)}`} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--theme-border-light)" />
+                  <XAxis dataKey="date" stroke="var(--theme-text-muted)" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
+                  <YAxis stroke="var(--theme-text-muted)" fontSize={12} tickFormatter={(v) => `$${v.toFixed(2)}`} />
                   <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`$${Number(value).toFixed(4)}`, 'Cost']} />
                   <Bar dataKey="cost" fill="#FF9500" radius={[4, 4, 0, 0]} />
                 </BarChart>

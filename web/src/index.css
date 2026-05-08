@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-apple-blue: #007AFF;
   --color-apple-blue-hover: #0066CC;
@@ -35,16 +37,23 @@
 
 /* ─── Theme Variables (Light/Dark) ─────────────────────────── */
 :root {
+  color-scheme: light;
   --theme-bg: #F5F5F7;
   --theme-bg-card: #FFFFFF;
   --theme-bg-sidebar: #FFFFFF;
   --theme-bg-input: #FFFFFF;
   --theme-bg-hover: #E8E8ED;
+  --theme-bg-surface: #FFFFFF;
+  --theme-bg-subtle: #F5F5F7;
   --theme-text: #1D1D1F;
+  --theme-text-primary: #1D1D1F;
   --theme-text-secondary: #636366;
   --theme-text-muted: #8E8E93;
+  --theme-text-tertiary: #8E8E93;
   --theme-border: #D2D2D7;
+  --theme-border-default: #D2D2D7;
   --theme-border-light: #E8E8ED;
+  --theme-color-primary: #007AFF;
   --theme-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   --theme-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
@@ -56,11 +65,17 @@
   --theme-bg-sidebar: #141416;
   --theme-bg-input: #2C2C2E;
   --theme-bg-hover: #3A3A3C;
+  --theme-bg-surface: #1C1C1E;
+  --theme-bg-subtle: rgba(255, 255, 255, 0.05);
   --theme-text: #F5F5F7;
+  --theme-text-primary: #F5F5F7;
   --theme-text-secondary: #AEAEB2;
   --theme-text-muted: #8E8E93;
+  --theme-text-tertiary: #8E8E93;
   --theme-border: rgba(255, 255, 255, 0.08);
+  --theme-border-default: rgba(255, 255, 255, 0.08);
   --theme-border-light: rgba(255, 255, 255, 0.05);
+  --theme-color-primary: #007AFF;
   --theme-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   --theme-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
   color-scheme: dark;
@@ -76,31 +91,6 @@
   --color-apple-gray-700: #D1D1D6;
   --color-apple-gray-800: #E5E5EA;
   --color-apple-gray-900: #F5F5F7;
-
-  /* ── Override built-in Tailwind gray/slate/zinc scales ──── */
-  /* Covers bg-gray-*, text-gray-*, border-gray-* utilities     */
-  --color-gray-50: #1C1C1E;
-  --color-gray-100: #2C2C2E;
-  --color-gray-200: #3A3A3C;
-  --color-gray-300: #48484A;
-  --color-gray-400: #8E8E93;
-  --color-gray-500: #AEAEB2;
-  --color-gray-600: #C7C7CC;
-  --color-gray-700: #D1D1D6;
-  --color-gray-800: #E5E5EA;
-  --color-gray-900: #F5F5F7;
-  --color-gray-950: #FFFFFF;
-
-  --color-slate-50: #1C1C1E;
-  --color-slate-100: #2C2C2E;
-  --color-slate-200: #3A3A3C;
-  --color-slate-300: #48484A;
-  --color-slate-400: #8E8E93;
-  --color-slate-500: #AEAEB2;
-  --color-slate-600: #C7C7CC;
-  --color-slate-700: #D1D1D6;
-  --color-slate-800: #E5E5EA;
-  --color-slate-900: #F5F5F7;
 
   /* ── Semantic status backgrounds ────────────────────────── */
   --color-green-50: rgba(52, 199, 89, 0.1);

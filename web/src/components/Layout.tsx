@@ -246,7 +246,7 @@ function Layout() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-apple-gray-50 dark:bg-[#0A0A0B] flex">
+    <div className="min-h-screen bg-[var(--theme-bg)] text-[var(--theme-text)] flex">
       {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
         {isSidebarOpen && (
@@ -330,7 +330,7 @@ function Layout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden bg-[var(--theme-bg)]">
         {/* Top Header */}
         <header className="header-bg backdrop-blur-md border-b border-apple-gray-200 dark:border-white/10 h-14 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30">
           <div className="flex items-center gap-3">
