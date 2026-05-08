@@ -23,7 +23,37 @@ func NewProviderRepository(db *gorm.DB) *ProviderRepository {
 
 // Create inserts a new provider.
 func (r *ProviderRepository) Create(ctx context.Context, provider *models.Provider) error {
-	return r.db.WithContext(ctx).Create(provider).Error
+	return r.db.WithContext(ctx).Raw(`
+		INSERT INTO providers (
+			name,
+			base_url,
+			is_active,
+			priority,
+			weight,
+			max_retries,
+			timeout,
+			use_proxy,
+			default_proxy_id,
+			requires_api_key,
+			model_patterns,
+			created_at,
+			updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		RETURNING *
+	`,
+		provider.Name,
+		provider.BaseURL,
+		provider.IsActive,
+		provider.Priority,
+		provider.Weight,
+		provider.MaxRetries,
+		provider.Timeout,
+		provider.UseProxy,
+		provider.DefaultProxyID,
+		provider.RequiresAPIKey,
+		provider.ModelPatterns,
+	).Scan(provider).Error
 }
 
 // GetByID retrieves a provider by ID.
@@ -90,7 +120,10 @@ func (r *ProviderAPIKeyRepository) Create(ctx context.Context, key *models.Provi
 // GetActiveByProvider retrieves active API keys for a provider.
 func (r *ProviderAPIKeyRepository) GetActiveByProvider(ctx context.Context, providerID uuid.UUID) ([]models.ProviderAPIKey, error) {
 	var keys []models.ProviderAPIKey
-	if err := r.db.WithContext(ctx).Where("provider_id = ? AND is_active = ?", providerID, true).Find(&keys).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Where("provider_id = ? AND is_active = ?", providerID, true).
+		Order("priority ASC, created_at ASC").
+		Find(&keys).Error; err != nil {
 		return nil, err
 	}
 	return keys, nil
@@ -193,4 +226,3 @@ func (r *ModelRepository) Update(ctx context.Context, m *models.Model) error {
 func (r *ModelRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return r.db.WithContext(ctx).Delete(&models.Model{}, "id = ?", id).Error
 }
-

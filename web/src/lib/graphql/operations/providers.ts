@@ -5,7 +5,7 @@ import { gql } from '@apollo/client';
 export const PROVIDERS_QUERY = gql`
   query Providers {
     providers {
-      id name baseUrl isActive priority weight maxRetries timeout useProxy requiresApiKey createdAt
+      id name baseUrl isActive priority weight maxRetries timeout useProxy defaultProxyId requiresApiKey createdAt
     }
   }
 `;
@@ -13,7 +13,7 @@ export const PROVIDERS_QUERY = gql`
 export const CREATE_PROVIDER = gql`
   mutation CreateProvider($input: CreateProviderInput!) {
     createProvider(input: $input) {
-      id name baseUrl isActive priority weight maxRetries timeout useProxy requiresApiKey createdAt
+      id name baseUrl isActive priority weight maxRetries timeout useProxy defaultProxyId requiresApiKey createdAt
     }
   }
 `;
@@ -43,7 +43,7 @@ export const PROVIDER_HEALTH_QUERY = gql`
 export const UPDATE_PROVIDER = gql`
   mutation UpdateProvider($id: ID!, $input: ProviderInput!) {
     updateProvider(id: $id, input: $input) {
-      id name baseUrl isActive priority weight maxRetries timeout useProxy
+      id name baseUrl isActive priority weight maxRetries timeout useProxy defaultProxyId requiresApiKey createdAt
     }
   }
 `;

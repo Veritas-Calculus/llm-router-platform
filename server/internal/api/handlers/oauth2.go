@@ -214,7 +214,7 @@ func (h *OAuth2Handler) exchangeCode(ctx context.Context, provider string, pcfg 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	client := sanitize.SafeHTTPClient(h.cfg.Server.AllowLocalProviders, 10*time.Second)
+	client := sanitize.SafeHTTPClient(false, 10*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("token exchange request failed: %w", err)
@@ -245,7 +245,7 @@ func (h *OAuth2Handler) getUserInfo(ctx context.Context, provider, accessToken s
 }
 
 func (h *OAuth2Handler) getGitHubUser(ctx context.Context, token string) (email, name, oauthID string, err error) {
-	client := sanitize.SafeHTTPClient(h.cfg.Server.AllowLocalProviders, 10*time.Second)
+	client := sanitize.SafeHTTPClient(false, 10*time.Second)
 
 	// Get user profile
 	req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user", nil)
@@ -306,7 +306,7 @@ func (h *OAuth2Handler) getGitHubUser(ctx context.Context, token string) (email,
 }
 
 func (h *OAuth2Handler) getGoogleUser(ctx context.Context, token string) (email, name, oauthID string, err error) {
-	client := sanitize.SafeHTTPClient(h.cfg.Server.AllowLocalProviders, 10*time.Second)
+	client := sanitize.SafeHTTPClient(false, 10*time.Second)
 	req, _ := http.NewRequestWithContext(ctx, "GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 

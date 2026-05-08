@@ -19,8 +19,8 @@ import (
 	"llm-router-platform/internal/service/mcp"
 	"llm-router-platform/internal/service/provider"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
 )
@@ -34,6 +34,8 @@ const (
 	StrategyLeastLatency  Strategy = "least_latency"
 	StrategyFallback      Strategy = "fallback"
 	StrategyCostOptimized Strategy = "cost_optimized"
+
+	allowLocalProviderEgress = true
 )
 
 // FailedKeyInfo tracks information about a failed API key.
@@ -76,26 +78,23 @@ type Router struct {
 	mcpService       *mcp.Service
 	strategy         Strategy
 	roundRobinIndex  int
-	redisClient      *redis.Client          // nil = use in-memory fallback
+	redisClient      *redis.Client                // nil = use in-memory fallback
 	failedKeys       map[uuid.UUID]*FailedKeyInfo // In-memory fallback when Redis unavailable
 	failedKeysMu     sync.RWMutex
-	providerLatency  map[uuid.UUID]int64    // EWMA latency per provider (ms)
+	providerLatency  map[uuid.UUID]int64 // EWMA latency per provider (ms)
 	latencyMu        sync.RWMutex
-	modelCache       *modelProviderCache    // Cached DB model→provider map
+	modelCache       *modelProviderCache // Cached DB model→provider map
 	modelCacheMu     sync.RWMutex
 	mu               sync.Mutex
 	discoveryCache   *modelDiscoveryCache
 	discoveryCacheMu sync.RWMutex
-	cacheSF          singleflight.Group      // Dedup concurrent model-provider cache refreshes
-	circuitBreaker   *CircuitBreaker         // Provider-level circuit breaker (3-state)
-	retryCfg         RetryConfig             // Exponential backoff config
+	cacheSF          singleflight.Group // Dedup concurrent model-provider cache refreshes
+	circuitBreaker   *CircuitBreaker    // Provider-level circuit breaker (3-state)
+	retryCfg         RetryConfig        // Exponential backoff config
 	logger           *zap.Logger
-	allowLocal       bool // SSRF gate for provider/model-discovery HTTP clients
 }
 
-// NewRouter creates a new router instance. allowLocal mirrors the server-wide
-// ALLOW_LOCAL_PROVIDERS flag and is used to gate every outbound HTTP client
-// the router constructs (direct provider dispatch, model discovery, health).
+// NewRouter creates a new router instance.
 func NewRouter(
 	providerRepo repository.ProviderRepo,
 	providerKeyRepo repository.ProviderAPIKeyRepo,
@@ -105,7 +104,6 @@ func NewRouter(
 	registry *provider.Registry,
 	mcpService *mcp.Service,
 	logger *zap.Logger,
-	allowLocal bool,
 ) *Router {
 	return &Router{
 		providerRepo:    providerRepo,
@@ -120,7 +118,6 @@ func NewRouter(
 		circuitBreaker:  NewCircuitBreaker(DefaultCircuitBreakerConfig(), logger),
 		retryCfg:        DefaultRetryConfig(),
 		logger:          logger,
-		allowLocal:      allowLocal,
 	}
 }
 

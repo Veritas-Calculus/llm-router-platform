@@ -3,6 +3,7 @@ package health
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"llm-router-platform/internal/config"
@@ -11,10 +12,13 @@ import (
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/internal/service/proxy"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
+
+const allowLocalProviderHealthEgress = true
 
 // Service handles health checks for API keys, proxies, and providers.
 type Service struct {
@@ -27,12 +31,9 @@ type Service struct {
 	providerRegistry  *provider.Registry
 	proxyService      *proxy.Service
 	logger            *zap.Logger
-	allowLocal        bool
 }
 
-// NewService creates a new health service. allowLocal mirrors the server's
-// ALLOW_LOCAL_PROVIDERS flag and controls whether health probes may reach
-// private/reserved IPs.
+// NewService creates a new health service.
 func NewService(
 	apiKeyRepo *repository.APIKeyRepository,
 	providerKeyRepo *repository.ProviderAPIKeyRepository,
@@ -43,7 +44,6 @@ func NewService(
 	providerRegistry *provider.Registry,
 	proxyService *proxy.Service,
 	logger *zap.Logger,
-	allowLocal bool,
 ) *Service {
 	return &Service{
 		apiKeyRepo:        apiKeyRepo,
@@ -55,7 +55,6 @@ func NewService(
 		providerRegistry:  providerRegistry,
 		proxyService:      proxyService,
 		logger:            logger,
-		allowLocal:        allowLocal,
 	}
 }
 
@@ -123,6 +122,9 @@ func (s *Service) getProviderClient(p *models.Provider, apiKey *models.ProviderA
 	cfg := &config.ProviderConfig{
 		APIKey:  decryptedKey,
 		BaseURL: p.BaseURL,
+		HTTPClient: func() *http.Client {
+			return sanitize.SafeHTTPClient(allowLocalProviderHealthEgress, time.Duration(p.Timeout)*time.Second)
+		},
 	}
 
 	return s.createProviderClient(p.Name, cfg)

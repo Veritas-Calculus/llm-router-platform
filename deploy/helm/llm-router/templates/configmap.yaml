@@ -12,7 +12,6 @@ data:
   CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
   SERVER_READ_TIMEOUT_SECONDS: {{ .Values.config.serverReadTimeoutSeconds | quote }}
   SERVER_WRITE_TIMEOUT_SECONDS: {{ .Values.config.serverWriteTimeoutSeconds | quote }}
-  ALLOW_LOCAL_PROVIDERS: {{ .Values.config.allowLocalProviders | quote }}
   # ── Database (auto-resolved from subchart when postgresql.enabled) ──
   DB_HOST: {{ include "llm-router.dbHost" . | quote }}
   DB_PORT: {{ .Values.config.dbPort | quote }}

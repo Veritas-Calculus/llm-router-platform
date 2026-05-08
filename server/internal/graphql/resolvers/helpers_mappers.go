@@ -82,13 +82,17 @@ func providerToGQL(p *models.Provider) *model.Provider {
 		s := p.DefaultProxyID.String()
 		proxyID = &s
 	}
+	createdAt := p.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
 	return &model.Provider{
 		ID: p.ID.String(), Name: p.Name, BaseURL: p.BaseURL,
 		IsActive: p.IsActive, Priority: p.Priority, Weight: p.Weight,
 		MaxRetries: p.MaxRetries, Timeout: p.Timeout,
 		UseProxy: p.UseProxy, DefaultProxyID: proxyID,
 		RequiresAPIKey: p.RequiresAPIKey,
-		CreatedAt:      p.CreatedAt,
+		CreatedAt:      createdAt,
 	}
 }
 

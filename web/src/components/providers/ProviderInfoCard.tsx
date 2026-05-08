@@ -4,9 +4,11 @@ import {
   XCircleIcon,
   ArrowPathIcon,
   TrashIcon,
+  AdjustmentsHorizontalIcon,
 } from '@heroicons/react/24/outline';
 import { Provider, ProviderHealthStatus, Proxy } from '@/lib/types';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 interface ProviderInfoCardProps {
   provider: Provider;
@@ -17,6 +19,12 @@ interface ProviderInfoCardProps {
   onTestConnection: () => void;
   onToggleProxy: () => void;
   onProxyChange: (proxyId: string) => void;
+  onUpdateProviderSettings: (input: {
+    priority: number;
+    weight: number;
+    maxRetries: number;
+    timeout: number;
+  }) => Promise<void>;
   onDeleteProvider: (id: string) => Promise<void>;
 }
 
@@ -29,10 +37,43 @@ export default function ProviderInfoCard({
   onTestConnection,
   onToggleProxy,
   onProxyChange,
+  onUpdateProviderSettings,
   onDeleteProvider,
 }: ProviderInfoCardProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settings, setSettings] = useState({
+    priority: provider.priority,
+    weight: provider.weight,
+    maxRetries: provider.max_retries,
+    timeout: provider.timeout,
+  });
+
+  useEffect(() => {
+    setSettings({
+      priority: provider.priority,
+      weight: provider.weight,
+      maxRetries: provider.max_retries,
+      timeout: provider.timeout,
+    });
+  }, [provider.id, provider.priority, provider.weight, provider.max_retries, provider.timeout]);
+
+  const settingsChanged =
+    settings.priority !== provider.priority ||
+    settings.weight !== provider.weight ||
+    settings.maxRetries !== provider.max_retries ||
+    settings.timeout !== provider.timeout;
+
+  const saveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      await onUpdateProviderSettings(settings);
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
   return (
     <div className="card">
       <div className="flex items-start justify-between">
@@ -104,6 +145,68 @@ export default function ProviderInfoCard({
               </button>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Routing Settings */}
+      <div className="mt-4 pt-4 border-t border-apple-gray-100">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-1">
+            <div>
+              <label className="label">Priority</label>
+              <input
+                type="number"
+                min="0"
+                value={settings.priority}
+                onChange={(e) => setSettings((prev) => ({ ...prev, priority: parseInt(e.target.value) || 0 }))}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">Weight</label>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={settings.weight}
+                onChange={(e) => setSettings((prev) => ({ ...prev, weight: parseFloat(e.target.value) || 0 }))}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">Retries</label>
+              <input
+                type="number"
+                min="0"
+                value={settings.maxRetries}
+                onChange={(e) => setSettings((prev) => ({ ...prev, maxRetries: parseInt(e.target.value) || 0 }))}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">Timeout</label>
+              <input
+                type="number"
+                min="1"
+                value={settings.timeout}
+                onChange={(e) => setSettings((prev) => ({ ...prev, timeout: parseInt(e.target.value) || 1 }))}
+                className="input"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link to="/admin/routing-rules" className="btn btn-secondary whitespace-nowrap">
+              <AdjustmentsHorizontalIcon className="w-5 h-5 mr-2" />
+              Routing Rules
+            </Link>
+            <button
+              onClick={saveSettings}
+              className="btn btn-primary whitespace-nowrap"
+              disabled={!settingsChanged || savingSettings}
+            >
+              {savingSettings ? 'Saving...' : 'Save'}
+            </button>
+          </div>
         </div>
       </div>
 

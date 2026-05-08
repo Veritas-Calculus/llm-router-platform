@@ -326,7 +326,7 @@ func (h *SSOHandler) exchangeOIDCCode(ctx context.Context, idp *models.IdentityP
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	client := sanitize.SafeHTTPClient(h.cfg.Server.AllowLocalProviders, 10*time.Second)
+	client := sanitize.SafeHTTPClient(false, 10*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token request failed: %w", err)
@@ -595,7 +595,7 @@ func (h *SSOHandler) resolveJWK(ctx context.Context, idp *models.IdentityProvide
 }
 
 func (h *SSOHandler) fetchJWKS(ctx context.Context, idp *models.IdentityProvider) (map[string]*rsa.PublicKey, error) {
-	client := sanitize.SafeHTTPClient(h.cfg.Server.AllowLocalProviders, 10*time.Second)
+	client := sanitize.SafeHTTPClient(false, 10*time.Second)
 
 	// 1. Discovery
 	discoveryURL := strings.TrimRight(idp.OIDCIssuerURL, "/") + "/.well-known/openid-configuration"

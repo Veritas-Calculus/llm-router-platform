@@ -16,13 +16,12 @@ import (
 
 // Service handles MCP server lifecycle and tool management.
 type Service struct {
-	repo       repository.MCPRepo
-	clients    map[string]Client // name -> MCP client
-	mu         sync.RWMutex
-	logger     *zap.Logger
-	ctx        context.Context    // lifecycle context for background goroutines
-	cancel     context.CancelFunc // cancels all background goroutines on shutdown
-	allowLocal bool               // whether MCP SSE clients may dial private IPs
+	repo    repository.MCPRepo
+	clients map[string]Client // name -> MCP client
+	mu      sync.RWMutex
+	logger  *zap.Logger
+	ctx     context.Context    // lifecycle context for background goroutines
+	cancel  context.CancelFunc // cancels all background goroutines on shutdown
 }
 
 // Client defines the interface for an MCP client (stdio or sse).
@@ -43,17 +42,15 @@ type Resource struct {
 	MimeType    string `json:"mimeType,omitempty"`
 }
 
-// NewService creates a new MCP service. allowLocal mirrors the server
-// ALLOW_LOCAL_PROVIDERS flag and gates SSRF-sensitive MCP SSE connections.
-func NewService(repo repository.MCPRepo, logger *zap.Logger, allowLocal bool) *Service {
+// NewService creates a new MCP service.
+func NewService(repo repository.MCPRepo, logger *zap.Logger) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{
-		repo:       repo,
-		clients:    make(map[string]Client),
-		logger:     logger,
-		ctx:        ctx,
-		cancel:     cancel,
-		allowLocal: allowLocal,
+		repo:    repo,
+		clients: make(map[string]Client),
+		logger:  logger,
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 }
 
@@ -108,7 +105,7 @@ func (s *Service) UpdateServer(ctx context.Context, server *models.MCPServer) er
 	if err := s.repo.UpdateServer(ctx, server); err != nil {
 		return err
 	}
-	
+
 	// Reconnect if status changed or active status changed
 	if server.IsActive {
 		go s.connectServer(s.ctx, *server) // G118: lifecycle-scoped
@@ -141,20 +138,20 @@ func (s *Service) RefreshTools(ctx context.Context, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	
+
 	s.mu.RLock()
 	client, ok := s.clients[server.Name]
 	s.mu.RUnlock()
-	
+
 	if !ok {
 		return fmt.Errorf("server not connected")
 	}
-	
+
 	tools, err := client.ListTools(ctx)
 	if err != nil {
 		return err
 	}
-	
+
 	return s.repo.SyncTools(ctx, server.ID, tools)
 }
 
@@ -237,15 +234,15 @@ func (s *Service) ReadResource(ctx context.Context, serverName, uri string) (int
 
 func (s *Service) connectServer(ctx context.Context, server models.MCPServer) {
 	s.logger.Info("connecting to MCP server", zap.String("name", sanitize.LogValue(server.Name)), zap.String("type", sanitize.LogValue(server.Type)))
-	
+
 	var client Client
 	var err error
-	
+
 	switch server.Type {
 	case "stdio":
 		client, err = NewStdioClient(server, s.logger)
 	case "sse":
-		client, err = NewSSEClient(server, s.logger, s.allowLocal)
+		client, err = NewSSEClient(server, s.logger, false)
 	default:
 		s.logger.Error("unsupported MCP transport type", zap.String("type", sanitize.LogValue(server.Type)))
 		return

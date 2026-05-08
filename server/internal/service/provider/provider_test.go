@@ -188,6 +188,13 @@ func TestCapabilityConstants(t *testing.T) {
 	assert.Equal(t, Capability("video"), CapVideo)
 }
 
+func TestCanonicalName(t *testing.T) {
+	assert.Equal(t, "openai", CanonicalName("openai-us"))
+	assert.Equal(t, "anthropic", CanonicalName("anthropic_backup"))
+	assert.Equal(t, "google", CanonicalName("Google.EU"))
+	assert.Equal(t, "custom-compatible", CanonicalName("custom-compatible"))
+}
+
 func TestRegistryTTSCapability(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	registry := NewRegistry(logger)
@@ -283,4 +290,3 @@ func TestFlexibleContentNullPreserved(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "null", string(marshaled))
 }
-

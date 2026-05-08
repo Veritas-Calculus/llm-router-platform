@@ -85,7 +85,6 @@ config:
   corsOrigins: ""
   serverReadTimeoutSeconds: 30
   serverWriteTimeoutSeconds: 600
-  allowLocalProviders: false
 
   # Database
   dbHost: postgres

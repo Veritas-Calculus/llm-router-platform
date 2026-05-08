@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ProvidersPage from '@/pages/ProvidersPage';
 
 vi.mock('framer-motion', () => ({
@@ -48,5 +48,21 @@ describe('ProvidersPage', () => {
         await waitFor(() => {
             expect(screen.getByText('Manage LLM providers and their API keys')).toBeInTheDocument();
         });
+    });
+
+    it('should ask for an API key when the selected provider requires one', async () => {
+        render(<ProvidersPage />);
+
+        fireEvent.click(screen.getByRole('button', { name: /Add First Provider/i }));
+        fireEvent.change(screen.getByLabelText('Provider Type'), { target: { value: 'openai' } });
+
+        expect(screen.getByLabelText('API Key')).toBeInTheDocument();
+        expect(screen.getByLabelText('Key Alias')).toBeInTheDocument();
+        expect(screen.getByLabelText(/Validate connection after saving/)).toBeChecked();
+        expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+
+        fireEvent.change(screen.getByLabelText('API Key'), { target: { value: 'sk-test' } });
+
+        expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
     });
 });

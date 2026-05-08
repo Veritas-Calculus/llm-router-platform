@@ -2,11 +2,44 @@ package provider
 
 import (
 	"fmt"
+	"strings"
 
 	"llm-router-platform/internal/config"
 
 	"go.uber.org/zap"
 )
+
+var knownProviderNames = map[string]struct{}{
+	"openai":    {},
+	"anthropic": {},
+	"google":    {},
+	"ollama":    {},
+	"lmstudio":  {},
+	"deepseek":  {},
+	"mistral":   {},
+	"vllm":      {},
+}
+
+// CanonicalName maps a user-visible provider instance name to the provider
+// client type. This lets admins create multiple instances such as openai-us
+// and openai-eu while still using the OpenAI client implementation.
+func CanonicalName(name string) string {
+	candidate := strings.ToLower(strings.TrimSpace(name))
+	if _, ok := knownProviderNames[candidate]; ok {
+		return candidate
+	}
+
+	prefix := strings.FieldsFunc(candidate, func(r rune) bool {
+		return r == '-' || r == '_' || r == ' ' || r == '.'
+	})
+	if len(prefix) > 0 {
+		if _, ok := knownProviderNames[prefix[0]]; ok {
+			return prefix[0]
+		}
+	}
+
+	return candidate
+}
 
 // NewClientByName creates a provider Client by provider name.
 // This is the single source of truth for mapping provider names to client
@@ -20,8 +53,9 @@ func NewClientByName(name string, cfg *config.ProviderConfig, logger *zap.Logger
 // Use RetryConfigFromProvider(maxRetries, timeout) to build from models.Provider.
 func NewClientByNameWithRetry(name string, cfg *config.ProviderConfig, retryCfg RetryConfig, logger *zap.Logger) (Client, error) {
 	var inner Client
+	canonicalName := CanonicalName(name)
 
-	switch name {
+	switch canonicalName {
 	case "openai":
 		inner = NewOpenAIClient(cfg, logger)
 	case "anthropic":

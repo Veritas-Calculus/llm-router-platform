@@ -30,7 +30,6 @@ services:
       - DB_SSL_MODE=disable
       - REGISTRATION_MODE=open
       - CORS_ORIGINS=http://localhost:3000,http://localhost:80
-      - ALLOW_LOCAL_PROVIDERS=true
       - GIN_MODE=debug
       - LOG_LEVEL=debug
 

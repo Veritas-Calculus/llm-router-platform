@@ -27,18 +27,16 @@ type AlertNotifier struct {
 	logger          *zap.Logger
 }
 
-// NewAlertNotifier creates a new AlertNotifier. allowLocal controls whether
-// alert webhook delivery may reach private/reserved IP ranges (SSRF guard).
+// NewAlertNotifier creates a new AlertNotifier.
 func NewAlertNotifier(
 	alertRepo *repository.AlertRepository,
 	alertConfigRepo *repository.AlertConfigRepository,
 	logger *zap.Logger,
-	allowLocal bool,
 ) *AlertNotifier {
 	return &AlertNotifier{
 		alertRepo:       alertRepo,
 		alertConfigRepo: alertConfigRepo,
-		webhookClient:   sanitize.SafeHTTPClient(allowLocal, 10*time.Second),
+		webhookClient:   sanitize.SafeHTTPClient(false, 10*time.Second),
 		logger:          logger,
 	}
 }

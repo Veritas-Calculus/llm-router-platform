@@ -130,6 +130,10 @@ function RoutingRulesPage() {
   const [fallbackProviderId, setFallbackProviderId] = useState<string>('');
   const [priority, setPriority] = useState(1);
   const [isEnabled, setIsEnabled] = useState(true);
+  const fallbackProviders = useMemo(
+    () => providers.filter((provider) => provider.id !== targetProviderId),
+    [providers, targetProviderId]
+  );
 
   // Delete confirm state
   const [confirmModal, setConfirmModal] = useState<{
@@ -237,7 +241,7 @@ function RoutingRulesPage() {
         isEnabled: !rule.isEnabled,
       };
       await updateRuleMut({ variables: { id: rule.id, input } });
-      toast.success(`Rule \${rule.isEnabled ? 'disabled' : 'enabled'}`);
+      toast.success(`Rule ${rule.isEnabled ? 'disabled' : 'enabled'}`);
       await refetchRules();
     } catch {
       toast.error('Failed to toggle rule status');
@@ -333,12 +337,12 @@ function RoutingRulesPage() {
                       <td className="table-cell">
                         <button
                           onClick={() => handleToggleStatus(rule)}
-                          className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none \${
+                          className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                             rule.isEnabled ? 'bg-apple-green' : 'bg-apple-gray-200'
                           }`}
                         >
                           <span
-                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out \${
+                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                               rule.isEnabled ? 'translate-x-4' : 'translate-x-0'
                             }`}
                           />
@@ -423,7 +427,12 @@ function RoutingRulesPage() {
                   <label className="label">Target Provider *</label>
                   <select
                     value={targetProviderId}
-                    onChange={(e) => setTargetProviderId(e.target.value)}
+                    onChange={(e) => {
+                      setTargetProviderId(e.target.value);
+                      if (fallbackProviderId === e.target.value) {
+                        setFallbackProviderId('');
+                      }
+                    }}
                     className="input"
                   >
                     <option value="">Select Primary Provider</option>
@@ -441,7 +450,7 @@ function RoutingRulesPage() {
                     className="input"
                   >
                     <option value="">None (Fail immediately)</option>
-                    {providers.map(p => (
+                    {fallbackProviders.map(p => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>

@@ -16,6 +16,7 @@ import {
 } from '@/lib/graphql/operations/providers';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useTranslation } from '@/lib/i18n';
+import toast from 'react-hot-toast';
 
 interface ModelTableProps {
   providerId: string;
@@ -55,7 +56,18 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
 
   const [syncModels, { loading: syncing }] = useMutation(SYNC_PROVIDER_MODELS, {
     variables: { providerId },
-    onCompleted: () => refetch(),
+    onCompleted: async (result) => {
+      await refetch();
+      const count = (result as { syncProviderModels?: ModelItem[] })?.syncProviderModels?.length ?? 0;
+      toast.success(
+        count > 0
+          ? t('providers.sync_models_success', { count })
+          : t('providers.sync_models_empty')
+      );
+    },
+    onError: (error) => {
+      toast.error(error.message || t('providers.sync_models_failed'));
+    },
   });
 
   const models: ModelItem[] = data?.models ?? [];

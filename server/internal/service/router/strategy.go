@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"llm-router-platform/internal/models"
+	providerSvc "llm-router-platform/internal/service/provider"
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
@@ -105,8 +106,9 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 func (r *Router) matchHeuristicFallback(modelLower string, providers []models.Provider) *models.Provider {
 	for i := range providers {
 		p := &providers[i]
+		providerName := providerSvc.CanonicalName(p.Name)
 		// Check prefix-based matching
-		if prefixes, ok := heuristicPrefixes[p.Name]; ok {
+		if prefixes, ok := heuristicPrefixes[providerName]; ok {
 			for _, prefix := range prefixes {
 				if strings.HasPrefix(modelLower, prefix) {
 					return p
@@ -114,7 +116,7 @@ func (r *Router) matchHeuristicFallback(modelLower string, providers []models.Pr
 			}
 		}
 		// Check substring-based matching (local providers)
-		if substrings, ok := heuristicContains[p.Name]; ok {
+		if substrings, ok := heuristicContains[providerName]; ok {
 			for _, substr := range substrings {
 				if strings.Contains(modelLower, substr) {
 					return p

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -120,8 +121,8 @@ func (r *Router) executeChatWithMCP(ctx context.Context, p *models.Provider, api
 
 		// Update request messages and repeat
 		req.Messages = messages
-		r.logger.Info("repeating LLM request after MCP tool execution", 
-			zap.String("provider", p.Name), 
+		r.logger.Info("repeating LLM request after MCP tool execution",
+			zap.String("provider", p.Name),
 			zap.Int("loop", loop+1))
 	}
 
@@ -196,14 +197,14 @@ func (r *Router) handleMCPToolCalls(ctx context.Context, resp *provider.ChatResp
 		}
 
 		serverName, toolName := parts[0], parts[1]
-		
+
 		var args map[string]json.RawMessage
 		_ = json.Unmarshal(tc.Function.Arguments, &args)
 
 		r.logger.Info("executing MCP tool", zap.String("server", serverName), zap.String("tool", toolName))
 		mcpCalls++
 		result, err := r.mcpService.CallTool(ctx, serverName, toolName, args)
-		
+
 		resultJSON, _ := json.Marshal(result)
 		if err != nil {
 			mcpErrors++
@@ -521,7 +522,7 @@ func (r *Router) GetProviderClientWithKey(ctx context.Context, p *models.Provide
 func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) config.HTTPClientProvider {
 	if !p.UseProxy {
 		return func() *http.Client {
-			return sanitize.SafeHTTPClient(r.allowLocal, 600*time.Second)
+			return sanitize.SafeHTTPClient(allowLocalProviderEgress, 600*time.Second)
 		}
 	}
 
@@ -541,7 +542,7 @@ func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) 
 			proxies, err := r.proxyRepo.GetActive(ctx)
 			if err != nil || len(proxies) == 0 {
 				// Fall through to a direct SafeTransport client.
-				return sanitize.SafeHTTPClient(r.allowLocal, 600*time.Second)
+				return sanitize.SafeHTTPClient(allowLocalProviderEgress, 600*time.Second)
 			}
 			proxyInfo = &proxies[0]
 		}
@@ -549,7 +550,7 @@ func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) 
 		proxyURL, err := url.Parse(proxyInfo.URL)
 		if err != nil {
 			r.logger.Warn("proxy URL parse failed, falling back to direct SafeTransport", zap.Error(err))
-			return sanitize.SafeHTTPClient(r.allowLocal, 600*time.Second)
+			return sanitize.SafeHTTPClient(allowLocalProviderEgress, 600*time.Second)
 		}
 
 		// Add authentication if available. Propagate decrypt errors so we do
@@ -560,7 +561,7 @@ func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) 
 				r.logger.Error("proxy password decryption failed, falling back to direct client",
 					zap.String("proxy_id", proxyInfo.ID.String()),
 					zap.Error(decErr))
-				return sanitize.SafeHTTPClient(r.allowLocal, 600*time.Second)
+				return sanitize.SafeHTTPClient(allowLocalProviderEgress, 600*time.Second)
 			}
 			proxyURL.User = url.UserPassword(proxyInfo.Username, password)
 		}
@@ -569,7 +570,7 @@ func (r *Router) getHTTPClientProvider(ctx context.Context, p *models.Provider) 
 			zap.String("provider", p.Name),
 			zap.String("proxy_url", proxyInfo.URL))
 
-		return sanitize.SafeHTTPClientWithProxy(r.allowLocal, 60*time.Second, proxyURL)
+		return sanitize.SafeHTTPClientWithProxy(allowLocalProviderEgress, 60*time.Second, proxyURL)
 	}
 }
 
@@ -647,9 +648,9 @@ type SyncModelsResult struct {
 	Total     int
 }
 
-// SyncProviderModels discovers models from a provider's upstream /v1/models endpoint
+// SyncProviderModels discovers models through the provider client implementation
 // and upserts any new ones. Returns all models for the provider.
-func (r *Router) SyncProviderModels(ctx context.Context, providerID uuid.UUID, httpClient *http.Client) ([]models.Model, error) {
+func (r *Router) SyncProviderModels(ctx context.Context, providerID uuid.UUID) ([]models.Model, error) {
 	prov, err := r.providerRepo.GetByID(ctx, providerID)
 	if err != nil {
 		return nil, errors.New("provider not found")
@@ -666,36 +667,23 @@ func (r *Router) SyncProviderModels(ctx context.Context, providerID uuid.UUID, h
 	if err != nil {
 		return nil, err
 	}
-
-	reqURL := strings.TrimRight(prov.BaseURL, "/") + "/v1/models"
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
-	if err != nil {
-		return nil, errors.New("failed to build request")
+	if prov.RequiresAPIKey && len(apiKeys) == 0 {
+		return nil, errors.New("provider requires an active API key")
 	}
 
+	var apiKey *models.ProviderAPIKey
 	if len(apiKeys) > 0 {
-		if decrypted, err := crypto.Decrypt(apiKeys[0].EncryptedAPIKey); err == nil {
-			req.Header.Set("Authorization", "Bearer "+decrypted)
-		}
+		apiKey = &apiKeys[0]
 	}
 
-	resp, err := httpClient.Do(req)
+	client, err := r.GetProviderClientWithKey(ctx, prov, apiKey)
 	if err != nil {
-		return nil, errors.New("failed to reach provider")
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != 200 {
-		return nil, errors.New("provider returned non-200 status")
+		return nil, fmt.Errorf("create provider client: %w", err)
 	}
 
-	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, errors.New("failed to parse model list")
+	upstreamModels, err := client.ListModels(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list provider models: %w", err)
 	}
 
 	// Build existing model map
@@ -705,18 +693,25 @@ func (r *Router) SyncProviderModels(ctx context.Context, providerID uuid.UUID, h
 	}
 
 	// Upsert discovered models
-	for _, upstream := range result.Data {
-		if existing[upstream.ID] {
+	for _, upstream := range upstreamModels {
+		modelName := upstream.ID
+		if modelName == "" {
+			modelName = upstream.Name
+		}
+		if modelName == "" || existing[modelName] {
 			continue
 		}
 		m := models.Model{
 			ProviderID:  providerID,
-			Name:        upstream.ID,
-			DisplayName: upstream.ID,
+			Name:        modelName,
+			DisplayName: modelName,
 			IsActive:    true,
 			MaxTokens:   4096,
 		}
-		_ = r.modelRepo.Create(ctx, &m)
+		if err := r.modelRepo.Create(ctx, &m); err != nil {
+			return nil, fmt.Errorf("create model %q: %w", modelName, err)
+		}
+		existing[modelName] = true
 	}
 
 	// Return full model list

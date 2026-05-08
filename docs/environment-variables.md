@@ -33,7 +33,6 @@
 | `CORS_ORIGINS` | _(空)_ | 允许的 CORS 源，逗号分隔。空=禁止跨域，`*`=全部允许 |
 | `SERVER_READ_TIMEOUT_SECONDS` | `30` | HTTP 读超时 |
 | `SERVER_WRITE_TIMEOUT_SECONDS` | `600` | HTTP 写超时 (需大于 LLM 流式最长回复) |
-| `ALLOW_LOCAL_PROVIDERS` | `false` | 允许 Provider URL 指向私有 IP (开发环境可设为 true) |
 | `FRONTEND_URL` | `http://localhost` | 前端地址 (用于邮件中的链接等；本地 Vite 开发可设为 `http://localhost:3000`) |
 
 ## Logging

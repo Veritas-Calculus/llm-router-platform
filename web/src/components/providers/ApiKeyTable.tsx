@@ -33,6 +33,7 @@ export default function ApiKeyTable({
   const [updatingKey, setUpdatingKey] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; keyId: string }>({ isOpen: false, keyId: '' });
   const [processing, setProcessing] = useState(false);
+  const canAddKey = Boolean(newKey.api_key.trim() && !adding);
 
   const formatDate = (dateString: string): string => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -43,13 +44,14 @@ export default function ApiKeyTable({
   };
 
   const handleAddKey = async () => {
-    if (!newKey.alias.trim()) return;
+    const trimmedKey = newKey.api_key.trim();
+    if (!trimmedKey) return;
     setAdding(true);
     try {
       await onAddKey({
         ...newKey,
-        api_key: newKey.api_key.trim() || 'default',
-        alias: newKey.alias.trim(),
+        api_key: trimmedKey,
+        alias: newKey.alias.trim() || `${providerName} primary`,
       });
       setShowAddModal(false);
       setNewKey({ api_key: '', alias: '', priority: 1, weight: 1.0, rate_limit: 0 });
@@ -249,10 +251,12 @@ export default function ApiKeyTable({
                   onChange={(e) => setNewKey((prev) => ({ ...prev, api_key: e.target.value }))}
                   className="input"
                   placeholder="sk-..."
+                  autoComplete="off"
+                  required
                 />
               </div>
               <div>
-                <label className="label">Alias</label>
+                <label className="label">Alias (optional)</label>
                 <input
                   type="text"
                   value={newKey.alias}
@@ -294,7 +298,7 @@ export default function ApiKeyTable({
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={() => setShowAddModal(false)} className="btn btn-secondary">Cancel</button>
-              <button onClick={handleAddKey} className="btn btn-primary" disabled={adding}>
+              <button onClick={handleAddKey} className="btn btn-primary" disabled={!canAddKey}>
                 {adding ? 'Adding...' : 'Add Key'}
               </button>
             </div>

@@ -140,9 +140,8 @@ func IsPrivateIP(ip net.IP) bool {
 //   - URLs pointing to private/reserved IP ranges (unless allowLocal is true)
 //   - URLs with no host or malformed structure
 //
-// When allowLocal is true (typically set via ALLOW_LOCAL_PROVIDERS config),
-// private/reserved IP ranges are permitted—useful for Docker-compose setups
-// where providers run on the same host.
+// When allowLocal is true, private/reserved IP ranges are permitted for
+// explicitly trusted call sites such as admin-managed local LLM providers.
 //
 // Returns an error describing the validation failure, or nil if valid.
 func ValidateWebhookURL(rawURL string, allowHTTP bool, allowLocal bool) error {
@@ -183,7 +182,7 @@ func ValidateWebhookURL(rawURL string, allowHTTP bool, allowLocal bool) error {
 		// Check that ALL resolved IPs are public (not private/reserved)
 		for _, ip := range ips {
 			if IsPrivateIP(ip) {
-				return fmt.Errorf("URL resolves to private/reserved IP address. Set ALLOW_LOCAL_PROVIDERS=true to allow")
+				return fmt.Errorf("URL resolves to private/reserved IP address")
 			}
 		}
 	}
@@ -257,7 +256,7 @@ func newSafeDialContext(allowLocal bool) func(ctx context.Context, network, addr
 			// Validate ALL resolved IPs are public
 			for _, ipAddr := range ips {
 				if IsPrivateIP(ipAddr.IP) {
-					return nil, fmt.Errorf("connection to %q blocked: resolves to private/reserved IP. Set ALLOW_LOCAL_PROVIDERS=true to allow", host)
+					return nil, fmt.Errorf("connection to %q blocked: resolves to private/reserved IP", host)
 				}
 			}
 		}

@@ -115,7 +115,7 @@ func (r *mutationResolver) ResolveAlert(ctx context.Context, id string) (*model.
 func (r *mutationResolver) UpdateAlertConfig(ctx context.Context, input model.AlertConfigInput) (*model.AlertConfig, error) {
 	targetID, _ := uuid.Parse(input.TargetID)
 	if input.WebhookURL != nil {
-		if err := sanitize.ValidateWebhookURL(*input.WebhookURL, false, r.Config().Server.AllowLocalProviders); err != nil {
+		if err := sanitize.ValidateWebhookURL(*input.WebhookURL, false, false); err != nil {
 			return nil, fmt.Errorf("invalid webhook URL: %w", err)
 		}
 	}

@@ -55,7 +55,7 @@ func (r *mutationResolver) UpdateIntegration(ctx context.Context, name string, i
 // TestLangfuseConnection is the resolver for the testLangfuseConnection field.
 func (r *mutationResolver) TestLangfuseConnection(ctx context.Context, publicKey string, secretKey string, host string) (bool, error) {
 	// SSRF protection: validate host URL before making request
-	if err := sanitize.ValidateWebhookURL(host, false, r.Config().Server.AllowLocalProviders); err != nil {
+	if err := sanitize.ValidateWebhookURL(host, false, false); err != nil {
 		return false, fmt.Errorf("invalid host URL: %w", err)
 	}
 
@@ -91,7 +91,7 @@ func (r *mutationResolver) TestLangfuseConnection(ctx context.Context, publicKey
 
 	client := &http.Client{
 		Timeout:   10 * time.Second,
-		Transport: sanitize.SafeTransport(r.Config().Server.AllowLocalProviders),
+		Transport: sanitize.SafeTransport(false),
 	}
 	resp, err := client.Do(req)
 	if err != nil {

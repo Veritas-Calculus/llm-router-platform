@@ -66,7 +66,6 @@ type ServerConfig struct {
 	MetricsAllowUnauthenticated bool     // Expose /internal/metrics without auth for Prometheus scraping
 	ReadTimeoutSeconds          int      // HTTP server read timeout (default: 30)
 	WriteTimeoutSeconds         int      // HTTP server write timeout; must be large for LLM streaming (default: 600)
-	AllowLocalProviders         bool     // Allow provider URLs pointing to private/reserved IPs (default: false)
 }
 
 // DatabaseConfig holds database connection configuration.
@@ -291,7 +290,6 @@ func Load() (*Config, error) {
 			MetricsAllowUnauthenticated: viper.GetBool("METRICS_ALLOW_UNAUTHENTICATED"),
 			ReadTimeoutSeconds:          viper.GetInt("SERVER_READ_TIMEOUT_SECONDS"),
 			WriteTimeoutSeconds:         viper.GetInt("SERVER_WRITE_TIMEOUT_SECONDS"),
-			AllowLocalProviders:         viper.GetBool("ALLOW_LOCAL_PROVIDERS"),
 		},
 		Database: DatabaseConfig{
 			Host:                   viper.GetString("DB_HOST"),

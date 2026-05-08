@@ -5,23 +5,23 @@ package resolvers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/pkg/sanitize"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
 
+const allowLocalProviderURLs = true
+
 // CreateProvider is the resolver for the createProvider field.
 func (r *mutationResolver) CreateProvider(ctx context.Context, input model.CreateProviderInput) (*model.Provider, error) {
 	// SSRF protection: validate the URL
-	if err := sanitize.ValidateWebhookURL(input.BaseURL, true, r.Config().Server.AllowLocalProviders); err != nil {
+	if err := sanitize.ValidateWebhookURL(input.BaseURL, true, allowLocalProviderURLs); err != nil {
 		return nil, fmt.Errorf("invalid base URL: %w", err)
 	}
 
@@ -86,9 +86,9 @@ func (r *mutationResolver) UpdateProvider(ctx context.Context, id string, input 
 		p.Name = *input.Name
 	}
 	if input.BaseURL != nil {
-		// SSRF protection: validate the URL is not pointing to internal/private IPs
-		// Allow HTTP since some local providers (Ollama, vLLM) use it
-		if err := sanitize.ValidateWebhookURL(*input.BaseURL, true, r.Config().Server.AllowLocalProviders); err != nil {
+		// Provider endpoints may be local/self-hosted, so HTTP and private IPs
+		// are allowed here while still using a guarded transport at dial time.
+		if err := sanitize.ValidateWebhookURL(*input.BaseURL, true, allowLocalProviderURLs); err != nil {
 			return nil, fmt.Errorf("invalid base URL: %w", err)
 		}
 		p.BaseURL = *input.BaseURL
@@ -338,78 +338,13 @@ func (r *mutationResolver) SyncProviderModels(ctx context.Context, providerID st
 	if err != nil {
 		return nil, fmt.Errorf("invalid provider id")
 	}
-	// Get provider from DB
-	var prov models.Provider
-	if err := r.AdminSvc.DB().Preload("Models").First(&prov, "id = ?", pid).Error; err != nil {
-		return nil, fmt.Errorf("provider not found")
-	}
-
-	// Call upstream /v1/models to discover available models
-	// Use SafeTransport to prevent SSRF via admin-controlled BaseURL
-	client := &http.Client{
-		Timeout:   15 * time.Second,
-		Transport: sanitize.SafeTransport(r.Config().Server.AllowLocalProviders),
-	}
-	reqURL := strings.TrimRight(prov.BaseURL, "/") + "/v1/models"
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	syncedModels, err := r.Router.SyncProviderModels(ctx, pid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build request: %w", err)
+		return nil, err
 	}
-
-	// Try to get the first active API key for auth
-	var apiKey models.ProviderAPIKey
-	if err := r.AdminSvc.DB().Where("provider_id = ? AND is_active = ?", pid, true).Order("priority ASC").First(&apiKey).Error; err == nil {
-		if decrypted, err := crypto.Decrypt(apiKey.EncryptedAPIKey); err == nil {
-			req.Header.Set("Authorization", "Bearer "+decrypted)
-		}
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to reach provider at %s: %w", reqURL, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("provider returned status %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to parse model list: %w", err)
-	}
-
-	// Build existing model map
-	existing := make(map[string]bool)
-	for _, m := range prov.Models {
-		existing[m.Name] = true
-	}
-
-	// Upsert discovered models
-	for _, upstream := range result.Data {
-		if existing[upstream.ID] {
-			continue
-		}
-		m := models.Model{
-			ProviderID:  pid,
-			Name:        upstream.ID,
-			DisplayName: upstream.ID,
-			IsActive:    true,
-			MaxTokens:   4096,
-		}
-		r.AdminSvc.DB().Create(&m)
-	}
-
-	// Return full model list
-	var allModels []models.Model
-	r.AdminSvc.DB().Where("provider_id = ?", pid).Order("name ASC").Find(&allModels)
-	out := make([]*model.Model, len(allModels))
-	for i := range allModels {
-		out[i] = modelToGQL(&allModels[i])
+	out := make([]*model.Model, len(syncedModels))
+	for i := range syncedModels {
+		out[i] = modelToGQL(&syncedModels[i])
 	}
 	return out, nil
 }

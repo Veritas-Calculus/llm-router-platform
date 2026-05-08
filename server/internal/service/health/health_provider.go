@@ -10,6 +10,7 @@ import (
 
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
+	"llm-router-platform/internal/service/provider"
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
@@ -189,7 +190,7 @@ func (s *Service) checkWithProxy(ctx context.Context, p *models.Provider, apiKey
 
 	// Create HTTP client with proxy + SSRF dial guard
 	httpClient := sanitize.SafeHTTPClientWithProxy(
-		s.allowLocal,
+		allowLocalProviderHealthEgress,
 		time.Duration(p.Timeout)*time.Second,
 		proxyURL,
 	)
@@ -227,6 +228,7 @@ func (s *Service) checkWithProxy(ctx context.Context, p *models.Provider, apiKey
 
 // resolveHealthURL returns the health check endpoint for a given provider.
 func (s *Service) resolveHealthURL(providerName, baseURL, decryptedKey string) string {
+	providerName = provider.CanonicalName(providerName)
 	switch providerName {
 	case "openai", "lmstudio", "vllm":
 		return baseURL + "/models"
@@ -252,6 +254,7 @@ func (s *Service) resolveHealthURL(providerName, baseURL, decryptedKey string) s
 
 // setAuthHeaders adds appropriate authorization headers for the given provider.
 func (s *Service) setAuthHeaders(req *http.Request, providerName, decryptedKey string) {
+	providerName = provider.CanonicalName(providerName)
 	switch providerName {
 	case "openai", "lmstudio", "vllm", "ollama":
 		if decryptedKey != "" {
@@ -272,6 +275,7 @@ func (s *Service) setAuthHeaders(req *http.Request, providerName, decryptedKey s
 
 // evaluateHealthResponse interprets the HTTP response for a health check.
 func (s *Service) evaluateHealthResponse(providerName, decryptedKey string, resp *http.Response, latency time.Duration) (bool, time.Duration, string) {
+	providerName = provider.CanonicalName(providerName)
 	// For Anthropic without API key, a 401 means the endpoint is reachable
 	if providerName == "anthropic" && decryptedKey == "" && resp.StatusCode == http.StatusUnauthorized {
 		return true, latency, ""

@@ -30,33 +30,29 @@ type Service interface {
 	GetEndpoint(ctx context.Context, id uuid.UUID) (*models.WebhookEndpoint, error)
 	UpdateEndpoint(ctx context.Context, id uuid.UUID, url string, events []string, isActive bool, description string) (*models.WebhookEndpoint, error)
 	DeleteEndpoint(ctx context.Context, id uuid.UUID) error
-	
+
 	// Dispatch
 	DispatchEvent(ctx context.Context, projectID uuid.UUID, eventType string, payloadData interface{}) error
-	
+
 	// Delivery queries
 	GetDeliveries(ctx context.Context, endpointID uuid.UUID, limit int) ([]*models.WebhookDelivery, error)
-	
+
 	// Background processing
 	ProcessPendingDeliveries(ctx context.Context)
 }
 
 type service struct {
-	repo       repository.WebhookRepository
-	logger     *zap.Logger
-	client     *http.Client
-	allowLocal bool
+	repo   repository.WebhookRepository
+	logger *zap.Logger
+	client *http.Client
 }
 
-// NewWebhookService constructs the webhook dispatch service. allowLocal mirrors
-// the server's ALLOW_LOCAL_PROVIDERS flag and controls whether outbound webhook
-// delivery can reach private/reserved IP ranges.
-func NewWebhookService(repo repository.WebhookRepository, logger *zap.Logger, allowLocal bool) Service {
+// NewWebhookService constructs the webhook dispatch service.
+func NewWebhookService(repo repository.WebhookRepository, logger *zap.Logger) Service {
 	return &service{
-		repo:       repo,
-		logger:     logger,
-		client:     sanitize.SafeHTTPClient(allowLocal, 10*time.Second),
-		allowLocal: allowLocal,
+		repo:   repo,
+		logger: logger,
+		client: sanitize.SafeHTTPClient(false, 10*time.Second),
 	}
 }
 
@@ -71,7 +67,7 @@ func generateSecret() (string, error) {
 }
 
 func (s *service) CreateEndpoint(ctx context.Context, projectID uuid.UUID, url string, events []string, description string) (*models.WebhookEndpoint, error) {
-	if err := sanitize.ValidateWebhookURL(url, s.allowLocal, s.allowLocal); err != nil {
+	if err := sanitize.ValidateWebhookURL(url, false, false); err != nil {
 		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
 
@@ -111,7 +107,7 @@ func (s *service) UpdateEndpoint(ctx context.Context, id uuid.UUID, url string, 
 	}
 
 	if url != "" {
-		if err := sanitize.ValidateWebhookURL(url, s.allowLocal, s.allowLocal); err != nil {
+		if err := sanitize.ValidateWebhookURL(url, false, false); err != nil {
 			return nil, fmt.Errorf("invalid webhook URL: %w", err)
 		}
 		endpoint.URL = url
@@ -159,14 +155,14 @@ func (s *service) DispatchEvent(ctx context.Context, projectID uuid.UUID, eventT
 			Payload:    payloadStr,
 			Status:     "pending",
 		}
-		
+
 		if err := s.repo.CreateDelivery(ctx, delivery); err != nil {
-			s.logger.Error("Failed to queue webhook delivery", 
+			s.logger.Error("Failed to queue webhook delivery",
 				zap.String("endpointID", endpoint.ID.String()),
 				zap.Error(err))
 			continue // Don't fail the whole loop just because one failed to save
 		}
-		
+
 		s.logger.Info("Queued webhook delivery", zap.String("deliveryID", delivery.ID.String()))
 	}
 
@@ -218,7 +214,7 @@ func (s *service) ProcessPendingDeliveries(ctx context.Context) {
 
 func (s *service) executeDelivery(ctx context.Context, delivery *models.WebhookDelivery) {
 	delivery.RetryCount++
-	
+
 	payloadBytes := []byte(delivery.Payload)
 	signature := computeHMAC(payloadBytes, delivery.Endpoint.Secret)
 
@@ -246,12 +242,12 @@ func (s *service) executeDelivery(ctx context.Context, delivery *models.WebhookD
 		} else {
 			errMsg = err.Error()
 		}
-		
+
 		status := "pending" // Will be retried if < 3
 		if delivery.RetryCount >= 3 {
 			status = "failed"
 		}
-		
+
 		s.finalizeDelivery(ctx, delivery, status, 0, errMsg, "")
 		return
 	}
@@ -260,7 +256,7 @@ func (s *service) executeDelivery(ctx context.Context, delivery *models.WebhookD
 	// Read up to 2048 bytes of the response body for debugging
 	bodyBytes := make([]byte, 2048)
 	n, _ := io.ReadFull(resp.Body, bodyBytes)
-	
+
 	var actualBody string
 	if n == len(bodyBytes) || err == io.ErrUnexpectedEOF || err == io.EOF {
 		actualBody = string(bodyBytes[:n])

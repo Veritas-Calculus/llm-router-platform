@@ -90,7 +90,7 @@ func (r *mutationResolver) TestNotificationChannel(ctx context.Context, id strin
 		if err := json.Unmarshal([]byte(ch.Config), &cfg); err != nil {
 			return false, fmt.Errorf("invalid webhook config: %w", err)
 		}
-		wh := notifSvc.NewWebhookChannel(cfg.URL, r.Config().Server.AllowLocalProviders)
+		wh := notifSvc.NewWebhookChannel(cfg.URL, false)
 		sendErr = wh.Send(ctx, payload)
 	case "email":
 		var cfg struct {
@@ -116,7 +116,7 @@ func (r *mutationResolver) TestNotificationChannel(ctx context.Context, id strin
 		if err := json.Unmarshal([]byte(ch.Config), &cfg); err != nil {
 			return false, fmt.Errorf("invalid dingtalk config: %w", err)
 		}
-		dt := notifSvc.NewDingTalkChannel(cfg.WebhookURL, cfg.Secret, r.Config().Server.AllowLocalProviders)
+		dt := notifSvc.NewDingTalkChannel(cfg.WebhookURL, cfg.Secret, false)
 		sendErr = dt.Send(ctx, payload)
 	case "feishu":
 		var cfg struct {
@@ -126,7 +126,7 @@ func (r *mutationResolver) TestNotificationChannel(ctx context.Context, id strin
 		if err := json.Unmarshal([]byte(ch.Config), &cfg); err != nil {
 			return false, fmt.Errorf("invalid feishu config: %w", err)
 		}
-		fs := notifSvc.NewFeishuChannel(cfg.WebhookURL, cfg.Secret, r.Config().Server.AllowLocalProviders)
+		fs := notifSvc.NewFeishuChannel(cfg.WebhookURL, cfg.Secret, false)
 		sendErr = fs.Send(ctx, payload)
 	default:
 		return false, fmt.Errorf("unknown channel type: %s", ch.Type)

@@ -329,7 +329,7 @@ func (app *Application) startBackgroundJobs() {
 
 	// Health check scheduler
 	if app.cfg.HealthCheck.Enabled {
-		alertNotifier := health.NewAlertNotifier(app.repos.Alert, app.repos.AlertConfig, app.logger, app.cfg.Server.AllowLocalProviders)
+		alertNotifier := health.NewAlertNotifier(app.repos.Alert, app.repos.AlertConfig, app.logger)
 		scheduler := health.NewScheduler(app.services.Health, alertNotifier, app.cfg.HealthCheck.Interval, app.logger)
 		go scheduler.Start(lifecycleCtx)
 	}
@@ -506,7 +506,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	// Provider registry - clients are created dynamically based on database configuration
 	providerRegistry := provider.NewRegistry(logger)
 
-	mcpService := mcp.NewService(repos.MCP, logger, cfg.Server.AllowLocalProviders)
+	mcpService := mcp.NewService(repos.MCP, logger)
 	cfgService := configService.NewService(repos.Config, logger)
 	cfgService.InitFeatureGates(cfg.FeatureGates)
 	cfg.FeatureGates.LogGates(logger)
@@ -516,7 +516,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		cfgService.SetRedis(redisClient)
 		cfgService.StartFGSubscriber(context.Background(), cfg.FeatureGates)
 	}
-	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, repos.RoutingRule, providerRegistry, mcpService, logger, cfg.Server.AllowLocalProviders)
+	routerService := router.NewRouter(repos.Provider, repos.ProviderAPIKey, repos.Proxy, repos.Model, repos.RoutingRule, providerRegistry, mcpService, logger)
 	if redisClient != nil {
 		routerService.SetRedisClient(redisClient)
 	}
@@ -541,19 +541,18 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	)
 	auditService := audit.NewService(repos.AuditLog, logger)
 
-	alertNotifier := health.NewAlertNotifier(repos.Alert, repos.AlertConfig, logger, cfg.Server.AllowLocalProviders)
+	alertNotifier := health.NewAlertNotifier(repos.Alert, repos.AlertConfig, logger)
 	healthService := health.NewService(
 		repos.APIKey, repos.ProviderAPIKey, repos.Proxy, repos.Provider,
 		repos.HealthHistory, alertNotifier, providerRegistry, proxyService, logger,
-		cfg.Server.AllowLocalProviders,
 	)
 
-	taskService := task.NewService(repos.Task, logger, cfg.Server.AllowLocalProviders)
+	taskService := task.NewService(repos.Task, logger)
 	redeemService := redeem.NewService(gormDB, logger)
 	announcementService := announcement.NewService(gormDB, logger)
 	couponService := coupon.NewService(gormDB, logger)
 	documentService := document.NewService(gormDB, logger)
-	webhookService := webhook.NewWebhookService(repos.Webhook, logger, cfg.Server.AllowLocalProviders)
+	webhookService := webhook.NewWebhookService(repos.Webhook, logger)
 
 	// Services previously created inside routes.Setup() — consolidated here
 	passwordResetSvc := user.NewPasswordResetService(gormDB)

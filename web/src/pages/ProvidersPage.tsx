@@ -23,6 +23,15 @@ const PROVIDER_PRESETS: { name: string; label: string; baseUrl: string; requires
   { name: 'vllm',      label: 'vLLM',           baseUrl: 'http://localhost:8000/v1',         requiresApiKey: false },
 ];
 
+type AddProviderData = {
+  name: string;
+  baseUrl: string;
+  requiresApiKey: boolean;
+  apiKey?: string;
+  apiKeyAlias?: string;
+  validateConnection?: boolean;
+};
+
 /** Generate a unique provider name by appending a numeric suffix if needed */
 function uniqueProviderName(baseName: string, existingNames: string[]): string {
   if (!existingNames.includes(baseName)) return baseName;
@@ -46,14 +55,17 @@ function AddProviderModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onSubmit: (data: { name: string; baseUrl: string; requiresApiKey: boolean }) => Promise<void>;
+  onSubmit: (data: AddProviderData) => Promise<void>;
   existingNames: string[];
 }) {
   const { t } = useTranslation();
   const [selected, setSelected] = useState('');
-  const [customName, setCustomName] = useState('');
+  const [providerName, setProviderName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [requiresApiKey, setRequiresApiKey] = useState(true);
+  const [apiKey, setApiKey] = useState('');
+  const [apiKeyAlias, setApiKeyAlias] = useState('');
+  const [validateConnection, setValidateConnection] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   const isCustom = selected === '__custom__';
@@ -61,33 +73,51 @@ function AddProviderModal({
   const handleSelectChange = (value: string) => {
     setSelected(value);
     if (value === '__custom__') {
-      setCustomName('');
+      setProviderName('');
       setBaseUrl('');
       setRequiresApiKey(true);
+      setApiKey('');
+      setApiKeyAlias('');
     } else {
       const preset = PROVIDER_PRESETS.find(p => p.name === value);
       if (preset) {
+        setProviderName(uniqueProviderName(preset.name, existingNames));
         setBaseUrl(preset.baseUrl);
         setRequiresApiKey(preset.requiresApiKey);
+        if (!preset.requiresApiKey) {
+          setApiKey('');
+          setApiKeyAlias('');
+        }
       }
     }
   };
 
-  // Auto-generate unique name if the preset already exists
-  const rawName = isCustom ? customName.trim().toLowerCase() : selected;
-  const finalName = rawName ? uniqueProviderName(rawName, existingNames) : '';
-  const canSubmit = finalName && baseUrl.trim() && !submitting;
+  const rawName = providerName.trim().toLowerCase();
+  const finalName = rawName;
+  const nameAlreadyExists = Boolean(finalName && existingNames.includes(finalName));
+  const showApiKeyFields = Boolean(selected && requiresApiKey);
+  const canSubmit = Boolean(finalName && !nameAlreadyExists && baseUrl.trim() && (!requiresApiKey || apiKey.trim()) && !submitting);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
     setSubmitting(true);
     try {
-      await onSubmit({ name: finalName, baseUrl: baseUrl.trim(), requiresApiKey });
+      await onSubmit({
+        name: finalName,
+        baseUrl: baseUrl.trim(),
+        requiresApiKey,
+        apiKey: requiresApiKey ? apiKey.trim() : undefined,
+        apiKeyAlias: requiresApiKey ? apiKeyAlias.trim() : undefined,
+        validateConnection,
+      });
       setSelected('');
-      setCustomName('');
+      setProviderName('');
       setBaseUrl('');
       setRequiresApiKey(true);
+      setApiKey('');
+      setApiKeyAlias('');
+      setValidateConnection(true);
       onClose();
     } catch (err: any) {
       toast.error(err?.message || 'Failed to create provider');
@@ -100,21 +130,21 @@ function AddProviderModal({
 
   return (
     <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+        onClick={onClose}
+      >
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={onClose}
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+          transition={{ type: 'spring', duration: 0.3 }}
+          className="card w-full max-w-md max-h-[90vh] overflow-y-auto mx-4 p-6"
+          onClick={(e) => e.stopPropagation()}
         >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            transition={{ type: 'spring', duration: 0.3 }}
-            className="card w-full max-w-md mx-4 p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-apple-gray-900">
                 {t('providers.addProvider')}
@@ -127,13 +157,14 @@ function AddProviderModal({
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Provider selector */}
               <div>
-                <label className="block text-sm font-medium text-apple-gray-700 mb-1">
+                <label htmlFor="providerPreset" className="block text-sm font-medium text-apple-gray-700 mb-1">
                   {t('providers.name')}
                 </label>
                 <select
+                  id="providerPreset"
                   value={selected}
                   onChange={(e) => handleSelectChange(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-apple border border-apple-gray-200 bg-white text-apple-gray-900 focus:outline-none focus:ring-2 focus:ring-apple-blue/40 focus:border-apple-blue transition-colors appearance-none"
+                  className="form-input"
                   required
                   autoFocus
                 >
@@ -152,33 +183,40 @@ function AddProviderModal({
               </div>
 
               {/* Custom name input — only for custom providers */}
-              {isCustom && (
+              {selected && (
                 <div>
-                  <label className="block text-sm font-medium text-apple-gray-700 mb-1">
-                    {t('providers.customName')}
+                  <label htmlFor="providerName" className="block text-sm font-medium text-apple-gray-700 mb-1">
+                    {t('providers.providerName')}
                   </label>
                   <input
+                    id="providerName"
                     type="text"
-                    value={customName}
-                    onChange={(e) => setCustomName(e.target.value)}
-                    placeholder="my-custom-provider"
-                    className="w-full px-3 py-2 rounded-apple border border-apple-gray-200 bg-white text-apple-gray-900 focus:outline-none focus:ring-2 focus:ring-apple-blue/40 focus:border-apple-blue transition-colors"
+                    value={providerName}
+                    onChange={(e) => setProviderName(e.target.value.toLowerCase())}
+                    placeholder={isCustom ? 'my-openai-compatible' : selected}
+                    className="form-input"
                     required
                   />
+                  <p className={`mt-1 text-xs ${nameAlreadyExists ? 'text-apple-red' : 'text-apple-gray-500'}`}>
+                    {nameAlreadyExists
+                      ? t('providers.providerNameExists')
+                      : t('providers.providerNameHint')}
+                  </p>
                 </div>
               )}
 
               {/* Base URL */}
               <div>
-                <label className="block text-sm font-medium text-apple-gray-700 mb-1">
+                <label htmlFor="providerBaseUrl" className="block text-sm font-medium text-apple-gray-700 mb-1">
                   {t('providers.baseUrl')}
                 </label>
                 <input
+                  id="providerBaseUrl"
                   type="url"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
                   placeholder="https://api.openai.com/v1"
-                  className="w-full px-3 py-2 rounded-apple border border-apple-gray-200 bg-white text-apple-gray-900 focus:outline-none focus:ring-2 focus:ring-apple-blue/40 focus:border-apple-blue transition-colors"
+                  className="form-input"
                   required
                 />
               </div>
@@ -189,11 +227,70 @@ function AddProviderModal({
                   type="checkbox"
                   id="requiresApiKey"
                   checked={requiresApiKey}
-                  onChange={(e) => setRequiresApiKey(e.target.checked)}
-                  className="rounded"
+                  onChange={(e) => {
+                    setRequiresApiKey(e.target.checked);
+                    if (!e.target.checked) {
+                      setApiKey('');
+                      setApiKeyAlias('');
+                    }
+                  }}
+                  className="form-checkbox"
                 />
                 <label htmlFor="requiresApiKey" className="text-sm text-apple-gray-700">
                   {t('providers.requiresApiKey')}
+                </label>
+              </div>
+
+              {showApiKeyFields && (
+                <div className="space-y-4 border-t border-apple-gray-100 pt-4">
+                  <div>
+                    <label htmlFor="providerApiKey" className="block text-sm font-medium text-apple-gray-700 mb-1">
+                      {t('providers.apiKey')}
+                    </label>
+                    <input
+                      id="providerApiKey"
+                      type="password"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder={t('providers.apiKeyPlaceholder')}
+                      className="form-input"
+                      autoComplete="off"
+                      required
+                    />
+                    <p className="mt-1 text-xs text-apple-gray-500">
+                      {t('providers.apiKeyRequiredHint')}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label htmlFor="providerApiKeyAlias" className="block text-sm font-medium text-apple-gray-700 mb-1">
+                      {t('providers.apiKeyAlias')}
+                    </label>
+                    <input
+                      id="providerApiKeyAlias"
+                      type="text"
+                      value={apiKeyAlias}
+                      onChange={(e) => setApiKeyAlias(e.target.value)}
+                      placeholder={t('providers.apiKeyAliasPlaceholder', { name: finalName || rawName || 'provider' })}
+                      className="form-input"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  id="validateConnection"
+                  checked={validateConnection}
+                  onChange={(e) => setValidateConnection(e.target.checked)}
+                  className="form-checkbox mt-0.5"
+                />
+                <label htmlFor="validateConnection" className="text-sm text-apple-gray-700">
+                  <span className="font-medium">{t('providers.validateConnection')}</span>
+                  <span className="block text-xs text-apple-gray-500 mt-0.5">
+                    {t('providers.validateConnectionHint')}
+                  </span>
                 </label>
               </div>
 
@@ -214,8 +311,8 @@ function AddProviderModal({
                 </button>
               </div>
             </form>
-          </motion.div>
         </motion.div>
+      </motion.div>
     </AnimatePresence>
   );
 }
@@ -242,6 +339,7 @@ function ProvidersPage() {
     handleProxyChange,
     handleToggleRequiresApiKey,
     handleSaveEndpoint,
+    handleUpdateProviderSettings,
     handleAddKey,
     handleUpdateKey,
     handleToggleKey,
@@ -335,6 +433,7 @@ function ProvidersPage() {
                   onTestConnection={handleTestConnection}
                   onToggleProxy={handleToggleProxy}
                   onProxyChange={handleProxyChange}
+                  onUpdateProviderSettings={handleUpdateProviderSettings}
                   onDeleteProvider={handleDeleteProvider}
                 />
 
