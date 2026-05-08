@@ -10,6 +10,8 @@ export interface Message {
   content: string | ContentPart[];
 }
 
+export type StreamPhase = 'idle' | 'waiting' | 'streaming';
+
 export interface ModelRef {
   id: string;
   object: string;

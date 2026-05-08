@@ -9,7 +9,8 @@ import {
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Message, UsageStats } from './types';
+import type { Message, StreamPhase, UsageStats } from './types';
+import { StreamingPlaceholder, StreamingStatusBadge } from './StreamingStatus';
 import { getMessageText, getMessageImages } from './utils';
 
 /* ── Stats display ──────────────────────────────────────────────── */
@@ -61,12 +62,14 @@ export function ChatImageThumbnail({ url }: { url: string }) {
 interface ChatPaneProps {
   messages: Message[];
   isStreaming: boolean;
+  streamPhase?: StreamPhase;
+  streamElapsedSec?: number;
   stats: UsageStats | null;
   model: string;
   compact?: boolean;
 }
 
-export default function ChatPane({ messages, isStreaming, stats, model, compact }: ChatPaneProps) {
+export default function ChatPane({ messages, isStreaming, streamPhase = 'idle', streamElapsedSec = 0, stats, model, compact }: ChatPaneProps) {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
@@ -75,7 +78,9 @@ export default function ChatPane({ messages, isStreaming, stats, model, compact 
       {compact && (
         <div className="h-10 bg-apple-gray-50 dark:bg-white/5 border-b border-apple-gray-100 dark:border-white/10 flex items-center px-3">
           <span className="text-xs font-semibold text-apple-gray-700 dark:text-gray-200 truncate">{model}</span>
-          {isStreaming && <span className="ml-2 w-2 h-2 bg-green-400 rounded-full animate-pulse" />}
+          {isStreaming && (
+            <StreamingStatusBadge phase={streamPhase} elapsedSec={streamElapsedSec} className="ml-2" />
+          )}
         </div>
       )}
       <div className={clsx("flex-1 overflow-y-auto p-4 space-y-4", compact && "text-sm")}>
@@ -88,6 +93,7 @@ export default function ChatPane({ messages, isStreaming, stats, model, compact 
         {messages.map((msg, i) => {
           const text = getMessageText(msg);
           const images = getMessageImages(msg);
+          const isPendingAssistant = isStreaming && msg.role === 'assistant' && i === messages.length - 1 && !text.trim();
           return (
             <div key={i} className={clsx("flex items-start gap-3 max-w-2xl", msg.role === 'user' ? "ml-auto flex-row-reverse" : "")}>
               <div className={clsx(
@@ -107,7 +113,9 @@ export default function ChatPane({ messages, isStreaming, stats, model, compact 
                     {images.map((url, j) => <ChatImageThumbnail key={j} url={url} />)}
                   </div>
                 )}
-                {msg.role === 'user' ? (
+                {isPendingAssistant ? (
+                  <StreamingPlaceholder phase={streamPhase} elapsedSec={streamElapsedSec} compact={compact} />
+                ) : msg.role === 'user' ? (
                   <div className="whitespace-pre-wrap">{text}</div>
                 ) : (
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>

@@ -25,6 +25,8 @@ import {
   StatsBar,
   ChatImageThumbnail,
   AttachmentBar,
+  StreamingPlaceholder,
+  StreamingStatusBadge,
   isVisionModel,
   isSTTModel,
   isTTSModel,
@@ -298,8 +300,14 @@ export default function PlaygroundPage() {
                 <EyeIcon className="w-3 h-3" /> Vision
               </span>
             )}
-            {(pg.isStreaming || pg.isStreamingB) && (
-              <span className="ml-2 inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+            {!pg.compareMode && pg.isStreaming && (
+              <StreamingStatusBadge phase={pg.streamPhase} elapsedSec={pg.streamElapsedSec} className="ml-2 align-middle" />
+            )}
+            {pg.compareMode && (pg.isStreaming || pg.isStreamingB) && (
+              <span className="ml-2 inline-flex items-center gap-1.5 align-middle">
+                {pg.isStreaming && <StreamingStatusBadge phase={pg.streamPhase} elapsedSec={pg.streamElapsedSec} />}
+                {pg.isStreamingB && <StreamingStatusBadge phase={pg.streamPhaseB} elapsedSec={pg.streamElapsedSecB} />}
+              </span>
             )}
           </div>
           <button onClick={pg.handleClear} disabled={pg.messages.length === 0 || pg.isStreaming}
@@ -313,10 +321,26 @@ export default function PlaygroundPage() {
           {pg.compareMode ? (
             <>
               <div className="flex-1 flex flex-col min-w-0">
-                <ChatPane messages={pg.messages} isStreaming={pg.isStreaming} stats={pg.stats} model={pg.selectedModel} compact />
+                <ChatPane
+                  messages={pg.messages}
+                  isStreaming={pg.isStreaming}
+                  streamPhase={pg.streamPhase}
+                  streamElapsedSec={pg.streamElapsedSec}
+                  stats={pg.stats}
+                  model={pg.selectedModel}
+                  compact
+                />
               </div>
               <div className="flex-1 flex flex-col min-w-0">
-                <ChatPane messages={pg.messagesB} isStreaming={pg.isStreamingB} stats={pg.statsB} model={pg.compareModel} compact />
+                <ChatPane
+                  messages={pg.messagesB}
+                  isStreaming={pg.isStreamingB}
+                  streamPhase={pg.streamPhaseB}
+                  streamElapsedSec={pg.streamElapsedSecB}
+                  stats={pg.statsB}
+                  model={pg.compareModel}
+                  compact
+                />
               </div>
             </>
           ) : (
@@ -344,6 +368,7 @@ export default function PlaygroundPage() {
                 {pg.messages.map((msg, i) => {
                   const text = getMessageText(msg);
                   const images = getMessageImages(msg);
+                  const isPendingAssistant = pg.isStreaming && msg.role === 'assistant' && i === pg.messages.length - 1 && !text.trim();
                   return (
                     <div key={i} className={clsx("flex items-start gap-4 max-w-3xl", msg.role === 'user' ? "ml-auto flex-row-reverse" : "")}>
                       <div className={clsx(
@@ -363,7 +388,9 @@ export default function PlaygroundPage() {
                             {images.map((url, j) => <ChatImageThumbnail key={j} url={url} />)}
                           </div>
                         )}
-                        {msg.role === 'user' ? (
+                        {isPendingAssistant ? (
+                          <StreamingPlaceholder phase={pg.streamPhase} elapsedSec={pg.streamElapsedSec} />
+                        ) : msg.role === 'user' ? (
                           <div className="whitespace-pre-wrap">{text}</div>
                         ) : (
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>

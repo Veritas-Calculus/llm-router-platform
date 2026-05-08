@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useMutation, useQuery } from '@apollo/client/react';
 import { CREATE_PLAYGROUND_TOKEN, MY_API_KEYS, MY_ORGANIZATIONS, MY_PROJECTS } from '@/lib/graphql/operations';
-import type { Message, ModelRef, UsageStats, ImageAttachment, ContentPart } from './types';
-import { estimateTokens, estimateMessageTokens, isVisionModel, isTTSModel, runCompletion } from './utils';
+import type { Message, ModelRef, UsageStats, ImageAttachment, ContentPart, StreamPhase } from './types';
+import { estimateTokens, estimateMessageTokens, getMessageText, isVisionModel, isTTSModel, runCompletion } from './utils';
 
 export const MANUAL_API_KEY_VALUE = '__manual__';
 
@@ -70,6 +70,8 @@ export interface PlaygroundState {
   input: string; setInput: (v: string) => void;
   attachments: ImageAttachment[];
   isStreaming: boolean; isStreamingB: boolean;
+  streamPhase: StreamPhase; streamPhaseB: StreamPhase;
+  streamElapsedSec: number; streamElapsedSecB: number;
   errorMsg: string; setErrorMsg: (v: string) => void;
   showSettings: boolean; setShowSettings: (v: boolean) => void;
   stats: UsageStats | null; statsB: UsageStats | null;
@@ -125,6 +127,9 @@ export function usePlayground(): PlaygroundState {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isStreamingB, setIsStreamingB] = useState(false);
+  const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null);
+  const [streamStartedAtB, setStreamStartedAtB] = useState<number | null>(null);
+  const [streamClock, setStreamClock] = useState(Date.now());
   const [errorMsg, setErrorMsg] = useState('');
   const [showSettings, setShowSettings] = useState(true);
   const [stats, setStats] = useState<UsageStats | null>(null);
@@ -186,11 +191,28 @@ export function usePlayground(): PlaygroundState {
 
   const selectedModelRef = models.find(m => m.id === selectedModel);
   const modelSupportsVision = selectedModelRef ? isVisionModel(selectedModelRef) : false;
+  const getStreamPhase = (list: Message[], active: boolean): StreamPhase => {
+    if (!active) return 'idle';
+    const last = list[list.length - 1];
+    if (last?.role === 'assistant' && getMessageText(last).trim()) return 'streaming';
+    return 'waiting';
+  };
+  const streamPhase = getStreamPhase(messages, isStreaming);
+  const streamPhaseB = getStreamPhase(messagesB, isStreamingB);
+  const streamElapsedSec = streamStartedAt ? Math.max(0, Math.floor((streamClock - streamStartedAt) / 1000)) : 0;
+  const streamElapsedSecB = streamStartedAtB ? Math.max(0, Math.floor((streamClock - streamStartedAtB) / 1000)) : 0;
 
   const inputTokenEstimate = estimateTokens(input) + estimateTokens(systemPrompt) +
     messages.reduce((s, m) => s + estimateMessageTokens(m), 0) + attachments.length * 85;
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+  useEffect(() => {
+    if (!isStreaming && !isStreamingB) return;
+    setStreamClock(Date.now());
+    const timer = window.setInterval(() => setStreamClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isStreaming, isStreamingB]);
 
   useEffect(() => {
     if (orgs.length > 0 && !selectedOrgId) {
@@ -511,6 +533,16 @@ export function usePlayground(): PlaygroundState {
 
   /* ── Send / Stop / Clear ── */
 
+  const removeEmptyAssistantTail = useCallback((setList: typeof setMessages) => {
+    setList(prev => {
+      const last = prev[prev.length - 1];
+      if (last?.role === 'assistant' && !getMessageText(last).trim()) {
+        return prev.slice(0, -1);
+      }
+      return prev;
+    });
+  }, []);
+
   const handleSend = async () => {
     if ((!input.trim() && attachments.length === 0) || isStreaming) return;
     const requestToken = await getRequestToken();
@@ -545,25 +577,33 @@ export function usePlayground(): PlaygroundState {
     apiMsgs.push(...newMessages);
 
     setIsStreaming(true);
+    setStreamStartedAt(Date.now());
     abortControllerRef.current = new AbortController();
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
     const runA = runCompletion(requestToken, selectedModel, apiMsgs, temperature, maxTokens, abortControllerRef.current.signal, (content) => {
       setMessages(prev => { const u = [...prev]; u[u.length - 1] = { role: 'assistant', content }; return u; });
     }).then(s => { setStats(s); }).catch(err => {
-      if (err.name !== 'AbortError') setErrorMsg(err.message);
-    }).finally(() => { setIsStreaming(false); abortControllerRef.current = null; });
+      if (err.name !== 'AbortError') {
+        setErrorMsg(err.message);
+        removeEmptyAssistantTail(setMessages);
+      }
+    }).finally(() => { setIsStreaming(false); setStreamStartedAt(null); abortControllerRef.current = null; });
 
     if (compareMode && compareModel) {
       setIsStreamingB(true);
+      setStreamStartedAtB(Date.now());
       abortControllerBRef.current = new AbortController();
       setMessagesB(prev => [...prev, { role: 'assistant', content: '' }]);
 
       const runB = runCompletion(requestToken, compareModel, apiMsgs, temperature, maxTokens, abortControllerBRef.current.signal, (content) => {
         setMessagesB(prev => { const u = [...prev]; u[u.length - 1] = { role: 'assistant', content }; return u; });
       }).then(s => { setStatsB(s); }).catch(err => {
-        if (err.name !== 'AbortError') setErrorMsg(err.message);
-      }).finally(() => { setIsStreamingB(false); abortControllerBRef.current = null; });
+        if (err.name !== 'AbortError') {
+          setErrorMsg(err.message);
+          removeEmptyAssistantTail(setMessagesB);
+        }
+      }).finally(() => { setIsStreamingB(false); setStreamStartedAtB(null); abortControllerBRef.current = null; });
 
       await Promise.allSettled([runA, runB]);
     } else {
@@ -576,6 +616,10 @@ export function usePlayground(): PlaygroundState {
     abortControllerBRef.current?.abort();
     setIsStreaming(false);
     setIsStreamingB(false);
+    setStreamStartedAt(null);
+    setStreamStartedAtB(null);
+    removeEmptyAssistantTail(setMessages);
+    removeEmptyAssistantTail(setMessagesB);
   };
 
   const handleClear = () => {
@@ -615,6 +659,8 @@ export function usePlayground(): PlaygroundState {
     input, setInput,
     attachments,
     isStreaming, isStreamingB,
+    streamPhase, streamPhaseB,
+    streamElapsedSec, streamElapsedSecB,
     errorMsg, setErrorMsg,
     showSettings, setShowSettings,
     stats, statsB,
