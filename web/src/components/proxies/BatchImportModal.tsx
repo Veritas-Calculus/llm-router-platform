@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { ArrowPathIcon, DocumentArrowUpIcon } from '@heroicons/react/24/outline';
+import { ArrowDownTrayIcon, ArrowPathIcon, DocumentArrowUpIcon } from '@heroicons/react/24/outline';
+import { downloadCsvTemplate } from '@/lib/csv';
 import { ProxyPool } from '@/lib/types';
 
 interface BatchImportModalProps {
@@ -40,8 +41,25 @@ export default function BatchImportModal({
           Batch Import Proxies
         </h2>
         <p className="text-sm text-apple-gray-500 mb-4">
-          Enter one proxy per line. Format: <code className="bg-apple-gray-100 px-1 rounded">URL [type] [region]</code>
+          Enter one proxy per line or paste CSV with headers.
         </p>
+        <div className="mb-4">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => downloadCsvTemplate(
+              'proxies-template.csv',
+              ['url', 'type', 'region', 'username', 'password', 'pool_name_or_id', 'upstream_proxy_url_or_id'],
+              [
+                ['http://proxy1.example.com:8080', 'http', 'US-West', '', '', 'residential-us', ''],
+                ['socks5://proxy2.example.com:1080', 'socks5', 'Singapore', 'proxy-user', 'proxy-pass', 'datacenter-sg', ''],
+              ],
+            )}
+          >
+            <ArrowDownTrayIcon className="w-5 h-5 mr-2" />
+            Template
+          </button>
+        </div>
         <div className="space-y-4">
           <div>
             <label htmlFor="batchProxyPool" className="label">Proxy Pool</label>

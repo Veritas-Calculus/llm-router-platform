@@ -1,11 +1,15 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
+  ArrowDownTrayIcon,
+  DocumentArrowUpIcon,
   PlusIcon,
   TrashIcon,
   CheckCircleIcon,
   XCircleIcon,
 } from '@heroicons/react/24/outline';
-import { ProviderApiKey, Proxy, ProxyPool } from '@/lib/types';
+import toast from 'react-hot-toast';
+import { downloadCsvTemplate, parseCsv } from '@/lib/csv';
+import { ApiKeyRuntimeStatus, ProviderApiKey, Proxy, ProxyPool } from '@/lib/types';
 import ConfirmModal from '@/components/ConfirmModal';
 
 interface ApiKeyTableProps {
@@ -13,6 +17,7 @@ interface ApiKeyTableProps {
   apiKeys: ProviderApiKey[];
   proxies: Proxy[];
   proxyPools: ProxyPool[];
+  healthByKeyId?: Record<string, ApiKeyRuntimeStatus>;
   onAddKey: (data: { api_key: string; alias: string; priority: number; weight: number; rate_limit: number; proxy_id?: string; proxy_pool_id?: string }) => Promise<void>;
   onUpdateKey: (keyId: string, data: { priority: number; weight: number; rate_limit: number; proxy_id?: string; proxy_pool_id?: string }) => Promise<void>;
   onToggleKey: (key: ProviderApiKey) => void;
@@ -24,17 +29,20 @@ export default function ApiKeyTable({
   apiKeys,
   proxies,
   proxyPools,
+  healthByKeyId = {},
   onAddKey,
   onUpdateKey,
   onToggleKey,
   onDeleteKey,
 }: ApiKeyTableProps) {
+  const csvInputRef = useRef<HTMLInputElement>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKey, setNewKey] = useState({ api_key: '', alias: '', priority: 1, weight: 1.0, rate_limit: 0, binding: '' });
   const [adding, setAdding] = useState(false);
   const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
   const [editKeyData, setEditKeyData] = useState({ priority: 1, weight: 1.0, rate_limit: 0, binding: '' });
   const [updatingKey, setUpdatingKey] = useState(false);
+  const [importingCsv, setImportingCsv] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; keyId: string }>({ isOpen: false, keyId: '' });
   const [processing, setProcessing] = useState(false);
   const canAddKey = Boolean(newKey.api_key.trim() && !adding);
@@ -107,8 +115,54 @@ export default function ApiKeyTable({
     }
   };
 
+  const handleCsvFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      void handleImportCsv(String(reader.result || ''));
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  };
+
+  const handleImportCsv = async (csvText: string) => {
+    const rows = parseCsv(csvText);
+    if (rows.length === 0) { toast.error('CSV contains no API keys'); return; }
+    setImportingCsv(true);
+    let success = 0;
+    let failed = 0;
+    try {
+      for (const row of rows) {
+        const apiKey = row.api_key || row.key || row.token;
+        if (!apiKey?.trim()) continue;
+        const binding = bindingFromCsv(row, proxies, proxyPools);
+        try {
+          await onAddKey({
+            api_key: apiKey.trim(),
+            alias: row.alias?.trim() || `${providerName} imported ${success + failed + 1}`,
+            priority: parseInt(row.priority || '1', 10) || 1,
+            weight: parseFloat(row.weight || '1') || 1,
+            rate_limit: parseInt(row.rate_limit || row.rate_limit_rps || '0', 10) || 0,
+            proxy_id: binding.proxy_id,
+            proxy_pool_id: binding.proxy_pool_id,
+          });
+          success++;
+        } catch {
+          failed++;
+        }
+      }
+      if (success > 0) toast.success(`Imported ${success} API keys`);
+      if (failed > 0) toast.error(`Failed to import ${failed} API keys`);
+      if (success === 0 && failed === 0) toast.error('CSV contains no valid API keys');
+    } finally {
+      setImportingCsv(false);
+    }
+  };
+
   return (
     <div className="card overflow-x-auto">
+      <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleCsvFile} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-lg font-semibold text-apple-gray-900">API Keys</h3>
@@ -116,20 +170,36 @@ export default function ApiKeyTable({
             Manage API keys for {providerName}
           </p>
         </div>
-        {apiKeys.length > 0 && (
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => downloadCsvTemplate(
+              `${providerName}-api-keys-template.csv`,
+              ['alias', 'api_key', 'priority', 'weight', 'rate_limit', 'binding_type', 'binding_value'],
+              [
+                [`${providerName}-primary`, 'sk-...', '1', '1', '0', 'pool', 'residential-us'],
+                [`${providerName}-backup`, 'sk-...', '2', '0.5', '5', 'proxy', 'http://proxy.example.com:8080'],
+              ],
+            )}
+          >
+            <ArrowDownTrayIcon className="w-5 h-5 mr-2" />
+            Template
+          </button>
+          <button type="button" onClick={() => csvInputRef.current?.click()} className="btn btn-secondary" disabled={importingCsv}>
+            <DocumentArrowUpIcon className="w-5 h-5 mr-2" />
+            {importingCsv ? 'Importing' : 'Import CSV'}
+          </button>
           <button onClick={() => setShowAddModal(true)} className="btn btn-primary">
             <PlusIcon className="w-5 h-5 mr-2" />
             Add Key
           </button>
-        )}
+        </div>
       </div>
 
       {apiKeys.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-apple-gray-500 mb-4">No API keys for this provider</p>
-          <button onClick={() => setShowAddModal(true)} className="btn btn-primary">
-            Add your first key
-          </button>
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -140,6 +210,7 @@ export default function ApiKeyTable({
                 <th className="table-header w-48">Config</th>
                 <th className="table-header">Binding</th>
                 <th className="table-header">Status</th>
+                <th className="table-header">Health</th>
                 <th className="table-header">Usage</th>
                 <th className="table-header">Last Used</th>
                 <th className="table-header text-right">Actions</th>
@@ -223,6 +294,9 @@ export default function ApiKeyTable({
                         </>
                       )}
                     </button>
+                  </td>
+                  <td className="table-cell">
+                    <HealthBadge status={healthByKeyId[key.id]} />
                   </td>
                   <td className="table-cell text-sm text-apple-gray-500">
                     {key.usage_count.toLocaleString()} reqs
@@ -368,6 +442,25 @@ function parseBinding(binding: string): { proxy_id?: string; proxy_pool_id?: str
   return {};
 }
 
+function bindingFromCsv(row: Record<string, string>, proxies: Proxy[], proxyPools: ProxyPool[]): { proxy_id?: string; proxy_pool_id?: string } {
+  if (row.proxy_id) return { proxy_id: row.proxy_id.trim() };
+  if (row.proxy_pool_id) return { proxy_pool_id: row.proxy_pool_id.trim() };
+
+  const type = (row.binding_type || row.proxy_binding_type || '').trim().toLowerCase();
+  const value = (row.binding_value || row.proxy_binding_value || row.proxy || row.proxy_pool || '').trim();
+  if (!type || !value) return {};
+
+  if (type === 'proxy') {
+    const proxy = proxies.find((item) => item.id === value || item.url === value);
+    return { proxy_id: proxy?.id || value };
+  }
+  if (type === 'pool' || type === 'proxy_pool') {
+    const pool = proxyPools.find((item) => item.id === value || item.name.toLowerCase() === value.toLowerCase());
+    return { proxy_pool_id: pool?.id || value };
+  }
+  return {};
+}
+
 function bindingLabel(key: ProviderApiKey, proxies: Proxy[], proxyPools: ProxyPool[]): string {
   if (key.proxy_id) {
     const proxy = proxies.find((p) => p.id === key.proxy_id);
@@ -378,6 +471,41 @@ function bindingLabel(key: ProviderApiKey, proxies: Proxy[], proxyPools: ProxyPo
     return pool ? `Pool: ${pool.name}` : 'Missing pool';
   }
   return 'Provider default';
+}
+
+function HealthBadge({ status }: { status?: ApiKeyRuntimeStatus }) {
+  if (!status) {
+    return (
+      <span className="inline-flex items-center px-2 py-1 rounded-full bg-apple-gray-100 text-apple-gray-500 text-xs font-medium">
+        Not checked
+      </span>
+    );
+  }
+
+  if (status.quota_status === 'limited') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-orange-100 text-apple-orange text-xs font-medium" title={status.message || undefined}>
+        <XCircleIcon className="w-3.5 h-3.5" />
+        Quota limited
+      </span>
+    );
+  }
+
+  if (status.is_healthy) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-apple-green text-xs font-medium">
+        <CheckCircleIcon className="w-3.5 h-3.5" />
+        Healthy
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-100 text-apple-red text-xs font-medium" title={status.message || undefined}>
+      <XCircleIcon className="w-3.5 h-3.5" />
+      Failed
+    </span>
+  );
 }
 
 function BindingSelect({

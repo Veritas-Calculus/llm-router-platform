@@ -69,43 +69,48 @@ func (s *Service) CheckSingleAPIKey(ctx context.Context, id uuid.UUID) (*APIKeyH
 	// Get the provider for this API key
 	p, err := s.providerRepo.GetByID(ctx, key.ProviderID)
 	if err != nil {
+		errorMsg := "provider not found: " + err.Error()
+		s.recordAPIKeyHealth(ctx, key.ID, false, 0, errorMsg)
 		return &APIKeyHealthStatus{
-			ID:        key.ID,
-			KeyPrefix: key.KeyPrefix,
-			IsActive:  key.IsActive,
-			IsHealthy: false,
+			ID:           key.ID,
+			ProviderID:   key.ProviderID,
+			ProviderName: key.Provider.Name,
+			KeyPrefix:    key.KeyPrefix,
+			IsActive:     key.IsActive,
+			IsHealthy:    false,
+			LastCheck:    time.Now(),
 		}, nil
 	}
 
 	// Create client dynamically using the provider API key
 	client, err := s.getProviderClient(ctx, p, key)
 	if err != nil {
+		errorMsg := "failed to create provider client: " + err.Error()
+		s.recordAPIKeyHealth(ctx, key.ID, false, 0, errorMsg)
 		return &APIKeyHealthStatus{
-			ID:        key.ID,
-			KeyPrefix: key.KeyPrefix,
-			IsActive:  key.IsActive,
-			IsHealthy: false,
+			ID:           key.ID,
+			ProviderID:   key.ProviderID,
+			ProviderName: p.Name,
+			KeyPrefix:    key.KeyPrefix,
+			IsActive:     key.IsActive,
+			IsHealthy:    false,
+			LastCheck:    time.Now(),
 		}, nil
 	}
 
-	healthy, latency, _ := client.CheckHealth(ctx)
+	healthy, latency, checkErr := client.CheckHealth(ctx)
+	errorMsg := ""
+	if checkErr != nil {
+		errorMsg = checkErr.Error()
+	}
+	if !healthy && errorMsg == "" {
+		errorMsg = "health check returned unhealthy"
+	}
 
-	history := &models.HealthHistory{
-		TargetType:   "api_key",
-		TargetID:     key.ID,
-		IsHealthy:    healthy,
-		ResponseTime: latency.Milliseconds(),
-		CheckedAt:    time.Now(),
-	}
-	if err := s.healthHistoryRepo.Create(ctx, history); err != nil {
-		s.logger.Error("failed to record health check history",
-			zap.String("target_type", "api_key"),
-			zap.String("target_id", key.ID.String()),
-			zap.Error(err))
-	}
+	s.recordAPIKeyHealth(ctx, key.ID, healthy, latency.Milliseconds(), errorMsg)
 
 	if !healthy && s.alertNotifier != nil {
-		if err := s.alertNotifier.Notify(ctx, "api_key", key.ID, "health_check_failed", "API key health check failed"); err != nil {
+		if err := s.alertNotifier.Notify(ctx, "api_key", key.ID, "health_check_failed", "API key health check failed: "+errorMsg); err != nil {
 			s.logger.Error("failed to send health check alert",
 				zap.String("target_type", "api_key"),
 				zap.String("target_id", key.ID.String()),
@@ -117,7 +122,8 @@ func (s *Service) CheckSingleAPIKey(ctx context.Context, id uuid.UUID) (*APIKeyH
 
 	return &APIKeyHealthStatus{
 		ID:           key.ID,
-		ProviderName: key.Provider.Name,
+		ProviderID:   key.ProviderID,
+		ProviderName: p.Name,
 		KeyPrefix:    key.KeyPrefix,
 		IsActive:     key.IsActive,
 		IsHealthy:    healthy,
@@ -125,6 +131,23 @@ func (s *Service) CheckSingleAPIKey(ctx context.Context, id uuid.UUID) (*APIKeyH
 		ResponseTime: latency.Milliseconds(),
 		SuccessRate:  successRate,
 	}, nil
+}
+
+func (s *Service) recordAPIKeyHealth(ctx context.Context, keyID uuid.UUID, healthy bool, responseTime int64, errorMsg string) {
+	history := &models.HealthHistory{
+		TargetType:   "api_key",
+		TargetID:     keyID,
+		IsHealthy:    healthy,
+		ResponseTime: responseTime,
+		ErrorMessage: errorMsg,
+		CheckedAt:    time.Now(),
+	}
+	if err := s.healthHistoryRepo.Create(ctx, history); err != nil {
+		s.logger.Error("failed to record health check history",
+			zap.String("target_type", "api_key"),
+			zap.String("target_id", keyID.String()),
+			zap.Error(err))
+	}
 }
 
 // GetProxiesHealth returns health status of all proxies.

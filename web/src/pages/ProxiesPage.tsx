@@ -53,6 +53,7 @@ function ProxiesPage() {
     handleToggle,
     handleFileUpload,
     handleCreatePool,
+    handleImportPools,
     handleTogglePool,
     handleDeletePool,
   } = useProxies();
@@ -100,6 +101,7 @@ function ProxiesPage() {
         deletingPoolId={deletingPoolId}
         onDraftChange={setPoolDraft}
         onCreatePool={handleCreatePool}
+        onImportPools={handleImportPools}
         onTogglePool={handleTogglePool}
         onDeletePool={handleDeletePool}
       />

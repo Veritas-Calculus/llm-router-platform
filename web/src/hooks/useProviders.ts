@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import toast from 'react-hot-toast';
-import { Provider, ProviderApiKey, ProviderHealthStatus, Proxy, ProxyPool, ProxyTopology } from '@/lib/types';
+import { ApiKeyRuntimeStatus, Provider, ProviderApiKey, ProviderHealthStatus, Proxy, ProxyPool, ProxyTopology } from '@/lib/types';
 import { t } from '@/lib/i18n';
 import {
+  HEALTH_OVERVIEW_QUERY,
   PROVIDERS_QUERY,
   PROVIDER_API_KEYS_QUERY,
   PROXIES_QUERY,
@@ -87,6 +88,39 @@ function mapTopology(d: any): ProxyTopology | null {
   };
 }
 
+function mapApiKeyRuntimeStatus(healthData: any): Record<string, ApiKeyRuntimeStatus> {
+  const latestEvents = new Map<string, any>();
+  for (const event of healthData?.healthHistory || []) {
+    if (event.targetType === 'api_key' && !latestEvents.has(event.targetId)) {
+      latestEvents.set(event.targetId, event);
+    }
+  }
+
+  const out: Record<string, ApiKeyRuntimeStatus> = {};
+  for (const status of healthData?.healthApiKeys || []) {
+    const event = latestEvents.get(status.id);
+    const message = event?.message || null;
+    out[status.id] = {
+      is_healthy: status.isHealthy,
+      last_check: status.lastCheck || event?.createdAt || null,
+      response_time: status.responseTime || 0,
+      success_rate: status.successRate || 0,
+      message,
+      quota_status: quotaStatus(status.isHealthy, message),
+    };
+  }
+  return out;
+}
+
+function quotaStatus(isHealthy: boolean, message?: string | null): ApiKeyRuntimeStatus['quota_status'] {
+  if (isHealthy) return 'ok';
+  if (!message) return 'unknown';
+  const text = message.toLowerCase();
+  const quotaSignals = ['quota', 'rate limit', 'rate_limit', 'ratelimit', '429', 'billing', 'balance', 'credit', 'insufficient', 'resource exhausted'];
+  if (quotaSignals.some((signal) => text.includes(signal))) return 'limited';
+  return 'error';
+}
+
 function mapProviderHealthStatus(status: any, fallback: Provider): ProviderHealthStatus {
   const errorMsg = status?.isHealthy ? '' : (status?.errorMessage || 'Connection failed');
   return {
@@ -118,6 +152,9 @@ export function useProviders() {
   });
   const { data: proxiesData } = useQuery<any>(PROXIES_QUERY);
   const { data: proxyPoolsData } = useQuery<any>(PROXY_POOLS_QUERY);
+  const { data: healthOverviewData, refetch: refetchHealthOverview } = useQuery<any>(HEALTH_OVERVIEW_QUERY, {
+    fetchPolicy: 'cache-and-network',
+  });
   const { data: topologyData, refetch: refetchTopology } = useQuery<any>(PROXY_TOPOLOGY_QUERY, {
     fetchPolicy: 'cache-and-network',
   });
@@ -140,6 +177,7 @@ export function useProviders() {
   const proxies = useMemo(() => (proxiesData?.proxies || []).map(mapProxy), [proxiesData]);
   const proxyPools = useMemo(() => (proxyPoolsData?.proxyPools || []).map(mapProxyPool), [proxyPoolsData]);
   const proxyTopology = useMemo(() => mapTopology(topologyData?.proxyTopology), [topologyData]);
+  const apiKeyHealthById = useMemo(() => mapApiKeyRuntimeStatus(healthOverviewData), [healthOverviewData]);
 
   useEffect(() => {
     if (remoteProviders.length === 0) return;
@@ -454,10 +492,11 @@ export function useProviders() {
         },
       },
     });
-    await refetchKeys();
-    await refetchTopology();
-    toast.success('API key added');
-  }, [selectedProvider, createKeyMut, refetchKeys, refetchTopology]);
+      await refetchKeys();
+      await refetchTopology();
+      await refetchHealthOverview();
+      toast.success('API key added');
+  }, [selectedProvider, createKeyMut, refetchKeys, refetchTopology, refetchHealthOverview]);
 
   const handleUpdateKey = useCallback(async (keyId: string, data: { priority: number; weight: number; rate_limit: number; proxy_id?: string; proxy_pool_id?: string }) => {
     if (!selectedProvider) return;
@@ -473,8 +512,9 @@ export function useProviders() {
     });
     await refetchKeys();
     await refetchTopology();
+    await refetchHealthOverview();
     toast.success('API key updated');
-  }, [selectedProvider, updateKeyMut, refetchKeys, refetchTopology]);
+  }, [selectedProvider, updateKeyMut, refetchKeys, refetchTopology, refetchHealthOverview]);
 
   const handleToggleKey = useCallback(async (key: ProviderApiKey) => {
     if (!selectedProvider) return;
@@ -482,21 +522,23 @@ export function useProviders() {
       const { data } = await toggleKeyMut({ variables: { providerId: selectedProvider.id, keyId: key.id } });
       await refetchKeys();
       await refetchTopology();
+      await refetchHealthOverview();
       toast.success(`API key ${(data as any)?.toggleProviderApiKey?.isActive ? 'enabled' : 'disabled'}`);
     } catch { toast.error('Failed to toggle API key'); }
-  }, [selectedProvider, toggleKeyMut, refetchKeys, refetchTopology]);
+  }, [selectedProvider, toggleKeyMut, refetchKeys, refetchTopology, refetchHealthOverview]);
 
   const handleDeleteKey = useCallback(async (keyId: string) => {
     if (!selectedProvider) return;
     await deleteKeyMut({ variables: { providerId: selectedProvider.id, keyId } });
     await refetchKeys();
     await refetchTopology();
+    await refetchHealthOverview();
     toast.success('API key deleted');
-  }, [selectedProvider, deleteKeyMut, refetchKeys, refetchTopology]);
+  }, [selectedProvider, deleteKeyMut, refetchKeys, refetchTopology, refetchHealthOverview]);
 
   return {
     providers, selectedProvider, setSelectedProvider,
-    apiKeys, proxies, proxyPools, proxyTopology, loading, testing, healthStatus, savingProxy,
+    apiKeys, apiKeyHealthById, proxies, proxyPools, proxyTopology, loading, testing, healthStatus, savingProxy,
     handleCreateProvider, handleDeleteProvider,
     handleToggleProvider, handleTestConnection, handleToggleProxy,
     handleProxyChange, handleToggleRequiresApiKey, handleSaveEndpoint,

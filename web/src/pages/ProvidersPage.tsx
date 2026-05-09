@@ -327,6 +327,7 @@ function ProvidersPage() {
     selectedProvider,
     setSelectedProvider,
     apiKeys,
+    apiKeyHealthById,
     proxies,
     proxyPools,
     proxyTopology,
@@ -457,6 +458,7 @@ function ProvidersPage() {
                   <ApiKeyTable
                     providerName={selectedProvider.name}
                     apiKeys={apiKeys}
+                    healthByKeyId={apiKeyHealthById}
                     proxies={proxies}
                     proxyPools={proxyPools}
                     onAddKey={handleAddKey}

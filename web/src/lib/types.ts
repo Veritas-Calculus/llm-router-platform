@@ -215,6 +215,17 @@ export interface ProviderApiKey {
   created_at: string;
 }
 
+export type ApiKeyQuotaStatus = 'ok' | 'limited' | 'unknown' | 'error';
+
+export interface ApiKeyRuntimeStatus {
+  is_healthy: boolean;
+  last_check?: string | null;
+  response_time: number;
+  success_rate: number;
+  message?: string | null;
+  quota_status: ApiKeyQuotaStatus;
+}
+
 export interface ProviderHealthStatus {
   id: string;
   name: string;

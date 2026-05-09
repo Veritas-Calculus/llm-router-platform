@@ -1,10 +1,14 @@
 import {
+  ArrowDownTrayIcon,
   CheckCircleIcon,
+  DocumentArrowUpIcon,
   PlusIcon,
   ServerStackIcon,
   TrashIcon,
   XCircleIcon,
 } from '@heroicons/react/24/outline';
+import { useRef } from 'react';
+import { downloadCsvTemplate } from '@/lib/csv';
 import { ProxyPool } from '@/lib/types';
 
 interface ProxyPoolDraft {
@@ -21,6 +25,7 @@ interface ProxyPoolsPanelProps {
   deletingPoolId: string | null;
   onDraftChange: (draft: ProxyPoolDraft) => void;
   onCreatePool: () => void;
+  onImportPools: (csvText: string) => void;
   onTogglePool: (pool: ProxyPool) => void;
   onDeletePool: (id: string) => void;
 }
@@ -33,13 +38,25 @@ export default function ProxyPoolsPanel({
   deletingPoolId,
   onDraftChange,
   onCreatePool,
+  onImportPools,
   onTogglePool,
   onDeletePool,
 }: ProxyPoolsPanelProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const canCreate = Boolean(poolDraft.name.trim() && !creatingPool);
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => onImportPools(String(reader.result || ''));
+    reader.readAsText(file);
+    event.target.value = '';
+  };
 
   return (
     <div className="card">
+      <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileChange} />
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -82,6 +99,28 @@ export default function ProxyPoolsPanel({
             {creatingPool ? 'Creating' : 'Create'}
           </button>
         </form>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-3">
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => downloadCsvTemplate(
+            'proxy-pools-template.csv',
+            ['name', 'description', 'strategy', 'is_active'],
+            [
+              ['residential-us', 'US residential egress pool', 'weighted', 'true'],
+              ['datacenter-sg', 'Singapore datacenter pool', 'weighted', 'true'],
+            ],
+          )}
+        >
+          <ArrowDownTrayIcon className="w-5 h-5 mr-2" />
+          Template
+        </button>
+        <button type="button" className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
+          <DocumentArrowUpIcon className="w-5 h-5 mr-2" />
+          Import CSV
+        </button>
       </div>
 
       <div className="mt-5 divide-y divide-apple-gray-100">

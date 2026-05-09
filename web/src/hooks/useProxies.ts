@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useMemo } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import toast from 'react-hot-toast';
 import { Proxy, ProxyPool } from '@/lib/types';
+import { csvBool, parseCsv } from '@/lib/csv';
 import {
   PROXIES_QUERY,
   PROXY_POOLS_QUERY,
@@ -72,8 +73,8 @@ export function useProxies() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { data, loading, refetch } = useQuery<any>(PROXIES_QUERY);
   const { data: poolsData, refetch: refetchPools } = useQuery<any>(PROXY_POOLS_QUERY);
-  const proxies = useMemo(() => (data?.proxies || []).map(mapProxy), [data]);
-  const proxyPools = useMemo(() => (poolsData?.proxyPools || []).map(mapProxyPool), [poolsData]);
+  const proxies: Proxy[] = useMemo(() => (data?.proxies || []).map(mapProxy), [data]);
+  const proxyPools: ProxyPool[] = useMemo(() => (poolsData?.proxyPools || []).map(mapProxyPool), [poolsData]);
 
   const [showModal, setShowModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -160,15 +161,52 @@ export function useProxies() {
   }, [formData, editingProxy, closeModal, createProxyMut, updateProxyMut, refetchProxyState]);
 
   const handleBatchImport = useCallback(async () => {
+    const csvRows = looksLikeCsv(batchInput) ? parseCsv(batchInput) : [];
+    if (csvRows.length > 0) {
+      setBatchImporting(true);
+      let success = 0;
+      let failed = 0;
+      try {
+        for (const row of csvRows) {
+          const url = row.url?.trim();
+          if (!url) continue;
+          const poolId = resolvePoolID(row.pool_id || row.pool || row.pool_name || row.pool_name_or_id, proxyPools) || batchPoolId || undefined;
+          const upstreamProxyId = resolveProxyID(row.upstream_proxy_id || row.upstream_proxy || row.upstream_proxy_url_or_id, proxies);
+          try {
+            await createProxyMut({
+              variables: {
+                input: {
+                  url,
+                  type: row.type || inferProxyType(url),
+                  region: row.region || undefined,
+                  username: row.username || undefined,
+                  password: row.password || undefined,
+                  upstreamProxyId: upstreamProxyId || undefined,
+                  poolId,
+                },
+              },
+            });
+            success++;
+          } catch {
+            failed++;
+          }
+        }
+        if (success > 0) { toast.success(`Successfully imported ${success} proxies`); await refetchProxyState(); closeBatchModal(); }
+        if (failed > 0) toast.error(`Failed to import ${failed} proxies`);
+        if (success === 0 && failed === 0) toast.error('CSV contains no proxy rows');
+      } finally {
+        setBatchImporting(false);
+      }
+      return;
+    }
+
     const lines = batchInput.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
     if (lines.length === 0) { toast.error('Please enter at least one proxy URL'); return; }
     const proxiesToCreate = lines.map((line) => {
       const parts = line.split(/\s+/);
       const url = parts[0];
-      let type = 'http';
+      let type = inferProxyType(url);
       let region = '';
-      if (url.startsWith('socks5://')) type = 'socks5';
-      else if (url.startsWith('https://')) type = 'https';
       if (parts[1]) { const t = parts[1].toLowerCase(); if (['http', 'https', 'socks5'].includes(t)) type = t; else region = parts[1]; }
       if (parts[2]) region = parts[2];
       return { url, type, region };
@@ -184,7 +222,7 @@ export function useProxies() {
       if (r?.success > 0) closeBatchModal();
     } catch { toast.error('Failed to import proxies'); }
     finally { setBatchImporting(false); }
-  }, [batchInput, batchPoolId, closeBatchModal, batchCreateMut, refetchProxyState]);
+  }, [batchInput, batchPoolId, closeBatchModal, batchCreateMut, createProxyMut, proxyPools, proxies, refetchProxyState]);
 
   const handleTestProxy = useCallback(async (id: string) => {
     setTestingId(id);
@@ -262,6 +300,43 @@ export function useProxies() {
     finally { setCreatingPool(false); }
   }, [poolDraft, createPoolMut, refetchPools]);
 
+  const handleImportPools = useCallback(async (csvText: string) => {
+    const rows = parseCsv(csvText);
+    if (rows.length === 0) { toast.error('CSV contains no proxy pools'); return; }
+    setCreatingPool(true);
+    let success = 0;
+    let failed = 0;
+    try {
+      for (const row of rows) {
+        const name = row.name?.trim();
+        if (!name) continue;
+        const existing = proxyPools.find((pool) => pool.name.toLowerCase() === name.toLowerCase());
+        const input = {
+          name,
+          description: row.description || '',
+          strategy: row.strategy || 'weighted',
+          isActive: csvBool(row.is_active || row.active, true),
+        };
+        try {
+          if (existing) {
+            await updatePoolMut({ variables: { id: existing.id, input } });
+          } else {
+            await createPoolMut({ variables: { input } });
+          }
+          success++;
+        } catch {
+          failed++;
+        }
+      }
+      await refetchProxyState();
+      if (success > 0) toast.success(`Imported ${success} proxy pools`);
+      if (failed > 0) toast.error(`Failed to import ${failed} proxy pools`);
+      if (success === 0 && failed === 0) toast.error('CSV contains no valid proxy pools');
+    } finally {
+      setCreatingPool(false);
+    }
+  }, [createPoolMut, proxyPools, refetchProxyState, updatePoolMut]);
+
   const handleTogglePool = useCallback(async (pool: ProxyPool) => {
     setUpdatingPoolId(pool.id);
     try {
@@ -309,6 +384,31 @@ export function useProxies() {
     openCreateModal, openEditModal, openBatchModal, closeModal, closeBatchModal,
     handleSubmit, handleBatchImport, handleTestProxy, handleTestAllProxies,
     handleConfirmDelete, handleToggle, handleFileUpload,
-    handleCreatePool, handleTogglePool, handleDeletePool,
+    handleCreatePool, handleImportPools, handleTogglePool, handleDeletePool,
   };
+}
+
+function looksLikeCsv(input: string): boolean {
+  const firstLine = input.split(/\r?\n/).find((line) => line.trim() && !line.trim().startsWith('#')) || '';
+  return firstLine.toLowerCase().split(',').map((part) => part.trim()).includes('url');
+}
+
+function inferProxyType(url: string): string {
+  if (url.startsWith('socks5://')) return 'socks5';
+  if (url.startsWith('https://')) return 'https';
+  return 'http';
+}
+
+function resolvePoolID(value: string | undefined, proxyPools: ProxyPool[]): string {
+  const needle = value?.trim();
+  if (!needle) return '';
+  const pool = proxyPools.find((item) => item.id === needle || item.name.toLowerCase() === needle.toLowerCase());
+  return pool?.id || needle;
+}
+
+function resolveProxyID(value: string | undefined, proxies: Proxy[]): string {
+  const needle = value?.trim();
+  if (!needle) return '';
+  const proxy = proxies.find((item) => item.id === needle || item.url === needle);
+  return proxy?.id || needle;
 }
