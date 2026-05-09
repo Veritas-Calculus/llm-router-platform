@@ -118,19 +118,21 @@ type AnomalyResult struct {
 }
 
 type APIKey struct {
-	ID         string     `json:"id"`
-	ProjectID  string     `json:"projectId"`
-	Channel    string     `json:"channel"`
-	Name       string     `json:"name"`
-	KeyPrefix  string     `json:"keyPrefix"`
-	IsActive   bool       `json:"isActive"`
-	Scopes     string     `json:"scopes"`
-	RateLimit  int        `json:"rateLimit"`
-	TokenLimit int        `json:"tokenLimit"`
-	DailyLimit int        `json:"dailyLimit"`
-	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
-	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
-	CreatedAt  time.Time  `json:"createdAt"`
+	ID               string     `json:"id"`
+	ProjectID        string     `json:"projectId"`
+	Channel          string     `json:"channel"`
+	Name             string     `json:"name"`
+	KeyPrefix        string     `json:"keyPrefix"`
+	IsActive         bool       `json:"isActive"`
+	Scopes           string     `json:"scopes"`
+	AllowedModels    []string   `json:"allowedModels"`
+	AllowedProviders []string   `json:"allowedProviders"`
+	RateLimit        int        `json:"rateLimit"`
+	TokenLimit       int        `json:"tokenLimit"`
+	DailyLimit       int        `json:"dailyLimit"`
+	ExpiresAt        *time.Time `json:"expiresAt,omitempty"`
+	LastUsedAt       *time.Time `json:"lastUsedAt,omitempty"`
+	CreatedAt        time.Time  `json:"createdAt"`
 }
 
 type APIKeyHealth struct {
@@ -161,19 +163,21 @@ type APIKeyRateLimitStatus struct {
 }
 
 type APIKeyWithSecret struct {
-	ID         string     `json:"id"`
-	ProjectID  string     `json:"projectId"`
-	Channel    string     `json:"channel"`
-	Name       string     `json:"name"`
-	Key        string     `json:"key"`
-	KeyPrefix  string     `json:"keyPrefix"`
-	IsActive   bool       `json:"isActive"`
-	Scopes     string     `json:"scopes"`
-	RateLimit  int        `json:"rateLimit"`
-	TokenLimit int        `json:"tokenLimit"`
-	DailyLimit int        `json:"dailyLimit"`
-	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
-	CreatedAt  time.Time  `json:"createdAt"`
+	ID               string     `json:"id"`
+	ProjectID        string     `json:"projectId"`
+	Channel          string     `json:"channel"`
+	Name             string     `json:"name"`
+	Key              string     `json:"key"`
+	KeyPrefix        string     `json:"keyPrefix"`
+	IsActive         bool       `json:"isActive"`
+	Scopes           string     `json:"scopes"`
+	AllowedModels    []string   `json:"allowedModels"`
+	AllowedProviders []string   `json:"allowedProviders"`
+	RateLimit        int        `json:"rateLimit"`
+	TokenLimit       int        `json:"tokenLimit"`
+	DailyLimit       int        `json:"dailyLimit"`
+	ExpiresAt        *time.Time `json:"expiresAt,omitempty"`
+	CreatedAt        time.Time  `json:"createdAt"`
 }
 
 type APIKeysSummary struct {

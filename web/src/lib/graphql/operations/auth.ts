@@ -70,6 +70,15 @@ export const ME = gql`
   }
 `;
 
+// MY_BALANCE is a lightweight query for refreshing user balance after a
+// completed payment. We keep it separate from ME so common auth flows don't
+// have to round-trip a financial field they don't render.
+export const MY_BALANCE = gql`
+  query MyBalance {
+    me { id balance }
+  }
+`;
+
 export const REGISTRATION_MODE = gql`
   query RegistrationMode {
     registrationMode {

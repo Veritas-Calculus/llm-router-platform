@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,9 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"llm-router-platform/internal/models"
 	"llm-router-platform/pkg/sanitize"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 var ansiEscapePattern = regexp.MustCompile(`(?:\x1b\[[0-?]*[ -/]*[@-~])|(?:\[[0-9;]*m)`)
@@ -51,9 +54,9 @@ type LokiResponse struct {
 // requestID and level are both optional filters. startTime/endTime should be RFC3339 strings.
 // limit caps the number of log lines returned. Defaults to 500 if not specified.
 func (s *Service) GetRequestLogs(ctx context.Context, requestID *string, level *string, startTime *string, endTime *string, limit *int) ([]*LogEntry, error) {
-	lokiURL := s.config.Observability.LokiURL
+	lokiURL, selector := s.effectiveLokiQueryConfig(ctx)
 	if lokiURL == "" {
-		return nil, fmt.Errorf("loki is not configured or disabled via environment variables")
+		return nil, fmt.Errorf("loki is not configured or is disabled")
 	}
 
 	startNs, endNs, err := parseTimeRange(startTime, endTime)
@@ -62,7 +65,7 @@ func (s *Service) GetRequestLogs(ctx context.Context, requestID *string, level *
 	}
 
 	queryLimit := clampLimit(limit, 500, 5000)
-	query := buildLogQLQuery(requestID, level)
+	query := buildLogQLQuery(selector, requestID, level)
 
 	reqURL, err := url.Parse(lokiURL)
 	if err != nil {
@@ -117,6 +120,64 @@ func (s *Service) GetRequestLogs(ctx context.Context, requestID *string, level *
 	return entries, nil
 }
 
+type lokiIntegrationConfig struct {
+	URL           string `json:"url"`
+	Endpoint      string `json:"endpoint"`
+	QuerySelector string `json:"querySelector"`
+	Selector      string `json:"selector"`
+}
+
+func (s *Service) effectiveLokiQueryConfig(ctx context.Context) (string, string) {
+	lokiURL := s.config.Observability.LokiURL
+	selector := s.config.Observability.LokiQuerySelector
+	if s.db == nil {
+		return lokiURL, selector
+	}
+
+	var integration models.IntegrationConfig
+	err := s.db.WithContext(ctx).Where("name = ?", "loki").First(&integration).Error
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			s.logger.Warn("failed to load loki integration config; falling back to environment", zap.Error(err))
+		}
+		return lokiURL, selector
+	}
+	if !lokiIntegrationOverridesRuntime(integration.Enabled, integration.Config) {
+		return lokiURL, selector
+	}
+	if !integration.Enabled {
+		return "", selector
+	}
+
+	var cfg lokiIntegrationConfig
+	if err := json.Unmarshal(integration.Config, &cfg); err != nil {
+		s.logger.Warn("invalid loki integration config; falling back to environment", zap.Error(err))
+		return lokiURL, selector
+	}
+	if cfg.URL != "" {
+		lokiURL = strings.TrimSpace(cfg.URL)
+	} else if cfg.Endpoint != "" {
+		lokiURL = strings.TrimSpace(cfg.Endpoint)
+	}
+	if cfg.QuerySelector != "" {
+		selector = strings.TrimSpace(cfg.QuerySelector)
+	} else if cfg.Selector != "" {
+		selector = strings.TrimSpace(cfg.Selector)
+	}
+	return lokiURL, selector
+}
+
+func lokiIntegrationOverridesRuntime(enabled bool, raw []byte) bool {
+	if enabled {
+		return true
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return strings.TrimSpace(string(raw)) != ""
+	}
+	return len(obj) > 0
+}
+
 // parseTimeRange parses optional RFC3339 start/end times into nanosecond timestamps.
 func parseTimeRange(startTime *string, endTime *string) (startNs, endNs int64, err error) {
 	now := time.Now()
@@ -141,6 +202,10 @@ func parseTimeRange(startTime *string, endTime *string) (startNs, endNs int64, e
 		startNs = now.Add(-30 * time.Minute).UnixNano()
 	}
 
+	if startNs > endNs {
+		return 0, 0, fmt.Errorf("startTime must be before endTime")
+	}
+
 	return startNs, endNs, nil
 }
 
@@ -156,8 +221,11 @@ func clampLimit(limit *int, defaultVal, maxVal int) int {
 }
 
 // buildLogQLQuery constructs a LogQL query string with optional filters.
-func buildLogQLQuery(requestID *string, level *string) string {
-	query := `{container="llm-router-server"}`
+func buildLogQLQuery(selector string, requestID *string, level *string) string {
+	query := strings.TrimSpace(selector)
+	if query == "" {
+		query = `{container="llm-router-server"}`
+	}
 	if requestID != nil && strings.TrimSpace(*requestID) != "" {
 		query += ` |= ` + strconv.Quote(strings.TrimSpace(*requestID))
 	}

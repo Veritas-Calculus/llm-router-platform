@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   CheckIcon,
@@ -14,11 +14,13 @@ import {
   GiftIcon,
   PlusIcon,
 } from '@heroicons/react/24/outline';
-import { useQuery, useMutation } from '@apollo/client/react';
+import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { PLANS_QUERY, MY_BILLING_QUERY, CHANGE_PLAN, CREATE_CHECKOUT_SESSION } from '@/lib/graphql/operations';
+import { MY_BALANCE } from '@/lib/graphql/operations/auth';
 import { REDEEM_CODE_MUTATION } from '@/lib/graphql/operations/redeem';
 import { useTranslation } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/authStore';
+import { formatUSD } from '@/lib/format';
 import toast from 'react-hot-toast';
 import RechargeModal from '@/components/RechargeModal';
 
@@ -26,9 +28,10 @@ import RechargeModal from '@/components/RechargeModal';
 
 function SubscriptionPage() {
   const { t } = useTranslation();
-  const { user } = useAuthStore();
+  const { user, updateUser } = useAuthStore();
   const { data: plansData, loading: plansLoading } = useQuery<any>(PLANS_QUERY);
   const { data: billingData, loading: billingLoading, refetch: refetchBilling } = useQuery<any>(MY_BILLING_QUERY);
+  const [refetchBalance] = useLazyQuery<any>(MY_BALANCE, { fetchPolicy: 'network-only' });
   const [changePlanMut] = useMutation(CHANGE_PLAN);
   const [createCheckoutSession] = useMutation(CREATE_CHECKOUT_SESSION);
   const [redeemMut] = useMutation(REDEEM_CODE_MUTATION);
@@ -38,6 +41,49 @@ function SubscriptionPage() {
   const [redeeming, setRedeeming] = useState(false);
   const [isRechargeModalOpen, setIsRechargeModalOpen] = useState(false);
   const loading = plansLoading || billingLoading;
+
+  // Refresh balance + billing on:
+  //   1. Returning to the tab after a Stripe redirect (window focus event).
+  //   2. Landing on this page with ?payment=success (Stripe success URL).
+  // The user's balance lives in zustand auth state, so we explicitly fetch
+  // ME { balance } and merge it back. Without this, the balance card stays
+  // stale until the user logs out and back in.
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const result = await refetchBalance();
+        const fresh = (result.data as any)?.me;
+        if (fresh && user) {
+          updateUser({ ...user, balance: fresh.balance });
+        }
+      } catch {
+        // best-effort — the existing user.balance stays as is
+      }
+      refetchBilling();
+    };
+
+    // URL-based refresh on first mount.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('payment') === 'success' || params.get('checkout') === 'success') {
+      refresh();
+      toast.success(t('subscription.payment_success'));
+      // Clean the URL so a manual reload doesn't re-toast.
+      params.delete('payment');
+      params.delete('checkout');
+      params.delete('order_no');
+      const newSearch = params.toString();
+      window.history.replaceState(
+        {},
+        '',
+        window.location.pathname + (newSearch ? `?${newSearch}` : '')
+      );
+    }
+
+    // Focus-based refresh (covers Stripe redirect-back without success param).
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const plans = useMemo(() => (plansData?.plans || []) as any[], [plansData]);
   const subscription = billingData?.mySubscription as any;
@@ -158,7 +204,7 @@ function SubscriptionPage() {
               <div>
                 <p className="text-xs text-apple-gray-500">{t('subscription.balance')}</p>
                 <p className="text-lg font-bold text-apple-gray-900">
-                  ${(user?.balance ?? 0).toFixed(2)}
+                  {formatUSD(user?.balance ?? 0)}
                 </p>
               </div>
             </div>

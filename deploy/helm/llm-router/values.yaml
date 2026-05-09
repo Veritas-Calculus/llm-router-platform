@@ -159,6 +159,8 @@ config:
   otelEnabled: false
   otelEndpoint: ""
   otelServiceName: "llm-router-platform"
+  lokiUrl: ""
+  lokiQuerySelector: ""
 
   # Data Retention
   cleanupHealthRetentionDays: 30

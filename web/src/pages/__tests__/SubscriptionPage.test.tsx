@@ -43,11 +43,15 @@ vi.mock('@apollo/client/react', () => ({
         }
         return { data: null, loading: false };
     }),
+    useLazyQuery: vi.fn(() => [vi.fn().mockResolvedValue({ data: { me: { id: 'u-1', balance: 50 } } }), { loading: false }]),
     useMutation: vi.fn(() => [vi.fn().mockResolvedValue({ data: {} }), { loading: false }]),
 }));
 
 vi.mock('@/stores/authStore', () => ({
-    useAuthStore: vi.fn(() => ({ user: { id: 'u-1', email: 'test@test.com', role: 'user', balance: 50.0 } })),
+    useAuthStore: vi.fn(() => ({
+        user: { id: 'u-1', email: 'test@test.com', role: 'user', balance: 50.0 },
+        updateUser: vi.fn(),
+    })),
 }));
 
 vi.mock('@/components/RechargeModal', () => ({

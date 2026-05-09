@@ -7,12 +7,11 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 
-	"time"
-
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"llm-router-platform/internal/service/email"
 )
@@ -46,18 +45,34 @@ func NewBalanceService(
 }
 
 // DeductBalance subtracts the cost of a request from the user's balance.
+//
+// The deduction and the matching transaction record are committed atomically
+// under a row lock on the user. The low-balance alert is dispatched only
+// AFTER the transaction commits — sending it inside the closure would still
+// fire on rollback, producing false alerts. The lock acquisition is bounded
+// by lockTimeout so a stuck peer cannot pin a request goroutine indefinitely.
 func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, amount float64, description string, referenceID string) error {
 	if amount <= 0 {
 		return nil
 	}
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	txCtx, cancel := context.WithTimeout(ctx, lockTimeout)
+	defer cancel()
+
+	var (
+		alertEmail   string
+		alertName    string
+		alertBalance float64
+		shouldAlert  bool
+	)
+
+	err := s.db.WithContext(txCtx).Transaction(func(tx *gorm.DB) error {
 		var user models.User
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, "id = ?", userID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
 			return err
 		}
 
-		user.Balance -= amount
+		user.Balance = roundCost(user.Balance - amount)
 		if err := tx.Save(&user).Error; err != nil {
 			return err
 		}
@@ -66,41 +81,36 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 			OrgID:       userID,
 			UserID:      userID,
 			Type:        "deduction",
-			Amount:      -amount,
+			Amount:      roundCost(-amount),
 			Balance:     user.Balance,
 			Description: description,
 			ReferenceID: referenceID,
 		}
 
-		err := tx.Create(transaction).Error
-		if err != nil {
+		if err := tx.Create(transaction).Error; err != nil {
 			return err
 		}
 
-		// Check for low balance alert (threshold $1.00)
-		if s.redis != nil && s.emailSvc != nil && user.Balance < 1.0 {
-			cacheKey := fmt.Sprintf("quota_warn:balance:%s", userID.String())
-			if err := s.redis.Get(ctx, cacheKey).Err(); err == redis.Nil { // Not warned yet
-				s.logger.Info("sending low balance warning email", zap.String("userID", userID.String()), zap.Float64("balance", user.Balance))
-
-				// Send warning asynchronously
-				go func(to, name string, currentBalance float64) {
-					if err := s.emailSvc.SendQuotaWarningEmail(to, name, fmt.Sprintf("$%.2f", currentBalance), "$1.00"); err != nil {
-						s.logger.Error("failed to send quota warning email", zap.Error(err))
-					}
-				}(user.Email, user.Name, user.Balance)
-
-				// Cache the warning state for 24 hours to prevent spam
-				s.redis.Set(ctx, cacheKey, "1", 24*time.Hour)
-			}
+		if user.Balance < 1.0 {
+			alertEmail = user.Email
+			alertName = user.Name
+			alertBalance = user.Balance
+			shouldAlert = true
 		}
-
 		return nil
 	})
 	if err != nil {
+		if txCtx.Err() != nil {
+			recordLockTimeout("deduct_balance")
+		}
 		billingDeductErrorsTotal.Inc()
+		return err
 	}
-	return err
+
+	if shouldAlert {
+		s.sendLowBalanceAlert(ctx, userID, alertEmail, alertName, alertBalance)
+	}
+	return nil
 }
 
 // AddBalance adds credits to the user's balance (recharge or refund).
@@ -109,13 +119,16 @@ func (s *BalanceService) AddBalance(ctx context.Context, userID uuid.UUID, amoun
 		return fmt.Errorf("amount must be positive")
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	txCtx, cancel := context.WithTimeout(ctx, lockTimeout)
+	defer cancel()
+
+	err := s.db.WithContext(txCtx).Transaction(func(tx *gorm.DB) error {
 		var user models.User
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, "id = ?", userID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
 			return err
 		}
 
-		user.Balance += amount
+		user.Balance = roundCost(user.Balance + amount)
 		if err := tx.Save(&user).Error; err != nil {
 			return err
 		}
@@ -124,7 +137,7 @@ func (s *BalanceService) AddBalance(ctx context.Context, userID uuid.UUID, amoun
 			OrgID:       userID,
 			UserID:      userID,
 			Type:        txType,
-			Amount:      amount,
+			Amount:      roundCost(amount),
 			Balance:     user.Balance,
 			Description: description,
 			ReferenceID: referenceID,
@@ -132,6 +145,10 @@ func (s *BalanceService) AddBalance(ctx context.Context, userID uuid.UUID, amoun
 
 		return tx.Create(transaction).Error
 	})
+	if err != nil && txCtx.Err() != nil {
+		recordLockTimeout("add_balance")
+	}
+	return err
 }
 
 func (s *BalanceService) GetBalance(ctx context.Context, userID uuid.UUID) (float64, error) {

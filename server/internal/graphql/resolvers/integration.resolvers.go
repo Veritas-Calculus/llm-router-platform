@@ -5,9 +5,12 @@ package resolvers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/models"
+	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/pkg/sanitize"
 	"net/http"
 	neturl "net/url"
@@ -20,6 +23,20 @@ import (
 
 // UpdateIntegration is the resolver for the updateIntegration field.
 func (r *mutationResolver) UpdateIntegration(ctx context.Context, name string, input model.UpdateIntegrationInput) (*model.IntegrationConfig, error) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if !json.Valid([]byte(input.Config)) {
+		return nil, fmt.Errorf("invalid integration config JSON")
+	}
+
+	var langfuseRuntimeCfg *config.ObservabilityConfig
+	if name == "langfuse" {
+		next, err := observability.LangfuseConfigFromIntegration(r.Config().Observability, input.Enabled, []byte(input.Config))
+		if err != nil {
+			return nil, err
+		}
+		langfuseRuntimeCfg = &next
+	}
+
 	var conf models.IntegrationConfig
 	if err := r.AdminSvc.DB().Where("name = ?", name).First(&conf).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -43,6 +60,14 @@ func (r *mutationResolver) UpdateIntegration(ctx context.Context, name string, i
 		}
 	}
 
+	if langfuseRuntimeCfg != nil {
+		if reloader, ok := r.Observability.(observability.LangfuseReloader); ok {
+			if err := reloader.ReloadLangfuse(ctx, *langfuseRuntimeCfg); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return &model.IntegrationConfig{
 		ID:        conf.ID.String(),
 		Name:      conf.Name,
@@ -54,8 +79,9 @@ func (r *mutationResolver) UpdateIntegration(ctx context.Context, name string, i
 
 // TestLangfuseConnection is the resolver for the testLangfuseConnection field.
 func (r *mutationResolver) TestLangfuseConnection(ctx context.Context, publicKey string, secretKey string, host string) (bool, error) {
-	// SSRF protection: validate host URL before making request
-	if err := sanitize.ValidateWebhookURL(host, false, false); err != nil {
+	// SSRF protection: validate host URL before making request. Platform admins
+	// may point this at self-hosted Docker/Kubernetes Langfuse instances.
+	if err := sanitize.ValidateWebhookURL(host, true, true); err != nil {
 		return false, fmt.Errorf("invalid host URL: %w", err)
 	}
 
@@ -89,11 +115,7 @@ func (r *mutationResolver) TestLangfuseConnection(ctx context.Context, publicKey
 	}
 	req.SetBasicAuth(publicKey, secretKey)
 
-	client := &http.Client{
-		Timeout:   10 * time.Second,
-		Transport: sanitize.SafeTransport(false),
-	}
-	resp, err := client.Do(req)
+	resp, err := sanitize.SafeHTTPClient(true, 10*time.Second).Do(req)
 	if err != nil {
 		return false, fmt.Errorf("connection failed: %w", err)
 	}

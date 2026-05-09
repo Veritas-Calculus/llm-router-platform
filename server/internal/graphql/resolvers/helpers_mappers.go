@@ -43,8 +43,17 @@ func apiKeyToGQL(k *models.APIKey) *model.APIKey {
 	return &model.APIKey{
 		ID: k.ID.String(), ProjectID: k.ProjectID.String(), Channel: k.Channel, Name: k.Name, KeyPrefix: k.KeyPrefix,
 		IsActive: k.IsActive, Scopes: k.Scopes, RateLimit: k.RateLimit, TokenLimit: int(k.TokenLimit), DailyLimit: k.DailyLimit,
+		AllowedModels: apiKeyPolicyList(k.AllowedModels), AllowedProviders: apiKeyPolicyList(k.AllowedProviders),
 		LastUsedAt: lastUsed, ExpiresAt: expires, CreatedAt: k.CreatedAt,
 	}
+}
+
+func apiKeyPolicyList(values []string) []string {
+	normalized := models.NormalizeAPIKeyPolicyList(values)
+	if normalized == nil {
+		return []string{}
+	}
+	return normalized
 }
 
 func orgToGQL(o *models.Organization) *model.Organization {

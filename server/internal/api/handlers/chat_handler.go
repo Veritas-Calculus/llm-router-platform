@@ -174,14 +174,31 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 	}
 
 	// Routing and quota check logic (simplified for brevity, reuses internal logic)
-	selectedProvider, apiKey, err := h.router.Route(c.Request.Context(), anthroReq.Model)
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no providers available"})
+	projectObj := c.MustGet("project").(*models.Project)
+	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	if done := h.applyDLP(c, projectObj, internalMessages); done {
 		return
 	}
 
-	projectObj := c.MustGet("project").(*models.Project)
-	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+	selectedProvider, apiKey, err := h.router.RouteForAPIKey(c.Request.Context(), anthroReq.Model, userAPIKey)
+	if err != nil {
+		if writeAPIKeyPolicyError(c, err) {
+			return
+		}
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no providers available"})
+		return
+	}
+	c.Set("llm_model", anthroReq.Model)
+	c.Set("provider_name", selectedProvider.Name)
+	c.Set("provider_id", selectedProvider.ID.String())
+
+	trace := h.startRequestTrace(c, "anthropic_messages", projectObj.ID.String(), "", map[string]interface{}{
+		"model":  anthroReq.Model,
+		"stream": anthroReq.Stream,
+	})
+	defer trace.End()
+
 	if quotaErr := h.checkProjectQuota(c, projectObj, userAPIKey); quotaErr != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": *quotaErr})
 		return
@@ -191,17 +208,34 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 
 	// Handle streaming via existing infrastructure
 	if anthroReq.Stream {
-		h.handleAnthropicStream(c, anthroReq, providerReq, selectedProvider, apiKey, userAPIKey, projectObj, start)
+		h.handleAnthropicStream(c, anthroReq, providerReq, selectedProvider, apiKey, userAPIKey, projectObj, start, trace)
 		return
 	}
 
+	gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, "Provider: "+selectedProvider.Name, anthroReq.Model, map[string]interface{}{
+		"temperature": providerReq.Temperature,
+		"max_tokens":  providerReq.MaxTokens,
+	}, providerReq.Messages)
+
 	result, err := h.router.ExecuteChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
-	if err != nil {
+	if err != nil || result == nil {
+		if err == nil {
+			err = errors.New("empty provider response")
+		}
+		gen.EndWithError(err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "provider error"})
 		return
 	}
 
 	resp := result.Response
+	if len(resp.Choices) == 0 {
+		err := errors.New("empty provider choices")
+		gen.EndWithError(err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "provider error"})
+		return
+	}
+	responseText := resp.Choices[0].Message.Content.Text
+	gen.End(responseText, resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 	latency := time.Since(start)
 
 	// Convert back to Anthropic response format
@@ -213,7 +247,7 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 		"content": []gin.H{
 			{
 				"type": "text",
-				"text": resp.Choices[0].Message.Content.Text,
+				"text": responseText,
 			},
 		},
 		"usage": gin.H{
@@ -273,7 +307,7 @@ func mapAnthropicMessages(anthroReq AnthropicMessagesRequest) []provider.Message
 }
 
 // handleAnthropicStream handles the streaming path for Anthropic-compatible requests.
-func (h *ChatHandler) handleAnthropicStream(c *gin.Context, anthroReq AnthropicMessagesRequest, providerReq *provider.ChatRequest, selectedProvider *models.Provider, apiKey *models.ProviderAPIKey, userAPIKey *models.APIKey, projectObj *models.Project, start time.Time) {
+func (h *ChatHandler) handleAnthropicStream(c *gin.Context, anthroReq AnthropicMessagesRequest, providerReq *provider.ChatRequest, selectedProvider *models.Provider, apiKey *models.ProviderAPIKey, userAPIKey *models.APIKey, projectObj *models.Project, start time.Time, trace observability.Trace) {
 	usageLog := &models.UsageLog{
 		UserID:     userAPIKey.UserID,
 		ProjectID:  projectObj.ID,
@@ -288,8 +322,15 @@ func (h *ChatHandler) handleAnthropicStream(c *gin.Context, anthroReq AnthropicM
 		h.logger.Warn("billing pre-record failed", zap.Error(err), zap.String("model", sanitize.LogValue(anthroReq.Model)))
 	}
 
+	gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, "Provider: "+selectedProvider.Name, anthroReq.Model, map[string]interface{}{
+		"temperature": providerReq.Temperature,
+		"max_tokens":  providerReq.MaxTokens,
+		"stream":      true,
+	}, providerReq.Messages)
+
 	streamResult, err := h.router.ExecuteStreamChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
 	if err != nil {
+		gen.EndWithError(err)
 		h.logger.Error("anthropic stream failed", zap.Error(err))
 		if billingErr := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, 0, http.StatusBadGateway, time.Since(start).Milliseconds(), err.Error()); billingErr != nil {
 			h.logger.Warn("billing update failed", zap.Error(billingErr))
@@ -328,9 +369,31 @@ func (h *ChatHandler) handleAnthropicStream(c *gin.Context, anthroReq AnthropicM
 	c.Writer.Flush()
 
 	var totalOutput int
-	for chunk := range streamResult.Stream {
-		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+	var fullText string
+	var streamErr error
+	statusCode := http.StatusOK
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			streamErr = c.Request.Context().Err()
+			statusCode = 499
+		case chunk, ok := <-streamResult.Stream:
+			if !ok {
+				gen.End(fullText, 0, totalOutput)
+				goto complete
+			}
+			if chunk.Error != nil {
+				streamErr = chunk.Error
+				statusCode = http.StatusBadGateway
+				gen.EndWithError(chunk.Error)
+				goto complete
+			}
+			if len(chunk.Choices) == 0 || chunk.Choices[0].Delta.Content == "" {
+				continue
+			}
+
 			totalOutput++
+			fullText += chunk.Choices[0].Delta.Content
 			delta := gin.H{
 				"type":  "content_block_delta",
 				"index": 0,
@@ -342,6 +405,19 @@ func (h *ChatHandler) handleAnthropicStream(c *gin.Context, anthroReq AnthropicM
 			_, _ = c.Writer.Write([]byte("\n\n"))
 			c.Writer.Flush()
 		}
+		if streamErr != nil {
+			gen.EndWithError(streamErr)
+			goto complete
+		}
+	}
+
+complete:
+	if streamErr != nil {
+		latency := time.Since(start)
+		if err := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, totalOutput, statusCode, latency.Milliseconds(), sanitize.TruncateErrorMessage(streamErr.Error())); err != nil {
+			h.logger.Warn("billing update failed", zap.Error(err))
+		}
+		return
 	}
 
 	// content_block_stop + message_delta + message_stop
@@ -418,22 +494,29 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	start := time.Now()
 
-	selectedProvider, apiKey, err := h.router.Route(c.Request.Context(), req.Model)
+	projectObj := c.MustGet("project").(*models.Project)
+	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	selectedProvider, apiKey, err := h.router.RouteForAPIKey(c.Request.Context(), req.Model, userAPIKey)
 	if err != nil {
+		if writeAPIKeyPolicyError(c, err) {
+			return
+		}
 		c.JSON(http.StatusNotFound, router_errs.NewRouterError(
 			router_errs.ErrCodeModelNotFound, http.StatusNotFound, "invalid_request_error", "no available providers for model: "+req.Model, err,
 		).MapToOpenAIResponse())
 		return
 	}
+	c.Set("llm_model", req.Model)
+	c.Set("provider_name", selectedProvider.Name)
+	c.Set("provider_id", selectedProvider.ID.String())
 
 	h.logger.Info("model routed to provider",
+		zap.String("request_id", requestIDFromContext(c)),
 		zap.String("model", sanitize.LogValue(req.Model)),
 		zap.String("provider", selectedProvider.Name),
 		zap.String("base_url", selectedProvider.BaseURL),
 	)
-
-	projectObj := c.MustGet("project").(*models.Project)
-	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 
 	// 1. Build messages (conversation history + request)
 	messages := h.buildMessages(c, req, projectObj, userAPIKey)
@@ -464,15 +547,10 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 	}
 
 	// Observability: Start Trace
-	reqID := c.GetHeader("X-Request-ID")
-	if reqID == "" {
-		reqID = uuid.New().String()
-	}
-	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "chat_completion", projectObj.ID.String(), req.ConversationID, map[string]interface{}{
+	trace := h.startRequestTrace(c, "chat_completion", projectObj.ID.String(), req.ConversationID, map[string]interface{}{
 		"model":  req.Model,
 		"stream": req.Stream,
 	})
-	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
 	// 5. Quota check
@@ -489,7 +567,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 
 	// 7. Cache hit response
 	if cacheHit != nil {
-		if h.handleCacheHit(c, cacheHit, req, userAPIKey, selectedProvider, projectObj, msgBytes, trace) {
+		if h.handleCacheHit(c, cacheHit, req, userAPIKey, selectedProvider, projectObj, messages, msgBytes, trace) {
 			return
 		}
 	}
@@ -670,13 +748,17 @@ func (h *ChatHandler) lookupSemanticCache(c *gin.Context, messages []provider.Me
 }
 
 // handleCacheHit serves a cached response (stream or non-stream). Returns true if handled.
-func (h *ChatHandler) handleCacheHit(c *gin.Context, cacheHit *models.SemanticCache, req ChatCompletionRequest, userAPIKey *models.APIKey, selectedProvider *models.Provider, projectObj *models.Project, msgBytes []byte, trace observability.Trace) bool {
+func (h *ChatHandler) handleCacheHit(c *gin.Context, cacheHit *models.SemanticCache, req ChatCompletionRequest, userAPIKey *models.APIKey, selectedProvider *models.Provider, projectObj *models.Project, messages []provider.Message, msgBytes []byte, trace observability.Trace) bool {
 	var cachedResp provider.ChatResponse
 	if err := json.Unmarshal(cacheHit.Response, &cachedResp); err != nil {
 		return false
 	}
+	if len(cachedResp.Choices) == 0 {
+		return false
+	}
 
-	h.obsInfo.StartGeneration(c.Request.Context(), trace, "Cache: ExactMatch", req.Model, nil, req.Messages).End(cachedResp.Choices[0].Message.Content.Text, 0, 0)
+	h.obsInfo.StartGeneration(c.Request.Context(), trace, "Cache: ExactMatch", req.Model, nil, messages).End(cachedResp.Choices[0].Message.Content.Text, 0, 0)
+	requestTokens := tokencount.CountTokens(string(msgBytes), req.Model)
 
 	usageLog := &models.UsageLog{
 		UserID:         userAPIKey.UserID,
@@ -687,9 +769,9 @@ func (h *ChatHandler) handleCacheHit(c *gin.Context, cacheHit *models.SemanticCa
 		ModelName:      req.Model,
 		Latency:        1,
 		StatusCode:     http.StatusOK,
-		RequestTokens:  tokencount.CountTokens(req.Model, string(msgBytes)),
+		RequestTokens:  requestTokens,
 		ResponseTokens: 0,
-		TotalTokens:    tokencount.CountTokens(req.Model, string(msgBytes)),
+		TotalTokens:    requestTokens,
 	}
 	if err := h.billing.RecordUsageAndDeduct(c.Request.Context(), usageLog, h.balance, userAPIKey.UserID, fmt.Sprintf("Cache hit: %s", req.Model)); err != nil {
 		h.logger.Warn("billing deduction failed (cache hit)", zap.Error(err), zap.String("model", sanitize.LogValue(req.Model)))
@@ -774,6 +856,28 @@ func providerErrorPayloadMessage(body []byte) string {
 	return strings.TrimSpace(payload.Message)
 }
 
+func writeAPIKeyPolicyError(c *gin.Context, err error) bool {
+	if err == nil || !isAPIKeyPolicyError(err) {
+		return false
+	}
+	c.JSON(http.StatusForbidden, gin.H{
+		"error": gin.H{
+			"message": err.Error(),
+			"type":    "forbidden",
+			"code":    "api_key_policy_forbidden",
+		},
+	})
+	return true
+}
+
+func isAPIKeyPolicyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not allowed for this api key")
+}
+
 // handleStreamPath handles the streaming chat path (pre-record, establish stream, delegate).
 func (h *ChatHandler) handleStreamPath(c *gin.Context, req ChatCompletionRequest, providerReq *provider.ChatRequest, selectedProvider *models.Provider, apiKey *models.ProviderAPIKey, userAPIKey *models.APIKey, projectObj *models.Project, start time.Time, trace observability.Trace, promptHash string, promptEmbedding []float32) {
 	usageLog := &models.UsageLog{
@@ -812,7 +916,7 @@ func (h *ChatHandler) handleNonStreamResponse(c *gin.Context, req ChatCompletion
 	gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, "Provider: "+selectedProvider.Name, req.Model, map[string]interface{}{
 		"temperature": req.Temperature,
 		"max_tokens":  req.MaxTokens,
-	}, req.Messages)
+	}, providerReq.Messages)
 
 	result, err := h.router.ExecuteChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
 

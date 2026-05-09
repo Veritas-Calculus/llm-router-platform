@@ -64,6 +64,8 @@ type ApiKey {
   keyPrefix: String!
   isActive: Boolean!
   scopes: String!
+  allowedModels: [String!]!
+  allowedProviders: [String!]!
   rateLimit: Int!
   tokenLimit: Int!
   dailyLimit: Int!
@@ -96,6 +98,8 @@ type ApiKeyWithSecret {
   keyPrefix: String!
   isActive: Boolean!
   scopes: String!
+  allowedModels: [String!]!
+  allowedProviders: [String!]!
   rateLimit: Int!
   tokenLimit: Int!
   dailyLimit: Int!

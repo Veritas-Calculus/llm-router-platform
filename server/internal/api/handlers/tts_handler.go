@@ -11,7 +11,6 @@ import (
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -34,11 +33,20 @@ func (h *ChatHandler) SynthesizeSpeech(c *gin.Context) {
 
 	start := time.Now()
 
-	selectedProvider, apiKey, err := h.router.Route(c.Request.Context(), req.Model)
+	projectObj := c.MustGet("project").(*models.Project)
+	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	selectedProvider, apiKey, err := h.router.RouteForAPIKey(c.Request.Context(), req.Model, userAPIKey)
 	if err != nil {
+		if writeAPIKeyPolicyError(c, err) {
+			return
+		}
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no available providers for model: " + req.Model})
 		return
 	}
+	c.Set("llm_model", req.Model)
+	c.Set("provider_name", selectedProvider.Name)
+	c.Set("provider_id", selectedProvider.ID.String())
 
 	providerReq := &provider.SpeechRequest{
 		Model:          req.Model,
@@ -48,21 +56,13 @@ func (h *ChatHandler) SynthesizeSpeech(c *gin.Context) {
 		Speed:          req.Speed,
 	}
 
-	projectObj := c.MustGet("project").(*models.Project)
-	userAPIKey := c.MustGet("api_key").(*models.APIKey)
-
 	// Observability: Start Trace
-	reqID := c.GetHeader("X-Request-ID")
-	if reqID == "" {
-		reqID = uuid.New().String()
-	}
-	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "synthesize_speech", projectObj.ID.String(), "", map[string]interface{}{
+	trace := h.startRequestTrace(c, "synthesize_speech", projectObj.ID.String(), "", map[string]interface{}{
 		"model":           req.Model,
 		"voice":           req.Voice,
 		"response_format": req.ResponseFormat,
 		"speed":           req.Speed,
 	})
-	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
 	if quotaErr := h.checkProjectQuota(c, projectObj, userAPIKey); quotaErr != nil {
@@ -80,7 +80,7 @@ func (h *ChatHandler) SynthesizeSpeech(c *gin.Context) {
 		"voice":           req.Voice,
 		"response_format": req.ResponseFormat,
 		"speed":           req.Speed,
-	}, req.Input)
+	}, providerReq.Input)
 
 	result, err := h.router.ExecuteSpeech(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
 

@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -29,6 +30,7 @@ import (
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/database"
+	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/internal/service/admin"
 	"llm-router-platform/internal/service/announcement"
@@ -529,14 +531,25 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 
 	// Dynamically get Stripe config from DB if available
 	stripeCfg := cfgService.GetStripeConfig(context.Background(), cfg.Stripe)
-	paymentService := billing.NewPaymentService(stripeCfg, cfg.Frontend.URL, repos.Plan, repos.Subscription, repos.Transaction, logger)
+	paymentService := billing.NewPaymentService(stripeCfg, cfg.Frontend.URL, repos.Plan, repos.Subscription, repos.Transaction, logger).WithRedis(redisClient)
+
+	// Wire metric callbacks for billing observability:
+	//   * row-lock timeouts on the user balance row
+	//   * payment webhook amount mismatches (must be zero in a healthy system)
+	billing.SetLockTimeoutObserver(func(op string) {
+		middleware.BillingLockTimeoutTotal.WithLabelValues(op).Inc()
+	})
+	billing.SetPaymentAmountMismatchObserver(func(provider string) {
+		middleware.PaymentAmountMismatchTotal.WithLabelValues(provider).Inc()
+	})
 	wechatPayService := billing.NewWechatPayService(cfg.WechatPay, cfg.Frontend.URL, repos.Subscription, repos.Transaction, logger)
 	alipayService := billing.NewAlipayService(cfg.Alipay, cfg.Frontend.URL, repos.Subscription, repos.Transaction, logger)
 
 	memoryService := memory.NewService(repos.Memory, redisClient, logger)
 	proxyService := proxy.NewService(repos.Proxy, logger)
+	langfuseCfg := loadLangfuseRuntimeConfig(context.Background(), gormDB, cfg.Observability, logger)
 	obsService := observability.NewCompositeService(
-		observability.NewLangfuseService(cfg.Observability, logger),
+		observability.NewReloadableLangfuseService(langfuseCfg, logger),
 		observability.NewOTelService(context.Background(), cfg.Observability, logger),
 	)
 	auditService := audit.NewService(repos.AuditLog, logger)
@@ -610,6 +623,30 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+func loadLangfuseRuntimeConfig(ctx context.Context, db *gorm.DB, base config.ObservabilityConfig, logger *zap.Logger) config.ObservabilityConfig {
+	var integration models.IntegrationConfig
+	err := db.WithContext(ctx).Where("name = ?", "langfuse").First(&integration).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return base
+	}
+	if err != nil {
+		logger.Warn("failed to load langfuse integration config; falling back to environment", zap.Error(err))
+		return base
+	}
+	if !observability.IntegrationConfigOverridesRuntime(integration.Enabled, integration.Config) {
+		return base
+	}
+
+	next, err := observability.LangfuseConfigFromIntegration(base, integration.Enabled, integration.Config)
+	if err != nil {
+		disabled := base
+		disabled.LangfuseEnabled = false
+		logger.Warn("invalid langfuse integration config; disabling langfuse runtime client", zap.Error(err))
+		return disabled
+	}
+	return next
+}
 
 // buildLogger creates a zap.Logger that respects the LOG_LEVEL and LOG_FORMAT
 // configuration values.

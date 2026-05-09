@@ -3,6 +3,8 @@ package observability
 import (
 	"context"
 
+	"llm-router-platform/internal/config"
+
 	"github.com/google/uuid"
 )
 
@@ -19,12 +21,12 @@ func NewCompositeService(services ...Service) *CompositeService {
 			active = append(active, s)
 		}
 	}
-	
+
 	// If no active services, just append one NoopService to satisfy assumptions
 	if len(active) == 0 {
 		active = append(active, NewNoopService())
 	}
-	
+
 	return &CompositeService{services: active}
 }
 
@@ -41,7 +43,7 @@ func (c *CompositeService) StartGeneration(ctx context.Context, trace Trace, nam
 	if !ok || len(ct.traces) != len(c.services) {
 		return &NoopGeneration{}
 	}
-	
+
 	generations := make([]Generation, len(c.services))
 	for i, s := range c.services {
 		generations[i] = s.StartGeneration(ctx, ct.traces[i], name, model, modelParams, input)
@@ -53,6 +55,20 @@ func (c *CompositeService) Shutdown(ctx context.Context) error {
 	var lastErr error
 	for _, s := range c.services {
 		if err := s.Shutdown(ctx); err != nil {
+			lastErr = err
+		}
+	}
+	return lastErr
+}
+
+func (c *CompositeService) ReloadLangfuse(ctx context.Context, cfg config.ObservabilityConfig) error {
+	var lastErr error
+	for _, s := range c.services {
+		reloader, ok := s.(LangfuseReloader)
+		if !ok {
+			continue
+		}
+		if err := reloader.ReloadLangfuse(ctx, cfg); err != nil {
 			lastErr = err
 		}
 	}

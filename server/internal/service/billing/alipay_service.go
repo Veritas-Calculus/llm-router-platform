@@ -12,9 +12,11 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -181,6 +183,12 @@ func (s *AlipayService) CreatePreCreateOrder(ctx context.Context, userID uuid.UU
 }
 
 // HandleNotify processes Alipay async notification.
+//
+// Security invariant: the credited amount is read from the signature-verified
+// form value `total_amount`, NOT from the local order record. The local order
+// is consulted only to look up the principal (OrgID) and to enforce
+// idempotency. Any discrepancy between signed amount and stored order amount
+// aborts fulfillment and increments payment_amount_mismatch_total{provider="alipay"}.
 func (s *AlipayService) HandleNotify(formValues url.Values) (string, error) {
 	if s.alipayPubKey == nil {
 		return "", fmt.Errorf("alipay public key not configured, cannot verify notification")
@@ -205,19 +213,41 @@ func (s *AlipayService) HandleNotify(formValues url.Values) (string, error) {
 		return orderNo, nil
 	}
 
-	if tradeStatus == "TRADE_SUCCESS" || tradeStatus == "TRADE_FINISHED" {
-		order.Status = "paid"
-		order.ExternalID = tradeNo
-		_ = s.subRepo.UpdateOrder(ctx, order)
-
-		// Credit user balance
-		if err := s.subRepo.UpdateUserBalance(ctx, order.OrgID, order.Amount, "recharge", "Credit Top-up via Alipay", orderNo); err != nil {
-			s.logger.Error("failed to credit user balance for alipay payment", zap.Error(err), zap.String("order_no", sanitize.LogValue(orderNo)))
-			return "", err
-		}
-		s.logger.Info("alipay order fulfilled", zap.String("order_no", sanitize.LogValue(orderNo)), zap.Float64("amount", order.Amount))
+	if tradeStatus != "TRADE_SUCCESS" && tradeStatus != "TRADE_FINISHED" {
+		// Not a terminal success state; record nothing.
+		return orderNo, nil
 	}
 
+	notifyAmount, err := validateAlipayNotifyAmount(formValues.Get("total_amount"), order.Amount)
+	if err != nil {
+		recordPaymentAmountMismatch("alipay")
+		s.logger.Error("alipay notify amount validation failed — refusing to credit",
+			zap.String("order_no", sanitize.LogValue(orderNo)),
+			zap.String("total_amount_raw", sanitize.LogValue(formValues.Get("total_amount"))),
+			zap.Float64("order_amount", order.Amount),
+			zap.Error(err),
+		)
+		return "", err
+	}
+
+	order.Status = "paid"
+	order.ExternalID = tradeNo
+	if err := s.subRepo.UpdateOrder(ctx, order); err != nil {
+		s.logger.Error("failed to mark alipay order paid",
+			zap.Error(err),
+			zap.String("order_no", sanitize.LogValue(orderNo)),
+		)
+		return "", err
+	}
+
+	if err := s.subRepo.UpdateUserBalance(ctx, order.OrgID, notifyAmount, "recharge", "Credit Top-up via Alipay", orderNo); err != nil {
+		s.logger.Error("failed to credit user balance for alipay payment", zap.Error(err), zap.String("order_no", sanitize.LogValue(orderNo)))
+		return "", err
+	}
+	s.logger.Info("alipay order fulfilled",
+		zap.String("order_no", sanitize.LogValue(orderNo)),
+		zap.Float64("amount", notifyAmount),
+	)
 	return orderNo, nil
 }
 
@@ -373,4 +403,21 @@ func parsePublicKey(keyPEM string) (*rsa.PublicKey, error) {
 		return nil, fmt.Errorf("key is not RSA public key")
 	}
 	return rsaPub, nil
+}
+
+// validateAlipayNotifyAmount parses the signed `total_amount` form value and
+// confirms it matches the locally-stored order amount within a 1-cent
+// tolerance. Returns the parsed notify amount on success.
+//
+// Pure helper extracted for testability — the rest of HandleNotify needs the
+// repository / signature setup to invoke directly.
+func validateAlipayNotifyAmount(rawTotalAmount string, orderAmount float64) (float64, error) {
+	notifyAmount, err := strconv.ParseFloat(rawTotalAmount, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid total_amount: %w", err)
+	}
+	if math.Abs(notifyAmount-orderAmount) > 0.01 {
+		return 0, fmt.Errorf("amount mismatch: notify=%.2f order=%.2f", notifyAmount, orderAmount)
+	}
+	return notifyAmount, nil
 }

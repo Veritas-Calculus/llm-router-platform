@@ -41,7 +41,8 @@
 |------|--------|------|
 | `LOG_LEVEL` | `info` | 日志级别 (`debug` / `info` / `warn` / `error`) |
 | `LOG_FORMAT` | `json` | 日志格式 (`json` / `text`) |
-| `LOKI_URL` | _(空)_ | Loki 推送地址 (如 `http://loki:3100`) |
+| `LOKI_URL` | _(空)_ | Loki 查询地址 (如 `http://loki:3100`；为空则禁用日志查询) |
+| `LOKI_QUERY_SELECTOR` | `{container="llm-router-server"}` | Loki LogQL stream selector，需匹配 Promtail/Agent 注入的标签 |
 
 ## Proxy Pool
 
@@ -217,6 +218,8 @@
 | `OTEL_ENABLED` | `false` | 启用 OpenTelemetry 分布式追踪 |
 | `OTEL_ENDPOINT` | _(空)_ | OTLP Exporter 地址 |
 | `OTEL_SERVICE_NAME` | `llm-router-platform` | 服务名 |
+
+> Admin Settings 中保存的非空 IntegrationConfig 会热加载并覆盖对应环境变量；空的默认 integration 行不会影响 env 配置。
 
 ## Cache
 

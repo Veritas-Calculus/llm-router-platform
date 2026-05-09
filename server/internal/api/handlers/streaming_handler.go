@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"llm-router-platform/internal/api/middleware"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/observability"
 	"llm-router-platform/internal/service/provider"
@@ -85,18 +86,49 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 }
 
 func (h *ChatHandler) finalizeStream(ctx context.Context, req *provider.ChatRequest, selectedProvider *models.Provider, projectObj *models.Project, userAPIKey *models.APIKey, start time.Time, conversationID string, originalMessages []MessageRequest, logID uuid.UUID, promptHash string, promptEmbedding []float32, fullText string, promptTokens int, completionTokens int, streamErr error, gen observability.Generation) {
+	// If the upstream provider didn't return a usage block in the stream
+	// (chunk.Usage was nil throughout), fall back to local tokenization. This
+	// estimate drives BILLING — record the fallback so a sustained spike is
+	// observable in metrics.
+	usedLocalEstimate := false
 	if promptTokens == 0 && completionTokens == 0 && fullText != "" {
+		usedLocalEstimate = true
 		completionTokens = tokencount.CountTokens(fullText, req.Model)
 		for _, m := range req.Messages {
 			promptTokens += tokencount.CountTokens(m.Content.Text, req.Model)
 		}
 	}
+	if usedLocalEstimate {
+		middleware.LocalTokenFallbackTotal.WithLabelValues(selectedProvider.Name, req.Model).Inc()
+		h.logger.Warn("streaming response billed using locally estimated tokens",
+			zap.String("provider", selectedProvider.Name),
+			zap.String("model", req.Model),
+			zap.Int("prompt_tokens", promptTokens),
+			zap.Int("completion_tokens", completionTokens),
+		)
+	}
+
 	gen.End(fullText, promptTokens, completionTokens)
 
+	// Status code semantics:
+	//   - clean stream completion: 200 (counted as success)
+	//   - upstream/network error mid-stream: 502 (counted as failure)
+	//
+	// We previously set 206 here, but UsageLog.IsSuccess uses statusCode in
+	// [200, 300), so 206 was being counted as success. Anything that reaches
+	// this branch with streamErr != nil is *not* a successful generation —
+	// either the connection broke or the upstream returned an error chunk.
 	statusCode := http.StatusOK
 	errStr := ""
 	if streamErr != nil {
-		statusCode = http.StatusPartialContent
+		if errors := ctx.Err(); errors != nil {
+			// Client disconnected (or request was canceled). Use 499
+			// (nginx-style "Client Closed Request") so it doesn't count as
+			// a successful response but is distinguishable from upstream 5xx.
+			statusCode = 499
+		} else {
+			statusCode = http.StatusBadGateway
+		}
 		errStr = sanitize.TruncateErrorMessage(streamErr.Error())
 	}
 

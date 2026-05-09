@@ -2,9 +2,12 @@
 package routes
 
 import (
+	"context"
 	"database/sql"
 	"net/http" // Added for http.StatusOK
 	"net/http/pprof"
+
+	"github.com/google/uuid"
 
 	"llm-router-platform/internal/api/handlers"
 	"llm-router-platform/internal/api/middleware"
@@ -221,6 +224,19 @@ func Setup(
 	// Per-key rate limiter (used by LLM endpoints)
 	perKeyLimiter := middleware.NewPerKeyRateLimiter(services.RedisClient, logger)
 	quotaChecker := middleware.NewQuotaChecker(services.RedisClient, logger)
+	if services.BudgetService != nil {
+		// Wire request-time budget hard-limit enforcement. The middleware
+		// only enforces when the user has an active budget with
+		// EnforceHardLimit=true; soft alerts continue to fire from the
+		// usual budget-status read paths.
+		quotaChecker.WithBudget(func(ctx context.Context, userID uuid.UUID) (bool, bool, float64, float64, error) {
+			status, err := services.BudgetService.CheckBudget(ctx, userID)
+			if err != nil || status == nil || status.Budget == nil {
+				return false, false, 0, 0, err
+			}
+			return status.Budget.EnforceHardLimit, status.IsOverBudget, status.Budget.MonthlyLimitUSD, status.CurrentSpend, nil
+		})
+	}
 
 	// ─── Backpressure middleware ──────────────────────────────────────
 	var sqlDB *sql.DB
@@ -257,8 +273,8 @@ func Setup(
 	// ─── Public Turnstile Config (frontend needs site key) ────────────────
 	engine.GET("/api/v1/captcha/config", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"enabled":  cfg.Turnstile.Enabled,
-			"siteKey":  cfg.Turnstile.SiteKey,
+			"enabled": cfg.Turnstile.Enabled,
+			"siteKey": cfg.Turnstile.SiteKey,
 		})
 	})
 
@@ -286,9 +302,10 @@ func Setup(
 	auditExportHandler := handlers.NewAuditHandler(services.AuditService, logger)
 
 	// Shared middleware chain for all LLM API endpoints.
-	applyLLMMiddleware := func(g *gin.RouterGroup) {
+	applyLLMMiddleware := func(g *gin.RouterGroup, scope string) {
 		g.Use(authMiddleware.APIKey())
 		g.Use(middleware.TenantAPIKeyWhitelist(logger))
+		g.Use(middleware.APIKeyScope(scope))
 		g.Use(perKeyLimiter.Limit())
 		g.Use(quotaChecker.Check())
 		g.Use(rateLimiter.Limit())
@@ -355,25 +372,25 @@ func Setup(
 // This is called multiple times to support different base URL configurations.
 func registerLLMEndpoints(
 	parent gin.IRouter,
-	applyLLMMiddleware func(*gin.RouterGroup),
+	applyLLMMiddleware func(*gin.RouterGroup, string),
 	chatHandler *handlers.ChatHandler,
 	modelHandler *handlers.ModelHandler,
 	authMiddleware *middleware.AuthMiddleware,
 ) {
 	chat := parent.Group("/chat")
-	applyLLMMiddleware(chat)
+	applyLLMMiddleware(chat, "chat")
 	chat.POST("/completions", chatHandler.ChatCompletion)
 
 	embeddings := parent.Group("/embeddings")
-	applyLLMMiddleware(embeddings)
+	applyLLMMiddleware(embeddings, "embeddings")
 	embeddings.POST("", chatHandler.Embeddings)
 
 	images := parent.Group("/images")
-	applyLLMMiddleware(images)
+	applyLLMMiddleware(images, "images")
 	images.POST("/generations", chatHandler.GenerateImage)
 
 	audio := parent.Group("/audio")
-	applyLLMMiddleware(audio)
+	applyLLMMiddleware(audio, "audio")
 	audio.POST("/transcriptions", chatHandler.TranscribeAudio)
 	audio.POST("/speech", chatHandler.SynthesizeSpeech)
 
@@ -387,6 +404,6 @@ func registerLLMEndpoints(
 
 	// ─── Anthropic-Compatible Routes ───────────────────────────
 	anthro := parent.Group("/v1/messages")
-	applyLLMMiddleware(anthro)
+	applyLLMMiddleware(anthro, "chat")
 	anthro.POST("", chatHandler.AnthropicMessages)
 }

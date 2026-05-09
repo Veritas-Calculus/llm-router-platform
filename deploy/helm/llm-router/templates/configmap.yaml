@@ -73,6 +73,8 @@ data:
   OTEL_ENABLED: {{ .Values.config.otelEnabled | quote }}
   OTEL_ENDPOINT: {{ .Values.config.otelEndpoint | quote }}
   OTEL_SERVICE_NAME: {{ .Values.config.otelServiceName | quote }}
+  LOKI_URL: {{ .Values.config.lokiUrl | quote }}
+  LOKI_QUERY_SELECTOR: {{ .Values.config.lokiQuerySelector | quote }}
   # ── Data Retention ──
   CLEANUP_HEALTH_RETENTION_DAYS: {{ .Values.config.cleanupHealthRetentionDays | quote }}
   CLEANUP_ALERT_RETENTION_DAYS: {{ .Values.config.cleanupAlertRetentionDays | quote }}

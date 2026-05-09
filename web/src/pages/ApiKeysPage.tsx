@@ -9,6 +9,27 @@ import {
   useApiKeys,
 } from '@/components/api-keys';
 
+function AccessBadges({ items, fallback }: { items?: string[]; fallback: string }) {
+  const values = (items || []).filter(Boolean);
+
+  if (values.length === 0) {
+    return <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs border border-emerald-100">{fallback}</span>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {values.slice(0, 2).map(item => (
+        <span key={item} title={item} className="max-w-32 truncate px-2 py-0.5 rounded-full bg-apple-gray-100 text-apple-gray-700 text-xs border border-apple-gray-200">
+          {item}
+        </span>
+      ))}
+      {values.length > 2 && (
+        <span className="px-2 py-0.5 rounded-full bg-apple-gray-100 text-apple-gray-500 text-xs border border-apple-gray-200">+{values.length - 2}</span>
+      )}
+    </div>
+  );
+}
+
 function ApiKeysPage() {
   const {
     t, AVAILABLE_SCOPES,
@@ -16,7 +37,8 @@ function ApiKeysPage() {
     projects, selectedProjectId, setSelectedProjectId,
     apiKeys, loading,
     showCreateModal, setShowCreateModal, newKeyName, setNewKeyName,
-    selectedScopes, setSelectedScopes, newKeyRateLimit, setNewKeyRateLimit,
+    selectedScopes, setSelectedScopes, newAllowedModels, setNewAllowedModels,
+    newAllowedProviders, setNewAllowedProviders, newKeyRateLimit, setNewKeyRateLimit,
     newKeyTokenLimit, setNewKeyTokenLimit, createdKey, setCreatedKey, creating, handleCreate,
     showQuickGuide, setShowQuickGuide,
     openRevokeModal, openDeleteModal, closeConfirmModal, handleConfirmAction,
@@ -120,6 +142,7 @@ function ApiKeysPage() {
                     <th className="table-header">{t('common.key')}</th>
                     <th className="table-header">{t('common.status')}</th>
                     <th className="table-header">{t('common.scopes')}</th>
+                    <th className="table-header">Access</th>
                     <th className="table-header">{t('common.limits')}</th>
                     <th className="table-header">{t('common.expires')}</th>
                     <th className="table-header">{t('common.created')}</th>
@@ -142,6 +165,18 @@ function ApiKeysPage() {
                               <span key={s} className="px-2 py-0.5 rounded-full bg-apple-gray-100 text-apple-gray-600 text-xs border border-apple-gray-200">{s}</span>
                             ))
                           )}
+                        </div>
+                      </td>
+                      <td className="table-cell">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-apple-gray-400 w-14">Models</span>
+                            <AccessBadges items={key.allowed_models} fallback="All models" />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-apple-gray-400 w-14">Providers</span>
+                            <AccessBadges items={key.allowed_providers} fallback="All providers" />
+                          </div>
                         </div>
                       </td>
                       <td className="table-cell">
@@ -196,6 +231,16 @@ function ApiKeysPage() {
                       ))
                     )}
                   </div>
+                  <div className="bg-apple-gray-50 rounded-xl p-3 border border-apple-gray-100 space-y-2">
+                    <div>
+                      <span className="block text-apple-gray-400 font-medium mb-1 uppercase tracking-wider text-[9px]">Models</span>
+                      <AccessBadges items={key.allowed_models} fallback="All models" />
+                    </div>
+                    <div>
+                      <span className="block text-apple-gray-400 font-medium mb-1 uppercase tracking-wider text-[9px]">Providers</span>
+                      <AccessBadges items={key.allowed_providers} fallback="All providers" />
+                    </div>
+                  </div>
                   <div className="bg-apple-gray-50 rounded-xl p-3 border border-apple-gray-100">
                     {key.is_active ? (
                       <RateLimitStatusCell keyId={key.id} isActive={key.is_active} />
@@ -237,7 +282,7 @@ function ApiKeysPage() {
       {/* Create Key Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-semibold text-apple-gray-900 mb-4">Create API Key</h2>
             <div className="mb-6">
               <label htmlFor="keyName" className="label">Name</label>
@@ -280,8 +325,18 @@ function ApiKeysPage() {
                 <input type="number" id="tokenLimit" value={newKeyTokenLimit} onChange={(e) => setNewKeyTokenLimit(e.target.value)} className="input mt-1 block w-full" placeholder="Unlimited (0)" />
               </div>
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div>
+                <label htmlFor="allowedModels" className="label">Allowed Models</label>
+                <textarea id="allowedModels" value={newAllowedModels} onChange={(e) => setNewAllowedModels(e.target.value)} rows={3} className="input mt-1 block w-full font-mono text-xs" placeholder="All models" />
+              </div>
+              <div>
+                <label htmlFor="allowedProviders" className="label">Allowed Providers</label>
+                <textarea id="allowedProviders" value={newAllowedProviders} onChange={(e) => setNewAllowedProviders(e.target.value)} rows={3} className="input mt-1 block w-full font-mono text-xs" placeholder="All providers" />
+              </div>
+            </div>
             <div className="flex justify-end gap-3">
-              <button onClick={() => { setShowCreateModal(false); setNewKeyName(''); setSelectedScopes(['all']); setNewKeyRateLimit(''); setNewKeyTokenLimit(''); }} className="btn btn-secondary">Cancel</button>
+              <button onClick={() => { setShowCreateModal(false); setNewKeyName(''); setSelectedScopes(['all']); setNewAllowedModels(''); setNewAllowedProviders(''); setNewKeyRateLimit(''); setNewKeyTokenLimit(''); }} className="btn btn-secondary">Cancel</button>
               <button onClick={handleCreate} className="btn btn-primary" disabled={creating}>{creating ? 'Creating...' : 'Create'}</button>
             </div>
           </motion.div>

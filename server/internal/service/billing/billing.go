@@ -1,13 +1,24 @@
 // Package billing provides billing and usage tracking.
+//
+// Note on the OrgID/UserID convention used across this package: the Order,
+// Transaction, Subscription and Budget models all carry an `org_id` column,
+// but in personal-account contexts the code stores the user_id in that column.
+// All write paths and the corresponding repository read paths use the same
+// convention, so the data is internally consistent — but the field name is
+// misleading. Treat `Transaction.OrgID = userID` etc. as the billing principal
+// for that record. Multi-user organizations sharing a single subscription is
+// not currently supported by the billing layer.
 package billing
 
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
 	"llm-router-platform/internal/models"
+	"llm-router-platform/internal/quota"
 	"llm-router-platform/internal/repository"
 
 	"github.com/google/uuid"
@@ -16,7 +27,52 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// lockTimeout bounds how long a deduction transaction will wait on the user
+// row's FOR UPDATE lock. Longer than this and we'd rather fail the request
+// than hold a request goroutine indefinitely (deadlock or stuck peer).
+const lockTimeout = 5 * time.Second
+
+// roundCost rounds a USD amount to 6 decimal places. We sum many small
+// per-token charges; without rounding the float64 representation drifts and
+// reports start disagreeing with the underlying transaction log.
+func roundCost(v float64) float64 {
+	return math.Round(v*1e6) / 1e6
+}
+
+// lockTimeoutCounter is filled in by middleware to avoid an import cycle with
+// the metrics defined in api/middleware. It is set by SetLockTimeoutCounter.
+type lockTimeoutObserver func(operation string)
+
+var lockTimeoutObserve lockTimeoutObserver
+
+// SetLockTimeoutObserver wires a metric callback for FOR UPDATE timeouts.
+// Called from cmd/server during bootstrap.
+func SetLockTimeoutObserver(fn func(operation string)) { lockTimeoutObserve = fn }
+
+func recordLockTimeout(op string) {
+	if lockTimeoutObserve != nil {
+		lockTimeoutObserve(op)
+	}
+}
+
+// paymentAmountMismatchObserve mirrors lockTimeoutObserve for payment webhook
+// amount-mismatch events. Wired from cmd/server bootstrap.
+var paymentAmountMismatchObserve func(provider string)
+
+// SetPaymentAmountMismatchObserver wires a metric callback for the payment
+// amount mismatch counter. Mismatches must always be zero in a healthy system.
+func SetPaymentAmountMismatchObserver(fn func(provider string)) {
+	paymentAmountMismatchObserve = fn
+}
+
+func recordPaymentAmountMismatch(provider string) {
+	if paymentAmountMismatchObserve != nil {
+		paymentAmountMismatchObserve(provider)
+	}
+}
 
 // ─── Prometheus Billing Metrics ─────────────────────────────────────────
 var (
@@ -83,6 +139,9 @@ func (s *Service) UpdateUsageTokens(ctx context.Context, logID uuid.UUID, reques
 	// Refresh redis cache — use org-scoped key matching GetUsageSummary read path
 	if s.redis != nil && err == nil && log.IsSuccess {
 		s.incrUsageCache(ctx, log)
+		// Note: no per-user IncrementUsage call here because UpdateUsageTokens
+		// is the no-balance-service variant; the deduct path
+		// (UpdateUsageTokensAndDeduct) handles the per-user counter.
 	}
 
 	return err
@@ -110,21 +169,33 @@ func (s *Service) UpdateUsageTokensAndDeduct(ctx context.Context, logID uuid.UUI
 		err := s.usageRepo.Update(ctx, log)
 		if s.redis != nil && err == nil && log.IsSuccess {
 			s.incrUsageCache(ctx, log)
+			quota.IncrementUsage(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
 		}
 		return err
 	}
 
-	err = balanceSvc.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	// Bound the FOR UPDATE wait so a stuck peer can't pin a request goroutine.
+	txCtx, cancel := context.WithTimeout(ctx, lockTimeout)
+	defer cancel()
+
+	var (
+		alertEmail   string
+		alertName    string
+		alertBalance float64
+		shouldAlert  bool
+	)
+
+	err = balanceSvc.db.WithContext(txCtx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(log).Error; err != nil {
 			return err
 		}
 
 		var user models.User
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, "id = ?", userID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
 			return err
 		}
 
-		user.Balance -= log.Cost
+		user.Balance = roundCost(user.Balance - log.Cost)
 		if err := tx.Save(&user).Error; err != nil {
 			return err
 		}
@@ -133,7 +204,7 @@ func (s *Service) UpdateUsageTokensAndDeduct(ctx context.Context, logID uuid.UUI
 			OrgID:       userID,
 			UserID:      userID,
 			Type:        "deduction",
-			Amount:      -log.Cost,
+			Amount:      roundCost(-log.Cost),
 			Balance:     user.Balance,
 			Description: description,
 			ReferenceID: log.ID.String(),
@@ -142,21 +213,42 @@ func (s *Service) UpdateUsageTokensAndDeduct(ctx context.Context, logID uuid.UUI
 			return err
 		}
 
-		balanceSvc.sendLowBalanceAlert(ctx, userID, user.Email, user.Name, user.Balance)
+		// Capture alert state for after-commit dispatch — emails sent inside
+		// the transaction would still go out on rollback.
+		if user.Balance < 1.0 {
+			alertEmail = user.Email
+			alertName = user.Name
+			alertBalance = user.Balance
+			shouldAlert = true
+		}
 		return nil
 	})
 
-	if s.redis != nil && err == nil {
-		s.incrUsageCache(ctx, log)
-	}
 	if err != nil {
+		if errors := txCtx.Err(); errors != nil {
+			recordLockTimeout("update_usage_and_deduct")
+		}
 		billingRecordErrorsTotal.WithLabelValues("update_usage_and_deduct").Inc()
+		return err
 	}
 
-	return err
+	if shouldAlert {
+		balanceSvc.sendLowBalanceAlert(ctx, userID, alertEmail, alertName, alertBalance)
+	}
+
+	if s.redis != nil {
+		s.incrUsageCache(ctx, log)
+		quota.IncrementUsage(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
+	}
+	return nil
 }
 
 // RecordUsage records API usage.
+//
+// Used for the streaming pre-record (status=Processing, tokens=0) and for
+// requests that don't require balance deduction. The per-user quota counter is
+// not incremented here because tokens=0 in the pre-record case; the deduct
+// path increments it once final tokens are known.
 func (s *Service) RecordUsage(ctx context.Context, log *models.UsageLog) error {
 	s.calculateUsageLogCost(ctx, log)
 
@@ -165,6 +257,11 @@ func (s *Service) RecordUsage(ctx context.Context, log *models.UsageLog) error {
 	// Refresh redis cache — use org-scoped key matching GetUsageSummary read path
 	if s.redis != nil && err == nil {
 		s.incrUsageCache(ctx, log)
+		// Increment per-user quota only if this is a final record (has tokens).
+		// The streaming pre-record has tokens=0; the finalize call will count it.
+		if log.TotalTokens > 0 && log.UserID != uuid.Nil {
+			quota.IncrementUsage(ctx, s.redis, s.logger, log.UserID.String(), int64(log.TotalTokens), log.Cost)
+		}
 	}
 	if err != nil {
 		billingRecordErrorsTotal.WithLabelValues("record_usage").Inc()
@@ -183,17 +280,32 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 	// Calculate cost first (outside transaction — read-only)
 	s.calculateUsageLogCost(ctx, log)
 
-	// If no balance service or zero cost, fall back to simple insert
+	// If no balance service or zero cost, fall back to simple insert.
+	// Still bump the per-user quota counter so token-limit checks work for
+	// free plans / zero-cost requests.
 	if balanceSvc == nil || log.Cost <= 0 {
 		err := s.usageRepo.Create(ctx, log)
 		if s.redis != nil && err == nil {
 			s.incrUsageCache(ctx, log)
+			if log.TotalTokens > 0 {
+				quota.IncrementUsage(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
+			}
 		}
 		return err
 	}
 
 	// Atomic transaction: insert usage log + deduct balance
-	err := balanceSvc.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	txCtx, cancel := context.WithTimeout(ctx, lockTimeout)
+	defer cancel()
+
+	var (
+		alertEmail   string
+		alertName    string
+		alertBalance float64
+		shouldAlert  bool
+	)
+
+	err := balanceSvc.db.WithContext(txCtx).Transaction(func(tx *gorm.DB) error {
 		// 1. Insert usage log within the transaction
 		if err := tx.Create(log).Error; err != nil {
 			return err
@@ -201,11 +313,11 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 
 		// 2. Lock user row and deduct balance
 		var user models.User
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, "id = ?", userID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
 			return err
 		}
 
-		user.Balance -= log.Cost
+		user.Balance = roundCost(user.Balance - log.Cost)
 		if err := tx.Save(&user).Error; err != nil {
 			return err
 		}
@@ -215,7 +327,7 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 			OrgID:       userID,
 			UserID:      userID,
 			Type:        "deduction",
-			Amount:      -log.Cost,
+			Amount:      roundCost(-log.Cost),
 			Balance:     user.Balance,
 			Description: description,
 			ReferenceID: log.ID.String(),
@@ -224,21 +336,34 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 			return err
 		}
 
-		// 4. Low balance alert (async, non-transactional)
-		balanceSvc.sendLowBalanceAlert(ctx, userID, user.Email, user.Name, user.Balance)
-
+		// Capture alert state; dispatch only on commit.
+		if user.Balance < 1.0 {
+			alertEmail = user.Email
+			alertName = user.Name
+			alertBalance = user.Balance
+			shouldAlert = true
+		}
 		return nil
 	})
 
-	// Refresh redis cache outside transaction
-	if s.redis != nil && err == nil {
-		s.incrUsageCache(ctx, log)
-	}
 	if err != nil {
+		if txCtx.Err() != nil {
+			recordLockTimeout("record_usage_and_deduct")
+		}
 		billingRecordErrorsTotal.WithLabelValues("record_usage_and_deduct").Inc()
+		return err
 	}
 
-	return err
+	if shouldAlert {
+		balanceSvc.sendLowBalanceAlert(ctx, userID, alertEmail, alertName, alertBalance)
+	}
+
+	// Refresh redis caches outside the transaction.
+	if s.redis != nil {
+		s.incrUsageCache(ctx, log)
+		quota.IncrementUsage(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
+	}
+	return nil
 }
 
 func (s *Service) calculateUsageLogCost(ctx context.Context, log *models.UsageLog) {
@@ -248,10 +373,10 @@ func (s *Service) calculateUsageLogCost(ctx context.Context, log *models.UsageLo
 	}
 
 	log.ModelID = model.ID
-	customerCharge := s.calculateCustomerCharge(model, log)
+	customerCharge := roundCost(s.calculateCustomerCharge(model, log))
 	log.Cost = customerCharge
 	log.CustomerCharge = customerCharge
-	log.ProviderCost = s.calculateProviderCost(model, log, customerCharge)
+	log.ProviderCost = roundCost(s.calculateProviderCost(model, log, customerCharge))
 }
 
 func (s *Service) modelForUsageLog(ctx context.Context, log *models.UsageLog) (*models.Model, error) {
@@ -294,7 +419,10 @@ func (bs *BalanceService) sendLowBalanceAlert(ctx context.Context, userID uuid.U
 }
 
 // incrUsageCache increments the Redis usage cache using org-scoped keys
-// that match the format read by GetUsageSummary.
+// that match the format read by GetUsageSummary. Failures are logged + counted
+// but never returned: the caller has already committed to the DB and the cache
+// is best-effort. Persistent failures show up in the
+// llm_router_billing_quota_cache_increment_failures_total counter.
 func (s *Service) incrUsageCache(ctx context.Context, log *models.UsageLog) {
 	// Look up the org ID from the project
 	orgID, err := s.usageRepo.GetOrgIDByProjectID(ctx, log.ProjectID)
@@ -311,7 +439,13 @@ func (s *Service) incrUsageCache(ctx context.Context, log *models.UsageLog) {
 	pipe.HIncrBy(ctx, key, "total_tokens", int64(log.TotalTokens))
 	pipe.HIncrByFloat(ctx, key, "total_cost", log.Cost)
 	pipe.Expire(ctx, key, 32*24*time.Hour)
-	_, _ = pipe.Exec(ctx)
+	if _, err := pipe.Exec(ctx); err != nil {
+		quota.IncrementFailuresTotal.Inc()
+		s.logger.Warn("billing usage cache increment failed",
+			zap.String("org_id", orgID.String()),
+			zap.Error(err),
+		)
+	}
 }
 
 // calculateCustomerCharge calculates the customer-facing charge for every populated metering dimension.

@@ -50,6 +50,8 @@ func TestCORSMiddlewareAllowsMethods(t *testing.T) {
 	assert.Contains(t, allowMethods, "OPTIONS")
 	assert.NotContains(t, allowMethods, "PUT")
 	assert.NotContains(t, allowMethods, "DELETE")
+	assert.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), "X-Request-Id")
+	assert.Contains(t, w.Header().Get("Access-Control-Expose-Headers"), "X-Trace-Id")
 }
 
 func TestRateLimiterCreation(t *testing.T) {
@@ -81,6 +83,16 @@ func TestLoggingMiddlewareLog(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestSanitizeQueryRedactsSensitiveValues(t *testing.T) {
+	query := sanitizeQuery("code=oauth-code&state=ok&access_token=secret")
+
+	assert.Contains(t, query, "code=%5BREDACTED%5D")
+	assert.Contains(t, query, "access_token=%5BREDACTED%5D")
+	assert.Contains(t, query, "state=ok")
+	assert.NotContains(t, query, "oauth-code")
+	assert.NotContains(t, query, "secret")
 }
 
 func TestRecoveryMiddleware(t *testing.T) {

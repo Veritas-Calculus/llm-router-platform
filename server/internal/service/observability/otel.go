@@ -2,6 +2,7 @@ package observability
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -189,6 +190,9 @@ func (g *OTelGeneration) End(output string, promptTokens, completionTokens int) 
 }
 
 func (g *OTelGeneration) EndWithError(err error) {
+	if err == nil {
+		err = errors.New("generation failed")
+	}
 	g.span.RecordError(err)
 	g.span.End()
 

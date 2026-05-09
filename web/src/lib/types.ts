@@ -66,6 +66,8 @@ export interface ApiKey {
   key_prefix: string;
   is_active: boolean;
   scopes?: string;
+  allowed_models: string[];
+  allowed_providers: string[];
   rate_limit: number;
   token_limit: number;
   daily_limit: number;

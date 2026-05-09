@@ -7,6 +7,13 @@ import { useTranslation } from '@/lib/i18n';
 import { mapApiKey, AVAILABLE_SCOPES_BASE } from './ApiKeyComponents';
 import toast from 'react-hot-toast';
 
+const parsePolicyList = (value: string) => Array.from(new Set(
+  value
+    .split(/[,\n]/)
+    .map(item => item.trim())
+    .filter(Boolean),
+));
+
 export function useApiKeys() {
   const { t } = useTranslation();
   const AVAILABLE_SCOPES = useMemo(() => AVAILABLE_SCOPES_BASE.map(s => ({ ...s, label: t(s.labelKey) })), [t]);
@@ -40,6 +47,8 @@ export function useApiKeys() {
   const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
   const [selectedScopes, setSelectedScopes] = useState<string[]>(['all']);
+  const [newAllowedModels, setNewAllowedModels] = useState('');
+  const [newAllowedProviders, setNewAllowedProviders] = useState('');
   const [newKeyRateLimit, setNewKeyRateLimit] = useState<string>('');
   const [newKeyTokenLimit, setNewKeyTokenLimit] = useState<string>('');
   const [createdKey, setCreatedKey] = useState<ApiKey | null>(null);
@@ -67,17 +76,21 @@ export function useApiKeys() {
       const variables: any = { projectId: selectedProjectId, name: newKeyName.trim(), scopes: scopeStr };
       if (newKeyRateLimit) variables.rateLimit = parseInt(newKeyRateLimit, 10);
       if (newKeyTokenLimit) variables.tokenLimit = parseInt(newKeyTokenLimit, 10);
+      const allowedModels = parsePolicyList(newAllowedModels);
+      const allowedProviders = parsePolicyList(newAllowedProviders);
+      if (allowedModels.length > 0) variables.allowedModels = allowedModels;
+      if (allowedProviders.length > 0) variables.allowedProviders = allowedProviders;
       const { data: result } = await createKeyMut({ variables });
       const key = mapApiKey((result as any)?.createApiKey);
       setCreatedKey(key);
       setShowCreateModal(false);
       await refetch();
-      setNewKeyName(''); setSelectedScopes(['all']); setNewKeyRateLimit(''); setNewKeyTokenLimit('');
+      setNewKeyName(''); setSelectedScopes(['all']); setNewAllowedModels(''); setNewAllowedProviders(''); setNewKeyRateLimit(''); setNewKeyTokenLimit('');
       toast.success(t('api_keys.created_success'));
     } catch (e: any) {
       toast.error(e.message || t('api_keys.create_error'));
     } finally { setCreating(false); }
-  }, [newKeyName, selectedProjectId, selectedScopes, newKeyRateLimit, newKeyTokenLimit, createKeyMut, refetch, t]);
+  }, [newKeyName, selectedProjectId, selectedScopes, newKeyRateLimit, newKeyTokenLimit, newAllowedModels, newAllowedProviders, createKeyMut, refetch, t]);
 
   const openRevokeModal = (id: string) => setConfirmModal({ isOpen: true, type: 'revoke', keyId: id });
   const openDeleteModal = (id: string) => setConfirmModal({ isOpen: true, type: 'delete', keyId: id });
@@ -132,7 +145,8 @@ export function useApiKeys() {
     apiKeys, loading,
     // Create
     showCreateModal, setShowCreateModal, newKeyName, setNewKeyName,
-    selectedScopes, setSelectedScopes, newKeyRateLimit, setNewKeyRateLimit,
+    selectedScopes, setSelectedScopes, newAllowedModels, setNewAllowedModels,
+    newAllowedProviders, setNewAllowedProviders, newKeyRateLimit, setNewKeyRateLimit,
     newKeyTokenLimit, setNewKeyTokenLimit, createdKey, setCreatedKey, creating, handleCreate,
     // Quick guide
     showQuickGuide, setShowQuickGuide,

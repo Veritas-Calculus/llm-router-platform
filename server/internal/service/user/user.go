@@ -33,6 +33,7 @@ type Service struct {
 	orgRepo     *repository.OrganizationRepository
 	logger      *zap.Logger
 }
+
 // NewService creates a new user service.
 func NewService(
 	userRepo *repository.UserRepository,
@@ -57,19 +58,19 @@ const bcryptCost = 12
 // commonPasswords is a blocklist of frequently breached passwords (lowercase).
 // Only includes passwords ≥8 chars that could pass character-class checks.
 var commonPasswords = map[string]bool{
-	"password1":  true, "password12": true, "password123": true,
-	"qwerty123":  true, "qwertyui":  true, "qwerty1234": true,
-	"abc12345":   true, "abcd1234":  true, "abcdef12": true,
-	"welcome1":   true, "letmein1":  true, "trustno1": true,
-	"iloveyou1":  true, "sunshine1": true, "princess1": true,
-	"football1":  true, "baseball1": true, "dragon123": true,
-	"master123":  true, "monkey123": true, "shadow123": true,
-	"michael1":   true, "jennifer1": true, "charlie1": true,
-	"admin123":   true, "login123":  true, "welcome123": true,
-	"passw0rd1":  true, "p@ssword1": true, "p@ssw0rd1": true,
-	"changeme1":  true, "test1234":  true, "guest1234": true,
-	"12345678a":  true, "1234567890a": true, "123456789a": true,
-	"Superman1":  true, "Computer1": true, "starwars1": true,
+	"password1": true, "password12": true, "password123": true,
+	"qwerty123": true, "qwertyui": true, "qwerty1234": true,
+	"abc12345": true, "abcd1234": true, "abcdef12": true,
+	"welcome1": true, "letmein1": true, "trustno1": true,
+	"iloveyou1": true, "sunshine1": true, "princess1": true,
+	"football1": true, "baseball1": true, "dragon123": true,
+	"master123": true, "monkey123": true, "shadow123": true,
+	"michael1": true, "jennifer1": true, "charlie1": true,
+	"admin123": true, "login123": true, "welcome123": true,
+	"passw0rd1": true, "p@ssword1": true, "p@ssw0rd1": true,
+	"changeme1": true, "test1234": true, "guest1234": true,
+	"12345678a": true, "1234567890a": true, "123456789a": true,
+	"Superman1": true, "Computer1": true, "starwars1": true,
 }
 
 // ValidatePassword enforces minimum password strength requirements.
@@ -325,7 +326,7 @@ func (s *Service) ChangePassword(ctx context.Context, id uuid.UUID, oldPass, new
 const MaxAPIKeysPerUser = 20
 
 // CreateAPIKey generates a new API key for a project.
-func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, projectID uuid.UUID, name string, scopes string, rateLimit *int, tokenLimit *int) (*models.APIKey, string, error) {
+func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, projectID uuid.UUID, name string, scopes string, rateLimit *int, tokenLimit *int, allowedModels []string, allowedProviders []string) (*models.APIKey, string, error) {
 	// Enforce max API key limit
 	existing, err := s.apiKeyRepo.GetByProjectID(ctx, projectID)
 	if err != nil {
@@ -348,17 +349,19 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, projectID 
 	}
 
 	apiKey := &models.APIKey{
-		UserID:     userID,
-		ProjectID:  projectID,
-		KeyHash:    hashedKey,
-		KeyPrefix:  rawKey[:8],
-		Name:       name,
-		IsActive:   true,
-		Scopes:     scopes,
-		RateLimit:  rl,
-		TokenLimit: int64(tl),
-		DailyLimit: 10000,
-		ExpiresAt:  time.Now().AddDate(1, 0, 0), // M5: default 1-year expiry
+		UserID:           userID,
+		ProjectID:        projectID,
+		KeyHash:          hashedKey,
+		KeyPrefix:        rawKey[:8],
+		Name:             name,
+		IsActive:         true,
+		Scopes:           scopes,
+		AllowedModels:    models.NormalizeAPIKeyPolicyList(allowedModels),
+		AllowedProviders: models.NormalizeAPIKeyPolicyList(allowedProviders),
+		RateLimit:        rl,
+		TokenLimit:       int64(tl),
+		DailyLimit:       10000,
+		ExpiresAt:        time.Now().AddDate(1, 0, 0), // M5: default 1-year expiry
 	}
 
 	if err := s.apiKeyRepo.Create(ctx, apiKey); err != nil {
@@ -369,7 +372,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, projectID 
 }
 
 // UpdateAPIKey updates an existing API key's settings.
-func (s *Service) UpdateAPIKey(ctx context.Context, keyID uuid.UUID, name *string, scopes *string, rateLimit *int, tokenLimit *int, isActive *bool) (*models.APIKey, error) {
+func (s *Service) UpdateAPIKey(ctx context.Context, keyID uuid.UUID, name *string, scopes *string, rateLimit *int, tokenLimit *int, isActive *bool, allowedModels []string, allowedProviders []string) (*models.APIKey, error) {
 	key, err := s.apiKeyRepo.GetByID(ctx, keyID)
 	if err != nil {
 		return nil, err
@@ -389,6 +392,12 @@ func (s *Service) UpdateAPIKey(ctx context.Context, keyID uuid.UUID, name *strin
 	}
 	if isActive != nil {
 		key.IsActive = *isActive
+	}
+	if allowedModels != nil {
+		key.AllowedModels = models.NormalizeAPIKeyPolicyList(allowedModels)
+	}
+	if allowedProviders != nil {
+		key.AllowedProviders = models.NormalizeAPIKeyPolicyList(allowedProviders)
 	}
 
 	if err := s.apiKeyRepo.Update(ctx, key); err != nil {

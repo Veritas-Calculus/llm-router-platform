@@ -9,6 +9,7 @@ import { CHANGE_PASSWORD, GENERATE_MFA_SECRET, VERIFY_AND_ENABLE_MFA, DISABLE_MF
 import { ShieldCheckIcon, ShieldExclamationIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
 import { QRCodeSVG } from 'qrcode.react';
 import { useTranslation } from '@/lib/i18n';
+import BudgetSettingsCard from '@/components/BudgetSettingsCard';
 
 function SettingsPage() {
   const { t } = useTranslation();
@@ -212,6 +213,8 @@ function SettingsPage() {
           </div>
         </div>
       </motion.div>
+
+      <BudgetSettingsCard />
 
       <motion.div
         initial={{ opacity: 0, y: 10 }}

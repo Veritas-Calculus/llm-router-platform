@@ -321,7 +321,14 @@ function UserDashboardPage() {
               </span>
             </div>
             {budgetStatus?.budget?.monthlyLimitUsd ? (
-              <div className="w-full bg-[var(--theme-bg-input)] rounded-full h-2.5 overflow-hidden border border-apple-gray-200 dark:border-[var(--theme-border)]">
+              <div
+                className="w-full bg-[var(--theme-bg-input)] rounded-full h-2.5 overflow-hidden border border-apple-gray-200 dark:border-[var(--theme-border)]"
+                role="progressbar"
+                aria-valuenow={Math.min(100, Math.round(budgetStatus.percentUsed || 0))}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={t('user_dashboard.monthly_spend')}
+              >
                 <div
                   className={`h-2.5 rounded-full transition-all ${(budgetStatus.percentUsed || 0) > 90 ? 'bg-apple-red' : (budgetStatus.percentUsed || 0) > 75 ? 'bg-apple-orange' : 'bg-apple-blue'}`}
                   style={{ width: `${Math.min(100, budgetStatus.percentUsed || 0)}%` }}
@@ -344,7 +351,14 @@ function UserDashboardPage() {
                   {formatTokens(summary?.totalTokens || 0)} / {formatTokens(me.monthlyTokenLimit)}
                 </span>
               </div>
-              <div className="w-full bg-[var(--theme-bg-input)] rounded-full h-2.5 overflow-hidden border border-apple-gray-200 dark:border-[var(--theme-border)]">
+              <div
+                className="w-full bg-[var(--theme-bg-input)] rounded-full h-2.5 overflow-hidden border border-apple-gray-200 dark:border-[var(--theme-border)]"
+                role="progressbar"
+                aria-valuenow={Math.min(100, Math.round(((summary?.totalTokens || 0) / me.monthlyTokenLimit) * 100))}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={t('user_dashboard.token_limit')}
+              >
                 <div
                   className={`h-2.5 rounded-full ${((summary?.totalTokens || 0) / me.monthlyTokenLimit) > 0.9 ? 'bg-apple-red' : ((summary?.totalTokens || 0) / me.monthlyTokenLimit) > 0.75 ? 'bg-apple-orange' : 'bg-apple-purple'}`}
                   style={{ width: `${Math.min(100, ((summary?.totalTokens || 0) / me.monthlyTokenLimit) * 100)}%` }}

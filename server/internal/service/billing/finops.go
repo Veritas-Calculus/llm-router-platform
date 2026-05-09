@@ -48,14 +48,20 @@ func NewBudgetService(usageRepo *repository.UsageLogRepository, budgetRepo *repo
 }
 
 // SetBudget creates or updates a budget for a user.
-func (s *BudgetService) SetBudget(ctx context.Context, userID uuid.UUID, limitUSD, threshold float64, webhookURL, email string) (*models.Budget, error) {
+//
+// `threshold` is the alert threshold expressed as a fraction in [0, 1]
+// (matching the `Budget.AlertThreshold` storage convention). `enforceHardLimit`
+// engages the request-time middleware that returns 429 once `currentSpend`
+// reaches `limitUSD` — without it the budget is alert-only.
+func (s *BudgetService) SetBudget(ctx context.Context, userID uuid.UUID, limitUSD, threshold float64, enforceHardLimit bool, webhookURL, email string) (*models.Budget, error) {
 	budget := &models.Budget{
-		OrgID:           userID,
-		MonthlyLimitUSD: limitUSD,
-		AlertThreshold:  threshold,
-		IsActive:        true,
-		WebhookURL:      webhookURL,
-		Email:           email,
+		OrgID:            userID,
+		MonthlyLimitUSD:  limitUSD,
+		AlertThreshold:   threshold,
+		EnforceHardLimit: enforceHardLimit,
+		IsActive:         true,
+		WebhookURL:       webhookURL,
+		Email:            email,
 	}
 	if err := s.budgetRepo.Upsert(ctx, budget); err != nil {
 		s.logger.Error("failed to save budget", zap.Error(err))
@@ -65,6 +71,7 @@ func (s *BudgetService) SetBudget(ctx context.Context, userID uuid.UUID, limitUS
 		zap.String("user_id", userID.String()),
 		zap.Float64("limit_usd", limitUSD),
 		zap.Float64("threshold", threshold),
+		zap.Bool("enforce_hard_limit", enforceHardLimit),
 	)
 	// Re-read from DB to get the generated ID/timestamps
 	saved, err := s.budgetRepo.GetByUserID(ctx, userID)

@@ -89,6 +89,7 @@ services:
       - LOG_LEVEL=info
       - LOG_FORMAT=json
       - LOKI_URL=http://loki:3100
+      - LOKI_QUERY_SELECTOR={container="llm-router-server"}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set}
       - ADMIN_NAME=${ADMIN_NAME:-Administrator}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 
 	"llm-router-platform/internal/config"
@@ -11,6 +12,7 @@ import (
 	"llm-router-platform/internal/repository"
 
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/stripe/stripe-go/v76"
 	"github.com/stripe/stripe-go/v76/billingportal/session"
 	checkoutSession "github.com/stripe/stripe-go/v76/checkout/session"
@@ -25,6 +27,7 @@ type PaymentService struct {
 	planRepo    repository.PlanRepo
 	subRepo     repository.SubscriptionRepo
 	txRepo      repository.TransactionRepo
+	redis       *redis.Client
 	logger      *zap.Logger
 }
 
@@ -47,6 +50,14 @@ func NewPaymentService(
 		txRepo:      txRepo,
 		logger:      logger,
 	}
+}
+
+// WithRedis wires a Redis client for Stripe webhook event-ID idempotency.
+// Optional: if redis is nil the order-status check still provides a
+// secondary defense, but cross-event replay protection is unavailable.
+func (s *PaymentService) WithRedis(rdb *redis.Client) *PaymentService {
+	s.redis = rdb
+	return s
 }
 
 // CreateCheckoutSession creates a Stripe Checkout Session for a plan subscription.
@@ -176,10 +187,29 @@ func (s *PaymentService) CreateRechargeSession(ctx context.Context, userID uuid.
 }
 
 // HandleWebhook processes Stripe webhooks.
+//
+// Idempotency layers (in order):
+//  1. Stripe signature on the raw payload (rejects forged events).
+//  2. Redis SETNX on event.ID (rejects redelivered events from the same
+//     dispatch — Stripe retries up to ~3 days).
+//  3. Order.Status == "paid" check inside fulfillOrder (last-resort guard
+//     against Redis unavailability).
 func (s *PaymentService) HandleWebhook(payload []byte, sigHeader string) error {
 	event, err := webhook.ConstructEvent(payload, sigHeader, s.cfg.WebhookSecret)
 	if err != nil {
 		return err
+	}
+
+	if s.redis != nil && event.ID != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+		set, err := s.redis.SetNX(ctx, fmt.Sprintf("stripe:event:%s", event.ID), "1", 24*time.Hour).Result()
+		if err == nil && !set {
+			s.logger.Info("stripe event already processed, skipping",
+				zap.String("event_id", event.ID),
+				zap.String("event_type", string(event.Type)))
+			return nil
+		}
 	}
 
 	switch event.Type {
@@ -211,7 +241,14 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 	orderNo := sess.Metadata["order_no"]
 	orderType := sess.Metadata["type"]
 
-	userID, _ := uuid.Parse(userIDStr)
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		s.logger.Error("stripe webhook: invalid user_id metadata, refusing to fulfill",
+			zap.String("order_no", orderNo),
+			zap.String("user_id_raw", userIDStr),
+			zap.Error(err))
+		return fmt.Errorf("invalid user_id in stripe metadata: %w", err)
+	}
 
 	ctx := context.Background()
 
@@ -244,6 +281,16 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 			return fmt.Errorf("invalid stripe amount")
 		}
 		amount := float64(sess.AmountTotal) / 100.0
+		// Cross-check against the order amount we recorded at checkout creation.
+		// A divergence indicates a price drift or tampered metadata; refuse.
+		if order != nil && math.Abs(amount-order.Amount) > 0.01 {
+			recordPaymentAmountMismatch("stripe")
+			s.logger.Error("stripe recharge amount mismatch — refusing to credit",
+				zap.String("order_no", orderNo),
+				zap.Float64("session_amount", amount),
+				zap.Float64("order_amount", order.Amount))
+			return fmt.Errorf("amount mismatch: session=%.2f order=%.2f", amount, order.Amount)
+		}
 		if err := s.subRepo.UpdateUserBalance(ctx, userID, amount, "recharge", "Credit Top-up via Stripe", orderNo); err != nil {
 			return err
 		}
@@ -252,7 +299,14 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 
 	// Default: Subscription fulfillment
 	planIDStr := sess.Metadata["plan_id"]
-	planID, _ := uuid.Parse(planIDStr)
+	planID, err := uuid.Parse(planIDStr)
+	if err != nil {
+		s.logger.Error("stripe webhook: invalid plan_id metadata, refusing to fulfill",
+			zap.String("order_no", orderNo),
+			zap.String("plan_id_raw", planIDStr),
+			zap.Error(err))
+		return fmt.Errorf("invalid plan_id in stripe metadata: %w", err)
+	}
 
 	s.logger.Info("fulfilling subscription order", zap.String("user_id", userIDStr), zap.String("plan_id", planIDStr))
 

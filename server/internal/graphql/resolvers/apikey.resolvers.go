@@ -20,7 +20,7 @@ import (
 )
 
 // CreateAPIKey is the resolver for the createApiKey field.
-func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, name string, scopes *string, rateLimit *int, tokenLimit *int) (*model.APIKeyWithSecret, error) {
+func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, name string, scopes *string, rateLimit *int, tokenLimit *int, allowedModels []string, allowedProviders []string) (*model.APIKeyWithSecret, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
 	if err := r.UserSvc.RequireProjectRole(ctx, uid, projectID, "admin", "member"); err != nil {
 		r.Logger.Error("RequireProjectRole failed in CreateAPIKey", zap.Error(err), zap.String("uid", sanitize.LogValue(uid)), zap.String("projectID", sanitize.LogValue(projectID)))
@@ -44,7 +44,7 @@ func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, n
 		scopeStr = *scopes
 	}
 
-	key, secret, err := r.UserSvc.CreateAPIKey(ctx, userID, id, name, scopeStr, rateLimit, tokenLimit)
+	key, secret, err := r.UserSvc.CreateAPIKey(ctx, userID, id, name, scopeStr, rateLimit, tokenLimit, allowedModels, allowedProviders)
 	if err != nil {
 		r.Logger.Error("Failed to create API key in resolver", zap.Error(err), zap.String("projectID", sanitize.LogValue(projectID)))
 		return nil, err
@@ -56,19 +56,21 @@ func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, n
 	r.AuditService.Log(ctx, audit.ActionAPIKeyCreate, id, key.ID, ip, ua, map[string]interface{}{"name": name})
 
 	return &model.APIKeyWithSecret{
-		ID:         key.ID.String(),
-		ProjectID:  key.ProjectID.String(),
-		Channel:    key.Channel,
-		Name:       key.Name,
-		Key:        secret,
-		KeyPrefix:  key.KeyPrefix,
-		IsActive:   key.IsActive,
-		Scopes:     key.Scopes,
-		RateLimit:  key.RateLimit,
-		TokenLimit: int(key.TokenLimit),
-		DailyLimit: key.DailyLimit,
-		ExpiresAt:  &key.ExpiresAt,
-		CreatedAt:  key.CreatedAt,
+		ID:               key.ID.String(),
+		ProjectID:        key.ProjectID.String(),
+		Channel:          key.Channel,
+		Name:             key.Name,
+		Key:              secret,
+		KeyPrefix:        key.KeyPrefix,
+		IsActive:         key.IsActive,
+		Scopes:           key.Scopes,
+		AllowedModels:    apiKeyPolicyList(key.AllowedModels),
+		AllowedProviders: apiKeyPolicyList(key.AllowedProviders),
+		RateLimit:        key.RateLimit,
+		TokenLimit:       int(key.TokenLimit),
+		DailyLimit:       key.DailyLimit,
+		ExpiresAt:        &key.ExpiresAt,
+		CreatedAt:        key.CreatedAt,
 	}, nil
 }
 
@@ -120,7 +122,7 @@ func (r *mutationResolver) CreatePlaygroundToken(ctx context.Context, apiKeyID s
 }
 
 // UpdateAPIKey is the resolver for the updateApiKey field.
-func (r *mutationResolver) UpdateAPIKey(ctx context.Context, id string, name *string, scopes *string, rateLimit *int, tokenLimit *int, isActive *bool) (*model.APIKey, error) {
+func (r *mutationResolver) UpdateAPIKey(ctx context.Context, id string, name *string, scopes *string, rateLimit *int, tokenLimit *int, isActive *bool, allowedModels []string, allowedProviders []string) (*model.APIKey, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
 
 	keyID, err := uuid.Parse(id)
@@ -140,7 +142,7 @@ func (r *mutationResolver) UpdateAPIKey(ctx context.Context, id string, name *st
 		return nil, err
 	}
 
-	key, err := r.UserSvc.UpdateAPIKey(ctx, keyID, name, scopes, rateLimit, tokenLimit, isActive)
+	key, err := r.UserSvc.UpdateAPIKey(ctx, keyID, name, scopes, rateLimit, tokenLimit, isActive, allowedModels, allowedProviders)
 	if err != nil {
 		return nil, err
 	}

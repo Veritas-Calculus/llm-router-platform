@@ -9,26 +9,26 @@ import (
 // User represents a platform user.
 type User struct {
 	BaseModel
-	Email                 string    `gorm:"uniqueIndex;not null" json:"email"`
-	PasswordHash          string    `gorm:"not null" json:"-"`
-	Name                  string    `json:"name"`
-	Role                  string    `gorm:"default:user" json:"role"`
-	IsActive              bool      `gorm:"default:true" json:"is_active"`
+	Email                 string               `gorm:"uniqueIndex;not null" json:"email"`
+	PasswordHash          string               `gorm:"not null" json:"-"`
+	Name                  string               `json:"name"`
+	Role                  string               `gorm:"default:user" json:"role"`
+	IsActive              bool                 `gorm:"default:true" json:"is_active"`
 	RequirePasswordChange bool                 `gorm:"default:false" json:"require_password_change"`
 	OAuthProvider         string               `gorm:"type:varchar(32)" json:"oauth_provider,omitempty"`  // github, google, etc.
 	OAuthID               string               `gorm:"type:varchar(255);index" json:"oauth_id,omitempty"` // Provider's unique user ID
 	Memberships           []OrganizationMember `gorm:"foreignKey:UserID" json:"-"`
-	LastLoginAt           time.Time `json:"last_login_at"`
-	MonthlyTokenLimit     int64     `gorm:"default:0" json:"monthly_token_limit"`   // 0 = unlimited
-	MonthlyBudgetUSD      float64   `gorm:"default:0" json:"monthly_budget_usd"`    // 0 = unlimited
-	RateLimitPerMinute    int       `gorm:"default:0" json:"rate_limit_per_minute"` // 0 = use global default
-	Balance               float64   `gorm:"default:0" json:"balance"`               // Current credit balance in USD
-	TokensInvalidatedAt   time.Time `json:"-"`                                      // tokens issued before this time are rejected
-	EmailVerified         bool      `gorm:"default:false" json:"email_verified"`
-	EmailVerifiedAt       *time.Time `json:"email_verified_at,omitempty"`
-	MfaEnabled            bool      `gorm:"default:false" json:"mfa_enabled"`
-	MfaSecret             string    `gorm:"type:varchar(255)" json:"-"`
-	MfaBackupCodes        string    `gorm:"type:text" json:"-"` // JSON array of backup codes
+	LastLoginAt           time.Time            `json:"last_login_at"`
+	MonthlyTokenLimit     int64                `gorm:"default:0" json:"monthly_token_limit"`   // 0 = unlimited
+	MonthlyBudgetUSD      float64              `gorm:"default:0" json:"monthly_budget_usd"`    // 0 = unlimited
+	RateLimitPerMinute    int                  `gorm:"default:0" json:"rate_limit_per_minute"` // 0 = use global default
+	Balance               float64              `gorm:"default:0" json:"balance"`               // Current credit balance in USD
+	TokensInvalidatedAt   time.Time            `json:"-"`                                      // tokens issued before this time are rejected
+	EmailVerified         bool                 `gorm:"default:false" json:"email_verified"`
+	EmailVerifiedAt       *time.Time           `json:"email_verified_at,omitempty"`
+	MfaEnabled            bool                 `gorm:"default:false" json:"mfa_enabled"`
+	MfaSecret             string               `gorm:"type:varchar(255)" json:"-"`
+	MfaBackupCodes        string               `gorm:"type:text" json:"-"` // JSON array of backup codes
 }
 
 // MfaSecretInfo holds the generated TOTP secret, QR code, and backup codes
@@ -66,20 +66,22 @@ func (ic *InviteCode) IsValid() bool {
 // APIKey represents an API key for authentication.
 type APIKey struct {
 	BaseModel
-	UserID     uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
-	ProjectID  uuid.UUID `gorm:"type:uuid;not null;index" json:"project_id"`
-	Channel    string    `gorm:"type:varchar(128);default:'default'" json:"channel"`
-	KeyHash    string    `gorm:"not null;uniqueIndex" json:"-"`
-	KeyPrefix  string    `gorm:"not null" json:"key_prefix"`
-	Name       string    `json:"name"`
-	IsActive   bool      `gorm:"default:true" json:"is_active"`
-	Scopes     string    `gorm:"type:text;default:'all'" json:"scopes"` // Comma-separated or JSON list of scopes: all, chat, embeddings, etc.
-	RateLimit  int       `gorm:"default:1000" json:"rate_limit"`
-	TokenLimit int64     `gorm:"default:0" json:"token_limit"` // 0 = unlimited tokens per minute
-	DailyLimit int       `gorm:"default:10000" json:"daily_limit"`
-	ExpiresAt  time.Time `json:"expires_at"`
-	LastUsedAt time.Time `json:"last_used_at"`
-	Project    Project   `gorm:"foreignKey:ProjectID" json:"-"`
+	UserID           uuid.UUID `gorm:"type:uuid;not null;index" json:"user_id"`
+	ProjectID        uuid.UUID `gorm:"type:uuid;not null;index" json:"project_id"`
+	Channel          string    `gorm:"type:varchar(128);default:'default'" json:"channel"`
+	KeyHash          string    `gorm:"not null;uniqueIndex" json:"-"`
+	KeyPrefix        string    `gorm:"not null" json:"key_prefix"`
+	Name             string    `json:"name"`
+	IsActive         bool      `gorm:"default:true" json:"is_active"`
+	Scopes           string    `gorm:"type:text;default:'all'" json:"scopes"` // Comma-separated or JSON list of scopes: all, chat, embeddings, etc.
+	AllowedModels    []string  `gorm:"type:jsonb;serializer:json;default:'[]'" json:"allowed_models"`
+	AllowedProviders []string  `gorm:"type:jsonb;serializer:json;default:'[]'" json:"allowed_providers"`
+	RateLimit        int       `gorm:"default:1000" json:"rate_limit"`
+	TokenLimit       int64     `gorm:"default:0" json:"token_limit"` // 0 = unlimited tokens per minute
+	DailyLimit       int       `gorm:"default:10000" json:"daily_limit"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	LastUsedAt       time.Time `json:"last_used_at"`
+	Project          Project   `gorm:"foreignKey:ProjectID" json:"-"`
 }
 
 // AuditLog records security-relevant events for incident investigation.
@@ -122,12 +124,12 @@ type OrganizationMember struct {
 // Project represents a workspace within an Organization that holds API keys and limits.
 type Project struct {
 	BaseModel
-	OrgID       uuid.UUID `gorm:"type:uuid;not null;index" json:"org_id"`
-	Name        string    `gorm:"type:varchar(255);not null" json:"name"`
-	Description    string    `gorm:"type:text" json:"description"`
-	QuotaLimit     float64   `gorm:"type:decimal(20,4);default:0.0000" json:"quota_limit"`
-	WhiteListedIps string    `gorm:"type:text" json:"white_listed_ips"` // Comma-separated CIDRs/IPs
-	APIKeys        []APIKey  `gorm:"foreignKey:ProjectID" json:"-"`
+	OrgID          uuid.UUID  `gorm:"type:uuid;not null;index" json:"org_id"`
+	Name           string     `gorm:"type:varchar(255);not null" json:"name"`
+	Description    string     `gorm:"type:text" json:"description"`
+	QuotaLimit     float64    `gorm:"type:decimal(20,4);default:0.0000" json:"quota_limit"`
+	WhiteListedIps string     `gorm:"type:text" json:"white_listed_ips"` // Comma-separated CIDRs/IPs
+	APIKeys        []APIKey   `gorm:"foreignKey:ProjectID" json:"-"`
 	DlpConfig      *DlpConfig `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE;" json:"-"`
 
 	Organization Organization `gorm:"foreignKey:OrgID" json:"-"`

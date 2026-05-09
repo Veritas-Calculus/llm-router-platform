@@ -272,7 +272,7 @@ function IntegrationInlineCard({ integration, onSave }: {
 
   const getTemplate = (name: string) => {
     if (name === 'sentry') return '{\n  "dsn": "https://example@sentry.io/123"\n}';
-    if (name === 'loki') return '{\n  "endpoint": "http://loki:3100/loki/api/v1/push"\n}';
+    if (name === 'loki') return '{\n  "url": "http://loki:3100",\n  "querySelector": "{container=\\"llm-router-server\\"}"\n}';
     return '{\n  \n}';
   };
 

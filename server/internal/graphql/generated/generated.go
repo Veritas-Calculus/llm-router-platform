@@ -124,19 +124,21 @@ type ComplexityRoot struct {
 	}
 
 	ApiKey struct {
-		Channel    func(childComplexity int) int
-		CreatedAt  func(childComplexity int) int
-		DailyLimit func(childComplexity int) int
-		ExpiresAt  func(childComplexity int) int
-		ID         func(childComplexity int) int
-		IsActive   func(childComplexity int) int
-		KeyPrefix  func(childComplexity int) int
-		LastUsedAt func(childComplexity int) int
-		Name       func(childComplexity int) int
-		ProjectID  func(childComplexity int) int
-		RateLimit  func(childComplexity int) int
-		Scopes     func(childComplexity int) int
-		TokenLimit func(childComplexity int) int
+		AllowedModels    func(childComplexity int) int
+		AllowedProviders func(childComplexity int) int
+		Channel          func(childComplexity int) int
+		CreatedAt        func(childComplexity int) int
+		DailyLimit       func(childComplexity int) int
+		ExpiresAt        func(childComplexity int) int
+		ID               func(childComplexity int) int
+		IsActive         func(childComplexity int) int
+		KeyPrefix        func(childComplexity int) int
+		LastUsedAt       func(childComplexity int) int
+		Name             func(childComplexity int) int
+		ProjectID        func(childComplexity int) int
+		RateLimit        func(childComplexity int) int
+		Scopes           func(childComplexity int) int
+		TokenLimit       func(childComplexity int) int
 	}
 
 	ApiKeyHealth struct {
@@ -167,19 +169,21 @@ type ComplexityRoot struct {
 	}
 
 	ApiKeyWithSecret struct {
-		Channel    func(childComplexity int) int
-		CreatedAt  func(childComplexity int) int
-		DailyLimit func(childComplexity int) int
-		ExpiresAt  func(childComplexity int) int
-		ID         func(childComplexity int) int
-		IsActive   func(childComplexity int) int
-		Key        func(childComplexity int) int
-		KeyPrefix  func(childComplexity int) int
-		Name       func(childComplexity int) int
-		ProjectID  func(childComplexity int) int
-		RateLimit  func(childComplexity int) int
-		Scopes     func(childComplexity int) int
-		TokenLimit func(childComplexity int) int
+		AllowedModels    func(childComplexity int) int
+		AllowedProviders func(childComplexity int) int
+		Channel          func(childComplexity int) int
+		CreatedAt        func(childComplexity int) int
+		DailyLimit       func(childComplexity int) int
+		ExpiresAt        func(childComplexity int) int
+		ID               func(childComplexity int) int
+		IsActive         func(childComplexity int) int
+		Key              func(childComplexity int) int
+		KeyPrefix        func(childComplexity int) int
+		Name             func(childComplexity int) int
+		ProjectID        func(childComplexity int) int
+		RateLimit        func(childComplexity int) int
+		Scopes           func(childComplexity int) int
+		TokenLimit       func(childComplexity int) int
 	}
 
 	ApiKeysSummary struct {
@@ -593,7 +597,7 @@ type ComplexityRoot struct {
 		CheckProxyHealth             func(childComplexity int, id string) int
 		ClearAllSemanticCaches       func(childComplexity int) int
 		ClearSemanticCache           func(childComplexity int, id string) int
-		CreateAPIKey                 func(childComplexity int, projectID string, name string, scopes *string, rateLimit *int, tokenLimit *int) int
+		CreateAPIKey                 func(childComplexity int, projectID string, name string, scopes *string, rateLimit *int, tokenLimit *int, allowedModels []string, allowedProviders []string) int
 		CreateAnnouncement           func(childComplexity int, input model.AnnouncementInput) int
 		CreateCheckoutSession        func(childComplexity int, planID string) int
 		CreateCoupon                 func(childComplexity int, input model.CouponInput) int
@@ -666,7 +670,7 @@ type ComplexityRoot struct {
 		ToggleProxyStatus            func(childComplexity int, id string) int
 		ToggleUser                   func(childComplexity int, id string) int
 		TriggerBackup                func(childComplexity int) int
-		UpdateAPIKey                 func(childComplexity int, id string, name *string, scopes *string, rateLimit *int, tokenLimit *int, isActive *bool) int
+		UpdateAPIKey                 func(childComplexity int, id string, name *string, scopes *string, rateLimit *int, tokenLimit *int, isActive *bool, allowedModels []string, allowedProviders []string) int
 		UpdateAlertConfig            func(childComplexity int, input model.AlertConfigInput) int
 		UpdateAnnouncement           func(childComplexity int, id string, input model.AnnouncementInput) int
 		UpdateCacheConfig            func(childComplexity int, input model.CacheConfigInput) int
@@ -1352,9 +1356,9 @@ type MutationResolver interface {
 	GenerateMfaSecret(ctx context.Context) (*model.MfaSecretInfo, error)
 	VerifyAndEnableMfa(ctx context.Context, code string) (bool, error)
 	DisableMfa(ctx context.Context, code string) (bool, error)
-	CreateAPIKey(ctx context.Context, projectID string, name string, scopes *string, rateLimit *int, tokenLimit *int) (*model.APIKeyWithSecret, error)
+	CreateAPIKey(ctx context.Context, projectID string, name string, scopes *string, rateLimit *int, tokenLimit *int, allowedModels []string, allowedProviders []string) (*model.APIKeyWithSecret, error)
 	CreatePlaygroundToken(ctx context.Context, apiKeyID string) (*model.PlaygroundToken, error)
-	UpdateAPIKey(ctx context.Context, id string, name *string, scopes *string, rateLimit *int, tokenLimit *int, isActive *bool) (*model.APIKey, error)
+	UpdateAPIKey(ctx context.Context, id string, name *string, scopes *string, rateLimit *int, tokenLimit *int, isActive *bool, allowedModels []string, allowedProviders []string) (*model.APIKey, error)
 	RevokeAPIKey(ctx context.Context, projectID string, id string) (*model.APIKey, error)
 	DeleteAPIKey(ctx context.Context, projectID string, id string) (bool, error)
 	UpdateProject(ctx context.Context, id string, input model.UpdateProjectInput) (*model.Project, error)
@@ -1938,6 +1942,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.AnomalyResult.Message(childComplexity), true
 
+	case "ApiKey.allowedModels":
+		if e.ComplexityRoot.ApiKey.AllowedModels == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKey.AllowedModels(childComplexity), true
+	case "ApiKey.allowedProviders":
+		if e.ComplexityRoot.ApiKey.AllowedProviders == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKey.AllowedProviders(childComplexity), true
 	case "ApiKey.channel":
 		if e.ComplexityRoot.ApiKey.Channel == nil {
 			break
@@ -2145,6 +2161,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.ApiKeyRateLimitStatus.TpmLimit(childComplexity), true
 
+	case "ApiKeyWithSecret.allowedModels":
+		if e.ComplexityRoot.ApiKeyWithSecret.AllowedModels == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyWithSecret.AllowedModels(childComplexity), true
+	case "ApiKeyWithSecret.allowedProviders":
+		if e.ComplexityRoot.ApiKeyWithSecret.AllowedProviders == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ApiKeyWithSecret.AllowedProviders(childComplexity), true
 	case "ApiKeyWithSecret.channel":
 		if e.ComplexityRoot.ApiKeyWithSecret.Channel == nil {
 			break
@@ -4081,7 +4109,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Mutation.CreateAPIKey(childComplexity, args["projectId"].(string), args["name"].(string), args["scopes"].(*string), args["rateLimit"].(*int), args["tokenLimit"].(*int)), true
+		return e.ComplexityRoot.Mutation.CreateAPIKey(childComplexity, args["projectId"].(string), args["name"].(string), args["scopes"].(*string), args["rateLimit"].(*int), args["tokenLimit"].(*int), args["allowedModels"].([]string), args["allowedProviders"].([]string)), true
 	case "Mutation.createAnnouncement":
 		if e.ComplexityRoot.Mutation.CreateAnnouncement == nil {
 			break
@@ -4839,7 +4867,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Mutation.UpdateAPIKey(childComplexity, args["id"].(string), args["name"].(*string), args["scopes"].(*string), args["rateLimit"].(*int), args["tokenLimit"].(*int), args["isActive"].(*bool)), true
+		return e.ComplexityRoot.Mutation.UpdateAPIKey(childComplexity, args["id"].(string), args["name"].(*string), args["scopes"].(*string), args["rateLimit"].(*int), args["tokenLimit"].(*int), args["isActive"].(*bool), args["allowedModels"].([]string), args["allowedProviders"].([]string)), true
 	case "Mutation.updateAlertConfig":
 		if e.ComplexityRoot.Mutation.UpdateAlertConfig == nil {
 			break
@@ -8473,9 +8501,9 @@ type Mutation {
   disableMfa(code: String!): Boolean! @auth @rateLimit(max: 5, window: "1m")
 
   # ── API Keys & Projects ──
-  createApiKey(projectId: ID!, name: String!, scopes: String, rateLimit: Int, tokenLimit: Int): ApiKeyWithSecret! @auth
+  createApiKey(projectId: ID!, name: String!, scopes: String, rateLimit: Int, tokenLimit: Int, allowedModels: [String!], allowedProviders: [String!]): ApiKeyWithSecret! @auth
   createPlaygroundToken(apiKeyId: ID!): PlaygroundToken! @auth
-  updateApiKey(id: ID!, name: String, scopes: String, rateLimit: Int, tokenLimit: Int, isActive: Boolean): ApiKey! @auth
+  updateApiKey(id: ID!, name: String, scopes: String, rateLimit: Int, tokenLimit: Int, isActive: Boolean, allowedModels: [String!], allowedProviders: [String!]): ApiKey! @auth
   revokeApiKey(projectId: ID!, id: ID!): ApiKey! @auth
   deleteApiKey(projectId: ID!, id: ID!): Boolean! @auth
   updateProject(id: ID!, input: UpdateProjectInput!): Project! @auth
@@ -10064,6 +10092,8 @@ type ApiKey {
   keyPrefix: String!
   isActive: Boolean!
   scopes: String!
+  allowedModels: [String!]!
+  allowedProviders: [String!]!
   rateLimit: Int!
   tokenLimit: Int!
   dailyLimit: Int!
@@ -10096,6 +10126,8 @@ type ApiKeyWithSecret {
   keyPrefix: String!
   isActive: Boolean!
   scopes: String!
+  allowedModels: [String!]!
+  allowedProviders: [String!]!
   rateLimit: Int!
   tokenLimit: Int!
   dailyLimit: Int!
@@ -10411,6 +10443,10 @@ func (ec *executionContext) childFields_ApiKey(ctx context.Context, field graphq
 		return ec.fieldContext_ApiKey_isActive(ctx, field)
 	case "scopes":
 		return ec.fieldContext_ApiKey_scopes(ctx, field)
+	case "allowedModels":
+		return ec.fieldContext_ApiKey_allowedModels(ctx, field)
+	case "allowedProviders":
+		return ec.fieldContext_ApiKey_allowedProviders(ctx, field)
 	case "rateLimit":
 		return ec.fieldContext_ApiKey_rateLimit(ctx, field)
 	case "tokenLimit":
@@ -10499,6 +10535,10 @@ func (ec *executionContext) childFields_ApiKeyWithSecret(ctx context.Context, fi
 		return ec.fieldContext_ApiKeyWithSecret_isActive(ctx, field)
 	case "scopes":
 		return ec.fieldContext_ApiKeyWithSecret_scopes(ctx, field)
+	case "allowedModels":
+		return ec.fieldContext_ApiKeyWithSecret_allowedModels(ctx, field)
+	case "allowedProviders":
+		return ec.fieldContext_ApiKeyWithSecret_allowedProviders(ctx, field)
 	case "rateLimit":
 		return ec.fieldContext_ApiKeyWithSecret_rateLimit(ctx, field)
 	case "tokenLimit":
@@ -12780,6 +12820,22 @@ func (ec *executionContext) field_Mutation_createApiKey_args(ctx context.Context
 		return nil, err
 	}
 	args["tokenLimit"] = arg4
+	arg5, err := graphql.ProcessArgField(ctx, rawArgs, "allowedModels",
+		func(ctx context.Context, v any) ([]string, error) {
+			return ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["allowedModels"] = arg5
+	arg6, err := graphql.ProcessArgField(ctx, rawArgs, "allowedProviders",
+		func(ctx context.Context, v any) ([]string, error) {
+			return ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["allowedProviders"] = arg6
 	return args, nil
 }
 
@@ -13818,6 +13874,22 @@ func (ec *executionContext) field_Mutation_updateApiKey_args(ctx context.Context
 		return nil, err
 	}
 	args["isActive"] = arg5
+	arg6, err := graphql.ProcessArgField(ctx, rawArgs, "allowedModels",
+		func(ctx context.Context, v any) ([]string, error) {
+			return ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["allowedModels"] = arg6
+	arg7, err := graphql.ProcessArgField(ctx, rawArgs, "allowedProviders",
+		func(ctx context.Context, v any) ([]string, error) {
+			return ec.unmarshalOString2ᚕstringᚄ(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["allowedProviders"] = arg7
 	return args, nil
 }
 
@@ -16972,6 +17044,52 @@ func (ec *executionContext) fieldContext_ApiKey_scopes(_ context.Context, field 
 	return graphql.NewScalarFieldContext("ApiKey", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _ApiKey_allowedModels(ctx context.Context, field graphql.CollectedField, obj *model.APIKey) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ApiKey_allowedModels(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.AllowedModels, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []string) graphql.Marshaler {
+			return ec.marshalNString2ᚕstringᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ApiKey_allowedModels(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ApiKey", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ApiKey_allowedProviders(ctx context.Context, field graphql.CollectedField, obj *model.APIKey) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ApiKey_allowedProviders(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.AllowedProviders, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []string) graphql.Marshaler {
+			return ec.marshalNString2ᚕstringᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ApiKey_allowedProviders(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ApiKey", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _ApiKey_rateLimit(ctx context.Context, field graphql.CollectedField, obj *model.APIKey) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -17774,6 +17892,52 @@ func (ec *executionContext) _ApiKeyWithSecret_scopes(ctx context.Context, field 
 	)
 }
 func (ec *executionContext) fieldContext_ApiKeyWithSecret_scopes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ApiKeyWithSecret", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ApiKeyWithSecret_allowedModels(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyWithSecret) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ApiKeyWithSecret_allowedModels(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.AllowedModels, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []string) graphql.Marshaler {
+			return ec.marshalNString2ᚕstringᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ApiKeyWithSecret_allowedModels(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ApiKeyWithSecret", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _ApiKeyWithSecret_allowedProviders(ctx context.Context, field graphql.CollectedField, obj *model.APIKeyWithSecret) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ApiKeyWithSecret_allowedProviders(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.AllowedProviders, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []string) graphql.Marshaler {
+			return ec.marshalNString2ᚕstringᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ApiKeyWithSecret_allowedProviders(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ApiKeyWithSecret", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
@@ -25408,7 +25572,7 @@ func (ec *executionContext) _Mutation_createApiKey(ctx context.Context, field gr
 		},
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Mutation().CreateAPIKey(ctx, fc.Args["projectId"].(string), fc.Args["name"].(string), fc.Args["scopes"].(*string), fc.Args["rateLimit"].(*int), fc.Args["tokenLimit"].(*int))
+			return ec.Resolvers.Mutation().CreateAPIKey(ctx, fc.Args["projectId"].(string), fc.Args["name"].(string), fc.Args["scopes"].(*string), fc.Args["rateLimit"].(*int), fc.Args["tokenLimit"].(*int), fc.Args["allowedModels"].([]string), fc.Args["allowedProviders"].([]string))
 		},
 		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
 			directive0 := next
@@ -25532,7 +25696,7 @@ func (ec *executionContext) _Mutation_updateApiKey(ctx context.Context, field gr
 		},
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Mutation().UpdateAPIKey(ctx, fc.Args["id"].(string), fc.Args["name"].(*string), fc.Args["scopes"].(*string), fc.Args["rateLimit"].(*int), fc.Args["tokenLimit"].(*int), fc.Args["isActive"].(*bool))
+			return ec.Resolvers.Mutation().UpdateAPIKey(ctx, fc.Args["id"].(string), fc.Args["name"].(*string), fc.Args["scopes"].(*string), fc.Args["rateLimit"].(*int), fc.Args["tokenLimit"].(*int), fc.Args["isActive"].(*bool), fc.Args["allowedModels"].([]string), fc.Args["allowedProviders"].([]string))
 		},
 		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
 			directive0 := next
@@ -49430,6 +49594,16 @@ func (ec *executionContext) _ApiKey(ctx context.Context, sel ast.SelectionSet, o
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "allowedModels":
+			out.Values[i] = ec._ApiKey_allowedModels(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "allowedProviders":
+			out.Values[i] = ec._ApiKey_allowedProviders(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "rateLimit":
 			out.Values[i] = ec._ApiKey_rateLimit(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -49695,6 +49869,16 @@ func (ec *executionContext) _ApiKeyWithSecret(ctx context.Context, sel ast.Selec
 			}
 		case "scopes":
 			out.Values[i] = ec._ApiKeyWithSecret_scopes(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "allowedModels":
+			out.Values[i] = ec._ApiKeyWithSecret_allowedModels(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "allowedProviders":
+			out.Values[i] = ec._ApiKeyWithSecret_allowedProviders(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

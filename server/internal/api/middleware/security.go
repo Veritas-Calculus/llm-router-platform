@@ -55,6 +55,46 @@ var (
 		},
 		[]string{"source"}, // per_key, per_user, fallback — fixed cardinality
 	)
+
+	// BillingLockTimeoutTotal counts FOR UPDATE waits that exceeded the
+	// configured timeout and aborted the deduction transaction.
+	BillingLockTimeoutTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "llm_router",
+			Subsystem: "billing",
+			Name:      "lock_timeout_total",
+			Help:      "FOR UPDATE row-lock timeouts on the user balance row.",
+		},
+		[]string{"operation"}, // record_usage_and_deduct, deduct_balance, add_balance, update_usage_and_deduct
+	)
+
+	// LocalTokenFallbackTotal counts streaming responses whose token totals
+	// were estimated locally because the provider did not return a usage block.
+	// The estimate drives billing, so a sustained spike means we may be
+	// over- or under-charging customers relative to provider invoices.
+	LocalTokenFallbackTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "llm_router",
+			Subsystem: "billing",
+			Name:      "local_token_fallback_total",
+			Help:      "Streaming responses billed using locally estimated token counts.",
+		},
+		[]string{"provider", "model"},
+	)
+
+	// PaymentAmountMismatchTotal counts payment notifications where the
+	// signed-event amount disagreed with the order amount we created. This
+	// must always be zero in a healthy system; any non-zero value indicates
+	// either a bug or a tampering attempt.
+	PaymentAmountMismatchTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "llm_router",
+			Subsystem: "billing",
+			Name:      "payment_amount_mismatch_total",
+			Help:      "Payment webhook amounts that disagreed with the stored order amount.",
+		},
+		[]string{"provider"}, // stripe, alipay, wechat
+	)
 )
 
 // ─── Security Response Headers ──────────────────────────────────────────

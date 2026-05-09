@@ -36,6 +36,8 @@ interface RawApiKeyData {
   keyPrefix: string;
   isActive: boolean;
   scopes: string;
+  allowedModels?: string[];
+  allowedProviders?: string[];
   rateLimit: number;
   tokenLimit: number;
   dailyLimit: number;
@@ -70,7 +72,8 @@ interface SubscriptionQuotaData {
 export function mapApiKey(d: RawApiKeyData): ApiKey {
   return {
     id: d.id, project_id: d.projectId, channel: d.channel, name: d.name, key: d.key || '', key_prefix: d.keyPrefix,
-    is_active: d.isActive, scopes: d.scopes, rate_limit: d.rateLimit, token_limit: d.tokenLimit, daily_limit: d.dailyLimit,
+    is_active: d.isActive, scopes: d.scopes, allowed_models: d.allowedModels || [], allowed_providers: d.allowedProviders || [],
+    rate_limit: d.rateLimit, token_limit: d.tokenLimit, daily_limit: d.dailyLimit,
     created_at: d.createdAt, last_used_at: d.lastUsedAt, expires_at: d.expiresAt,
   };
 }

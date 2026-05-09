@@ -16,6 +16,7 @@ resolver:
   layout: follow-schema
   dir: internal/graphql/resolvers
   package: resolvers
+  preserve_resolver: true
 
 # Bind to existing Go models where possible
 autobind:

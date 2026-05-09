@@ -272,9 +272,35 @@ func (r *Router) SetStrategy(strategy Strategy) {
 
 // Route selects a provider and API key for a request.
 func (r *Router) Route(ctx context.Context, modelName string) (*models.Provider, *models.ProviderAPIKey, error) {
+	return r.route(ctx, modelName, nil)
+}
+
+// RouteForAPIKey selects a provider and provider API key while respecting a caller API key policy.
+func (r *Router) RouteForAPIKey(ctx context.Context, modelName string, callerKey *models.APIKey) (*models.Provider, *models.ProviderAPIKey, error) {
+	return r.route(ctx, modelName, callerKey)
+}
+
+func (r *Router) route(ctx context.Context, modelName string, callerKey *models.APIKey) (*models.Provider, *models.ProviderAPIKey, error) {
+	if callerKey != nil && !callerKey.AllowsModel(modelName) {
+		return nil, nil, errors.New("model is not allowed for this API key")
+	}
+
 	providers, err := r.providerRepo.GetActive(ctx)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if callerKey != nil {
+		filtered := make([]models.Provider, 0, len(providers))
+		for i := range providers {
+			if callerKey.AllowsProvider(&providers[i]) {
+				filtered = append(filtered, providers[i])
+			}
+		}
+		if len(filtered) == 0 && len(providers) > 0 && len(models.NormalizeAPIKeyPolicyList(callerKey.AllowedProviders)) > 0 {
+			return nil, nil, errors.New("provider is not allowed for this API key")
+		}
+		providers = filtered
 	}
 
 	if len(providers) == 0 {

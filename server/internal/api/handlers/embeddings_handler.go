@@ -12,7 +12,6 @@ import (
 	"llm-router-platform/internal/service/provider"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -26,20 +25,26 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 
 	start := time.Now()
 
-	selectedProvider, apiKey, err := h.router.Route(c.Request.Context(), req.Model)
+	projectObj := c.MustGet("project").(*models.Project)
+	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	selectedProvider, apiKey, err := h.router.RouteForAPIKey(c.Request.Context(), req.Model, userAPIKey)
 	if err != nil {
+		if writeAPIKeyPolicyError(c, err) {
+			return
+		}
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no available providers"})
 		return
 	}
+	c.Set("llm_model", req.Model)
+	c.Set("provider_name", selectedProvider.Name)
+	c.Set("provider_id", selectedProvider.ID.String())
 
 	providerReq := &provider.EmbeddingRequest{
 		Model:          req.Model,
 		Input:          req.Input,
 		EncodingFormat: req.EncodingFormat,
 	}
-
-	projectObj := c.MustGet("project").(*models.Project)
-	userAPIKey := c.MustGet("api_key").(*models.APIKey)
 
 	// === Data Loss Prevention (DLP) ===
 	if projectObj.DlpConfig != nil && projectObj.DlpConfig.IsEnabled {
@@ -62,15 +67,10 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 	}
 
 	// Observability: Start Trace
-	reqID := c.GetHeader("X-Request-ID")
-	if reqID == "" {
-		reqID = uuid.New().String()
-	}
-	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "embeddings", projectObj.ID.String(), "", map[string]interface{}{
+	trace := h.startRequestTrace(c, "embeddings", projectObj.ID.String(), "", map[string]interface{}{
 		"model":           req.Model,
 		"encoding_format": req.EncodingFormat,
 	})
-	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
 	if quotaErr := h.checkProjectQuota(c, projectObj, userAPIKey); quotaErr != nil {
@@ -86,7 +86,7 @@ func (h *ChatHandler) Embeddings(c *gin.Context) {
 
 	gen := h.obsInfo.StartGeneration(c.Request.Context(), trace, "Provider: "+selectedProvider.Name, req.Model, map[string]interface{}{
 		"encoding_format": req.EncodingFormat,
-	}, req.Input)
+	}, providerReq.Input)
 
 	result, err := h.router.ExecuteEmbeddings(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
 

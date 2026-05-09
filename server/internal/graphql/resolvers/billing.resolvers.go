@@ -4,12 +4,13 @@ package resolvers
 // Extracted from schema.resolvers.go for maintainability.
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"fmt"
 	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/models"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,12 +19,19 @@ import (
 // SetBudget is the resolver for the setBudget field.
 func (r *mutationResolver) SetBudget(ctx context.Context, input model.BudgetInput) (*model.Budget, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	id, _ := uuid.Parse(uid)
-	threshold := 80.0
+	id, err := uuid.Parse(uid)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
+	threshold := 0.8
 	if input.AlertThreshold != nil {
 		threshold = *input.AlertThreshold
 	}
-	b, err := r.BudgetService.SetBudget(ctx, id, input.MonthlyLimitUsd, threshold, derefStr(input.WebhookURL), derefStr(input.Email))
+	enforce := false
+	if input.EnforceHardLimit != nil {
+		enforce = *input.EnforceHardLimit
+	}
+	b, err := r.BudgetService.SetBudget(ctx, id, input.MonthlyLimitUsd, threshold, enforce, derefStr(input.WebhookURL), derefStr(input.Email))
 	if err != nil {
 		return nil, err
 	}
@@ -37,36 +45,29 @@ func (r *mutationResolver) DeleteBudget(ctx context.Context) (bool, error) {
 	return true, r.BudgetService.DeleteBudget(ctx, id)
 }
 
-// ExportUsageCSV is the resolver for the exportUsageCsv field.
+// ExportUsageCSV streams the caller's last 30 days of usage as CSV.
+//
+// Delegates to billing.Service.ExportUsageCSV which paginates the query in
+// batches of 1000 to avoid loading the entire dataset into memory. The 30-day
+// window matches the previous behavior; for arbitrary ranges callers should
+// use the date-bounded admin-side export.
 func (r *mutationResolver) ExportUsageCSV(ctx context.Context) (string, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	userID, _ := uuid.Parse(uid)
-
-	var logs []models.UsageLog
-	since := time.Now().AddDate(0, 0, -30)
-	if err := r.AdminSvc.DB().Where("user_id = ? AND created_at >= ?", userID, since).
-		Order("created_at DESC").Limit(10000).Find(&logs).Error; err != nil {
-		return "", fmt.Errorf("failed to query usage: %w", err)
+	userID, err := uuid.Parse(uid)
+	if err != nil {
+		return "", fmt.Errorf("invalid user id: %w", err)
 	}
 
-	var buf strings.Builder
-	buf.WriteString("date,model,channel,input_tokens,output_tokens,total_tokens,cost_usd,latency_ms,status\n")
-	for _, l := range logs {
-		status := "ok"
-		if l.StatusCode >= 400 {
-			status = "error"
-		}
-		fmt.Fprintf(&buf, "%s,%s,%s,%d,%d,%d,%.6f,%d,%s\n",
-			l.CreatedAt.Format("2006-01-02 15:04:05"),
-			l.ModelName,
-			l.Channel,
-			l.RequestTokens,
-			l.ResponseTokens,
-			l.TotalTokens,
-			l.Cost,
-			l.Latency,
-			status,
-		)
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	end := time.Now()
+	start := end.AddDate(0, 0, -30)
+	if err := r.Billing.ExportUsageCSV(ctx, userID, start, end, w); err != nil {
+		return "", fmt.Errorf("failed to export usage: %w", err)
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return "", fmt.Errorf("csv flush failed: %w", err)
 	}
 	return buf.String(), nil
 }

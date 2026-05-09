@@ -42,6 +42,24 @@ func TestAPIKeyModel(t *testing.T) {
 	assert.Equal(t, 1000, apiKey.RateLimit)
 }
 
+func TestAPIKeyPolicyAllowsScopesModelsAndProviders(t *testing.T) {
+	providerID := uuid.New()
+	apiKey := APIKey{
+		Scopes:           "chat,embeddings",
+		AllowedModels:    []string{"gpt-4*", "qwen/*"},
+		AllowedProviders: []string{"openai", providerID.String()},
+	}
+
+	assert.True(t, apiKey.AllowsScope("chat"))
+	assert.False(t, apiKey.AllowsScope("images"))
+	assert.True(t, apiKey.AllowsModel("gpt-4o"))
+	assert.True(t, apiKey.AllowsModel("qwen/qwen3-vl-8b"))
+	assert.False(t, apiKey.AllowsModel("claude-3-opus"))
+	assert.True(t, apiKey.AllowsProvider(&Provider{Name: "openai"}))
+	assert.True(t, apiKey.AllowsProvider(&Provider{BaseModel: BaseModel{ID: providerID}, Name: "anthropic"}))
+	assert.False(t, apiKey.AllowsProvider(&Provider{Name: "google"}))
+}
+
 func TestProviderModel(t *testing.T) {
 	provider := Provider{
 		Name:       "openai",
@@ -94,7 +112,7 @@ func TestProxyModel(t *testing.T) {
 
 func TestUsageLogModel(t *testing.T) {
 	log := UsageLog{
-		ProjectID:         uuid.New(),
+		ProjectID:      uuid.New(),
 		APIKeyID:       uuid.New(),
 		ProviderID:     uuid.New(),
 		RequestTokens:  100,
@@ -159,12 +177,12 @@ func TestModelMultiDimensionalPricing(t *testing.T) {
 
 	// TTS model with per-second pricing
 	ttsModel := Model{
-		ProviderID:      providerID,
-		Name:            "tts-1",
-		DisplayName:     "TTS-1",
-		PricePerSecond:  0.015,
-		MaxTokens:       0,
-		IsActive:        true,
+		ProviderID:     providerID,
+		Name:           "tts-1",
+		DisplayName:    "TTS-1",
+		PricePerSecond: 0.015,
+		MaxTokens:      0,
+		IsActive:       true,
 	}
 	assert.Equal(t, "tts-1", ttsModel.Name)
 	assert.Equal(t, 0.015, ttsModel.PricePerSecond)
@@ -195,7 +213,7 @@ func TestModelMultiDimensionalPricing(t *testing.T) {
 func TestUsageLogExtendedFields(t *testing.T) {
 	// TTS usage log with duration
 	ttsLog := UsageLog{
-		ProjectID:     uuid.New(),
+		ProjectID:  uuid.New(),
 		APIKeyID:   uuid.New(),
 		ProviderID: uuid.New(),
 		ModelName:  "tts-1",
@@ -209,7 +227,7 @@ func TestUsageLogExtendedFields(t *testing.T) {
 
 	// Image generation usage log with item count
 	imageLog := UsageLog{
-		ProjectID:     uuid.New(),
+		ProjectID:  uuid.New(),
 		APIKeyID:   uuid.New(),
 		ProviderID: uuid.New(),
 		ModelName:  "dall-e-3",
@@ -221,7 +239,7 @@ func TestUsageLogExtendedFields(t *testing.T) {
 
 	// Video analysis usage log with bytes processed
 	videoLog := UsageLog{
-		ProjectID:         uuid.New(),
+		ProjectID:      uuid.New(),
 		APIKeyID:       uuid.New(),
 		ProviderID:     uuid.New(),
 		ModelName:      "gemini-2.0-flash",
@@ -236,7 +254,7 @@ func TestUsageLogExtendedFields(t *testing.T) {
 
 func TestAsyncTaskModel(t *testing.T) {
 	task := AsyncTask{
-		ProjectID:     uuid.New(),
+		ProjectID:  uuid.New(),
 		Type:       "batch_tts",
 		Status:     "pending",
 		Input:      `[{"text":"hello"},{"text":"world"}]`,
@@ -259,7 +277,7 @@ func TestAsyncTaskStatusTransitions(t *testing.T) {
 
 	// Completed task
 	completed := AsyncTask{
-		ProjectID:      uuid.New(),
+		ProjectID:   uuid.New(),
 		Type:        "tts",
 		Status:      "completed",
 		Input:       `{"text":"test"}`,
@@ -274,7 +292,7 @@ func TestAsyncTaskStatusTransitions(t *testing.T) {
 
 	// Failed task
 	failed := AsyncTask{
-		ProjectID:      uuid.New(),
+		ProjectID:   uuid.New(),
 		Type:        "video_analysis",
 		Status:      "failed",
 		Input:       `{"video_url":"https://example.com/video.mp4"}`,
@@ -286,5 +304,3 @@ func TestAsyncTaskStatusTransitions(t *testing.T) {
 	assert.Equal(t, 45, failed.Progress)
 	assert.Contains(t, failed.Error, "timeout")
 }
-
-

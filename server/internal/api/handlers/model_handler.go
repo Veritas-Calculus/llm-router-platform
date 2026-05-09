@@ -220,9 +220,10 @@ func (h *ModelHandler) ListProviders(c *gin.Context) {
 	}
 
 	// Filter active providers
+	callerKey := apiKeyFromContext(c)
 	activeProviders := make([]models.Provider, 0)
 	for _, p := range providers {
-		if p.IsActive {
+		if p.IsActive && (callerKey == nil || callerKey.AllowsProvider(&p)) {
 			activeProviders = append(activeProviders, p)
 		}
 	}
@@ -250,6 +251,9 @@ func (h *ModelHandler) ListProviders(c *gin.Context) {
 	for r := range resultChan {
 		modelNames := make([]string, 0, len(r.models))
 		for _, m := range r.models {
+			if callerKey != nil && !callerKey.AllowsModel(m.ID) {
+				continue
+			}
 			modelNames = append(modelNames, m.ID)
 		}
 		result = append(result, ProviderInfo{
@@ -279,9 +283,10 @@ func (h *ModelHandler) List(c *gin.Context) {
 	}
 
 	// Filter active providers
+	callerKey := apiKeyFromContext(c)
 	activeProviders := make([]models.Provider, 0)
 	for _, p := range providers {
-		if p.IsActive {
+		if p.IsActive && (callerKey == nil || callerKey.AllowsProvider(&p)) {
 			activeProviders = append(activeProviders, p)
 		}
 	}
@@ -309,6 +314,9 @@ func (h *ModelHandler) List(c *gin.Context) {
 	allModels := make([]map[string]interface{}, 0)
 	for r := range resultChan {
 		for _, mi := range r.models {
+			if callerKey != nil && !callerKey.AllowsModel(mi.ID) {
+				continue
+			}
 			m := map[string]interface{}{
 				"id":       mi.ID,
 				"object":   "model",
@@ -387,11 +395,23 @@ func (h *ModelHandler) Retrieve(c *gin.Context) {
 	}
 
 	// Filter active providers
+	callerKey := apiKeyFromContext(c)
 	activeProviders := make([]models.Provider, 0)
 	for _, p := range allProviders {
-		if p.IsActive {
+		if p.IsActive && (callerKey == nil || callerKey.AllowsProvider(&p)) {
 			activeProviders = append(activeProviders, p)
 		}
+	}
+
+	if callerKey != nil && !callerKey.AllowsModel(modelID) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": gin.H{
+				"message": "The model '" + modelID + "' does not exist",
+				"type":    "invalid_request_error",
+				"code":    "model_not_found",
+			},
+		})
+		return
 	}
 
 	if m, found := h.findAndFormatModel(ctx, modelID, activeProviders); found {
@@ -407,6 +427,18 @@ func (h *ModelHandler) Retrieve(c *gin.Context) {
 			"code":    "model_not_found",
 		},
 	})
+}
+
+func apiKeyFromContext(c *gin.Context) *models.APIKey {
+	if c == nil {
+		return nil
+	}
+	raw, ok := c.Get("api_key")
+	if !ok {
+		return nil
+	}
+	key, _ := raw.(*models.APIKey)
+	return key
 }
 
 func (h *ModelHandler) findAndFormatModel(ctx context.Context, modelID string, activeProviders []models.Provider) (map[string]interface{}, bool) {

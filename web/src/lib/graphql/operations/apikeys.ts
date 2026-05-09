@@ -17,15 +17,15 @@ export const MY_PROJECTS = gql`
 export const MY_API_KEYS = gql`
   query MyApiKeys($projectId: ID!) {
     myApiKeys(projectId: $projectId) {
-      id projectId channel name keyPrefix isActive scopes rateLimit tokenLimit dailyLimit lastUsedAt createdAt expiresAt
+      id projectId channel name keyPrefix isActive scopes allowedModels allowedProviders rateLimit tokenLimit dailyLimit lastUsedAt createdAt expiresAt
     }
   }
 `;
 
 export const CREATE_API_KEY = gql`
-  mutation CreateApiKey($projectId: ID!, $name: String!, $scopes: String, $rateLimit: Int, $tokenLimit: Int) {
-    createApiKey(projectId: $projectId, name: $name, scopes: $scopes, rateLimit: $rateLimit, tokenLimit: $tokenLimit) {
-      id projectId channel name key keyPrefix isActive scopes rateLimit tokenLimit dailyLimit createdAt expiresAt
+  mutation CreateApiKey($projectId: ID!, $name: String!, $scopes: String, $rateLimit: Int, $tokenLimit: Int, $allowedModels: [String!], $allowedProviders: [String!]) {
+    createApiKey(projectId: $projectId, name: $name, scopes: $scopes, rateLimit: $rateLimit, tokenLimit: $tokenLimit, allowedModels: $allowedModels, allowedProviders: $allowedProviders) {
+      id projectId channel name key keyPrefix isActive scopes allowedModels allowedProviders rateLimit tokenLimit dailyLimit createdAt expiresAt
     }
   }
 `;
@@ -42,9 +42,9 @@ export const CREATE_PLAYGROUND_TOKEN = gql`
 `;
 
 export const UPDATE_API_KEY = gql`
-  mutation UpdateApiKey($id: ID!, $name: String, $scopes: String, $rateLimit: Int, $tokenLimit: Int, $isActive: Boolean) {
-    updateApiKey(id: $id, name: $name, scopes: $scopes, rateLimit: $rateLimit, tokenLimit: $tokenLimit, isActive: $isActive) {
-      id projectId channel name keyPrefix isActive scopes rateLimit tokenLimit dailyLimit createdAt expiresAt
+  mutation UpdateApiKey($id: ID!, $name: String, $scopes: String, $rateLimit: Int, $tokenLimit: Int, $isActive: Boolean, $allowedModels: [String!], $allowedProviders: [String!]) {
+    updateApiKey(id: $id, name: $name, scopes: $scopes, rateLimit: $rateLimit, tokenLimit: $tokenLimit, isActive: $isActive, allowedModels: $allowedModels, allowedProviders: $allowedProviders) {
+      id projectId channel name keyPrefix isActive scopes allowedModels allowedProviders rateLimit tokenLimit dailyLimit createdAt expiresAt
     }
   }
 `;

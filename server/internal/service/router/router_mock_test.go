@@ -270,6 +270,44 @@ func TestRoute_SingleProvider_WithAPIKey(t *testing.T) {
 	assert.Equal(t, kid, key.ID)
 }
 
+func TestRouteForAPIKey_EnforcesModelAndProviderPolicy(t *testing.T) {
+	openAIID := uuid.New()
+	anthropicID := uuid.New()
+	repo := &mockProviderRepo{
+		providers: []models.Provider{
+			{BaseModel: models.BaseModel{ID: openAIID}, Name: "openai", IsActive: true, RequiresAPIKey: true, Weight: 1},
+			{BaseModel: models.BaseModel{ID: anthropicID}, Name: "anthropic", IsActive: true, RequiresAPIKey: true, Weight: 1},
+		},
+	}
+	keyRepo := &mockProviderAPIKeyRepo{
+		keys: map[uuid.UUID][]models.ProviderAPIKey{
+			openAIID:    {{BaseModel: models.BaseModel{ID: uuid.New()}, ProviderID: openAIID, IsActive: true, Priority: 1, Weight: 1}},
+			anthropicID: {{BaseModel: models.BaseModel{ID: uuid.New()}, ProviderID: anthropicID, IsActive: true, Priority: 1, Weight: 1}},
+		},
+	}
+
+	r := newTestRouter(repo, keyRepo)
+	callerKey := &models.APIKey{
+		AllowedModels:    []string{"gpt-*"},
+		AllowedProviders: []string{"openai"},
+	}
+
+	p, key, err := r.RouteForAPIKey(context.Background(), "gpt-4o", callerKey)
+	require.NoError(t, err)
+	require.NotNil(t, p)
+	require.NotNil(t, key)
+	assert.Equal(t, "openai", p.Name)
+
+	_, _, err = r.RouteForAPIKey(context.Background(), "claude-3-opus", callerKey)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "model is not allowed")
+
+	callerKey.AllowedProviders = []string{"missing-provider"}
+	_, _, err = r.RouteForAPIKey(context.Background(), "gpt-4o", callerKey)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "provider is not allowed")
+}
+
 func TestRoute_RequiresAPIKey_NoActiveKeys(t *testing.T) {
 	pid := uuid.New()
 	repo := &mockProviderRepo{

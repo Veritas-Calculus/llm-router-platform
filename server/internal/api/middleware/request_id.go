@@ -13,6 +13,8 @@ const (
 	RequestIDHeader = "X-Request-Id"
 	// RequestIDKey is the context key for the request ID.
 	RequestIDKey = "request_id"
+	// TraceIDKey is the context key for the downstream trace ID.
+	TraceIDKey = "trace_id"
 )
 
 // RequestIDMiddleware generates or propagates a unique request ID for each request.

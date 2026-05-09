@@ -11,7 +11,6 @@ import (
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -31,11 +30,20 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 
 	start := time.Now()
 
-	selectedProvider, apiKey, err := h.router.Route(c.Request.Context(), model)
+	projectObj := c.MustGet("project").(*models.Project)
+	userAPIKey := c.MustGet("api_key").(*models.APIKey)
+
+	selectedProvider, apiKey, err := h.router.RouteForAPIKey(c.Request.Context(), model, userAPIKey)
 	if err != nil {
+		if writeAPIKeyPolicyError(c, err) {
+			return
+		}
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no available providers"})
 		return
 	}
+	c.Set("llm_model", model)
+	c.Set("provider_name", selectedProvider.Name)
+	c.Set("provider_id", selectedProvider.ID.String())
 
 	providerReq := &provider.ImageGenerationRequest{
 		Model:          model,
@@ -45,20 +53,12 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 		ResponseFormat: req.ResponseFormat,
 	}
 
-	projectObj := c.MustGet("project").(*models.Project)
-	userAPIKey := c.MustGet("api_key").(*models.APIKey)
-
 	// Observability: Start Trace
-	reqID := c.GetHeader("X-Request-ID")
-	if reqID == "" {
-		reqID = uuid.New().String()
-	}
-	trace := h.obsInfo.StartTrace(c.Request.Context(), reqID, "generate_image", projectObj.ID.String(), "", map[string]interface{}{
+	trace := h.startRequestTrace(c, "generate_image", projectObj.ID.String(), "", map[string]interface{}{
 		"model":           model,
 		"size":            req.Size,
 		"response_format": req.ResponseFormat,
 	})
-	c.Header("X-Langfuse-Trace-Id", trace.GetID())
 	defer trace.End()
 
 	if quotaErr := h.checkProjectQuota(c, projectObj, userAPIKey); quotaErr != nil {
@@ -76,7 +76,7 @@ func (h *ChatHandler) GenerateImage(c *gin.Context) {
 		"size":            req.Size,
 		"response_format": req.ResponseFormat,
 		"n":               req.N,
-	}, req.Prompt)
+	}, providerReq.Prompt)
 
 	result, err := h.router.ExecuteImage(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
 

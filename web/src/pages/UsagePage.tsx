@@ -13,6 +13,7 @@ import {
 import { useQuery } from '@apollo/client/react';
 import { MY_USAGE_SUMMARY, MY_DAILY_USAGE, MY_RECENT_USAGE } from '@/lib/graphql/operations';
 import { useTranslation } from '@/lib/i18n';
+import { formatNumber, formatUSDPrecise } from '@/lib/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -20,7 +21,7 @@ function UsagePage() {
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const pageSize = 20;
-  
+
   const [channelFilter, setChannelFilter] = useState('');
   const [debouncedChannel, setDebouncedChannel] = useState('');
 
@@ -35,10 +36,16 @@ function UsagePage() {
     channel: debouncedChannel || undefined
   };
 
-  const { data: summaryData, loading: sumLoading } = useQuery<any>(MY_USAGE_SUMMARY, { variables: queryVars });
-  const { data: dailyData, loading: dailyLoading } = useQuery<any>(MY_DAILY_USAGE, { variables: { days: 30, ...queryVars } });
-  const { data: recentData, loading: recentLoading } = useQuery<any>(MY_RECENT_USAGE, { variables: { page, pageSize } });
+  const { data: summaryData, loading: sumLoading, error: sumError, refetch: refetchSummary } = useQuery<any>(MY_USAGE_SUMMARY, { variables: queryVars });
+  const { data: dailyData, loading: dailyLoading, error: dailyError, refetch: refetchDaily } = useQuery<any>(MY_DAILY_USAGE, { variables: { days: 30, ...queryVars } });
+  const { data: recentData, loading: recentLoading, error: recentError, refetch: refetchRecent } = useQuery<any>(MY_RECENT_USAGE, { variables: { page, pageSize } });
   const loading = sumLoading || dailyLoading || recentLoading;
+  const queryError = sumError || dailyError || recentError;
+  const retryAll = () => {
+    refetchSummary();
+    refetchDaily();
+    refetchRecent();
+  };
 
   const monthlyUsage = useMemo(() => {
     const s = summaryData?.myUsageSummary;
@@ -58,17 +65,7 @@ function UsagePage() {
   [recentData]);
   const total = recentData?.myRecentUsage?.total || 0;
 
-  const formatCurrency = (value: number): string => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 4,
-    }).format(value);
-  };
-
-  const formatNumber = (value: number): string => {
-    return new Intl.NumberFormat('en-US').format(value);
-  };
+  const formatCurrency = formatUSDPrecise;
 
   const formatDate = (dateString: string): string => {
     return new Date(dateString).toLocaleString(undefined, {
@@ -85,6 +82,23 @@ function UsagePage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-apple-blue" />
+      </div>
+    );
+  }
+
+  if (queryError && !summaryData && !dailyData && !recentData) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4 text-center">
+        <p className="text-apple-gray-700 font-medium">{t('common.error_title')}</p>
+        <p className="text-sm text-apple-gray-500 max-w-md">
+          {queryError.message || t('common.error_generic')}
+        </p>
+        <button
+          onClick={retryAll}
+          className="px-4 py-2 bg-apple-blue text-white rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors"
+        >
+          {t('common.retry')}
+        </button>
       </div>
     );
   }

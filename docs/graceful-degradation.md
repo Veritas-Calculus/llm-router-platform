@@ -26,8 +26,18 @@ This document describes how the LLM Router Platform behaves when optional depend
 - **Detection**: Controlled by `LANGFUSE_ENABLED=true/false`.
 - **Behavior when disabled/unavailable**:
   - Request traces are **silently dropped**; no error propagation to the caller.
+  - Local request logs, usage logs, and billing records continue to be written independently.
   - The `CompositeService` skips Langfuse calls entirely if the client fails to initialize.
 - **Recovery**: Set `LANGFUSE_ENABLED=true` with valid keys and restart.
+  Admin Integration settings can also enable, disable, or replace the Langfuse client at runtime; non-empty DB integration config takes precedence over environment variables.
+
+### Loki (Request Log Querying)
+
+- **Detection**: Enabled when `LOKI_URL` points at a reachable Loki query endpoint.
+- **Behavior when disabled/unavailable**:
+  - Admin troubleshooting log search returns an explicit configuration/query error.
+  - LLM routing, Langfuse traces, usage logs, and billing are unaffected.
+- **Recovery**: Set `LOKI_URL`, align `LOKI_QUERY_SELECTOR` with the labels emitted by Promtail/Grafana Agent, and restart; or update the Loki integration in Admin Settings, which is read on each log query.
 
 ### Sentry (Error Tracking)
 

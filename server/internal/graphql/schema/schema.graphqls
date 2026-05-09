@@ -131,9 +131,9 @@ type Mutation {
   disableMfa(code: String!): Boolean! @auth @rateLimit(max: 5, window: "1m")
 
   # ── API Keys & Projects ──
-  createApiKey(projectId: ID!, name: String!, scopes: String, rateLimit: Int, tokenLimit: Int): ApiKeyWithSecret! @auth
+  createApiKey(projectId: ID!, name: String!, scopes: String, rateLimit: Int, tokenLimit: Int, allowedModels: [String!], allowedProviders: [String!]): ApiKeyWithSecret! @auth
   createPlaygroundToken(apiKeyId: ID!): PlaygroundToken! @auth
-  updateApiKey(id: ID!, name: String, scopes: String, rateLimit: Int, tokenLimit: Int, isActive: Boolean): ApiKey! @auth
+  updateApiKey(id: ID!, name: String, scopes: String, rateLimit: Int, tokenLimit: Int, isActive: Boolean, allowedModels: [String!], allowedProviders: [String!]): ApiKey! @auth
   revokeApiKey(projectId: ID!, id: ID!): ApiKey! @auth
   deleteApiKey(projectId: ID!, id: ID!): Boolean! @auth
   updateProject(id: ID!, input: UpdateProjectInput!): Project! @auth

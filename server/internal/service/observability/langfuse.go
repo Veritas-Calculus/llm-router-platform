@@ -2,6 +2,7 @@ package observability
 
 import (
 	"context"
+	"errors"
 
 	"go.uber.org/zap"
 
@@ -57,7 +58,7 @@ func (s *LangfuseService) StartTrace(ctx context.Context, id, name, userID, sess
 	defer func() {
 		if r := recover(); r != nil {
 			s.logger.Warn("Langfuse StartTrace panicked, degrading to noop", zap.Any("panic", r))
-			result = &NoopTrace{}
+			result = &NoopTrace{id: id}
 		}
 	}()
 
@@ -133,6 +134,9 @@ func (lg *LangfuseGeneration) End(output string, promptTokens, completionTokens 
 }
 
 func (lg *LangfuseGeneration) EndWithError(err error) {
+	if err == nil {
+		err = errors.New("generation failed")
+	}
 	lg.obs.Level = traces.ObservationLevelError
 	lg.obs.StatusMessage = err.Error()
 	lg.obs.End()

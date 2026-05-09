@@ -2,8 +2,11 @@ package middleware
 
 import (
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
+	"llm-router-platform/internal/models"
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
@@ -25,7 +28,7 @@ func (m *LoggingMiddleware) Log() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := sanitize.LogValue(c.Request.URL.Path)
-		query := sanitize.LogValue(c.Request.URL.RawQuery)
+		query := sanitizeQuery(c.Request.URL.RawQuery)
 		method := sanitize.LogValue(c.Request.Method)
 		clientIP := sanitize.LogValue(c.ClientIP())
 
@@ -42,14 +45,82 @@ func (m *LoggingMiddleware) Log() gin.HandlerFunc {
 		requestID, _ := c.Get(RequestIDKey)
 		reqIDStr, _ := requestID.(string)
 
-		m.logger.Info("request",
+		fields := []zap.Field{
 			zap.String("request_id", reqIDStr),
 			zap.String("method", method),
 			zap.String("path", path),
 			zap.Int("status", status),
 			zap.Duration("latency", latency),
 			zap.String("client_ip", clientIP),
-		)
+			zap.String("user_agent", sanitize.LogValue(c.Request.UserAgent())),
+		}
+
+		if traceID, ok := c.Get(TraceIDKey); ok {
+			if traceIDStr, ok := traceID.(string); ok && traceIDStr != "" {
+				fields = append(fields, zap.String("trace_id", sanitize.LogValue(traceIDStr)))
+			}
+		}
+		if rawAPIKey, ok := c.Get("api_key"); ok {
+			if apiKey, ok := rawAPIKey.(*models.APIKey); ok && apiKey != nil {
+				fields = append(fields,
+					zap.String("api_key_id", apiKey.ID.String()),
+					zap.String("api_key_prefix", sanitize.LogValue(apiKey.KeyPrefix)),
+				)
+			}
+		}
+		if rawProject, ok := c.Get("project"); ok {
+			if project, ok := rawProject.(*models.Project); ok && project != nil {
+				fields = append(fields,
+					zap.String("project_id", project.ID.String()),
+					zap.String("org_id", project.OrgID.String()),
+				)
+			}
+		}
+		if modelName, ok := stringContextValue(c, "llm_model"); ok {
+			fields = append(fields, zap.String("model", sanitize.LogValue(modelName)))
+		}
+		if providerName, ok := stringContextValue(c, "provider_name"); ok {
+			fields = append(fields, zap.String("provider", sanitize.LogValue(providerName)))
+		}
+		if providerID, ok := stringContextValue(c, "provider_id"); ok {
+			fields = append(fields, zap.String("provider_id", sanitize.LogValue(providerID)))
+		}
+
+		m.logger.Info("request", fields...)
+	}
+}
+
+func stringContextValue(c *gin.Context, key string) (string, bool) {
+	value, ok := c.Get(key)
+	if !ok {
+		return "", false
+	}
+	str, ok := value.(string)
+	return str, ok && str != ""
+}
+
+func sanitizeQuery(rawQuery string) string {
+	if rawQuery == "" {
+		return ""
+	}
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return sanitize.LogValue(sanitize.RedactSecrets(rawQuery))
+	}
+	for key := range values {
+		if isSensitiveQueryKey(key) {
+			values[key] = []string{"[REDACTED]"}
+		}
+	}
+	return sanitize.LogValue(values.Encode())
+}
+
+func isSensitiveQueryKey(key string) bool {
+	switch strings.ToLower(key) {
+	case "access_token", "api_key", "apikey", "auth", "authorization", "code", "id_token", "key", "password", "refresh_token", "secret", "token":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -102,7 +173,8 @@ func (m *CORSMiddleware) Handle() gin.HandlerFunc {
 
 		// Only allow methods actually used: GraphQL (POST) and LLM API (GET, POST)
 		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-API-Key")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-API-Key, X-Request-Id, X-Trace-Id")
+		c.Header("Access-Control-Expose-Headers", "X-Request-Id, X-Trace-Id, X-Langfuse-Trace-Id")
 		c.Header("Access-Control-Max-Age", "86400")
 
 		if c.Request.Method == "OPTIONS" {
