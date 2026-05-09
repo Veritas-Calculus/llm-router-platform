@@ -524,13 +524,13 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	}
 	billingService := billing.NewService(repos.UsageLog, repos.Model, redisClient, logger)
 	budgetService := billing.NewBudgetService(repos.UsageLog, repos.Budget, logger)
-	subscriptionService := billing.NewSubscriptionService(repos.Plan, repos.Subscription, repos.UsageLog, logger)
+	subscriptionService := billing.NewSubscriptionService(repos.Plan, repos.Subscription, repos.UsageLog, gormDB, logger)
 
 	emailSvc := email.NewService(cfg.Email, cfg.Frontend.URL)
 	balanceService := billing.NewBalanceService(gormDB, repos.User, repos.Transaction, redisClient, emailSvc, logger)
 
 	// Dynamically get Stripe config from DB if available
-	stripeCfg := cfgService.GetStripeConfig(context.Background(), cfg.Stripe)
+	stripeCfg := cfgService.GetPaymentStripeConfig(context.Background(), cfg.Stripe)
 	paymentService := billing.NewPaymentService(stripeCfg, cfg.Frontend.URL, repos.Plan, repos.Subscription, repos.Transaction, logger).WithRedis(redisClient)
 
 	// Wire metric callbacks for billing observability:

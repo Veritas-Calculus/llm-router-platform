@@ -17,7 +17,7 @@ import {
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { PLANS_QUERY, MY_BILLING_QUERY, CHANGE_PLAN, CREATE_CHECKOUT_SESSION } from '@/lib/graphql/operations';
 import { MY_BALANCE } from '@/lib/graphql/operations/auth';
-import { REDEEM_CODE_MUTATION } from '@/lib/graphql/operations/redeem';
+import { MY_REDEEM_HISTORY, REDEEM_CODE_MUTATION } from '@/lib/graphql/operations/redeem';
 import { useTranslation } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/authStore';
 import { formatUSD } from '@/lib/format';
@@ -26,21 +26,28 @@ import RechargeModal from '@/components/RechargeModal';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+const getErrorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return '';
+};
+
 function SubscriptionPage() {
   const { t } = useTranslation();
   const { user, updateUser } = useAuthStore();
   const { data: plansData, loading: plansLoading } = useQuery<any>(PLANS_QUERY);
   const { data: billingData, loading: billingLoading, refetch: refetchBilling } = useQuery<any>(MY_BILLING_QUERY);
+  const { data: redeemHistoryData, loading: redeemHistoryLoading, refetch: refetchRedeemHistory } = useQuery<any>(MY_REDEEM_HISTORY);
   const [refetchBalance] = useLazyQuery<any>(MY_BALANCE, { fetchPolicy: 'network-only' });
   const [changePlanMut] = useMutation(CHANGE_PLAN);
   const [createCheckoutSession] = useMutation(CREATE_CHECKOUT_SESSION);
   const [redeemMut] = useMutation(REDEEM_CODE_MUTATION);
   const [processingId, setProcessingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'plans' | 'orders'>('plans');
+  const [activeTab, setActiveTab] = useState<'plans' | 'orders' | 'redeems'>('plans');
   const [redeemCode, setRedeemCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
   const [isRechargeModalOpen, setIsRechargeModalOpen] = useState(false);
-  const loading = plansLoading || billingLoading;
+  const loading = plansLoading || billingLoading || redeemHistoryLoading;
 
   // Refresh balance + billing on:
   //   1. Returning to the tab after a Stripe redirect (window focus event).
@@ -60,6 +67,7 @@ function SubscriptionPage() {
         // best-effort — the existing user.balance stays as is
       }
       refetchBilling();
+      refetchRedeemHistory();
     };
 
     // URL-based refresh on first mount.
@@ -88,26 +96,83 @@ function SubscriptionPage() {
   const plans = useMemo(() => (plansData?.plans || []) as any[], [plansData]);
   const subscription = billingData?.mySubscription as any;
   const orders = useMemo(() => (billingData?.myOrders || []) as any[], [billingData]);
+  const redeemHistory = useMemo(() => (redeemHistoryData?.myRedeemHistory || []) as any[], [redeemHistoryData]);
+  const activePlans = useMemo(() => plans.filter((p: any) => p.isActive), [plans]);
+  const currentPlan = useMemo(
+    () => activePlans.find((p: any) => p.id === subscription?.planId),
+    [activePlans, subscription?.planId]
+  );
+  const currentPlanPrice = Number(currentPlan?.priceMonth || 0);
+
+  const refreshUserBalance = async () => {
+    try {
+      const result = await refetchBalance();
+      const fresh = (result.data as any)?.me;
+      if (fresh && user) {
+        updateUser({ ...user, balance: fresh.balance });
+      }
+      return Number(fresh?.balance ?? user?.balance ?? 0);
+    } catch {
+      return Number(user?.balance ?? 0);
+    }
+  };
+
+  const planChangeErrorMessage = (error: unknown, fallback: string) => {
+    const message = getErrorMessage(error);
+    if (message.includes('insufficient balance')) {
+      return t('subscription.insufficient_balance');
+    }
+    if (message.includes('payments are currently disabled')) {
+      return t('subscription.payment_disabled');
+    }
+    if (message.includes('plan is not available')) {
+      return t('subscription.plan_unavailable');
+    }
+    if (message.includes('plan not found')) {
+      return t('subscription.plan_not_found');
+    }
+    if (message.includes('checkout session missing url')) {
+      return t('subscription.checkout_missing');
+    }
+    return message || fallback;
+  };
+
+  const changePlanWithBalance = async (planId: string) => {
+    const { data, error } = await changePlanMut({
+      variables: { planId },
+      refetchQueries: [{ query: MY_BILLING_QUERY }],
+      awaitRefetchQueries: true,
+    });
+    if (error) throw error;
+    if (!(data as any)?.changePlan) throw new Error('plan change missing subscription');
+    await refreshUserBalance();
+  };
 
   const handleChangePlan = async (plan: any) => {
     try {
       setProcessingId(plan.id);
-      if (plan.priceMonth > 0) {
-        const { data } = await createCheckoutSession({ variables: { planId: plan.id } });
+      const priceMonth = Number(plan.priceMonth || 0);
+      if (priceMonth > 0) {
+        const balance = await refreshUserBalance();
+        if (balance >= priceMonth) {
+          await changePlanWithBalance(plan.id);
+          toast.success(t('subscription.change_success'));
+          return;
+        }
+
+        const { data, error } = await createCheckoutSession({ variables: { planId: plan.id } });
+        if (error) throw error;
         const url = (data as any)?.createCheckoutSession?.url;
         if (!url) throw new Error('checkout session missing url');
         window.location.href = url;
         return;
       }
 
-      await changePlanMut({
-        variables: { planId: plan.id },
-        refetchQueries: [{ query: MY_BILLING_QUERY }],
-        awaitRefetchQueries: true,
-      });
+      await changePlanWithBalance(plan.id);
       toast.success(t('subscription.change_success'));
-    } catch {
-      toast.error(t('subscription.change_error'));
+    } catch (error) {
+      const fallback = plan.priceMonth > 0 ? t('subscription.checkout_error') : t('subscription.change_error');
+      toast.error(planChangeErrorMessage(error, fallback));
     } finally {
       setProcessingId(null);
     }
@@ -117,12 +182,13 @@ function SubscriptionPage() {
     if (!redeemCode.trim()) return;
     try {
       setRedeeming(true);
-      const { data } = await redeemMut({ variables: { code: redeemCode.trim() } });
+      const { data, error } = await redeemMut({ variables: { code: redeemCode.trim() } });
+      if (error) throw error;
       const result = (data as any)?.redeemCode;
       if (result?.success) {
         toast.success(result.message || t('redeem.success_msg'));
         setRedeemCode('');
-        refetchBilling();
+        await Promise.all([refreshUserBalance(), refetchBilling(), refetchRedeemHistory()]);
       } else {
         toast.error(result?.message || t('redeem.error_msg'));
       }
@@ -135,20 +201,20 @@ function SubscriptionPage() {
 
   const getPlanIcon = (name: string) => {
     switch (name.toLowerCase()) {
-      case 'free': return <SparklesIcon className="w-7 h-7 text-apple-gray-400" />;
-      case 'pro': return <RocketLaunchIcon className="w-7 h-7 text-apple-blue" />;
-      case 'enterprise': return <BuildingOffice2Icon className="w-7 h-7 text-purple-600" />;
-      default: return <SparklesIcon className="w-7 h-7 text-apple-blue" />;
+      case 'free': return <SparklesIcon className="w-5 h-5 text-apple-gray-500 dark:text-apple-gray-300" />;
+      case 'pro': return <RocketLaunchIcon className="w-5 h-5 text-apple-blue" />;
+      case 'enterprise': return <BuildingOffice2Icon className="w-5 h-5 text-purple-600 dark:text-purple-400" />;
+      default: return <SparklesIcon className="w-5 h-5 text-apple-blue" />;
     }
   };
 
   const getStatusBadge = (status: string) => {
     const config: Record<string, { bg: string; text: string; icon: any; label: string }> = {
-      paid: { bg: 'bg-green-100', text: 'text-green-800', icon: CheckCircleIcon, label: t('subscription.status_paid') },
-      pending: { bg: 'bg-orange-100', text: 'text-orange-800', icon: ClockIcon, label: t('subscription.status_pending') },
-      failed: { bg: 'bg-red-100', text: 'text-red-800', icon: XCircleIcon, label: t('subscription.status_failed') },
+      paid: { bg: 'bg-green-100 dark:bg-green-500/15', text: 'text-green-800 dark:text-green-300', icon: CheckCircleIcon, label: t('subscription.status_paid') },
+      pending: { bg: 'bg-orange-100 dark:bg-orange-500/15', text: 'text-orange-800 dark:text-orange-300', icon: ClockIcon, label: t('subscription.status_pending') },
+      failed: { bg: 'bg-red-100 dark:bg-red-500/15', text: 'text-red-800 dark:text-red-300', icon: XCircleIcon, label: t('subscription.status_failed') },
     };
-    const s = config[status] || { bg: 'bg-gray-100', text: 'text-gray-800', icon: ClockIcon, label: status };
+    const s = config[status] || { bg: 'bg-gray-100 dark:bg-white/10', text: 'text-gray-800 dark:text-apple-gray-300', icon: ClockIcon, label: status };
     const Icon = s.icon;
     return (
       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${s.bg} ${s.text}`}>
@@ -174,146 +240,191 @@ function SubscriptionPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-7xl space-y-5 pb-8">
       <div>
-        <h1 className="text-2xl font-bold text-apple-gray-900">{t('subscription.title')}</h1>
-        <p className="mt-1 text-apple-gray-500">{t('subscription.subtitle')}</p>
+        <h1 className="text-2xl font-bold text-apple-gray-900 dark:text-white">{t('subscription.title')}</h1>
+        <p className="mt-1 text-sm text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.subtitle')}</p>
       </div>
 
-      {/* Current status cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="card p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
-              <CreditCardIcon className="w-5 h-5 text-apple-blue" />
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_1.25fr_1fr]">
+        <div className="rounded-2xl border border-apple-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#1C1C1E]">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-500/15">
+              <CreditCardIcon className="h-5 w-5 text-apple-blue" />
             </div>
-            <div>
-              <p className="text-xs text-apple-gray-500">{t('subscription.current_plan')}</p>
-              <p className="text-lg font-bold text-apple-gray-900">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.current_plan')}</p>
+              <p className="mt-0.5 truncate text-lg font-semibold text-apple-gray-900 dark:text-white">
                 {subscription?.planName || t('subscription.no_plan')}
               </p>
             </div>
           </div>
         </div>
-        <div className="card p-5">
-          <div className="flex justify-between items-center w-full">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-50 rounded-xl flex items-center justify-center">
-                <SparklesIcon className="w-5 h-5 text-green-600" />
+
+        <div className="rounded-2xl border border-apple-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#1C1C1E]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-green-50 dark:bg-green-500/15">
+                <SparklesIcon className="h-5 w-5 text-green-600 dark:text-green-400" />
               </div>
-              <div>
-                <p className="text-xs text-apple-gray-500">{t('subscription.balance')}</p>
-                <p className="text-lg font-bold text-apple-gray-900">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.balance')}</p>
+                <p className="mt-0.5 truncate text-xl font-semibold text-apple-gray-900 dark:text-white">
                   {formatUSD(user?.balance ?? 0)}
                 </p>
               </div>
             </div>
             <button
               onClick={() => setIsRechargeModalOpen(true)}
-              className="px-3 py-1.5 bg-green-500 hover:bg-green-600 active:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 shadow-sm"
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-green-500 px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-green-600 active:bg-green-700"
               title={t('subscription.top_up')}
             >
-              <PlusIcon className="w-4 h-4" />
+              <PlusIcon className="h-4 w-4" />
               {t('subscription.top_up')}
             </button>
           </div>
         </div>
-        <div className="card p-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
-              <ClockIcon className="w-5 h-5 text-purple-600" />
+
+        <div className="rounded-2xl border border-apple-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-[#1C1C1E]">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-purple-50 dark:bg-purple-500/15">
+              <ClockIcon className="h-5 w-5 text-purple-600 dark:text-purple-400" />
             </div>
-            <div>
-              <p className="text-xs text-apple-gray-500">{t('subscription.period')}</p>
-              <p className="text-sm font-semibold text-apple-gray-900">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.period')}</p>
+              <p className="mt-0.5 truncate text-lg font-semibold text-apple-gray-900 dark:text-white">
                 {subscription?.currentPeriodEnd
                   ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
-                  : '—'}
+                  : '--'}
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex gap-1 bg-apple-gray-100 rounded-xl p-1 w-fit">
+      <div className="inline-flex max-w-full overflow-x-auto rounded-2xl border border-apple-gray-200 bg-apple-gray-100 p-1 dark:border-white/10 dark:bg-white/5">
         <button
           onClick={() => setActiveTab('plans')}
-          className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
+          className={`h-10 shrink-0 rounded-xl px-5 text-sm font-semibold transition-all ${
             activeTab === 'plans'
-              ? 'bg-white text-apple-blue shadow-sm'
-              : 'text-apple-gray-500 hover:text-apple-gray-700'
+              ? 'bg-white text-apple-blue shadow-sm dark:bg-[#2C2C2E]'
+              : 'text-apple-gray-500 hover:text-apple-gray-700 dark:text-apple-gray-400 dark:hover:text-white'
           }`}
         >
           {t('subscription.tab_plans')}
         </button>
         <button
           onClick={() => setActiveTab('orders')}
-          className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
+          className={`h-10 shrink-0 rounded-xl px-5 text-sm font-semibold transition-all ${
             activeTab === 'orders'
-              ? 'bg-white text-apple-blue shadow-sm'
-              : 'text-apple-gray-500 hover:text-apple-gray-700'
+              ? 'bg-white text-apple-blue shadow-sm dark:bg-[#2C2C2E]'
+              : 'text-apple-gray-500 hover:text-apple-gray-700 dark:text-apple-gray-400 dark:hover:text-white'
           }`}
         >
           {t('subscription.tab_orders')}
         </button>
+        <button
+          onClick={() => setActiveTab('redeems')}
+          className={`h-10 shrink-0 rounded-xl px-5 text-sm font-semibold transition-all ${
+            activeTab === 'redeems'
+              ? 'bg-white text-apple-blue shadow-sm dark:bg-[#2C2C2E]'
+              : 'text-apple-gray-500 hover:text-apple-gray-700 dark:text-apple-gray-400 dark:hover:text-white'
+          }`}
+        >
+          {t('subscription.tab_redeems')}
+        </button>
       </div>
 
-      {activeTab === 'plans' ? (
+      {activeTab === 'plans' && (
         <>
-          {/* Plan cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {plans.filter((p: any) => p.isActive).map((plan: any) => {
-              const isCurrent = subscription?.planId === plan.id;
-              const features = (plan.features || '').split(',').map((f: string) => f.trim()).filter(Boolean);
-              const isUpgrade = plan.priceMonth > (plans.find((p: any) => p.id === subscription?.planId)?.priceMonth || 0);
+          {activePlans.length === 0 ? (
+            <div className="rounded-2xl border border-apple-gray-200 bg-white p-10 text-center shadow-sm dark:border-white/10 dark:bg-[#1C1C1E]">
+              <CreditCardIcon className="mx-auto h-10 w-10 text-apple-gray-300 dark:text-apple-gray-500" />
+              <h3 className="mt-3 text-base font-semibold text-apple-gray-900 dark:text-white">{t('subscription.no_plan')}</h3>
+            </div>
+          ) : (
+            <div className={activePlans.length === 1
+              ? 'grid max-w-md grid-cols-1 gap-4'
+              : 'grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3'}
+            >
+              {activePlans.map((plan: any) => {
+                const isCurrent = subscription?.planId === plan.id;
+                const features = (plan.features || '').split(',').map((f: string) => f.trim()).filter(Boolean);
+                const priceMonth = Number(plan.priceMonth || 0);
+                const isUpgrade = priceMonth > currentPlanPrice;
 
-              return (
-                <motion.div
-                  key={plan.id}
-                  whileHover={{ y: -4 }}
-                  className={`relative card overflow-hidden ${
-                    isCurrent ? 'ring-2 ring-apple-blue' : ''
-                  }`}
-                >
-                  {isCurrent && (
-                    <div className="absolute top-0 right-0 bg-apple-blue text-white px-3 py-1 text-[10px] font-bold rounded-bl-xl">
-                      {t('subscription.current')}
+                return (
+                  <motion.div
+                    key={plan.id}
+                    whileHover={isCurrent ? undefined : { y: -3 }}
+                    className={`relative overflow-hidden rounded-2xl border bg-white p-5 shadow-sm transition-colors dark:bg-[#1C1C1E] ${
+                      isCurrent
+                        ? 'border-apple-blue shadow-[0_0_0_1px_rgba(0,122,255,0.45)]'
+                        : 'border-apple-gray-200 hover:border-apple-gray-300 dark:border-white/10 dark:hover:border-white/20'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-apple-gray-100 dark:bg-white/10">
+                        {getPlanIcon(plan.name)}
+                      </div>
+                      {isCurrent && (
+                        <span className="rounded-full bg-apple-blue px-2.5 py-1 text-xs font-semibold text-white">
+                          {t('subscription.current')}
+                        </span>
+                      )}
                     </div>
-                  )}
-                  <div className="p-6">
-                    <div className="mb-4">{getPlanIcon(plan.name)}</div>
-                    <h3 className="text-xl font-bold text-apple-gray-900">{plan.name}</h3>
-                    <p className="mt-1 text-apple-gray-500 text-sm h-10">{plan.description}</p>
-                    <div className="mt-4 flex items-baseline">
-                      <span className="text-3xl font-bold text-apple-gray-900">${plan.priceMonth}</span>
-                      <span className="ml-1 text-apple-gray-500 text-sm">{t('subscription.per_month')}</span>
+
+                    <div className="mt-4">
+                      <h3 className="text-xl font-semibold text-apple-gray-900 dark:text-white">{plan.name}</h3>
+                      {plan.description && (
+                        <p className="mt-1 text-sm leading-5 text-apple-gray-500 dark:text-apple-gray-400">
+                          {plan.description}
+                        </p>
+                      )}
                     </div>
-                    <div className="mt-3 flex gap-4 text-xs text-apple-gray-500">
-                      <span>{formatTokens(plan.tokenLimit)} {t('subscription.token_limit')}</span>
-                      <span>{plan.rateLimit} {t('subscription.rate_limit_label')}</span>
+
+                    <div className="mt-5 flex items-end gap-1">
+                      <span className="text-4xl font-semibold tracking-normal text-apple-gray-900 dark:text-white">
+                        ${priceMonth}
+                      </span>
+                      <span className="pb-1 text-sm text-apple-gray-500 dark:text-apple-gray-400">
+                        {t('subscription.per_month')}
+                      </span>
                     </div>
-                    <ul className="mt-5 space-y-2.5">
-                      {features.map((f: string, i: number) => (
-                        <li key={i} className="flex items-start text-sm">
-                          <CheckIcon className="w-4 h-4 text-apple-green shrink-0 mr-2 mt-0.5" />
-                          <span className="text-apple-gray-600">{f}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="p-6 bg-apple-gray-50 border-t border-apple-gray-100">
+
+                    <div className="mt-5 grid grid-cols-2 gap-2">
+                      <div className="rounded-xl border border-apple-gray-200 bg-apple-gray-50 p-3 dark:border-white/10 dark:bg-white/5">
+                        <p className="text-xs text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.token_limit')}</p>
+                        <p className="mt-1 text-sm font-semibold text-apple-gray-900 dark:text-white">{formatTokens(plan.tokenLimit)}</p>
+                      </div>
+                      <div className="rounded-xl border border-apple-gray-200 bg-apple-gray-50 p-3 dark:border-white/10 dark:bg-white/5">
+                        <p className="text-xs text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.rate_limit_label')}</p>
+                        <p className="mt-1 text-sm font-semibold text-apple-gray-900 dark:text-white">{plan.rateLimit}</p>
+                      </div>
+                    </div>
+
+                    {features.length > 0 && (
+                      <ul className="mt-5 space-y-2 border-t border-apple-gray-100 pt-4 dark:border-white/10">
+                        {features.map((f: string, i: number) => (
+                          <li key={i} className="flex items-start text-sm">
+                            <CheckIcon className="mr-2 mt-0.5 h-4 w-4 shrink-0 text-apple-green" />
+                            <span className="text-apple-gray-600 dark:text-apple-gray-300">{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
                     <button
                       onClick={() => handleChangePlan(plan)}
                       disabled={isCurrent || !!processingId}
-                      className={`w-full py-2.5 px-4 rounded-xl font-semibold text-sm transition-all flex justify-center items-center ${
+                      className={`mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition-all ${
                         isCurrent
-                          ? 'bg-apple-gray-200 text-apple-gray-500 cursor-default'
-                          : 'bg-apple-blue text-white hover:bg-blue-600 active:scale-95 shadow-sm'
+                          ? 'cursor-default bg-apple-gray-100 text-apple-gray-500 dark:bg-white/10 dark:text-apple-gray-400'
+                          : 'bg-apple-blue text-white shadow-sm hover:bg-blue-600 active:scale-[0.98]'
                       }`}
                     >
                       {processingId === plan.id ? (
-                        <ArrowPathIcon className="w-5 h-5 animate-spin" />
+                        <ArrowPathIcon className="h-5 w-5 animate-spin" />
                       ) : isCurrent ? (
                         t('subscription.subscribed')
                       ) : isUpgrade ? (
@@ -322,89 +433,158 @@ function SubscriptionPage() {
                         t('subscription.downgrade')
                       )}
                     </button>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
-
-          {/* Redeem Code */}
-          <div className="card p-8 text-center">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <GiftIcon className="w-6 h-6 text-apple-blue" />
-              <h2 className="text-xl font-bold text-apple-gray-900">{t('subscription.redeem_code')}</h2>
+                  </motion.div>
+                );
+              })}
             </div>
-            <p className="text-apple-gray-500 text-sm mb-6 max-w-lg mx-auto">{t('redeem.input_desc')}</p>
-            <div className="flex gap-3 max-w-md mx-auto">
-              <input
-                type="text"
-                value={redeemCode}
-                onChange={(e) => setRedeemCode(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleRedeem()}
-                placeholder={t('subscription.redeem_placeholder')}
-                className="flex-1 px-4 py-2.5 rounded-xl border border-apple-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-apple-blue focus:border-transparent font-mono tracking-wider"
-              />
-              <button
-                onClick={handleRedeem}
-                disabled={!redeemCode.trim() || redeeming}
-                className="px-6 py-2.5 bg-apple-blue text-white rounded-xl font-semibold text-sm hover:bg-blue-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {redeeming ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <GiftIcon className="w-4 h-4" />}
-                {t('subscription.redeem_btn')}
-              </button>
+          )}
+
+          <div className="rounded-2xl border border-apple-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-[#1C1C1E]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 dark:bg-blue-500/15">
+                  <GiftIcon className="h-5 w-5 text-apple-blue" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-base font-semibold text-apple-gray-900 dark:text-white">{t('subscription.redeem_code')}</h2>
+                  <p className="mt-0.5 text-sm text-apple-gray-500 dark:text-apple-gray-400">{t('redeem.input_desc')}</p>
+                </div>
+              </div>
+              <div className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-xl">
+                <input
+                  type="text"
+                  value={redeemCode}
+                  onChange={(e) => setRedeemCode(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleRedeem()}
+                  placeholder={t('subscription.redeem_placeholder')}
+                  className="h-11 min-w-0 flex-1 rounded-xl border border-apple-gray-200 bg-white px-4 text-sm font-mono tracking-wider text-apple-gray-900 transition-shadow focus:border-transparent focus:outline-none focus:ring-2 focus:ring-apple-blue dark:border-white/10 dark:bg-[#111113] dark:text-white"
+                />
+                <button
+                  onClick={handleRedeem}
+                  disabled={!redeemCode.trim() || redeeming}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-apple-blue px-5 text-sm font-semibold text-white transition-all hover:bg-blue-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {redeeming ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <GiftIcon className="h-4 w-4" />}
+                  {t('subscription.redeem_btn')}
+                </button>
+              </div>
             </div>
           </div>
         </>
-      ) : (
-        /* Orders tab */
-        <div className="card overflow-hidden">
+      )}
+
+      {activeTab === 'orders' && (
+        <div className="overflow-hidden rounded-2xl border border-apple-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#1C1C1E]">
           {orders.length === 0 ? (
             <div className="p-12 text-center">
-              <CreditCardIcon className="w-12 h-12 text-apple-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-apple-gray-900">{t('subscription.no_orders')}</h3>
-              <p className="text-apple-gray-500 text-sm mt-1">{t('subscription.no_orders_desc')}</p>
+              <CreditCardIcon className="mx-auto mb-4 h-12 w-12 text-apple-gray-300 dark:text-apple-gray-500" />
+              <h3 className="text-lg font-medium text-apple-gray-900 dark:text-white">{t('subscription.no_orders')}</h3>
+              <p className="mt-1 text-sm text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.no_orders_desc')}</p>
             </div>
           ) : (
-            <table className="min-w-full divide-y divide-apple-gray-200">
-              <thead className="bg-apple-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-apple-gray-500 uppercase tracking-wider">{t('subscription.order_info')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-apple-gray-500 uppercase tracking-wider">{t('common.status')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-apple-gray-500 uppercase tracking-wider">{t('subscription.amount')}</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-apple-gray-500 uppercase tracking-wider">{t('common.created_at')}</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-apple-gray-200">
-                {orders.map((order: any) => (
-                  <tr key={order.id} className="hover:bg-apple-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-mono text-apple-gray-900">
-                          {order.id.slice(0, 8)}...
-                        </span>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(order.id);
-                            toast.success(t('common.copied'));
-                          }}
-                          className="text-apple-gray-400 hover:text-apple-blue"
-                        >
-                          <DocumentDuplicateIcon className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      <p className="text-xs text-apple-gray-500">{order.description || '—'}</p>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(order.status)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-apple-gray-900">
-                      ${order.amount.toFixed(2)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-apple-gray-500">
-                      {new Date(order.createdAt).toLocaleDateString()}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-apple-gray-200 dark:divide-white/10">
+                <thead className="bg-apple-gray-50 dark:bg-white/5">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.order_info')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-apple-gray-500 dark:text-apple-gray-400">{t('common.status')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.amount')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-apple-gray-500 dark:text-apple-gray-400">{t('common.created_at')}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-apple-gray-200 bg-white dark:divide-white/10 dark:bg-[#1C1C1E]">
+                  {orders.map((order: any) => (
+                    <tr key={order.id} className="transition-colors hover:bg-apple-gray-50 dark:hover:bg-white/5">
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-mono text-apple-gray-900 dark:text-white">
+                            {order.id.slice(0, 8)}...
+                          </span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(order.id);
+                              toast.success(t('common.copied'));
+                            }}
+                            className="text-apple-gray-400 transition-colors hover:text-apple-blue"
+                          >
+                            <DocumentDuplicateIcon className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <p className="text-xs text-apple-gray-500 dark:text-apple-gray-400">{order.description || '--'}</p>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4">{getStatusBadge(order.status)}</td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-apple-gray-900 dark:text-white">
+                        ${order.amount.toFixed(2)}
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4 text-sm text-apple-gray-500 dark:text-apple-gray-400">
+                        {new Date(order.createdAt).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'redeems' && (
+        <div className="overflow-hidden rounded-2xl border border-apple-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#1C1C1E]">
+          {redeemHistory.length === 0 ? (
+            <div className="p-12 text-center">
+              <GiftIcon className="mx-auto mb-4 h-12 w-12 text-apple-gray-300 dark:text-apple-gray-500" />
+              <h3 className="text-lg font-medium text-apple-gray-900 dark:text-white">{t('subscription.no_redeems')}</h3>
+              <p className="mt-1 text-sm text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.no_redeems_desc')}</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-apple-gray-200 dark:divide-white/10">
+                <thead className="bg-apple-gray-50 dark:bg-white/5">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.redeem_info')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.redeem_type')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.redeem_amount')}</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.redeemed_at')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-apple-gray-200 bg-white dark:divide-white/10 dark:bg-[#1C1C1E]">
+                  {redeemHistory.map((record: any) => {
+                    const creditAmount = Number(record.creditAmount || 0);
+                    const label = record.planName || t('subscription.credits');
+                    return (
+                      <tr key={record.id} className="transition-colors hover:bg-apple-gray-50 dark:hover:bg-white/5">
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-mono text-apple-gray-900 dark:text-white">{record.code}</span>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(record.code);
+                                toast.success(t('common.copied'));
+                              }}
+                              className="text-apple-gray-400 transition-colors hover:text-apple-blue"
+                              title={t('common.copy')}
+                            >
+                              <DocumentDuplicateIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-apple-blue dark:bg-blue-500/15">
+                            {label}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-green-600 dark:text-green-400">
+                          {creditAmount > 0 ? `+${formatUSD(creditAmount)}` : '--'}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-sm text-apple-gray-500 dark:text-apple-gray-400">
+                          {record.redeemedAt ? new Date(record.redeemedAt).toLocaleString() : '--'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

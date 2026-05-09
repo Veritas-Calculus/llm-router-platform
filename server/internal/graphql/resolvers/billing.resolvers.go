@@ -99,13 +99,21 @@ func (r *mutationResolver) ChangePlan(ctx context.Context, planID string) (*mode
 	if err != nil {
 		return nil, err
 	}
+	uid, err := directives.UserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userID, err := uuid.Parse(uid)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
 
 	pid, err := uuid.Parse(planID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid plan ID")
 	}
 
-	sub, err := r.SubscriptionSvc.ChangePlan(ctx, orgID, pid)
+	sub, err := r.SubscriptionSvc.ChangePlan(ctx, orgID, userID, pid)
 	if err != nil {
 		return nil, err
 	}
@@ -169,17 +177,25 @@ func (r *mutationResolver) RedeemCode(ctx context.Context, code string) (*model.
 	if err != nil {
 		return nil, err
 	}
-	userID, _ := uuid.Parse(uid)
+	userID, err := uuid.Parse(uid)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID")
+	}
 	result, err := r.RedeemSvc.Redeem(userID, code)
 	if err != nil {
 		return nil, err
 	}
-	return &model.RedeemResult{
-		Success:      true,
-		Message:      result.Message,
-		CreditAmount: &result.CreditAmount,
-		PlanName:     &result.PlanName,
-	}, nil
+	out := &model.RedeemResult{
+		Success: result.Success,
+		Message: result.Message,
+	}
+	if result.CreditAmount > 0 {
+		out.CreditAmount = &result.CreditAmount
+	}
+	if result.PlanName != "" {
+		out.PlanName = &result.PlanName
+	}
+	return out, nil
 }
 
 // CreatePlan is the resolver for the createPlan field.
@@ -473,16 +489,28 @@ func (r *queryResolver) MyRedeemHistory(ctx context.Context) ([]*model.RedeemRec
 	if err != nil {
 		return nil, err
 	}
-	userID, _ := uuid.Parse(uid)
+	userID, err := uuid.Parse(uid)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user id: %w", err)
+	}
 	records, err := r.RedeemSvc.UserHistory(userID)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*model.RedeemRecord, len(records))
 	for i, rc := range records {
+		redeemedAt := rc.UpdatedAt
+		if rc.UsedAt != nil {
+			redeemedAt = *rc.UsedAt
+		}
+		var planName *string
+		if rc.Plan.Name != "" {
+			name := rc.Plan.Name
+			planName = &name
+		}
 		out[i] = &model.RedeemRecord{
 			ID: rc.ID.String(), Code: rc.Code,
-			CreditAmount: rc.CreditAmount, RedeemedAt: rc.UpdatedAt,
+			CreditAmount: rc.CreditAmount, PlanName: planName, RedeemedAt: redeemedAt,
 		}
 	}
 	return out, nil

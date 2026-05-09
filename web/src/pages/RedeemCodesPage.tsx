@@ -91,12 +91,11 @@ function RedeemCodesPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="form-label">{t('redeem_codes.type')}</label>
-              <select className="form-input" value={formData.type} onChange={e => setFormData(d => ({ ...d, type: e.target.value }))}>
-                <option value="credit">Credit</option>
-                <option value="plan">Plan</option>
-              </select>
-            </div>
+	              <label className="form-label">{t('redeem_codes.type')}</label>
+	              <select className="form-input" value={formData.type} onChange={e => setFormData(d => ({ ...d, type: e.target.value }))}>
+	                <option value="credit">Credit</option>
+	              </select>
+	            </div>
             <div>
               <label className="form-label">{t('redeem_codes.count')}</label>
               <input type="number" className="form-input" value={formData.count} min={1} max={100}

@@ -159,7 +159,10 @@ func (r *mutationResolver) ExportSystemUsageCSV(ctx context.Context) (string, er
 func (r *mutationResolver) GenerateRedeemCodes(ctx context.Context, input model.GenerateRedeemCodesInput) (*model.GenerateRedeemCodesResult, error) {
 	var planID *uuid.UUID
 	if input.PlanID != nil {
-		p, _ := uuid.Parse(*input.PlanID)
+		p, err := uuid.Parse(*input.PlanID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid plan ID")
+		}
 		planID = &p
 	}
 	var expiresAt *time.Time
