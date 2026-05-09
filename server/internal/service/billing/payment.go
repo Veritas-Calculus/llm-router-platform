@@ -325,10 +325,12 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 	sub.CurrentPeriodEnd = time.Now().AddDate(0, 1, 0)
 
 	if sess.Customer != nil {
-		sub.StripeCustomerID = sess.Customer.ID
+		customerID := sess.Customer.ID
+		sub.StripeCustomerID = &customerID
 	}
 	if sess.Subscription != nil {
-		sub.StripeSubscriptionID = sess.Subscription.ID
+		subscriptionID := sess.Subscription.ID
+		sub.StripeSubscriptionID = &subscriptionID
 	}
 
 	if sub.ID == uuid.Nil {
@@ -349,12 +351,12 @@ func (s *PaymentService) CreatePortalSession(ctx context.Context, userID uuid.UU
 	}
 
 	sub, err := s.subRepo.GetByUserID(ctx, userID)
-	if err != nil || sub.StripeCustomerID == "" {
+	if err != nil || sub.StripeCustomerID == nil || *sub.StripeCustomerID == "" {
 		return "", fmt.Errorf("no active subscription associated with this account")
 	}
 
 	params := &stripe.BillingPortalSessionParams{
-		Customer:  stripe.String(sub.StripeCustomerID),
+		Customer:  stripe.String(*sub.StripeCustomerID),
 		ReturnURL: stripe.String(s.frontendURL + "/billing"),
 	}
 

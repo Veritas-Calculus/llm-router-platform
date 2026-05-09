@@ -28,8 +28,8 @@ type Subscription struct {
 	CurrentPeriodStart   time.Time `json:"current_period_start"`
 	CurrentPeriodEnd     time.Time `json:"current_period_end"`
 	CancelAtPeriodEnd    bool      `gorm:"default:false" json:"cancel_at_period_end"`
-	StripeCustomerID     string    `gorm:"index" json:"stripe_customer_id"`
-	StripeSubscriptionID string    `gorm:"uniqueIndex" json:"stripe_subscription_id"`
+	StripeCustomerID     *string   `gorm:"index" json:"stripe_customer_id,omitempty"`
+	StripeSubscriptionID *string   `gorm:"uniqueIndex:idx_subscriptions_stripe_subscription_id,where:stripe_subscription_id IS NOT NULL" json:"stripe_subscription_id,omitempty"`
 
 	Organization Organization `gorm:"foreignKey:OrgID" json:"-"`
 	Plan         Plan         `gorm:"foreignKey:PlanID" json:"plan"`

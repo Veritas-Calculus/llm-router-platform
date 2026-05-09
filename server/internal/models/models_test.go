@@ -1,6 +1,7 @@
 package models
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -75,6 +76,17 @@ func TestProviderModel(t *testing.T) {
 	assert.Equal(t, "https://api.openai.com/v1", provider.BaseURL)
 	assert.True(t, provider.IsActive)
 	assert.Equal(t, 10, provider.Priority)
+}
+
+func TestSubscriptionStripeIDsAreNullable(t *testing.T) {
+	subscription := Subscription{}
+
+	assert.Nil(t, subscription.StripeCustomerID)
+	assert.Nil(t, subscription.StripeSubscriptionID)
+
+	field, ok := reflect.TypeOf(Subscription{}).FieldByName("StripeSubscriptionID")
+	assert.True(t, ok)
+	assert.Contains(t, field.Tag.Get("gorm"), "where:stripe_subscription_id IS NOT NULL")
 }
 
 func TestModelModel(t *testing.T) {
