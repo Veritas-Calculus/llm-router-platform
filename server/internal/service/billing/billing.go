@@ -165,9 +165,16 @@ func (s *Service) UpdateUsageTokensAndDeduct(ctx context.Context, logID uuid.UUI
 
 	s.calculateUsageLogCost(ctx, log)
 
-	if balanceSvc == nil || !log.IsSuccess || log.Cost <= 0 {
+	// 499 (client closed request) is not a success for analytics, but the
+	// upstream provider already billed us for the tokens we streamed before
+	// the client went away. Treat it as billable so dropping the connection
+	// can't be used to consume tokens for free; only real upstream failures
+	// (5xx, 4xx other than 499) skip deduction.
+	billable := log.IsSuccess || statusCode == 499
+
+	if balanceSvc == nil || !billable || log.Cost <= 0 {
 		err := s.usageRepo.Update(ctx, log)
-		if s.redis != nil && err == nil && log.IsSuccess {
+		if s.redis != nil && err == nil && billable {
 			s.incrUsageCache(ctx, log)
 			quota.IncrementUsage(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
 		}
@@ -225,7 +232,7 @@ func (s *Service) UpdateUsageTokensAndDeduct(ctx context.Context, logID uuid.UUI
 	})
 
 	if err != nil {
-		if errors := txCtx.Err(); errors != nil {
+		if txCtx.Err() != nil {
 			recordLockTimeout("update_usage_and_deduct")
 		}
 		billingRecordErrorsTotal.WithLabelValues("update_usage_and_deduct").Inc()
