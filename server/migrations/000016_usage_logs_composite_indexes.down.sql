@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_usage_logs_project_channel_created_at;
+DROP INDEX IF EXISTS idx_usage_logs_project_created_at;
