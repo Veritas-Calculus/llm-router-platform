@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
+
 	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/service/audit"
@@ -124,6 +126,13 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 }
 
 // RefreshToken is the resolver for the refreshToken field.
+//
+// This re-issues an access token from an already-authenticated session. The
+// @auth directive ensures the incoming token is currently valid, and the REST
+// middleware enforces the iat ≥ TokensInvalidatedAt invariant on the inbound
+// token. We re-check that invariant here as defense in depth — without this,
+// any future bypass of the middleware would let a stolen token be re-minted
+// with a fresh iat that escapes future logout/password-change revocations.
 func (r *mutationResolver) RefreshToken(ctx context.Context) (*model.AuthPayload, error) {
 	uid, err := directives.UserIDFromContext(ctx)
 	if err != nil {
@@ -134,7 +143,22 @@ func (r *mutationResolver) RefreshToken(ctx context.Context) (*model.AuthPayload
 	if err != nil {
 		return nil, err
 	}
-	token, _ := r.generateJWT(u)
+	if !u.IsActive {
+		return nil, fmt.Errorf("account is disabled")
+	}
+	if !u.TokensInvalidatedAt.IsZero() {
+		if gc, gcErr := directives.GinContextFromContext(ctx); gcErr == nil {
+			if v, ok := gc.Get("token_iat"); ok {
+				if iat, ok := v.(time.Time); ok && iat.Before(u.TokensInvalidatedAt) {
+					return nil, fmt.Errorf("token has been revoked")
+				}
+			}
+		}
+	}
+	token, err := r.generateJWT(u)
+	if err != nil {
+		return nil, err
+	}
 	return &model.AuthPayload{Token: token, User: userToGQL(u)}, nil
 }
 

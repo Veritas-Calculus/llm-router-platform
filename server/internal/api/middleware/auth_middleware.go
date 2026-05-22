@@ -72,6 +72,9 @@ func (m *AuthMiddleware) JWT() gin.HandlerFunc {
 		c.Set("user_monthly_token_limit", userObj.MonthlyTokenLimit)
 		c.Set("user_monthly_budget_usd", userObj.MonthlyBudgetUSD)
 		c.Set("user_rate_limit", userObj.RateLimitPerMinute)
+		if iat, _ := claims.GetIssuedAt(); iat != nil {
+			c.Set("token_iat", iat.Time)
+		}
 
 		c.Next()
 	}
@@ -169,6 +172,9 @@ func (m *AuthMiddleware) OptionalJWT() gin.HandlerFunc {
 		c.Set("user_monthly_token_limit", userObj.MonthlyTokenLimit)
 		c.Set("user_monthly_budget_usd", userObj.MonthlyBudgetUSD)
 		c.Set("user_rate_limit", userObj.RateLimitPerMinute)
+		if iat, _ := claims.GetIssuedAt(); iat != nil {
+			c.Set("token_iat", iat.Time)
+		}
 		c.Next()
 	}
 }
