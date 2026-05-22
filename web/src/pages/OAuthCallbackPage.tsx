@@ -1,47 +1,63 @@
-import { useEffect, useState } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useMutation } from '@apollo/client/react';
+import { gql } from '@apollo/client';
 import { useAuthStore } from '@/stores/authStore';
 
+const EXCHANGE_OAUTH_CODE = gql`
+  mutation ExchangeOAuthCode {
+    exchangeOAuthCode {
+      token
+      refreshToken
+      user { id email name role isActive mfaEnabled emailVerified }
+    }
+  }
+`;
+
 /**
- * OAuthCallbackPage handles the redirect from the backend OAuth2 callback.
- * It extracts the JWT token from the URL, stores it, and redirects to dashboard.
+ * OAuthCallbackPage handles the redirect from the backend OAuth2/SSO callback.
+ *
+ * The backend no longer ships the JWT in the URL (that path leaked tokens to
+ * browser history, Referer headers, and CDN/proxy access logs). Instead it
+ * sets a short-lived HttpOnly + Secure exchange cookie and redirects here.
+ * We trade that cookie for a real AuthPayload via a GraphQL mutation.
  */
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
   const [error, setError] = useState('');
+  const [exchange] = useMutation<any>(EXCHANGE_OAUTH_CODE);
+  // useEffect runs twice under React.StrictMode in dev — make sure the
+  // single-use cookie isn't redeemed twice (the second call would 401).
+  const didRunRef = useRef(false);
 
   useEffect(() => {
-    const token = searchParams.get('token');
-    const errorMsg = searchParams.get('error');
+    if (didRunRef.current) return;
+    didRunRef.current = true;
 
+    const errorMsg = searchParams.get('error');
     if (errorMsg) {
       setError(errorMsg);
       return;
     }
 
-    if (!token) {
-      setError('No authentication token received');
-      return;
-    }
-
-    // Decode JWT to get user info (without verification — the backend verified it)
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const user = {
-        id: payload.sub,
-        email: payload.email,
-        role: payload.role,
-        name: payload.email.split('@')[0],
-        isActive: true,
-      };
-      setAuth(token, user);
-      navigate('/dashboard', { replace: true });
-    } catch {
-      setError('Invalid authentication token');
-    }
-  }, [searchParams, setAuth, navigate]);
+    (async () => {
+      try {
+        const result = await exchange();
+        if (result.error) throw new Error(result.error.message);
+        const payload = (result.data as any)?.exchangeOAuthCode;
+        if (!payload?.token || !payload?.user) {
+          throw new Error('Authentication response was incomplete');
+        }
+        setAuth(payload.token, payload.user, payload.refreshToken ?? null);
+        navigate('/dashboard', { replace: true });
+      } catch (err: any) {
+        setError(err.message || 'Authentication failed');
+      }
+    })();
+  }, [searchParams, exchange, setAuth, navigate]);
 
   if (error) {
     return (

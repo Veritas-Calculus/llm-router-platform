@@ -73,7 +73,8 @@ func setupRedeemTestDB(t *testing.T) *gorm.DB {
 			currency TEXT DEFAULT 'USD',
 			balance REAL,
 			description TEXT,
-			reference_id TEXT
+			reference_id TEXT,
+			idempotency_key TEXT
 		);
 	`).Error)
 	return db

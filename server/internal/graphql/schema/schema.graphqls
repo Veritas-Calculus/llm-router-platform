@@ -127,6 +127,11 @@ type Mutation {
   register(input: RegisterInput!): AuthPayload! @rateLimit(max: 5, window: "1m")
   refreshToken: AuthPayload! @auth
   rotateRefreshToken(refreshToken: String!): AuthPayload! @rateLimit(max: 5, window: "1m")
+  # exchangeOAuthCode redeems the short-lived HttpOnly cookie set by the
+  # OAuth/SSO callback for an AuthPayload. The callback handler no longer
+  # places the JWT in the redirect URL, so the token never enters browser
+  # history, Referer headers, or server logs.
+  exchangeOAuthCode: AuthPayload! @rateLimit(max: 5, window: "1m")
   logout: Boolean! @auth
   discoverSso(email: String!): SsoDiscoveryResult! @rateLimit(max: 5, window: "1m")
   forgotPassword(email: String!): Boolean! @rateLimit(max: 3, window: "1m")

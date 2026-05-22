@@ -322,7 +322,7 @@ func Setup(
 			v1.POST("/payments/webhook/alipay", paymentHandler.AlipayNotify)
 
 			// ─── SSO / Tenant-Aware Login ───────────────────────────
-			ssoHandler := handlers.NewSSOHandler(cfg, services.DB, logger)
+			ssoHandler := handlers.NewSSOHandler(cfg, services.DB, services.RedisClient, logger)
 			sso := v1.Group("/sso")
 			{
 				sso.POST("/discover", ssoHandler.Discover)
@@ -344,7 +344,7 @@ func Setup(
 		}
 	}
 
-	oauth2Handler := handlers.NewOAuth2Handler(cfg, services.SystemConfig, services.DB, logger)
+	oauth2Handler := handlers.NewOAuth2Handler(cfg, services.SystemConfig, services.DB, services.RedisClient, logger)
 	authGroup := engine.Group("/auth/oauth2")
 	{
 		authGroup.GET("/providers", oauth2Handler.Providers)

@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
+	"llm-router-platform/internal/api/handlers"
 	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/service/audit"
@@ -189,6 +191,56 @@ func (r *mutationResolver) RotateRefreshToken(ctx context.Context, refreshToken 
 		if iat != nil && iat.Before(u.TokensInvalidatedAt) {
 			return nil, fmt.Errorf("refresh token has been revoked")
 		}
+	}
+
+	token, err := r.generateJWT(u)
+	if err != nil {
+		return nil, err
+	}
+	refresh, err := r.generateRefreshJWT(u)
+	if err != nil {
+		return nil, err
+	}
+	return &model.AuthPayload{Token: token, RefreshToken: &refresh, User: userToGQL(u)}, nil
+}
+
+// ExchangeOAuthCode redeems the HttpOnly cookie that an OAuth/SSO callback
+// set after successful authentication. The cookie holds a short opaque
+// code; we look it up in Redis to recover the user_id, fetch the user, and
+// mint a fresh access+refresh pair. The code is consumed (DEL) on a
+// successful lookup so it can't be replayed.
+func (r *mutationResolver) ExchangeOAuthCode(ctx context.Context) (*model.AuthPayload, error) {
+	gc, err := directives.GinContextFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("invalid request")
+	}
+	code, err := gc.Cookie(handlers.OAuthExchangeCookieName)
+	if err != nil || code == "" {
+		return nil, fmt.Errorf("no exchange cookie")
+	}
+	// Clear the cookie regardless of outcome.
+	gc.SetSameSite(http.SameSiteLaxMode)
+	gc.SetCookie(handlers.OAuthExchangeCookieName, "", -1, "/", "", true, true)
+
+	redisClient := r.RedisClient()
+	if redisClient == nil {
+		return nil, fmt.Errorf("auth backend unavailable")
+	}
+	key := handlers.OAuthExchangeRedisKey(code)
+	uidStr, err := redisClient.GetDel(ctx, key).Result()
+	if err != nil || uidStr == "" {
+		return nil, fmt.Errorf("invalid or expired code")
+	}
+	uid, err := uuid.Parse(uidStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid code payload")
+	}
+	u, err := r.UserSvc.GetByID(ctx, uid)
+	if err != nil || u == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if !u.IsActive {
+		return nil, fmt.Errorf("account is disabled")
 	}
 
 	token, err := r.generateJWT(u)

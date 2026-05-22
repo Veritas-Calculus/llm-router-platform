@@ -22,6 +22,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -39,12 +40,13 @@ type OAuth2Handler struct {
 	cfg       *config.Config
 	configSvc *configService.Service
 	db        *gorm.DB
+	redis     *redis.Client
 	logger    *zap.Logger
 }
 
 // NewOAuth2Handler creates a new OAuth2 handler.
-func NewOAuth2Handler(cfg *config.Config, configSvc *configService.Service, db *gorm.DB, logger *zap.Logger) *OAuth2Handler {
-	return &OAuth2Handler{cfg: cfg, configSvc: configSvc, db: db, logger: logger}
+func NewOAuth2Handler(cfg *config.Config, configSvc *configService.Service, db *gorm.DB, redisClient *redis.Client, logger *zap.Logger) *OAuth2Handler {
+	return &OAuth2Handler{cfg: cfg, configSvc: configSvc, db: db, redis: redisClient, logger: logger}
 }
 
 // resolveConfig reads OAuth2 config from DB (with env fallback) at request time.
@@ -179,20 +181,20 @@ func (h *OAuth2Handler) Callback(c *gin.Context) {
 		return
 	}
 
-	// Generate JWT
-	token, err := h.generateJWT(user)
-	if err != nil {
-		h.logger.Error("OAuth2 JWT generation failed", zap.Error(err))
-		h.redirectWithError(c, "Token generation failed")
+	// Hand off via a single-use HttpOnly exchange cookie rather than
+	// placing the JWT in the redirect URL. The frontend redeems the cookie
+	// via the exchangeOAuthCode GraphQL mutation.
+	if _, err := MintOAuthExchangeCode(c.Request.Context(), h.redis, c, user.ID); err != nil {
+		h.logger.Error("OAuth2 exchange-code minting failed", zap.Error(err))
+		h.redirectWithError(c, "Failed to complete sign-in")
 		return
 	}
 
-	// Redirect to frontend with token
 	frontendURL := h.cfg.Frontend.URL
 	if frontendURL == "" {
 		frontendURL = "http://localhost"
 	}
-	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/oauth/callback?token=%s", frontendURL, token))
+	c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/oauth/callback")
 }
 
 // Providers returns the list of available OAuth2 providers (public endpoint).

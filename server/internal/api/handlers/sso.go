@@ -23,6 +23,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -39,11 +40,12 @@ type SSOResponse struct {
 type SSOHandler struct {
 	cfg    *config.Config
 	db     *gorm.DB
+	redis  *redis.Client
 	logger *zap.Logger
 }
 
-func NewSSOHandler(cfg *config.Config, db *gorm.DB, logger *zap.Logger) *SSOHandler {
-	return &SSOHandler{cfg: cfg, db: db, logger: logger}
+func NewSSOHandler(cfg *config.Config, db *gorm.DB, redisClient *redis.Client, logger *zap.Logger) *SSOHandler {
+	return &SSOHandler{cfg: cfg, db: db, redis: redisClient, logger: logger}
 }
 
 // Discover takes an email, finds the associated IdP via domain matching,
@@ -283,9 +285,11 @@ func (h *SSOHandler) Callback(c *gin.Context) {
 		return
 	}
 
-	token, err := h.generateJWT(user)
-	if err != nil {
-		h.logger.Error("JWT generation failed", zap.Error(err))
+	// Hand off via the single-use exchange cookie rather than the legacy
+	// /oauth/callback?token=<JWT> redirect. URL-borne tokens leak into
+	// browser history, Referer headers, and CDN/proxy access logs.
+	if _, err := MintOAuthExchangeCode(c.Request.Context(), h.redis, c, user.ID); err != nil {
+		h.logger.Error("SSO exchange-code minting failed", zap.Error(err))
 		h.redirectWithError(c, "Session creation failed")
 		return
 	}
@@ -294,7 +298,7 @@ func (h *SSOHandler) Callback(c *gin.Context) {
 	if frontendURL == "" {
 		frontendURL = "http://localhost"
 	}
-	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/oauth/callback?token=%s", frontendURL, token))
+	c.Redirect(http.StatusTemporaryRedirect, frontendURL+"/oauth/callback")
 }
 
 // ── Internal Helpers ────────────────────────────────────────────────────────

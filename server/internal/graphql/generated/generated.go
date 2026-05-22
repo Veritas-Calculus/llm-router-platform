@@ -642,6 +642,7 @@ type ComplexityRoot struct {
 		DeleteWebhookEndpoint        func(childComplexity int, id string) int
 		DisableMfa                   func(childComplexity int, code string) int
 		DiscoverSso                  func(childComplexity int, email string) int
+		ExchangeOAuthCode            func(childComplexity int) int
 		ExportSystemUsageCSV         func(childComplexity int) int
 		ExportUsageCSV               func(childComplexity int) int
 		ForgotPassword               func(childComplexity int, email string) int
@@ -1357,6 +1358,7 @@ type MutationResolver interface {
 	Register(ctx context.Context, input model.RegisterInput) (*model.AuthPayload, error)
 	RefreshToken(ctx context.Context) (*model.AuthPayload, error)
 	RotateRefreshToken(ctx context.Context, refreshToken string) (*model.AuthPayload, error)
+	ExchangeOAuthCode(ctx context.Context) (*model.AuthPayload, error)
 	Logout(ctx context.Context) (bool, error)
 	DiscoverSso(ctx context.Context, email string) (*model.SsoDiscoveryResult, error)
 	ForgotPassword(ctx context.Context, email string) (bool, error)
@@ -4560,6 +4562,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.DiscoverSso(childComplexity, args["email"].(string)), true
+	case "Mutation.exchangeOAuthCode":
+		if e.ComplexityRoot.Mutation.ExchangeOAuthCode == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Mutation.ExchangeOAuthCode(childComplexity), true
 	case "Mutation.exportSystemUsageCsv":
 		if e.ComplexityRoot.Mutation.ExportSystemUsageCSV == nil {
 			break
@@ -8547,6 +8555,11 @@ type Mutation {
   register(input: RegisterInput!): AuthPayload! @rateLimit(max: 5, window: "1m")
   refreshToken: AuthPayload! @auth
   rotateRefreshToken(refreshToken: String!): AuthPayload! @rateLimit(max: 5, window: "1m")
+  # exchangeOAuthCode redeems the short-lived HttpOnly cookie set by the
+  # OAuth/SSO callback for an AuthPayload. The callback handler no longer
+  # places the JWT in the redirect URL, so the token never enters browser
+  # history, Referer headers, or server logs.
+  exchangeOAuthCode: AuthPayload! @rateLimit(max: 5, window: "1m")
   logout: Boolean! @auth
   discoverSso(email: String!): SsoDiscoveryResult! @rateLimit(max: 5, window: "1m")
   forgotPassword(email: String!): Boolean! @rateLimit(max: 3, window: "1m")
@@ -25040,6 +25053,61 @@ func (ec *executionContext) fieldContext_Mutation_rotateRefreshToken(ctx context
 	if fc.Args, err = ec.field_Mutation_rotateRefreshToken_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_exchangeOAuthCode(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_exchangeOAuthCode(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Mutation().ExchangeOAuthCode(ctx)
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int(ctx, 5)
+				if err != nil {
+					var zeroVal *model.AuthPayload
+					return zeroVal, err
+				}
+				window, err := ec.unmarshalNString2string(ctx, "1m")
+				if err != nil {
+					var zeroVal *model.AuthPayload
+					return zeroVal, err
+				}
+				if ec.Directives.RateLimit == nil {
+					var zeroVal *model.AuthPayload
+					return zeroVal, errors.New("directive rateLimit is not implemented")
+				}
+				return ec.Directives.RateLimit(ctx, nil, directive0, max, window)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v *model.AuthPayload) graphql.Marshaler {
+			return ec.marshalNAuthPayload2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐAuthPayload(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_exchangeOAuthCode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_AuthPayload(ctx, field)
+		},
 	}
 	return fc, nil
 }
@@ -52890,6 +52958,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "rotateRefreshToken":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_rotateRefreshToken(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "exchangeOAuthCode":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_exchangeOAuthCode(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
