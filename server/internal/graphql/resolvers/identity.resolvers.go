@@ -6,6 +6,8 @@ package resolvers
 import (
 	"context"
 	"fmt"
+
+	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/models"
 
@@ -14,7 +16,11 @@ import (
 
 // CreateIdentityProvider is the resolver for the createIdentityProvider field.
 func (r *mutationResolver) CreateIdentityProvider(ctx context.Context, input model.CreateIdentityProviderInput) (*model.IdentityProvider, error) {
-	if err := r.UserSvc.RequireOrgRole(ctx, input.OrgID, "OWNER", "ADMIN"); err != nil {
+	uid, err := directives.UserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.UserSvc.RequireOrgRole(ctx, uid, input.OrgID, "OWNER", "ADMIN"); err != nil {
 		return nil, err
 	}
 	orgID, _ := uuid.Parse(input.OrgID)
@@ -69,6 +75,10 @@ func (r *mutationResolver) CreateIdentityProvider(ctx context.Context, input mod
 
 // UpdateIdentityProvider is the resolver for the updateIdentityProvider field.
 func (r *mutationResolver) UpdateIdentityProvider(ctx context.Context, id string, input model.UpdateIdentityProviderInput) (*model.IdentityProvider, error) {
+	uid, err := directives.UserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	idpID, err := uuid.Parse(id)
 	if err != nil {
 		return nil, fmt.Errorf("invalid idp id")
@@ -79,7 +89,7 @@ func (r *mutationResolver) UpdateIdentityProvider(ctx context.Context, id string
 		return nil, fmt.Errorf("identity provider not found")
 	}
 
-	if err := r.UserSvc.RequireOrgRole(ctx, idp.OrgID.String(), "OWNER", "ADMIN"); err != nil {
+	if err := r.UserSvc.RequireOrgRole(ctx, uid, idp.OrgID.String(), "OWNER", "ADMIN"); err != nil {
 		return nil, err
 	}
 
@@ -135,6 +145,10 @@ func applyIdentityProviderUpdates(idp *models.IdentityProvider, input model.Upda
 
 // DeleteIdentityProvider is the resolver for the deleteIdentityProvider field.
 func (r *mutationResolver) DeleteIdentityProvider(ctx context.Context, id string) (bool, error) {
+	uid, err := directives.UserIDFromContext(ctx)
+	if err != nil {
+		return false, err
+	}
 	idpID, err := uuid.Parse(id)
 	if err != nil {
 		return false, fmt.Errorf("invalid idp id")
@@ -145,7 +159,7 @@ func (r *mutationResolver) DeleteIdentityProvider(ctx context.Context, id string
 		return false, fmt.Errorf("identity provider not found")
 	}
 
-	if err := r.UserSvc.RequireOrgRole(ctx, idp.OrgID.String(), "OWNER", "ADMIN"); err != nil {
+	if err := r.UserSvc.RequireOrgRole(ctx, uid, idp.OrgID.String(), "OWNER", "ADMIN"); err != nil {
 		return false, err
 	}
 
@@ -158,7 +172,11 @@ func (r *mutationResolver) DeleteIdentityProvider(ctx context.Context, id string
 
 // IdentityProviders is the resolver for the identityProviders field.
 func (r *queryResolver) IdentityProviders(ctx context.Context, orgID string) ([]*model.IdentityProvider, error) {
-	if err := r.UserSvc.RequireOrgRole(ctx, orgID, "OWNER", "ADMIN", "MEMBER", "READONLY"); err != nil {
+	uid, err := directives.UserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.UserSvc.RequireOrgRole(ctx, uid, orgID, "OWNER", "ADMIN", "MEMBER", "READONLY"); err != nil {
 		return nil, err
 	}
 
