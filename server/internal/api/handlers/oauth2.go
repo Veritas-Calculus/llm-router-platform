@@ -4,9 +4,14 @@ package handlers
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -17,10 +22,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+const oauth2StateCookie = "oauth2_state"
+
+type oauth2StatePayload struct {
+	State    string `json:"s"`
+	Verifier string `json:"v,omitempty"`
+	Provider string `json:"p"`
+}
 
 // OAuth2Handler handles OAuth2 social login flows.
 type OAuth2Handler struct {
@@ -71,25 +83,53 @@ func (h *OAuth2Handler) Redirect(c *gin.Context) {
 		return
 	}
 
-	// Generate state parameter (CSRF protection)
-	state := uuid.New().String()
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("oauth2_state", state, 300, "/", "", true, true) // 5 min, secure, httpOnly
+	state, err := randomURLSafe(32)
+	if err != nil {
+		h.logger.Error("oauth2: failed to generate state", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to initialize OAuth2 flow"})
+		return
+	}
+
+	// PKCE: Google supports S256 natively, GitHub's classic OAuth Apps do not
+	// (only newer GitHub Apps in some flows). Add PKCE wherever the IdP
+	// accepts it as defense in depth — even with a confidential client secret
+	// it prevents replay of a leaked authorization code.
+	var verifier, challenge string
+	if provider == "google" {
+		verifier, err = randomURLSafe(64)
+		if err != nil {
+			h.logger.Error("oauth2: failed to generate verifier", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to initialize OAuth2 flow"})
+			return
+		}
+		sum := sha256.Sum256([]byte(verifier))
+		challenge = base64.RawURLEncoding.EncodeToString(sum[:])
+	}
+
+	if err := setOAuth2StateCookie(c, oauth2StatePayload{State: state, Verifier: verifier, Provider: provider}); err != nil {
+		h.logger.Error("oauth2: failed to set state cookie", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to initialize OAuth2 flow"})
+		return
+	}
 
 	redirectURL := h.callbackURL(c, provider)
+
+	q := url.Values{}
+	q.Set("client_id", pcfg.ClientID)
+	q.Set("redirect_uri", redirectURL)
+	q.Set("state", state)
 
 	var authURL string
 	switch provider {
 	case "github":
-		authURL = fmt.Sprintf(
-			"https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&state=%s&scope=read:user user:email",
-			pcfg.ClientID, redirectURL, state,
-		)
+		q.Set("scope", "read:user user:email")
+		authURL = "https://github.com/login/oauth/authorize?" + q.Encode()
 	case "google":
-		authURL = fmt.Sprintf(
-			"https://accounts.google.com/o/oauth2/v2/auth?client_id=%s&redirect_uri=%s&state=%s&response_type=code&scope=openid email profile",
-			pcfg.ClientID, redirectURL, state,
-		)
+		q.Set("response_type", "code")
+		q.Set("scope", "openid email profile")
+		q.Set("code_challenge", challenge)
+		q.Set("code_challenge_method", "S256")
+		authURL = "https://accounts.google.com/o/oauth2/v2/auth?" + q.Encode()
 	}
 
 	c.Redirect(http.StatusTemporaryRedirect, authURL)
@@ -101,9 +141,10 @@ func (h *OAuth2Handler) Callback(c *gin.Context) {
 	code := c.Query("code")
 	state := c.Query("state")
 
-	// Validate state
-	savedState, _ := c.Cookie("oauth2_state")
-	if state == "" || state != savedState {
+	// Read & clear the state cookie atomically — even if validation fails the
+	// cookie is single-use, so a stolen code+cookie pair cannot be replayed.
+	saved, ok := readAndClearOAuth2StateCookie(c)
+	if !ok || state == "" || subtle.ConstantTimeCompare([]byte(state), []byte(saved.State)) != 1 || saved.Provider != provider {
 		h.redirectWithError(c, "Invalid state parameter")
 		return
 	}
@@ -115,7 +156,7 @@ func (h *OAuth2Handler) Callback(c *gin.Context) {
 	}
 
 	// Exchange code for access token
-	accessToken, err := h.exchangeCode(c.Request.Context(), provider, pcfg, code, h.callbackURL(c, provider))
+	accessToken, err := h.exchangeCode(c.Request.Context(), provider, pcfg, code, h.callbackURL(c, provider), saved.Verifier)
 	if err != nil {
 		h.logger.Error("OAuth2 token exchange failed", zap.Error(err))
 		h.redirectWithError(c, "Authentication failed")
@@ -198,7 +239,7 @@ func (h *OAuth2Handler) redirectWithError(c *gin.Context, errMsg string) {
 	c.Redirect(http.StatusTemporaryRedirect, fmt.Sprintf("%s/login?error=%s", frontendURL, errMsg))
 }
 
-func (h *OAuth2Handler) exchangeCode(ctx context.Context, provider string, pcfg *config.OAuth2ProviderConfig, code, redirectURI string) (string, error) {
+func (h *OAuth2Handler) exchangeCode(ctx context.Context, provider string, pcfg *config.OAuth2ProviderConfig, code, redirectURI, codeVerifier string) (string, error) {
 	var tokenURL string
 	switch provider {
 	case "github":
@@ -207,10 +248,17 @@ func (h *OAuth2Handler) exchangeCode(ctx context.Context, provider string, pcfg 
 		tokenURL = "https://oauth2.googleapis.com/token" // #nosec G101 -- OAuth2 endpoint URL, not a credential
 	}
 
-	body := fmt.Sprintf("client_id=%s&client_secret=%s&code=%s&redirect_uri=%s&grant_type=authorization_code",
-		pcfg.ClientID, pcfg.ClientSecret, code, redirectURI)
+	form := url.Values{}
+	form.Set("client_id", pcfg.ClientID)
+	form.Set("client_secret", pcfg.ClientSecret)
+	form.Set("code", code)
+	form.Set("redirect_uri", redirectURI)
+	form.Set("grant_type", "authorization_code")
+	if codeVerifier != "" {
+		form.Set("code_verifier", codeVerifier)
+	}
 
-	req, _ := http.NewRequestWithContext(ctx, "POST", tokenURL, strings.NewReader(body))
+	req, _ := http.NewRequestWithContext(ctx, "POST", tokenURL, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
@@ -418,6 +466,46 @@ func emailDomain(email string) string {
 		return ""
 	}
 	return parts[1]
+}
+
+func randomURLSafe(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func setOAuth2StateCookie(c *gin.Context, payload oauth2StatePayload) error {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(raw)
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(oauth2StateCookie, encoded, 600, "/", "", true, true) // 10 min, Secure, HttpOnly
+	return nil
+}
+
+// readAndClearOAuth2StateCookie returns the saved payload and clears the cookie
+// in the same call so it cannot be replayed.
+func readAndClearOAuth2StateCookie(c *gin.Context) (oauth2StatePayload, bool) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(oauth2StateCookie, "", -1, "/", "", true, true)
+
+	encoded, err := c.Cookie(oauth2StateCookie)
+	if err != nil || encoded == "" {
+		return oauth2StatePayload{}, false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return oauth2StatePayload{}, false
+	}
+	var p oauth2StatePayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return oauth2StatePayload{}, false
+	}
+	return p, true
 }
 
 func (h *OAuth2Handler) generateJWT(u *models.User) (string, error) {
