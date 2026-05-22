@@ -102,7 +102,7 @@ function LoginPage() {
         const resp = (result.data as any)?.login;
         if (!resp?.token) throw new Error(t('auth.invalid_credentials'));
         authenticatedUser = resp.user;
-        setAuth(resp.token, resp.user);
+        setAuth(resp.token, resp.user, resp.refreshToken ?? null);
         toast.success(t('auth.welcome_back'));
       } else {
         const registerInput: Record<string, string | null> = {
@@ -121,7 +121,7 @@ function LoginPage() {
         const resp = (result.data as any)?.register;
         if (!resp?.token) throw new Error(t('auth.registration_failed'));
         authenticatedUser = resp.user;
-        setAuth(resp.token, resp.user);
+        setAuth(resp.token, resp.user, resp.refreshToken ?? null);
         toast.success(t('auth.account_created'));
       }
       navigate(getPostAuthRedirect(authenticatedUser), { replace: true });

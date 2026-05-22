@@ -32,6 +32,19 @@ export const REFRESH_TOKEN = gql`
   }
 `;
 
+// ROTATE_REFRESH_TOKEN is the canonical refresh path. It validates the
+// refresh token's iat against the user's TokensInvalidatedAt server-side so
+// that logout / password change / admin reset actually revoke sessions.
+export const ROTATE_REFRESH_TOKEN = gql`
+  mutation RotateRefreshToken($refreshToken: String!) {
+    rotateRefreshToken(refreshToken: $refreshToken) {
+      token
+      refreshToken
+      user { id email name role isActive mfaEnabled emailVerified }
+    }
+  }
+`;
+
 export const LOGOUT = gql`
   mutation Logout {
     logout

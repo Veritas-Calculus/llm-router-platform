@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useQuery } from '@apollo/client/react';
 import { SITE_CONFIG_QUERY } from '@/lib/graphql/operations';
+import { apolloClient } from '@/lib/graphql/client';
 import {
   KeyIcon,
   ChartBarIcon,
@@ -186,8 +187,13 @@ function Layout() {
   const showAdminNav = isAdmin && adminView;
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    // Clear Apollo cache before nulling the auth state so the next user's
+    // session can't see the previous user's me/myUsageSummary/myOrganizations
+    // data flash in from cache during the cache-and-network fetch.
+    void apolloClient.clearStore().finally(() => {
+      logout();
+      navigate('/login');
+    });
   };
 
   const toggleLanguage = () => {
