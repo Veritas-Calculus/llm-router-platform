@@ -384,77 +384,101 @@ func (h *OAuth2Handler) getGoogleUser(ctx context.Context, token string) (email,
 }
 
 func (h *OAuth2Handler) findOrCreateUser(email, name, provider, oauthID string) (*models.User, error) {
-	var user models.User
+	var result *models.User
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		var user models.User
 
-	// First try: find by OAuth ID + provider
-	if err := h.db.Where("oauth_provider = ? AND oauth_id = ?", provider, oauthID).First(&user).Error; err == nil {
-		return &user, nil
-	}
-
-	// Second try: an account with this email already exists.
-	//
-	// SECURITY: We refuse to auto-link to an account that has a password hash.
-	// Without this guard an attacker who controls an OAuth identity for the
-	// victim's email address (e.g. because the victim reused it with an IdP
-	// they do not actively use) could silently take over the password account.
-	// The user must explicitly link OAuth from an authenticated session.
-	if err := h.db.Where("email = ?", email).First(&user).Error; err == nil {
-		if user.PasswordHash != "" && user.OAuthProvider == "" {
-			h.logger.Warn("refusing to auto-link OAuth identity to pre-existing password account",
-				zap.String("email_domain", emailDomain(email)),
-				zap.String("provider", provider))
-			return nil, fmt.Errorf("an account with this email already exists. Please sign in with your password and link your %s account from account settings", provider)
+		// First try: find by OAuth ID + provider.
+		if err := tx.Where("oauth_provider = ? AND oauth_id = ?", provider, oauthID).First(&user).Error; err == nil {
+			result = &user
+			return nil
 		}
 
-		// Account is OAuth-only (or already linked to a different OAuth provider):
-		// attach the identity if not set, and opportunistically mark email verified.
-		updates := map[string]interface{}{}
-		if user.OAuthProvider == "" {
-			updates["oauth_provider"] = provider
-			updates["oauth_id"] = oauthID
+		// Second try: an account with this email already exists.
+		//
+		// SECURITY: We refuse to auto-link to an account that has a password hash.
+		// Without this guard an attacker who controls an OAuth identity for the
+		// victim's email address (e.g. because the victim reused it with an IdP
+		// they do not actively use) could silently take over the password account.
+		// The user must explicitly link OAuth from an authenticated session.
+		if err := tx.Where("email = ?", email).First(&user).Error; err == nil {
+			if user.PasswordHash != "" && user.OAuthProvider == "" {
+				h.logger.Warn("refusing to auto-link OAuth identity to pre-existing password account",
+					zap.String("email_domain", emailDomain(email)),
+					zap.String("provider", provider))
+				return fmt.Errorf("an account with this email already exists. Please sign in with your password and link your %s account from account settings", provider)
+			}
+			updates := map[string]interface{}{}
+			if user.OAuthProvider == "" {
+				updates["oauth_provider"] = provider
+				updates["oauth_id"] = oauthID
+			}
+			if !user.EmailVerified {
+				now := time.Now()
+				updates["email_verified"] = true
+				updates["email_verified_at"] = now
+			}
+			if len(updates) > 0 {
+				if err := tx.Model(&user).Updates(updates).Error; err != nil {
+					return fmt.Errorf("update existing user: %w", err)
+				}
+			}
+			result = &user
+			return nil
 		}
-		if !user.EmailVerified {
-			now := time.Now()
-			updates["email_verified"] = true
-			updates["email_verified_at"] = now
-		}
-		if len(updates) > 0 {
-			h.db.Model(&user).Updates(updates)
-		}
-		return &user, nil
-	}
 
-	// Create new user (no password for OAuth users)
-	now := time.Now()
-	user = models.User{
-		Email:           email,
-		PasswordHash:    "", // OAuth users have no password
-		Name:            name,
-		Role:            "user",
-		IsActive:        true,
-		OAuthProvider:   provider,
-		OAuthID:         oauthID,
-		EmailVerified:   true, // OAuth provider verified the email
-		EmailVerifiedAt: &now,
-	}
-	if err := h.db.Create(&user).Error; err != nil {
+		// Create new user — full provisioning (user + org + member + project +
+		// welcome credit + transaction) must succeed together or roll back so
+		// we never leave a partial account in a half-onboarded state.
+		now := time.Now()
+		user = models.User{
+			Email:           email,
+			PasswordHash:    "",
+			Name:            name,
+			Role:            "user",
+			IsActive:        true,
+			OAuthProvider:   provider,
+			OAuthID:         oauthID,
+			EmailVerified:   true,
+			EmailVerifiedAt: &now,
+			Balance:         5.0,
+		}
+		if err := tx.Create(&user).Error; err != nil {
+			return fmt.Errorf("create user: %w", err)
+		}
+
+		org := models.Organization{Name: name + "'s Org", OwnerID: user.ID}
+		if err := tx.Create(&org).Error; err != nil {
+			return fmt.Errorf("create org: %w", err)
+		}
+		member := models.OrganizationMember{OrgID: org.ID, UserID: user.ID, Role: "OWNER"}
+		if err := tx.Create(&member).Error; err != nil {
+			return fmt.Errorf("create org member: %w", err)
+		}
+		project := models.Project{OrgID: org.ID, Name: "Default", Description: "Auto-created project"}
+		if err := tx.Create(&project).Error; err != nil {
+			return fmt.Errorf("create project: %w", err)
+		}
+		txn := models.Transaction{
+			OrgID:       org.ID,
+			UserID:      user.ID,
+			Type:        "recharge",
+			Amount:      5.0,
+			Balance:     5.0,
+			Description: "Welcome credit",
+			Currency:    "USD",
+		}
+		if err := tx.Create(&txn).Error; err != nil {
+			return fmt.Errorf("create welcome transaction: %w", err)
+		}
+
+		result = &user
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-
-	// Auto-create Org + Project + welcome credit (same as register)
-	org := models.Organization{Name: name + "'s Org", OwnerID: user.ID}
-	if err := h.db.Create(&org).Error; err == nil {
-		member := models.OrganizationMember{OrgID: org.ID, UserID: user.ID, Role: "OWNER"}
-		h.db.Create(&member)
-		project := models.Project{OrgID: org.ID, Name: "Default", Description: "Auto-created project"}
-		h.db.Create(&project)
-		user.Balance = 5.0
-		h.db.Model(&user).UpdateColumn("balance", 5.0)
-		tx := models.Transaction{OrgID: org.ID, UserID: user.ID, Type: "recharge", Amount: 5.0, Balance: 5.0, Description: "Welcome credit", Currency: "USD"}
-		h.db.Create(&tx)
-	}
-
-	return &user, nil
+	return result, nil
 }
 
 // emailDomain returns the part after "@" in an email address, or an empty
