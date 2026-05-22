@@ -365,6 +365,14 @@ func Setup(
 
 	// Without /v1/ prefix (root-level, for SDKs that include /v1 in base URL)
 	registerLLMEndpoints(engine, applyLLMMiddleware, chatHandler, modelHandler, authMiddleware)
+
+	// ─── Anthropic-Compatible Routes (POST /v1/messages) ─────────
+	// Anthropic SDKs hit /v1/messages regardless of base URL flavor,
+	// so register it once at the root rather than under each LLM prefix
+	// (which would have produced /v1/v1/messages and /api/v1/v1/messages).
+	anthro := engine.Group("/v1/messages")
+	applyLLMMiddleware(anthro, "chat")
+	anthro.POST("", chatHandler.AnthropicMessages)
 }
 
 // registerLLMEndpoints registers the OpenAI-compatible LLM API endpoints
@@ -401,9 +409,4 @@ func registerLLMEndpoints(
 	// GET /models/{model_id} — supports slashed IDs like "qwen/qwen3-vl-8b"
 	// Uses a two-segment pattern to avoid conflicts with /models/providers
 	models.GET("/:org/*name", modelHandler.Retrieve)
-
-	// ─── Anthropic-Compatible Routes ───────────────────────────
-	anthro := parent.Group("/v1/messages")
-	applyLLMMiddleware(anthro, "chat")
-	anthro.POST("", chatHandler.AnthropicMessages)
 }
