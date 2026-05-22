@@ -308,6 +308,36 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 		return fmt.Errorf("invalid plan_id in stripe metadata: %w", err)
 	}
 
+	// Cross-check the paid amount against the plan price. Metadata is not
+	// individually signed — the whole session payload is — so the plan_id
+	// could in principle drift from the price the user actually paid (e.g. a
+	// tampered checkout-session creation paths the user through a cheap plan
+	// then activates an expensive one). Refuse if amount and plan disagree.
+	plan, err := s.planRepo.GetByID(ctx, planID)
+	if err != nil {
+		s.logger.Error("stripe webhook: plan_id not found, refusing to fulfill",
+			zap.String("order_no", orderNo),
+			zap.String("plan_id", planIDStr),
+			zap.Error(err))
+		return fmt.Errorf("plan not found: %w", err)
+	}
+	if sess.AmountTotal <= 0 {
+		s.logger.Error("stripe subscription with non-positive amount_total, refusing to fulfill",
+			zap.String("order_no", orderNo),
+			zap.Int64("amount_total", sess.AmountTotal))
+		return fmt.Errorf("invalid stripe amount")
+	}
+	sessionAmount := float64(sess.AmountTotal) / 100.0
+	if math.Abs(sessionAmount-plan.PriceMonth) > 0.01 {
+		recordPaymentAmountMismatch("stripe")
+		s.logger.Error("stripe subscription amount mismatch — refusing to fulfill",
+			zap.String("order_no", orderNo),
+			zap.String("plan_id", planIDStr),
+			zap.Float64("session_amount", sessionAmount),
+			zap.Float64("plan_price", plan.PriceMonth))
+		return fmt.Errorf("amount mismatch: session=%.2f plan=%.2f", sessionAmount, plan.PriceMonth)
+	}
+
 	s.logger.Info("fulfilling subscription order", zap.String("user_id", userIDStr), zap.String("plan_id", planIDStr))
 
 	sub, err := s.subRepo.GetByUserID(ctx, userID)
