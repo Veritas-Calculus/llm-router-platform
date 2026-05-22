@@ -2,7 +2,9 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
@@ -15,6 +17,12 @@ import (
 
 	"llm-router-platform/internal/service/email"
 )
+
+// ErrInsufficientBalance is returned by DeductBalance when the user does not
+// have enough credit to cover the requested amount. Callers should gate
+// requests on this and return a 402 Payment Required (or equivalent) so the
+// DB-level CHECK (balance >= 0) constraint never aborts a billing transaction.
+var ErrInsufficientBalance = errors.New("insufficient balance")
 
 // BalanceService handles user credits and transactions.
 type BalanceService struct {
@@ -72,7 +80,14 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 			return err
 		}
 
-		user.Balance = roundCost(user.Balance - amount)
+		// Refuse to overdraft so the new CHECK (balance >= 0) constraint
+		// never aborts a billing transaction mid-write. Callers should
+		// gate on GetBalance / quotas; this is the last-line guard.
+		newBalance := roundCost(user.Balance - amount)
+		if newBalance < 0 {
+			return ErrInsufficientBalance
+		}
+		user.Balance = newBalance
 		if err := tx.Save(&user).Error; err != nil {
 			return err
 		}
@@ -115,6 +130,19 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 
 // AddBalance adds credits to the user's balance (recharge or refund).
 func (s *BalanceService) AddBalance(ctx context.Context, userID uuid.UUID, amount float64, txType string, description string, referenceID string) error {
+	return s.addBalance(ctx, userID, amount, txType, description, referenceID, "")
+}
+
+// AddBalanceIdempotent adds credits and attaches an idempotency key. A second
+// call with the same key — typically the upstream provider's event/transaction
+// id, e.g. Stripe evt_…, WeChat transaction_id, Alipay trade_no — is rejected
+// by the partial unique index on transactions(idempotency_key) and surfaces as
+// a no-op (returns nil so the webhook can ack the duplicate retry).
+func (s *BalanceService) AddBalanceIdempotent(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID, idempotencyKey string) error {
+	return s.addBalance(ctx, userID, amount, txType, description, referenceID, idempotencyKey)
+}
+
+func (s *BalanceService) addBalance(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID, idempotencyKey string) error {
 	if amount <= 0 {
 		return fmt.Errorf("amount must be positive")
 	}
@@ -142,13 +170,41 @@ func (s *BalanceService) AddBalance(ctx context.Context, userID uuid.UUID, amoun
 			Description: description,
 			ReferenceID: referenceID,
 		}
+		if idempotencyKey != "" {
+			transaction.IdempotencyKey = &idempotencyKey
+		}
 
 		return tx.Create(transaction).Error
 	})
-	if err != nil && txCtx.Err() != nil {
-		recordLockTimeout("add_balance")
+	if err != nil {
+		if txCtx.Err() != nil {
+			recordLockTimeout("add_balance")
+		}
+		// Duplicate idempotency key — webhook redelivery. Swallow so the
+		// upstream gets a 2xx and stops retrying.
+		if idempotencyKey != "" && isDuplicateIdempotencyKey(err) {
+			s.logger.Info("AddBalanceIdempotent: duplicate key, skipping",
+				zap.String("user_id", userID.String()),
+				zap.String("idempotency_key", idempotencyKey))
+			return nil
+		}
 	}
 	return err
+}
+
+// isDuplicateIdempotencyKey returns true if err comes from the partial unique
+// index on transactions(idempotency_key). We string-match because the GORM
+// driver wraps pgx errors; the Postgres SQLSTATE for unique_violation (23505)
+// or the literal "duplicate key" text is stable across versions.
+func isDuplicateIdempotencyKey(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "idempotency_key") {
+		return false
+	}
+	return strings.Contains(msg, "duplicate key") || strings.Contains(msg, "23505")
 }
 
 func (s *BalanceService) GetBalance(ctx context.Context, userID uuid.UUID) (float64, error) {

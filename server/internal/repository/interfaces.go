@@ -229,6 +229,7 @@ type SubscriptionRepo interface {
 	GetOrdersByUserID(ctx context.Context, userID uuid.UUID) ([]models.Order, error)
 	UpdateOrder(ctx context.Context, order *models.Order) error
 	UpdateUserBalance(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID string) error
+	UpdateUserBalanceIdempotent(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID, idempotencyKey string) error
 }
 
 // TransactionRepo defines the interface for balance transaction data access.

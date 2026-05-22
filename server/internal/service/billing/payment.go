@@ -292,7 +292,11 @@ func (s *PaymentService) fulfillOrder(ctx context.Context, sess *stripe.Checkout
 				zap.Float64("order_amount", order.Amount))
 			return fmt.Errorf("amount mismatch: session=%.2f order=%.2f", amount, order.Amount)
 		}
-		if err := s.subRepo.UpdateUserBalance(ctx, userID, amount, "recharge", "Credit Top-up via Stripe", orderNo); err != nil {
+		// Idempotency-key = orderNo so a Stripe webhook redelivery that bypasses
+		// both the Redis SETNX dedupe and the Order.Status=="paid" guard cannot
+		// double-credit the user (the partial unique index on
+		// transactions(idempotency_key) rejects the second insert).
+		if err := s.subRepo.UpdateUserBalanceIdempotent(ctx, userID, amount, "recharge", "Credit Top-up via Stripe", orderNo, "stripe:"+orderNo); err != nil {
 			return err
 		}
 		return markOrderPaid()

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 
 	"llm-router-platform/internal/models"
 
@@ -128,7 +129,16 @@ func (r *SubscriptionRepository) UpdateOrder(ctx context.Context, order *models.
 }
 
 func (r *SubscriptionRepository) UpdateUserBalance(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID string) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return r.UpdateUserBalanceIdempotent(ctx, userID, amount, txType, description, referenceID, "")
+}
+
+// UpdateUserBalanceIdempotent applies a balance change tagged with an
+// idempotency_key. A duplicate-key error from the partial unique index is
+// the signal that this exact credit was already applied (Stripe redelivery,
+// WeChat double-notify, Alipay async retry); we swallow it so the upstream
+// gets a 2xx and stops retrying.
+func (r *SubscriptionRepository) UpdateUserBalanceIdempotent(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID, idempotencyKey string) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user models.User
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, "id = ?", userID).Error; err != nil {
 			return err
@@ -148,9 +158,27 @@ func (r *SubscriptionRepository) UpdateUserBalance(ctx context.Context, userID u
 			Description: description,
 			ReferenceID: referenceID,
 		}
+		if idempotencyKey != "" {
+			transaction.IdempotencyKey = &idempotencyKey
+		}
 
 		return tx.Create(transaction).Error
 	})
+	if err != nil && idempotencyKey != "" && isDuplicateTxIdempotency(err) {
+		return nil
+	}
+	return err
+}
+
+func isDuplicateTxIdempotency(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "idempotency_key") {
+		return false
+	}
+	return strings.Contains(msg, "duplicate key") || strings.Contains(msg, "23505")
 }
 
 // TransactionRepository handles transaction data access.

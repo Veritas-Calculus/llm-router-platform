@@ -59,6 +59,11 @@ type Transaction struct {
 	Balance     float64   `json:"balance"` // Balance AFTER this transaction
 	Description string    `json:"description"`
 	ReferenceID string    `gorm:"index" json:"reference_id"` // Related Order ID or Usage Log ID
+	// IdempotencyKey, when set, has a partial unique index — a second insert
+	// with the same key is rejected by the DB. Use it for payment webhooks
+	// (Stripe event ID, WeChat transaction_id, Alipay trade_no) so retries
+	// from the upstream cannot double-credit.
+	IdempotencyKey *string `gorm:"column:idempotency_key" json:"idempotency_key,omitempty"`
 }
 
 // UsageLog represents a single API usage record.
