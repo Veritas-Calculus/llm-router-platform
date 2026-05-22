@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,6 +78,66 @@ var allowedMCPCommands = map[string]bool{
 	"bun":    true,
 }
 
+// dangerousMCPArgFlags lists argument prefixes that turn an otherwise-trusted
+// interpreter into an arbitrary-code-execution primitive. Validating only the
+// executable name is insufficient — `node -e "…"`, `python -c "…"`, `deno eval`,
+// etc. let any caller who can edit MCP server config (currently @auth(role:
+// ADMIN), so platform admins) execute attacker-controlled code under the
+// gateway service account.
+//
+// This block is defense-in-depth on top of admin gating: it raises the bar so
+// a single compromised admin account cannot trivially read ENCRYPTION_KEY/
+// JWT_SECRET/cloud IAM tokens from the process environment.
+var dangerousMCPArgPrefixes = []string{
+	"-c", "-e",
+	"--eval", "--command", "--exec",
+}
+
+// dangerousDockerFlags rejects docker invocations that bind the host filesystem,
+// give the container privileged access, or share the host network — any of
+// which trivially defeats process isolation.
+var dangerousDockerFlags = []string{
+	"--privileged",
+	"--cap-add",
+	"--security-opt",
+	"--device",
+	"--pid", "--ipc", "--uts", "--userns",
+	"--network=host",
+	"--net=host",
+	"-v", "--volume",
+	"--mount",
+}
+
+// validateMCPArgs returns an error if any element of args is a known
+// code-injection flag for the given executable.
+func validateMCPArgs(cmd string, args []string) error {
+	for _, raw := range args {
+		a := strings.TrimSpace(raw)
+		if a == "" {
+			continue
+		}
+		// Bare "-" means read from stdin (`python -`, `node -`). Refuse.
+		if a == "-" {
+			return fmt.Errorf("MCP args may not contain bare stdin marker %q", a)
+		}
+		switch cmd {
+		case "node", "deno", "bun", "python", "python3", "uv", "uvx":
+			for _, bad := range dangerousMCPArgPrefixes {
+				if a == bad || strings.HasPrefix(a, bad+"=") {
+					return fmt.Errorf("MCP args may not contain inline-code flag %q for %s", a, cmd)
+				}
+			}
+		case "docker":
+			for _, bad := range dangerousDockerFlags {
+				if a == bad || strings.HasPrefix(a, bad+"=") {
+					return fmt.Errorf("MCP args may not contain isolation-breaking docker flag %q", a)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (c *StdioClient) Connect(ctx context.Context) error {
 	// G204: Validate command against allowlist before execution
 	if !allowedMCPCommands[c.server.Command] {
@@ -90,7 +151,11 @@ func (c *StdioClient) Connect(ctx context.Context) error {
 		}
 	}
 
-	c.cmd = exec.Command(c.server.Command, args...) // #nosec G204 -- command validated against allowlist above
+	if err := validateMCPArgs(c.server.Command, args); err != nil {
+		return err
+	}
+
+	c.cmd = exec.Command(c.server.Command, args...) // #nosec G204 -- command + args validated against allowlist above
 	
 	// Set environment variables
 	if len(c.server.Env) > 0 {
