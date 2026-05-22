@@ -405,6 +405,14 @@ func (app *Application) Shutdown() error {
 		app.lifecycleCancel()
 	}
 
+	// 1a. Tear down MCP servers (stdio subprocesses, SSE goroutines, HTTP
+	// connections) so the HTTP server shutdown isn't blocked by in-flight
+	// MCP work and so child processes are reaped instead of becoming zombies.
+	if app.services != nil && app.services.MCP != nil {
+		app.services.MCP.Shutdown()
+		app.logger.Info("mcp service stopped")
+	}
+
 	// 2. Shutdown HTTP server with deadline
 	shutdownTimeout := 15 * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)

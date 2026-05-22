@@ -174,13 +174,21 @@ func (c *StdioClient) Connect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	
+
 	c.stdout, err = c.cmd.StdoutPipe()
 	if err != nil {
+		// stdin was created but never owned by a Start()'d process; close it
+		// explicitly so the fd is not leaked.
+		_ = c.stdin.Close()
+		c.stdin = nil
 		return err
 	}
 
 	if err := c.cmd.Start(); err != nil {
+		_ = c.stdin.Close()
+		_ = c.stdout.Close()
+		c.stdin = nil
+		c.stdout = nil
 		return err
 	}
 
@@ -201,12 +209,29 @@ func (c *StdioClient) Close() error {
 	}
 	if c.cmd != nil && c.cmd.Process != nil {
 		_ = c.cmd.Process.Kill()
+		// Reap the child to avoid leaving a zombie. Wait closes any open
+		// pipes (stdout) too, so the listen() goroutine unblocks.
+		// Bound the wait so a stuck child doesn't pin Close() forever.
+		done := make(chan struct{})
+		go func() {
+			_ = c.cmd.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			c.logger.Warn("MCP child did not exit within 5s after Kill",
+				zap.String("server", c.server.Name))
+		}
 	}
 	return nil
 }
 
 func (c *StdioClient) listen() {
 	scanner := bufio.NewScanner(c.stdout)
+	// Default 64KB token limit is too small for tool-call responses that
+	// embed full prompts or stack traces. Allow up to 1MB lines.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		var resp JSONRPCResponse
@@ -234,6 +259,11 @@ func (c *StdioClient) listen() {
 			}
 			c.pendingMu.Unlock()
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		c.logger.Warn("MCP stdio scanner exited with error",
+			zap.String("server", c.server.Name),
+			zap.Error(err))
 	}
 }
 
