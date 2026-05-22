@@ -14,6 +14,7 @@ import {
 import {
   LineChart,
   Line,
+  ComposedChart,
   BarChart,
   Bar,
   XAxis,
@@ -306,7 +307,7 @@ function UsersTab() {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={growth}>
+              <ComposedChart data={growth}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                 <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
                 <YAxis yAxisId="left" stroke="#8E8E93" fontSize={12} />
@@ -314,7 +315,7 @@ function UsersTab() {
                 <Tooltip contentStyle={tooltipStyle} />
                 <Line yAxisId="left" type="monotone" dataKey="totalUsers" stroke="#007AFF" strokeWidth={2} dot={false} name="Total Users" />
                 <Bar yAxisId="right" dataKey="newUsers" fill="#34C759" opacity={0.6} name="New Users" />
-              </LineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           )}
         </div>

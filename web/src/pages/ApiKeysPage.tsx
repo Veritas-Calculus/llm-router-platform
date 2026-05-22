@@ -128,8 +128,12 @@ function ApiKeysPage() {
               <KeyIcon className="w-8 h-8 text-apple-blue" />
             </div>
             <h3 className="text-lg font-semibold text-apple-gray-900 mb-1">{t('api_keys.no_keys')}</h3>
-            <p className="text-apple-gray-500 text-sm mb-6 max-w-sm mx-auto">Create an API key to start routing requests through the LLM Router.</p>
-            <button onClick={() => setShowCreateModal(true)} className="btn btn-primary rounded-xl">Create your first API key</button>
+            <p className="text-apple-gray-500 text-sm mb-6 max-w-sm mx-auto">
+              {selectedProjectId ? t('api_keys.no_keys_desc') : t('api_keys.no_project_desc')}
+            </p>
+            <button onClick={() => setShowCreateModal(true)} disabled={!selectedProjectId} className="btn btn-primary rounded-xl disabled:opacity-50 disabled:cursor-not-allowed">
+              {t('api_keys.create_first')}
+            </button>
           </div>
         ) : (
           <>

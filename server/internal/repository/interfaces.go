@@ -109,7 +109,7 @@ type UsageLogRepo interface {
 	Update(ctx context.Context, log *models.UsageLog) error
 	GetByOrgOrProjectTimeRange(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, start, end time.Time) ([]models.UsageLog, error)
 	GetByTimeRange(ctx context.Context, start, end time.Time) ([]models.UsageLog, error)
-	GetByOrgOrProjectPaginated(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, start, end time.Time, limit, offset int) ([]models.UsageLog, error)
+	GetByOrgOrProjectPaginated(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time, limit, offset int) ([]models.UsageLog, error)
 	GetByTimeRangePaginated(ctx context.Context, start, end time.Time, limit, offset int) ([]models.UsageLog, error)
 	CountInterruptedByIDAndProject(ctx context.Context, id uuid.UUID, projectID uuid.UUID) (int64, error)
 

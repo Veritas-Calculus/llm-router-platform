@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { gql } from '@apollo/client';
 import { motion } from 'framer-motion';
@@ -30,7 +30,7 @@ function SsoManagementPage() {
   const orgs = useMemo(() => orgResult?.myOrganizations || [], [orgResult]);
   const [selectedOrgId, setSelectedOrgId] = useState('');
 
-  useMemo(() => {
+  useEffect(() => {
     if (orgs.length > 0 && !selectedOrgId) setSelectedOrgId(orgs[0].id);
   }, [orgs, selectedOrgId]);
 

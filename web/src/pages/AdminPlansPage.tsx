@@ -36,7 +36,7 @@ const emptyForm: PlanForm = {
   priceMonth: '',
   tokenLimit: '100000',
   rateLimit: '10',
-  supportLevel: 'basic',
+  supportLevel: 'standard',
   features: '',
   isActive: true,
 };
@@ -67,7 +67,7 @@ function AdminPlansPage() {
       priceMonth: String(p.priceMonth),
       tokenLimit: String(p.tokenLimit),
       rateLimit: String(p.rateLimit),
-      supportLevel: p.supportLevel || 'basic',
+      supportLevel: p.supportLevel || 'standard',
       features: p.features || '',
       isActive: p.isActive,
     });
@@ -133,6 +133,17 @@ function AdminPlansPage() {
               <input type="number" className="form-input" value={form.rateLimit}
                 onChange={e => setForm(f => ({ ...f, rateLimit: e.target.value }))} />
             </div>
+            <div>
+              <label className="form-label">{t('plans.support_level')}</label>
+              <select className="form-input" value={form.supportLevel}
+                onChange={e => setForm(f => ({ ...f, supportLevel: e.target.value }))}>
+                <option value="community">{t('plans.support_community')}</option>
+                <option value="basic">{t('plans.support_basic')}</option>
+                <option value="standard">{t('plans.support_standard')}</option>
+                <option value="priority">{t('plans.support_priority')}</option>
+                <option value="enterprise">{t('plans.support_enterprise')}</option>
+              </select>
+            </div>
             <div className="col-span-2">
               <label className="form-label">{t('plans.description')}</label>
               <textarea className="form-input" rows={2} value={form.description}
@@ -174,6 +185,7 @@ function AdminPlansPage() {
                 <th className="px-5 py-3 text-right font-medium">{t('plans.price_month')}</th>
                 <th className="px-5 py-3 text-right font-medium">{t('plans.token_limit')}</th>
                 <th className="px-5 py-3 text-right font-medium">{t('plans.rate_limit')}</th>
+                <th className="px-5 py-3 text-left font-medium">{t('plans.support_level')}</th>
                 <th className="px-5 py-3 text-center font-medium">{t('common.status')}</th>
                 <th className="px-5 py-3 text-right font-medium">{t('common.actions')}</th>
               </tr>
@@ -185,6 +197,7 @@ function AdminPlansPage() {
                   <td className="px-5 py-3.5 text-right">${plan.priceMonth.toFixed(2)}/mo</td>
                   <td className="px-5 py-3.5 text-right">{(plan.tokenLimit / 1000).toFixed(0)}K</td>
                   <td className="px-5 py-3.5 text-right">{plan.rateLimit} req/min</td>
+                  <td className="px-5 py-3.5 text-left capitalize">{plan.supportLevel}</td>
                   <td className="px-5 py-3.5 text-center">
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
                       plan.isActive ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>

@@ -326,7 +326,7 @@ func (s *Service) ExportUsageCSV(ctx context.Context, userID uuid.UUID, startTim
 	// Stream in batches to avoid OOM
 	offset := 0
 	for {
-		logs, err := s.usageRepo.GetByOrgOrProjectPaginated(ctx, &userID, nil, startTime, endTime, csvBatchSize, offset)
+		logs, err := s.usageRepo.GetByOrgOrProjectPaginated(ctx, &userID, nil, nil, startTime, endTime, csvBatchSize, offset)
 		if err != nil {
 			return fmt.Errorf("failed to get usage logs (offset %d): %w", offset, err)
 		}

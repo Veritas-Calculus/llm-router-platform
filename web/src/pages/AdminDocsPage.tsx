@@ -61,7 +61,12 @@ function AdminDocsPage() {
 
   const handleSubmit = async () => {
     try {
-      const input = { ...form, category: form.category || undefined, sortOrder: form.sortOrder || undefined, isPublished: form.isPublished || undefined };
+      const input = {
+        ...form,
+        category: form.category || undefined,
+        sortOrder: Number.isFinite(form.sortOrder) ? form.sortOrder : undefined,
+        isPublished: form.isPublished,
+      };
       if (editing) { await updateDocument({ variables: { id: editing.id, input } }); }
       else { await createDocument({ variables: { input } }); }
       setCreating(false); setEditing(null); refetch();

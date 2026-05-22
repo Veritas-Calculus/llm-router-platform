@@ -296,6 +296,11 @@ type CacheStats struct {
 	TotalHits   int `json:"totalHits"`
 }
 
+type CaptchaConfig struct {
+	Enabled bool   `json:"enabled"`
+	SiteKey string `json:"siteKey"`
+}
+
 type ChangePasswordInput struct {
 	OldPassword string `json:"oldPassword"`
 	NewPassword string `json:"newPassword"`
@@ -380,6 +385,7 @@ type CreateWebhookEndpointInput struct {
 	ProjectID   string   `json:"projectId"`
 	URL         string   `json:"url"`
 	Events      []string `json:"events"`
+	IsActive    *bool    `json:"isActive,omitempty"`
 	Description *string  `json:"description,omitempty"`
 }
 
@@ -1194,6 +1200,10 @@ type SiteConfig struct {
 	Subtitle   string `json:"subtitle"`
 	LogoURL    string `json:"logoUrl"`
 	FaviconURL string `json:"faviconUrl"`
+}
+
+type SsoDiscoveryResult struct {
+	RedirectURL string `json:"redirectUrl"`
 }
 
 type SystemLoad struct {

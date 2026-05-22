@@ -327,7 +327,7 @@ func (r *queryResolver) MyUsageByProvider(ctx context.Context, orgID *string, pr
 }
 
 // MyRecentUsage is the resolver for the myRecentUsage field.
-func (r *queryResolver) MyRecentUsage(ctx context.Context, page *int, pageSize *int, orgID *string, projectID *string) (*model.UsageConnection, error) {
+func (r *queryResolver) MyRecentUsage(ctx context.Context, page *int, pageSize *int, orgID *string, projectID *string, channel *string) (*model.UsageConnection, error) {
 	oId, err := r.resolveOrgID(ctx, orgID)
 	if err != nil {
 		return nil, err
@@ -335,7 +335,7 @@ func (r *queryResolver) MyRecentUsage(ctx context.Context, page *int, pageSize *
 	pId := r.resolveProjectID(projectID)
 
 	pg, ps := clampPagination(page, pageSize)
-	logs, total, err := r.Billing.GetRecentUsage(ctx, oId, pId, pg, ps)
+	logs, total, err := r.Billing.GetRecentUsage(ctx, oId, pId, channel, pg, ps)
 	if err != nil {
 		return &model.UsageConnection{Data: []*model.UsageRecord{}, Total: 0}, nil
 	}
@@ -625,6 +625,7 @@ func (r *queryResolver) Plans(ctx context.Context) ([]*model.Plan, error) {
 		out[i] = &model.Plan{
 			ID: p.ID.String(), Name: p.Name, PriceMonth: p.PriceMonth,
 			TokenLimit: int(p.TokenLimit), RateLimit: p.RateLimit,
+			Description: p.Description, SupportLevel: p.SupportLevel,
 			Features: features, IsActive: p.IsActive,
 		}
 	}

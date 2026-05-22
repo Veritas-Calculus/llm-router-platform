@@ -93,7 +93,7 @@ func (h *SSOHandler) Discover(c *gin.Context) {
 	redirectURL := h.callbackURL(matchedIdp.ID.String())
 	var authURL string
 
-	switch matchedIdp.Type {
+	switch strings.ToLower(matchedIdp.Type) {
 	case "oidc":
 		state, nonce, verifier, challenge, err := generateOIDCState()
 		if err != nil {
@@ -222,7 +222,7 @@ func (h *SSOHandler) Callback(c *gin.Context) {
 	var email, name, oauthID string
 	var groups []string
 
-	switch idp.Type {
+	switch strings.ToLower(idp.Type) {
 	case "oidc":
 		if code == "" {
 			h.redirectWithError(c, "Missing authorization code")

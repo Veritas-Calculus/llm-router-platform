@@ -24,7 +24,7 @@ type Query {
   myUsageSummary(orgId: ID, projectId: ID, channel: String): UsageSummary! @auth
   myDailyUsage(days: Int = 30, orgId: ID, projectId: ID, channel: String): [DailyStats!]! @auth
   myUsageByProvider(orgId: ID, projectId: ID, channel: String): [ProviderUsage!]! @auth
-  myRecentUsage(page: Int = 1, pageSize: Int = 20, orgId: ID, projectId: ID): UsageConnection! @auth
+  myRecentUsage(page: Int = 1, pageSize: Int = 20, orgId: ID, projectId: ID, channel: String): UsageConnection! @auth
   myBudget(orgId: ID): Budget @auth
   myBudgetStatus(orgId: ID): BudgetStatus @auth
   mySubscription(orgId: ID): UserSubscription @auth
@@ -103,12 +103,22 @@ type Query {
 
   # ── Public (unauthenticated) ──
   registrationMode: RegistrationMode!
+  captchaConfig: CaptchaConfig!
   siteConfig: SiteConfig!
 }
 
 type RegistrationMode {
   mode: String!
   inviteCodeRequired: Boolean!
+}
+
+type CaptchaConfig {
+  enabled: Boolean!
+  siteKey: String!
+}
+
+type SsoDiscoveryResult {
+  redirectUrl: String!
 }
 
 type Mutation {
@@ -118,6 +128,7 @@ type Mutation {
   refreshToken: AuthPayload! @auth
   rotateRefreshToken(refreshToken: String!): AuthPayload! @rateLimit(max: 5, window: "1m")
   logout: Boolean! @auth
+  discoverSso(email: String!): SsoDiscoveryResult! @rateLimit(max: 5, window: "1m")
   forgotPassword(email: String!): Boolean! @rateLimit(max: 3, window: "1m")
   resetPassword(input: ResetPasswordInput!): Boolean! @rateLimit(max: 5, window: "1m")
   changePassword(input: ChangePasswordInput!): Boolean! @auth @rateLimit(max: 5, window: "1m")

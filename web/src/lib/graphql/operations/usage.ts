@@ -23,8 +23,8 @@ export const MY_USAGE_BY_PROVIDER = gql`
 `;
 
 export const MY_RECENT_USAGE = gql`
-  query MyRecentUsage($page: Int, $pageSize: Int) {
-    myRecentUsage(page: $page, pageSize: $pageSize) {
+  query MyRecentUsage($page: Int, $pageSize: Int, $channel: String) {
+    myRecentUsage(page: $page, pageSize: $pageSize, channel: $channel) {
       data {
         id modelName inputTokens outputTokens cost
         latencyMs isSuccess createdAt

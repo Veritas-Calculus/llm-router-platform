@@ -5,7 +5,7 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useMutation, useQuery } from '@apollo/client/react';
-import { LOGIN, REGISTER, REGISTRATION_MODE } from '@/lib/graphql/operations';
+import { CAPTCHA_CONFIG, DISCOVER_SSO, LOGIN, REGISTER, REGISTRATION_MODE } from '@/lib/graphql/operations';
 import { useAuthStore } from '@/stores/authStore';
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { useTranslation } from '@/lib/i18n';
@@ -32,6 +32,7 @@ function LoginPage() {
   const { t } = useTranslation();
   const [loginMut] = useMutation(LOGIN);
   const [registerMut] = useMutation(REGISTER);
+  const [discoverSsoMut] = useMutation(DISCOVER_SSO);
   const [isLogin, setIsLogin] = useState(true);
   const [isSsoMode, setIsSsoMode] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -44,19 +45,12 @@ function LoginPage() {
 
   // Turnstile CAPTCHA state
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [captchaConfig, setCaptchaConfig] = useState<{ enabled: boolean; siteKey: string }>({ enabled: false, siteKey: '' });
   const turnstileRef = useRef<TurnstileInstance | null>(null);
-
-  // Fetch Turnstile config from backend
-  useEffect(() => {
-    fetch('/api/v1/captcha/config')
-      .then(r => r.json())
-      .then(data => setCaptchaConfig({ enabled: data.enabled, siteKey: data.siteKey || '' }))
-      .catch(() => {});
-  }, []);
 
   // Query registration mode (public, no auth required)
   const { data: regModeData } = useQuery<{ registrationMode: { mode: string; inviteCodeRequired: boolean } }>(REGISTRATION_MODE, { fetchPolicy: 'cache-first' });
+  const { data: captchaData } = useQuery<{ captchaConfig: { enabled: boolean; siteKey: string } }>(CAPTCHA_CONFIG, { fetchPolicy: 'cache-first' });
+  const captchaConfig = captchaData?.captchaConfig ?? { enabled: false, siteKey: '' };
   const regMode = regModeData?.registrationMode?.mode ?? 'closed';
   const inviteRequired = regModeData?.registrationMode?.inviteCodeRequired ?? false;
   const registrationOpen = regMode === 'open' || regMode === 'invite';
@@ -165,14 +159,10 @@ function LoginPage() {
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/sso/discover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: formData.email })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t('auth.sso_failed'));
-      window.location.href = data.redirect_url;
+      const result = await discoverSsoMut({ variables: { email: formData.email } });
+      const redirectUrl = (result.data as any)?.discoverSso?.redirectUrl;
+      if (!redirectUrl) throw new Error(t('auth.sso_failed'));
+      window.location.href = redirectUrl;
     } catch (err: any) {
       toast.error(err.message || t('auth.sso_failed'));
       setLoading(false);

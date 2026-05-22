@@ -102,13 +102,16 @@ export function useWebhooks() {
     if (editingWebhook) {
       updateWebhook({ variables: { id: editingWebhook.id, input: { url: formData.url, description: formData.description, events: formData.events, isActive: formData.isActive } } });
     } else {
-      createWebhook({ variables: { input: { projectId: selectedProjectId, url: formData.url, description: formData.description, events: formData.events } } });
+      createWebhook({ variables: { input: { projectId: selectedProjectId, url: formData.url, description: formData.description, events: formData.events, isActive: formData.isActive } } });
     }
   }, [selectedProjectId, editingWebhook, formData, updateWebhook, createWebhook]);
 
   const handleDelete = useCallback((id: string) => {
-    if (window.confirm(t('webhooks.delete_confirm'))) deleteWebhook({ variables: { id } });
-  }, [deleteWebhook, t]);
+    if (window.confirm(t('webhooks.delete_confirm'))) {
+      if (selectedEndpointId === id) setSelectedEndpointId(null);
+      deleteWebhook({ variables: { id } });
+    }
+  }, [deleteWebhook, selectedEndpointId, t]);
 
   const handleTest = useCallback((id: string) => {
     setSelectedEndpointId(id);

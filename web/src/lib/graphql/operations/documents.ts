@@ -18,6 +18,20 @@ export const DOCUMENTS_QUERY = gql`
   }
 `;
 
+export const PUBLISHED_DOCUMENTS_QUERY = gql`
+  query PublishedDocuments {
+    publishedDocuments {
+      id
+      title
+      slug
+      content
+      category
+      sortOrder
+      updatedAt
+    }
+  }
+`;
+
 export const CREATE_DOCUMENT = gql`
   mutation CreateDocument($input: DocumentInput!) {
     createDocument(input: $input) {

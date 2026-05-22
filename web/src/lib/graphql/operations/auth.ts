@@ -88,6 +88,23 @@ export const REGISTRATION_MODE = gql`
   }
 `;
 
+export const CAPTCHA_CONFIG = gql`
+  query CaptchaConfig {
+    captchaConfig {
+      enabled
+      siteKey
+    }
+  }
+`;
+
+export const DISCOVER_SSO = gql`
+  mutation DiscoverSso($email: String!) {
+    discoverSso(email: $email) {
+      redirectUrl
+    }
+  }
+`;
+
 export const VERIFY_EMAIL = gql`
   mutation VerifyEmail($token: String!) {
     verifyEmail(token: $token)

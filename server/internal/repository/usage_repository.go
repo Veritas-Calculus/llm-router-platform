@@ -74,7 +74,7 @@ func (r *UsageLogRepository) GetByTimeRange(ctx context.Context, start, end time
 }
 
 // GetByOrgOrProjectPaginated retrieves usage logs with LIMIT/OFFSET pagination.
-func (r *UsageLogRepository) GetByOrgOrProjectPaginated(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, start, end time.Time, limit, offset int) ([]models.UsageLog, error) {
+func (r *UsageLogRepository) GetByOrgOrProjectPaginated(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time, limit, offset int) ([]models.UsageLog, error) {
 	var logs []models.UsageLog
 	query := r.db.WithContext(ctx).Model(&models.UsageLog{}).
 		Select("usage_logs.*").
@@ -87,6 +87,9 @@ func (r *UsageLogRepository) GetByOrgOrProjectPaginated(ctx context.Context, org
 	}
 	if projectID != nil {
 		query = query.Where("usage_logs.project_id = ?", *projectID)
+	}
+	if channel != nil && *channel != "" {
+		query = query.Where("usage_logs.channel = ?", *channel)
 	}
 
 	if err := query.Find(&logs).Error; err != nil {
@@ -275,8 +278,8 @@ func (r *UsageLogRepository) AggregateByModelByTimeRange(ctx context.Context, or
 	return rows, nil
 }
 
-// CountByOrgOrProject counts total usage logs matching org/project in a time range (for pagination).
-func (r *UsageLogRepository) CountByOrgOrProject(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, start, end time.Time) (int64, error) {
+// CountByOrgOrProject counts total usage logs matching org/project/channel in a time range (for pagination).
+func (r *UsageLogRepository) CountByOrgOrProject(ctx context.Context, orgID *uuid.UUID, projectID *uuid.UUID, channel *string, start, end time.Time) (int64, error) {
 	var count int64
 	query := r.db.WithContext(ctx).Model(&models.UsageLog{}).
 		Where("usage_logs.created_at >= ? AND usage_logs.created_at <= ?", start, end)
@@ -286,6 +289,9 @@ func (r *UsageLogRepository) CountByOrgOrProject(ctx context.Context, orgID *uui
 	}
 	if projectID != nil {
 		query = query.Where("usage_logs.project_id = ?", *projectID)
+	}
+	if channel != nil && *channel != "" {
+		query = query.Where("usage_logs.channel = ?", *channel)
 	}
 
 	if err := query.Count(&count).Error; err != nil {

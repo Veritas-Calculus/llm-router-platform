@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQuery } from '@apollo/client/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
@@ -6,12 +7,14 @@ import {
   CodeBracketIcon,
   CommandLineIcon,
   CubeIcon,
+  DocumentTextIcon,
   ClipboardDocumentIcon,
   CheckIcon,
   PlayIcon,
   ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
+import { PUBLISHED_DOCUMENTS_QUERY } from '@/lib/graphql/operations/documents';
 
 /* ── Copy button ───────────────────────────────────────────────── */
 function CopyButton({ text }: { text: string }) {
@@ -47,9 +50,46 @@ const tabs = [
   { id: 'api', label: 'API Reference', icon: CodeBracketIcon },
   { id: 'sdk', label: 'SDKs & Examples', icon: CubeIcon },
   { id: 'mcp', label: 'MCP Protocol', icon: CommandLineIcon },
+  { id: 'guides', label: 'Guides', icon: DocumentTextIcon },
 ] as const;
 
 type TabId = (typeof tabs)[number]['id'];
+
+interface PublishedDocument {
+  id: string;
+  title: string;
+  slug: string;
+  content: string;
+  category: string;
+  sortOrder: number;
+  updatedAt: string;
+}
+
+function safeMarkdownHref(rawHref: string): string | null {
+  const href = rawHref.trim();
+  if (href.startsWith('#') || href.startsWith('/')) return href;
+  return /^(https?:|mailto:)/i.test(href) ? href : null;
+}
+
+function renderDocumentMarkdown(md: string): string {
+  if (!md.trim()) return '<p class="text-apple-gray-400 italic">No content yet.</p>';
+  return md
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold text-apple-gray-900 mt-5 mb-2">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-semibold text-apple-gray-900 mt-6 mb-2">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold text-apple-gray-900 mt-6 mb-3">$1</h1>')
+    .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-apple-gray-100 text-sm font-mono text-apple-gray-800">$1</code>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, href: string) => {
+      const safeHref = safeMarkdownHref(href);
+      return safeHref
+        ? `<a href="${safeHref}" class="text-apple-blue hover:underline" target="_blank" rel="noopener noreferrer">${label}</a>`
+        : label;
+    })
+    .replace(/^[-*] (.+)$/gm, '<li class="ml-5 list-disc text-sm leading-6 text-apple-gray-700">$1</li>')
+    .replace(/^(?!<[hla-z])(.*\S.*)$/gm, '<p class="text-sm leading-7 text-apple-gray-700 my-2">$1</p>');
+}
 
 /* ── Endpoint card ─────────────────────────────────────────────── */
 function EndpointCard({ method, path, description, children }: {
@@ -88,6 +128,8 @@ function EndpointCard({ method, path, description, children }: {
 /* ── Main component ────────────────────────────────────────────── */
 function DocsPage() {
   const [activeTab, setActiveTab] = useState<TabId>('quickstart');
+  const { data: docsData, loading: docsLoading } = useQuery<{ publishedDocuments: PublishedDocument[] }>(PUBLISHED_DOCUMENTS_QUERY);
+  const publishedDocuments = docsData?.publishedDocuments ?? [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -135,6 +177,7 @@ function DocsPage() {
           {activeTab === 'api' && <ApiReferenceTab />}
           {activeTab === 'sdk' && <SdkTab />}
           {activeTab === 'mcp' && <McpTab />}
+          {activeTab === 'guides' && <GuidesTab documents={publishedDocuments} loading={docsLoading} />}
         </motion.div>
       </AnimatePresence>
     </div>
@@ -431,6 +474,69 @@ curl ${BASE_URL}/chat/completions \\
   }'
 # The model can now use the search tool automatically`} />
       </div>
+    </div>
+  );
+}
+
+function GuidesTab({ documents, loading }: { documents: PublishedDocument[]; loading: boolean }) {
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const sortedDocs = [...documents].sort((a, b) => (
+    a.category.localeCompare(b.category) || a.sortOrder - b.sortOrder || a.title.localeCompare(b.title)
+  ));
+  const selectedDoc = sortedDocs.find(doc => doc.slug === selectedSlug) ?? sortedDocs[0];
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl p-8 border border-apple-gray-200 shadow-sm text-center text-apple-gray-400">
+        Loading guides...
+      </div>
+    );
+  }
+
+  if (!selectedDoc) {
+    return (
+      <div className="bg-white rounded-2xl p-8 border border-apple-gray-200 shadow-sm text-center">
+        <DocumentTextIcon className="w-10 h-10 mx-auto mb-3 text-apple-gray-300" />
+        <p className="text-sm text-apple-gray-500">No published guides yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5">
+      <aside className="bg-white rounded-2xl border border-apple-gray-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-apple-gray-100">
+          <h3 className="text-sm font-semibold text-apple-gray-900">Published Guides</h3>
+        </div>
+        <div className="p-2">
+          {sortedDocs.map(doc => (
+            <button
+              key={doc.id}
+              onClick={() => setSelectedSlug(doc.slug)}
+              className={clsx(
+                'w-full text-left px-3 py-2.5 rounded-xl transition-colors',
+                selectedDoc.id === doc.id
+                  ? 'bg-blue-50 text-apple-blue'
+                  : 'text-apple-gray-700 hover:bg-apple-gray-50'
+              )}
+            >
+              <span className="block text-sm font-semibold truncate">{doc.title}</span>
+              <span className="block text-xs text-apple-gray-400 truncate">{doc.category}</span>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <article className="bg-white rounded-2xl p-6 border border-apple-gray-200 shadow-sm min-w-0">
+        <div className="mb-5 pb-4 border-b border-apple-gray-100">
+          <p className="text-xs uppercase tracking-wide text-apple-gray-400 font-semibold mb-1">{selectedDoc.category}</p>
+          <h2 className="text-xl font-bold text-apple-gray-900">{selectedDoc.title}</h2>
+        </div>
+        <div
+          className="max-w-none"
+          dangerouslySetInnerHTML={{ __html: renderDocumentMarkdown(selectedDoc.content) }}
+        />
+      </article>
     </div>
   );
 }

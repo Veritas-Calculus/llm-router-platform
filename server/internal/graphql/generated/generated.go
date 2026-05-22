@@ -275,6 +275,11 @@ type ComplexityRoot struct {
 		TotalHits   func(childComplexity int) int
 	}
 
+	CaptchaConfig struct {
+		Enabled func(childComplexity int) int
+		SiteKey func(childComplexity int) int
+	}
+
 	CheckoutSession struct {
 		URL func(childComplexity int) int
 	}
@@ -636,6 +641,7 @@ type ComplexityRoot struct {
 		DeleteRoutingRule            func(childComplexity int, id string) int
 		DeleteWebhookEndpoint        func(childComplexity int, id string) int
 		DisableMfa                   func(childComplexity int, code string) int
+		DiscoverSso                  func(childComplexity int, email string) int
 		ExportSystemUsageCSV         func(childComplexity int) int
 		ExportUsageCSV               func(childComplexity int) int
 		ForgotPassword               func(childComplexity int, email string) int
@@ -961,6 +967,7 @@ type ComplexityRoot struct {
 		BackupStatus            func(childComplexity int) int
 		CacheConfig             func(childComplexity int) int
 		CacheStats              func(childComplexity int) int
+		CaptchaConfig           func(childComplexity int) int
 		Coupon                  func(childComplexity int, id string) int
 		Coupons                 func(childComplexity int) int
 		Dashboard               func(childComplexity int, projectID *string, channel *string) int
@@ -991,7 +998,7 @@ type ComplexityRoot struct {
 		MyOrders                func(childComplexity int, orgID *string) int
 		MyOrganizations         func(childComplexity int) int
 		MyProjects              func(childComplexity int, orgID string) int
-		MyRecentUsage           func(childComplexity int, page *int, pageSize *int, orgID *string, projectID *string) int
+		MyRecentUsage           func(childComplexity int, page *int, pageSize *int, orgID *string, projectID *string, channel *string) int
 		MyRedeemHistory         func(childComplexity int) int
 		MySubscription          func(childComplexity int, orgID *string) int
 		MyTasks                 func(childComplexity int, page *int, pageSize *int) int
@@ -1149,6 +1156,10 @@ type ComplexityRoot struct {
 		LogoURL    func(childComplexity int) int
 		SiteName   func(childComplexity int) int
 		Subtitle   func(childComplexity int) int
+	}
+
+	SsoDiscoveryResult struct {
+		RedirectURL func(childComplexity int) int
 	}
 
 	SystemLoad struct {
@@ -1347,6 +1358,7 @@ type MutationResolver interface {
 	RefreshToken(ctx context.Context) (*model.AuthPayload, error)
 	RotateRefreshToken(ctx context.Context, refreshToken string) (*model.AuthPayload, error)
 	Logout(ctx context.Context) (bool, error)
+	DiscoverSso(ctx context.Context, email string) (*model.SsoDiscoveryResult, error)
 	ForgotPassword(ctx context.Context, email string) (bool, error)
 	ResetPassword(ctx context.Context, input model.ResetPasswordInput) (bool, error)
 	ChangePassword(ctx context.Context, input model.ChangePasswordInput) (bool, error)
@@ -1468,7 +1480,7 @@ type QueryResolver interface {
 	MyUsageSummary(ctx context.Context, orgID *string, projectID *string, channel *string) (*model.UsageSummary, error)
 	MyDailyUsage(ctx context.Context, days *int, orgID *string, projectID *string, channel *string) ([]*model.DailyStats, error)
 	MyUsageByProvider(ctx context.Context, orgID *string, projectID *string, channel *string) ([]*model.ProviderUsage, error)
-	MyRecentUsage(ctx context.Context, page *int, pageSize *int, orgID *string, projectID *string) (*model.UsageConnection, error)
+	MyRecentUsage(ctx context.Context, page *int, pageSize *int, orgID *string, projectID *string, channel *string) (*model.UsageConnection, error)
 	MyBudget(ctx context.Context, orgID *string) (*model.Budget, error)
 	MyBudgetStatus(ctx context.Context, orgID *string) (*model.BudgetStatus, error)
 	MySubscription(ctx context.Context, orgID *string) (*model.UserSubscription, error)
@@ -1531,6 +1543,7 @@ type QueryResolver interface {
 	PublishedDocuments(ctx context.Context) ([]*model.Document, error)
 	Document(ctx context.Context, id string) (*model.Document, error)
 	RegistrationMode(ctx context.Context) (*model.RegistrationMode, error)
+	CaptchaConfig(ctx context.Context) (*model.CaptchaConfig, error)
 	SiteConfig(ctx context.Context) (*model.SiteConfig, error)
 	SemanticCaches(ctx context.Context, limit *int, offset *int) ([]*model.SemanticCache, error)
 	CacheStats(ctx context.Context) (*model.CacheStats, error)
@@ -2598,6 +2611,19 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.CacheStats.TotalHits(childComplexity), true
+
+	case "CaptchaConfig.enabled":
+		if e.ComplexityRoot.CaptchaConfig.Enabled == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CaptchaConfig.Enabled(childComplexity), true
+	case "CaptchaConfig.siteKey":
+		if e.ComplexityRoot.CaptchaConfig.SiteKey == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CaptchaConfig.SiteKey(childComplexity), true
 
 	case "CheckoutSession.url":
 		if e.ComplexityRoot.CheckoutSession.URL == nil {
@@ -4523,6 +4549,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.DisableMfa(childComplexity, args["code"].(string)), true
+	case "Mutation.discoverSso":
+		if e.ComplexityRoot.Mutation.DiscoverSso == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_discoverSso_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.DiscoverSso(childComplexity, args["email"].(string)), true
 	case "Mutation.exportSystemUsageCsv":
 		if e.ComplexityRoot.Mutation.ExportSystemUsageCSV == nil {
 			break
@@ -6346,6 +6383,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.CacheStats(childComplexity), true
+	case "Query.captchaConfig":
+		if e.ComplexityRoot.Query.CaptchaConfig == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.CaptchaConfig(childComplexity), true
 	case "Query.coupon":
 		if e.ComplexityRoot.Query.Coupon == nil {
 			break
@@ -6612,7 +6655,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Query.MyRecentUsage(childComplexity, args["page"].(*int), args["pageSize"].(*int), args["orgId"].(*string), args["projectId"].(*string)), true
+		return e.ComplexityRoot.Query.MyRecentUsage(childComplexity, args["page"].(*int), args["pageSize"].(*int), args["orgId"].(*string), args["projectId"].(*string), args["channel"].(*string)), true
 	case "Query.myRedeemHistory":
 		if e.ComplexityRoot.Query.MyRedeemHistory == nil {
 			break
@@ -7432,6 +7475,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.SiteConfig.Subtitle(childComplexity), true
+
+	case "SsoDiscoveryResult.redirectUrl":
+		if e.ComplexityRoot.SsoDiscoveryResult.RedirectURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SsoDiscoveryResult.RedirectURL(childComplexity), true
 
 	case "SystemLoad.database":
 		if e.ComplexityRoot.SystemLoad.Database == nil {
@@ -8394,7 +8444,7 @@ type Query {
   myUsageSummary(orgId: ID, projectId: ID, channel: String): UsageSummary! @auth
   myDailyUsage(days: Int = 30, orgId: ID, projectId: ID, channel: String): [DailyStats!]! @auth
   myUsageByProvider(orgId: ID, projectId: ID, channel: String): [ProviderUsage!]! @auth
-  myRecentUsage(page: Int = 1, pageSize: Int = 20, orgId: ID, projectId: ID): UsageConnection! @auth
+  myRecentUsage(page: Int = 1, pageSize: Int = 20, orgId: ID, projectId: ID, channel: String): UsageConnection! @auth
   myBudget(orgId: ID): Budget @auth
   myBudgetStatus(orgId: ID): BudgetStatus @auth
   mySubscription(orgId: ID): UserSubscription @auth
@@ -8473,12 +8523,22 @@ type Query {
 
   # ── Public (unauthenticated) ──
   registrationMode: RegistrationMode!
+  captchaConfig: CaptchaConfig!
   siteConfig: SiteConfig!
 }
 
 type RegistrationMode {
   mode: String!
   inviteCodeRequired: Boolean!
+}
+
+type CaptchaConfig {
+  enabled: Boolean!
+  siteKey: String!
+}
+
+type SsoDiscoveryResult {
+  redirectUrl: String!
 }
 
 type Mutation {
@@ -8488,6 +8548,7 @@ type Mutation {
   refreshToken: AuthPayload! @auth
   rotateRefreshToken(refreshToken: String!): AuthPayload! @rateLimit(max: 5, window: "1m")
   logout: Boolean! @auth
+  discoverSso(email: String!): SsoDiscoveryResult! @rateLimit(max: 5, window: "1m")
   forgotPassword(email: String!): Boolean! @rateLimit(max: 3, window: "1m")
   resetPassword(input: ResetPasswordInput!): Boolean! @rateLimit(max: 5, window: "1m")
   changePassword(input: ChangePasswordInput!): Boolean! @auth @rateLimit(max: 5, window: "1m")
@@ -10219,6 +10280,7 @@ input CreateWebhookEndpointInput {
     projectId: ID!
     url: String!
     events: [String!]!
+    isActive: Boolean
     description: String
 }
 
@@ -10729,6 +10791,16 @@ func (ec *executionContext) childFields_CacheStats(ctx context.Context, field gr
 		return ec.fieldContext_CacheStats_totalHits(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type CacheStats", field.Name)
+}
+
+func (ec *executionContext) childFields_CaptchaConfig(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "enabled":
+		return ec.fieldContext_CaptchaConfig_enabled(ctx, field)
+	case "siteKey":
+		return ec.fieldContext_CaptchaConfig_siteKey(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type CaptchaConfig", field.Name)
 }
 
 func (ec *executionContext) childFields_CheckoutSession(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -12077,6 +12149,14 @@ func (ec *executionContext) childFields_SiteConfig(ctx context.Context, field gr
 	return nil, fmt.Errorf("no field named %q was found under type SiteConfig", field.Name)
 }
 
+func (ec *executionContext) childFields_SsoDiscoveryResult(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "redirectUrl":
+		return ec.fieldContext_SsoDiscoveryResult_redirectUrl(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type SsoDiscoveryResult", field.Name)
+}
+
 func (ec *executionContext) childFields_SystemLoad(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "service":
@@ -13372,6 +13452,20 @@ func (ec *executionContext) field_Mutation_disableMfa_args(ctx context.Context, 
 		return nil, err
 	}
 	args["code"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_discoverSso_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "email",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["email"] = arg0
 	return args, nil
 }
 
@@ -14876,6 +14970,14 @@ func (ec *executionContext) field_Query_myRecentUsage_args(ctx context.Context, 
 		return nil, err
 	}
 	args["projectId"] = arg3
+	arg4, err := graphql.ProcessArgField(ctx, rawArgs, "channel",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["channel"] = arg4
 	return args, nil
 }
 
@@ -19396,6 +19498,52 @@ func (ec *executionContext) _CacheStats_totalHits(ctx context.Context, field gra
 }
 func (ec *executionContext) fieldContext_CacheStats_totalHits(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("CacheStats", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _CaptchaConfig_enabled(ctx context.Context, field graphql.CollectedField, obj *model.CaptchaConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CaptchaConfig_enabled(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Enabled, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CaptchaConfig_enabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CaptchaConfig", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _CaptchaConfig_siteKey(ctx context.Context, field graphql.CollectedField, obj *model.CaptchaConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CaptchaConfig_siteKey(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SiteKey, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CaptchaConfig_siteKey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CaptchaConfig", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _CheckoutSession_url(ctx context.Context, field graphql.CollectedField, obj *model.CheckoutSession) (ret graphql.Marshaler) {
@@ -24935,6 +25083,73 @@ func (ec *executionContext) _Mutation_logout(ctx context.Context, field graphql.
 }
 func (ec *executionContext) fieldContext_Mutation_logout(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Mutation", field, true, true, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Mutation_discoverSso(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_discoverSso(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().DiscoverSso(ctx, fc.Args["email"].(string))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int(ctx, 5)
+				if err != nil {
+					var zeroVal *model.SsoDiscoveryResult
+					return zeroVal, err
+				}
+				window, err := ec.unmarshalNString2string(ctx, "1m")
+				if err != nil {
+					var zeroVal *model.SsoDiscoveryResult
+					return zeroVal, err
+				}
+				if ec.Directives.RateLimit == nil {
+					var zeroVal *model.SsoDiscoveryResult
+					return zeroVal, errors.New("directive rateLimit is not implemented")
+				}
+				return ec.Directives.RateLimit(ctx, nil, directive0, max, window)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v *model.SsoDiscoveryResult) graphql.Marshaler {
+			return ec.marshalNSsoDiscoveryResult2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐSsoDiscoveryResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_discoverSso(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_SsoDiscoveryResult(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_discoverSso_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _Mutation_forgotPassword(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -36326,7 +36541,7 @@ func (ec *executionContext) _Query_myRecentUsage(ctx context.Context, field grap
 		},
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Query().MyRecentUsage(ctx, fc.Args["page"].(*int), fc.Args["pageSize"].(*int), fc.Args["orgId"].(*string), fc.Args["projectId"].(*string))
+			return ec.Resolvers.Query().MyRecentUsage(ctx, fc.Args["page"].(*int), fc.Args["pageSize"].(*int), fc.Args["orgId"].(*string), fc.Args["projectId"].(*string), fc.Args["channel"].(*string))
 		},
 		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
 			directive0 := next
@@ -39856,6 +40071,38 @@ func (ec *executionContext) fieldContext_Query_registrationMode(_ context.Contex
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_captchaConfig(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_captchaConfig(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().CaptchaConfig(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.CaptchaConfig) graphql.Marshaler {
+			return ec.marshalNCaptchaConfig2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCaptchaConfig(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_captchaConfig(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_CaptchaConfig(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_siteConfig(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -42279,6 +42526,29 @@ func (ec *executionContext) _SiteConfig_faviconUrl(ctx context.Context, field gr
 }
 func (ec *executionContext) fieldContext_SiteConfig_faviconUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("SiteConfig", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _SsoDiscoveryResult_redirectUrl(ctx context.Context, field graphql.CollectedField, obj *model.SsoDiscoveryResult) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SsoDiscoveryResult_redirectUrl(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RedirectURL, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SsoDiscoveryResult_redirectUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SsoDiscoveryResult", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _SystemLoad_service(ctx context.Context, field graphql.CollectedField, obj *model.SystemLoad) (ret graphql.Marshaler) {
@@ -47287,7 +47557,7 @@ func (ec *executionContext) unmarshalInputCreateWebhookEndpointInput(ctx context
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"projectId", "url", "events", "description"}
+	fieldsInOrder := [...]string{"projectId", "url", "events", "isActive", "description"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -47315,6 +47585,13 @@ func (ec *executionContext) unmarshalInputCreateWebhookEndpointInput(ctx context
 				return it, err
 			}
 			it.Events = data
+		case "isActive":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("isActive"))
+			data, err := ec.unmarshalOBoolean2ᚖbool(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.IsActive = data
 		case "description":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("description"))
 			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
@@ -50554,6 +50831,50 @@ func (ec *executionContext) _CacheStats(ctx context.Context, sel ast.SelectionSe
 	return out
 }
 
+var captchaConfigImplementors = []string{"CaptchaConfig"}
+
+func (ec *executionContext) _CaptchaConfig(ctx context.Context, sel ast.SelectionSet, obj *model.CaptchaConfig) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, captchaConfigImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CaptchaConfig")
+		case "enabled":
+			out.Values[i] = ec._CaptchaConfig_enabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "siteKey":
+			out.Values[i] = ec._CaptchaConfig_siteKey(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var checkoutSessionImplementors = []string{"CheckoutSession"}
 
 func (ec *executionContext) _CheckoutSession(ctx context.Context, sel ast.SelectionSet, obj *model.CheckoutSession) graphql.Marshaler {
@@ -52576,6 +52897,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "logout":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_logout(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "discoverSso":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_discoverSso(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -56604,6 +56932,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "captchaConfig":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_captchaConfig(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "siteConfig":
 			field := field
 
@@ -57657,6 +58007,45 @@ func (ec *executionContext) _SiteConfig(ctx context.Context, sel ast.SelectionSe
 			}
 		case "faviconUrl":
 			out.Values[i] = ec._SiteConfig_faviconUrl(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var ssoDiscoveryResultImplementors = []string{"SsoDiscoveryResult"}
+
+func (ec *executionContext) _SsoDiscoveryResult(ctx context.Context, sel ast.SelectionSet, obj *model.SsoDiscoveryResult) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, ssoDiscoveryResultImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SsoDiscoveryResult")
+		case "redirectUrl":
+			out.Values[i] = ec._SsoDiscoveryResult_redirectUrl(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -59697,6 +60086,20 @@ func (ec *executionContext) marshalNCacheStats2ᚖllmᚑrouterᚑplatformᚋinte
 	return ec._CacheStats(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNCaptchaConfig2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCaptchaConfig(ctx context.Context, sel ast.SelectionSet, v model.CaptchaConfig) graphql.Marshaler {
+	return ec._CaptchaConfig(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNCaptchaConfig2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐCaptchaConfig(ctx context.Context, sel ast.SelectionSet, v *model.CaptchaConfig) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._CaptchaConfig(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNChangePasswordInput2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐChangePasswordInput(ctx context.Context, v any) (model.ChangePasswordInput, error) {
 	res, err := ec.unmarshalInputChangePasswordInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -61436,6 +61839,20 @@ func (ec *executionContext) marshalNSiteConfig2ᚖllmᚑrouterᚑplatformᚋinte
 		return graphql.Null
 	}
 	return ec._SiteConfig(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNSsoDiscoveryResult2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐSsoDiscoveryResult(ctx context.Context, sel ast.SelectionSet, v model.SsoDiscoveryResult) graphql.Marshaler {
+	return ec._SsoDiscoveryResult(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNSsoDiscoveryResult2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐSsoDiscoveryResult(ctx context.Context, sel ast.SelectionSet, v *model.SsoDiscoveryResult) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SsoDiscoveryResult(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {

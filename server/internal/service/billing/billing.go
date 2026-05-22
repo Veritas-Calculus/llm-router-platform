@@ -721,7 +721,7 @@ func (s *Service) GetSystemUsageByModel(ctx context.Context, channel *string, st
 }
 
 // GetRecentUsage returns recent usage logs with proper pagination.
-func (s *Service) GetRecentUsage(ctx context.Context, orgID uuid.UUID, projectID *uuid.UUID, page, limit int) ([]models.UsageLog, int64, error) {
+func (s *Service) GetRecentUsage(ctx context.Context, orgID uuid.UUID, projectID *uuid.UUID, channel *string, page, limit int) ([]models.UsageLog, int64, error) {
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -30)
 
@@ -730,12 +730,12 @@ func (s *Service) GetRecentUsage(ctx context.Context, orgID uuid.UUID, projectID
 		offset = 0
 	}
 
-	logs, err := s.usageRepo.GetByOrgOrProjectPaginated(ctx, &orgID, projectID, startTime, endTime, limit, offset)
+	logs, err := s.usageRepo.GetByOrgOrProjectPaginated(ctx, &orgID, projectID, channel, startTime, endTime, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	total, _ := s.usageRepo.CountByOrgOrProject(ctx, &orgID, projectID, startTime, endTime)
+	total, _ := s.usageRepo.CountByOrgOrProject(ctx, &orgID, projectID, channel, startTime, endTime)
 
 	// Set IsSuccess based on StatusCode
 	for i := range logs {

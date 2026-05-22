@@ -23,7 +23,11 @@ func (r *mutationResolver) CreateWebhookEndpoint(ctx context.Context, input mode
 	if input.Description != nil {
 		desc = *input.Description
 	}
-	endpoint, err := r.WebhookSvc.CreateEndpoint(ctx, projectID, input.URL, input.Events, desc)
+	isActive := true
+	if input.IsActive != nil {
+		isActive = *input.IsActive
+	}
+	endpoint, err := r.WebhookSvc.CreateEndpoint(ctx, projectID, input.URL, input.Events, isActive, desc)
 	if err != nil {
 		return nil, err
 	}

@@ -32,13 +32,17 @@ function UsagePage() {
     return () => clearTimeout(timer);
   }, [channelFilter]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedChannel]);
+
   const queryVars = {
     channel: debouncedChannel || undefined
   };
 
   const { data: summaryData, loading: sumLoading, error: sumError, refetch: refetchSummary } = useQuery<any>(MY_USAGE_SUMMARY, { variables: queryVars });
   const { data: dailyData, loading: dailyLoading, error: dailyError, refetch: refetchDaily } = useQuery<any>(MY_DAILY_USAGE, { variables: { days: 30, ...queryVars } });
-  const { data: recentData, loading: recentLoading, error: recentError, refetch: refetchRecent } = useQuery<any>(MY_RECENT_USAGE, { variables: { page, pageSize } });
+  const { data: recentData, loading: recentLoading, error: recentError, refetch: refetchRecent } = useQuery<any>(MY_RECENT_USAGE, { variables: { page, pageSize, ...queryVars } });
   const loading = sumLoading || dailyLoading || recentLoading;
   const queryError = sumError || dailyError || recentError;
   const retryAll = () => {

@@ -25,7 +25,7 @@ import (
 // Service defines the interface for webhook operations
 type Service interface {
 	// Management
-	CreateEndpoint(ctx context.Context, projectID uuid.UUID, url string, events []string, description string) (*models.WebhookEndpoint, error)
+	CreateEndpoint(ctx context.Context, projectID uuid.UUID, url string, events []string, isActive bool, description string) (*models.WebhookEndpoint, error)
 	GetEndpoints(ctx context.Context, projectID uuid.UUID) ([]*models.WebhookEndpoint, error)
 	GetEndpoint(ctx context.Context, id uuid.UUID) (*models.WebhookEndpoint, error)
 	UpdateEndpoint(ctx context.Context, id uuid.UUID, url string, events []string, isActive bool, description string) (*models.WebhookEndpoint, error)
@@ -66,7 +66,7 @@ func generateSecret() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func (s *service) CreateEndpoint(ctx context.Context, projectID uuid.UUID, url string, events []string, description string) (*models.WebhookEndpoint, error) {
+func (s *service) CreateEndpoint(ctx context.Context, projectID uuid.UUID, url string, events []string, isActive bool, description string) (*models.WebhookEndpoint, error) {
 	if err := sanitize.ValidateWebhookURL(url, false, false); err != nil {
 		return nil, fmt.Errorf("invalid webhook URL: %w", err)
 	}
@@ -81,7 +81,7 @@ func (s *service) CreateEndpoint(ctx context.Context, projectID uuid.UUID, url s
 		URL:         url,
 		Secret:      secret,
 		Events:      events,
-		IsActive:    true,
+		IsActive:    isActive,
 		Description: description,
 	}
 
