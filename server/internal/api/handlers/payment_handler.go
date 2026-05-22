@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"io"
 	"net/http"
+	"time"
 
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/billing"
@@ -138,8 +140,13 @@ func (h *PaymentHandler) StripeWebhook(c *gin.Context) {
 		return
 	}
 
+	// Derive a bounded ctx from the request so a slow DB/row lock cannot
+	// hold the goroutine open past Stripe's ~30s webhook deadline.
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
 	sigHeader := c.GetHeader("Stripe-Signature")
-	if err := h.paymentService.HandleWebhook(payload, sigHeader); err != nil {
+	if err := h.paymentService.HandleWebhook(ctx, payload, sigHeader); err != nil {
 		h.logger.Error("stripe webhook failed", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "webhook processing failed"})
 		return
@@ -161,7 +168,10 @@ func (h *PaymentHandler) WechatPayNotify(c *gin.Context) {
 		return
 	}
 
-	orderNo, err := h.wechatPay.HandleNotify(payload, c.Request.Header)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	orderNo, err := h.wechatPay.HandleNotify(ctx, payload, c.Request.Header)
 	if err != nil {
 		h.logger.Error("wechat pay notification failed", zap.String("error", sanitize.SafeString(err.Error())))
 		c.JSON(http.StatusBadRequest, gin.H{"code": "FAIL", "message": "notification processing failed"})
@@ -185,7 +195,10 @@ func (h *PaymentHandler) AlipayNotify(c *gin.Context) {
 		return
 	}
 
-	orderNo, err := h.alipay.HandleNotify(c.Request.Form)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	orderNo, err := h.alipay.HandleNotify(ctx, c.Request.Form)
 	if err != nil {
 		h.logger.Error("alipay notification failed",
 			zap.String("error", sanitize.SafeString(err.Error())),

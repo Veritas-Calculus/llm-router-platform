@@ -198,7 +198,7 @@ func (s *WechatPayService) verifyNotifySignature(body []byte, headers http.Heade
 }
 
 // HandleNotify processes WeChat Pay async notification.
-func (s *WechatPayService) HandleNotify(body []byte, headers http.Header) (string, error) {
+func (s *WechatPayService) HandleNotify(ctx context.Context, body []byte, headers http.Header) (string, error) {
 	if err := s.verifyNotifySignature(body, headers); err != nil {
 		return "", err
 	}
@@ -242,8 +242,6 @@ func (s *WechatPayService) HandleNotify(body []byte, headers http.Header) (strin
 	if err := json.Unmarshal(plaintext, &txResult); err != nil {
 		return "", fmt.Errorf("failed to parse decrypted result: %w", err)
 	}
-
-	ctx := context.Background()
 
 	// Idempotency check
 	order, err := s.subRepo.GetOrderByNo(ctx, txResult.OutTradeNo)

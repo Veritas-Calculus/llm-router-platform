@@ -189,7 +189,7 @@ func (s *AlipayService) CreatePreCreateOrder(ctx context.Context, userID uuid.UU
 // is consulted only to look up the principal (OrgID) and to enforce
 // idempotency. Any discrepancy between signed amount and stored order amount
 // aborts fulfillment and increments payment_amount_mismatch_total{provider="alipay"}.
-func (s *AlipayService) HandleNotify(formValues url.Values) (string, error) {
+func (s *AlipayService) HandleNotify(ctx context.Context, formValues url.Values) (string, error) {
 	if s.alipayPubKey == nil {
 		return "", fmt.Errorf("alipay public key not configured, cannot verify notification")
 	}
@@ -200,8 +200,6 @@ func (s *AlipayService) HandleNotify(formValues url.Values) (string, error) {
 	tradeStatus := formValues.Get("trade_status")
 	orderNo := formValues.Get("out_trade_no")
 	tradeNo := formValues.Get("trade_no")
-
-	ctx := context.Background()
 
 	// Idempotency check
 	order, err := s.subRepo.GetOrderByNo(ctx, orderNo)

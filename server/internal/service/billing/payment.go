@@ -194,16 +194,19 @@ func (s *PaymentService) CreateRechargeSession(ctx context.Context, userID uuid.
 //     dispatch — Stripe retries up to ~3 days).
 //  3. Order.Status == "paid" check inside fulfillOrder (last-resort guard
 //     against Redis unavailability).
-func (s *PaymentService) HandleWebhook(payload []byte, sigHeader string) error {
+//
+// ctx is derived from the inbound HTTP request so a slow DB or row lock does
+// not pin the webhook handler past the request's deadline.
+func (s *PaymentService) HandleWebhook(ctx context.Context, payload []byte, sigHeader string) error {
 	event, err := webhook.ConstructEvent(payload, sigHeader, s.cfg.WebhookSecret)
 	if err != nil {
 		return err
 	}
 
 	if s.redis != nil && event.ID != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		defer cancel()
-		set, err := s.redis.SetNX(ctx, fmt.Sprintf("stripe:event:%s", event.ID), "1", 24*time.Hour).Result()
+		setCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		set, err := s.redis.SetNX(setCtx, fmt.Sprintf("stripe:event:%s", event.ID), "1", 24*time.Hour).Result()
+		cancel()
 		if err == nil && !set {
 			s.logger.Info("stripe event already processed, skipping",
 				zap.String("event_id", event.ID),
@@ -218,25 +221,25 @@ func (s *PaymentService) HandleWebhook(payload []byte, sigHeader string) error {
 		if err := json.Unmarshal(event.Data.Raw, &sess); err != nil {
 			return err
 		}
-		return s.fulfillOrder(&sess)
+		return s.fulfillOrder(ctx, &sess)
 	case "customer.subscription.updated":
 		var sub stripe.Subscription
 		if err := json.Unmarshal(event.Data.Raw, &sub); err != nil {
 			return err
 		}
-		return s.handleSubscriptionUpdated(&sub)
+		return s.handleSubscriptionUpdated(ctx, &sub)
 	case "customer.subscription.deleted":
 		var sub stripe.Subscription
 		if err := json.Unmarshal(event.Data.Raw, &sub); err != nil {
 			return err
 		}
-		return s.handleSubscriptionDeleted(&sub)
+		return s.handleSubscriptionDeleted(ctx, &sub)
 	}
 
 	return nil
 }
 
-func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
+func (s *PaymentService) fulfillOrder(ctx context.Context, sess *stripe.CheckoutSession) error {
 	userIDStr := sess.Metadata["user_id"]
 	orderNo := sess.Metadata["order_no"]
 	orderType := sess.Metadata["type"]
@@ -249,8 +252,6 @@ func (s *PaymentService) fulfillOrder(sess *stripe.CheckoutSession) error {
 			zap.Error(err))
 		return fmt.Errorf("invalid user_id in stripe metadata: %w", err)
 	}
-
-	ctx := context.Background()
 
 	// Idempotency: if the order is already fulfilled, skip re-processing.
 	// Stripe may retry webhooks, so this prevents duplicate balance top-ups.
@@ -398,8 +399,7 @@ func (s *PaymentService) CreatePortalSession(ctx context.Context, userID uuid.UU
 	return sess.URL, nil
 }
 
-func (s *PaymentService) handleSubscriptionUpdated(stripeSub *stripe.Subscription) error {
-	ctx := context.Background()
+func (s *PaymentService) handleSubscriptionUpdated(ctx context.Context, stripeSub *stripe.Subscription) error {
 	sub, err := s.subRepo.GetByStripeCustomerID(ctx, stripeSub.Customer.ID)
 	if err != nil {
 		s.logger.Warn("webhook updated subscription but no local sub found", zap.String("customer_id", stripeSub.Customer.ID))
@@ -431,8 +431,7 @@ func (s *PaymentService) handleSubscriptionUpdated(stripeSub *stripe.Subscriptio
 	return s.subRepo.Update(ctx, sub)
 }
 
-func (s *PaymentService) handleSubscriptionDeleted(stripeSub *stripe.Subscription) error {
-	ctx := context.Background()
+func (s *PaymentService) handleSubscriptionDeleted(ctx context.Context, stripeSub *stripe.Subscription) error {
 	sub, err := s.subRepo.GetByStripeCustomerID(ctx, stripeSub.Customer.ID)
 	if err != nil {
 		return nil
