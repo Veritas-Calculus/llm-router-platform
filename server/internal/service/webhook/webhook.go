@@ -3,15 +3,17 @@ package webhook
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +22,20 @@ import (
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/pkg/sanitize"
+)
+
+const (
+	// maxWebhookRetries matches the repo-side WHERE retry_count < ? cap.
+	maxWebhookRetries = 5
+	// backoffBase is the first retry's nominal delay; subsequent retries
+	// double it (1m, 2m, 4m, 8m, 16m). With jitter the worst-case window
+	// before a row is moved to dead-letter is around 30 minutes.
+	backoffBase = 1 * time.Minute
+	// backoffCap bounds a single retry's wait to avoid pathological cases
+	// where retry_count was somehow set high. Also the maximum Retry-After
+	// we'll honor — receivers that ask for hours of pause should be
+	// dead-lettered through normal retry-count expiry instead.
+	backoffCap = 1 * time.Hour
 )
 
 // Service defines the interface for webhook operations
@@ -59,11 +75,63 @@ func NewWebhookService(repo repository.WebhookRepository, logger *zap.Logger) Se
 // generateSecret generates a cryptographically secure random 32-byte hex string
 func generateSecret() (string, error) {
 	b := make([]byte, 32)
-	_, err := rand.Read(b)
+	_, err := cryptorand.Read(b)
 	if err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// computeBackoff returns the next-attempt delay for a delivery on its
+// retryCount-th attempt. Uses 2^n * base with ±25% jitter so a synchronized
+// cohort of failures (e.g. all queued in the same DispatchEvent) doesn't all
+// retry at the same instant. Capped at backoffCap.
+func computeBackoff(retryCount int) time.Duration {
+	if retryCount < 1 {
+		retryCount = 1
+	}
+	d := backoffBase << (retryCount - 1)
+	if d > backoffCap || d < 0 {
+		d = backoffCap
+	}
+	// Jitter ±25%. crypto/rand here is overkill, but the package already
+	// imports it for secret generation and there's no math/rand global to
+	// seed at startup.
+	var nonce [8]byte
+	if _, err := cryptorand.Read(nonce[:]); err == nil {
+		r := binary.BigEndian.Uint64(nonce[:])
+		// Map to [-0.25, +0.25].
+		jit := (float64(r%1000)/1000.0 - 0.5) / 2.0
+		d = time.Duration(float64(d) * (1.0 + jit))
+	}
+	return d
+}
+
+// parseRetryAfter reads an RFC 7231 Retry-After header (either a delta-seconds
+// integer or an HTTP date) and clamps the result to [0, backoffCap]. Returns
+// the zero duration if the header is missing or unparseable.
+func parseRetryAfter(h string) time.Duration {
+	if h == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(h); err == nil && secs >= 0 {
+		d := time.Duration(secs) * time.Second
+		if d > backoffCap {
+			d = backoffCap
+		}
+		return d
+	}
+	if t, err := http.ParseTime(h); err == nil {
+		d := time.Until(t)
+		if d <= 0 {
+			return 0
+		}
+		if d > backoffCap {
+			d = backoffCap
+		}
+		return d
+	}
+	return 0
 }
 
 func (s *service) CreateEndpoint(ctx context.Context, projectID uuid.UUID, url string, events []string, isActive bool, description string) (*models.WebhookEndpoint, error) {
@@ -220,7 +288,7 @@ func (s *service) executeDelivery(ctx context.Context, delivery *models.WebhookD
 
 	req, err := http.NewRequestWithContext(ctx, "POST", delivery.Endpoint.URL, bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		s.finalizeDelivery(ctx, delivery, "failed", 0, err.Error(), "")
+		s.recordFailure(ctx, delivery, 0, err.Error(), "", 0)
 		return
 	}
 
@@ -242,45 +310,61 @@ func (s *service) executeDelivery(ctx context.Context, delivery *models.WebhookD
 		} else {
 			errMsg = err.Error()
 		}
-
-		status := "pending" // Will be retried if < 3
-		if delivery.RetryCount >= 3 {
-			status = "failed"
-		}
-
-		s.finalizeDelivery(ctx, delivery, status, 0, errMsg, "")
+		s.recordFailure(ctx, delivery, 0, errMsg, "", 0)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	// Read up to 2048 bytes of the response body for debugging
+	// Read up to 2048 bytes of the response body for debugging. io.ReadFull
+	// returns n bytes and one of {nil, io.EOF, io.ErrUnexpectedEOF} — any
+	// of those means we have a valid prefix; only an unexpected error from
+	// the underlying transport would warrant dropping the bytes.
 	bodyBytes := make([]byte, 2048)
-	n, _ := io.ReadFull(resp.Body, bodyBytes)
-
+	n, readErr := io.ReadFull(resp.Body, bodyBytes)
 	var actualBody string
-	if n == len(bodyBytes) || err == io.ErrUnexpectedEOF || err == io.EOF {
-		actualBody = string(bodyBytes[:n])
-	} else if n > 0 {
+	if n > 0 && (readErr == nil || readErr == io.EOF || readErr == io.ErrUnexpectedEOF) {
 		actualBody = string(bodyBytes[:n])
 	}
 
-	status := "success"
 	if resp.StatusCode >= 300 {
-		status = "pending"
-		if delivery.RetryCount >= 3 {
-			status = "failed"
-		}
+		retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
+		s.recordFailure(ctx, delivery, resp.StatusCode, "", actualBody, retryAfter)
+		return
 	}
-
-	s.finalizeDelivery(ctx, delivery, status, resp.StatusCode, "", actualBody)
+	s.recordSuccess(ctx, delivery, resp.StatusCode, actualBody)
 }
 
-func (s *service) finalizeDelivery(ctx context.Context, delivery *models.WebhookDelivery, status string, statusCode int, errorMessage string, responseBody string) {
-	delivery.Status = status
+func (s *service) recordSuccess(ctx context.Context, delivery *models.WebhookDelivery, statusCode int, body string) {
+	delivery.Status = "success"
 	delivery.StatusCode = statusCode
-	delivery.ErrorMessage = errorMessage
-	delivery.ResponseBody = responseBody
+	delivery.ErrorMessage = ""
+	delivery.ResponseBody = body
+	delivery.NextAttemptAt = nil
+	if err := s.repo.UpdateDelivery(ctx, delivery); err != nil {
+		s.logger.Error("Failed to update webhook delivery status", zap.Error(err), zap.String("id", delivery.ID.String()))
+	}
+}
 
+// recordFailure persists a failed attempt. If retryCount has reached the cap
+// the row moves to "failed" (dead-letter). Otherwise the row stays "pending"
+// and next_attempt_at is set to honor either Retry-After (if non-zero) or the
+// computed exponential backoff with jitter.
+func (s *service) recordFailure(ctx context.Context, delivery *models.WebhookDelivery, statusCode int, errMsg, body string, retryAfter time.Duration) {
+	if delivery.RetryCount >= maxWebhookRetries {
+		delivery.Status = "failed"
+		delivery.NextAttemptAt = nil
+	} else {
+		delay := retryAfter
+		if delay <= 0 {
+			delay = computeBackoff(delivery.RetryCount)
+		}
+		next := time.Now().Add(delay)
+		delivery.Status = "pending"
+		delivery.NextAttemptAt = &next
+	}
+	delivery.StatusCode = statusCode
+	delivery.ErrorMessage = errMsg
+	delivery.ResponseBody = body
 	if err := s.repo.UpdateDelivery(ctx, delivery); err != nil {
 		s.logger.Error("Failed to update webhook delivery status", zap.Error(err), zap.String("id", delivery.ID.String()))
 	}

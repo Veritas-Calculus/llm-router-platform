@@ -91,8 +91,10 @@ func (r *webhookRepository) GetPendingDeliveries(ctx context.Context, limit int)
 	var deliveries []*models.WebhookDelivery
 	err := r.db.WithContext(ctx).
 		Preload("Endpoint"). // Need the endpoint for the URL and Secret
-		Where("status = ? AND retry_count < ?", "pending", 3). // Simple criteria
-		Order("created_at asc").
+		// Only pick rows whose backoff window has elapsed; null next_attempt_at
+		// covers rows queued before the backoff column existed.
+		Where("status = ? AND retry_count < ? AND (next_attempt_at IS NULL OR next_attempt_at <= NOW())", "pending", 5).
+		Order("next_attempt_at asc nulls first").
 		Limit(limit).
 		Find(&deliveries).Error
 	return deliveries, err

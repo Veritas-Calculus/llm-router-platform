@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -52,4 +53,9 @@ type WebhookDelivery struct {
 	ResponseBody string           `gorm:"type:text" json:"responseBody"` // Truncated response body from destination
 	ErrorMessage string           `gorm:"type:text" json:"errorMessage"`
 	RetryCount   int              `gorm:"type:int;not null;default:0" json:"retryCount"`
+	// NextAttemptAt gates when the dispatcher may try a pending delivery
+	// again. Set on each failed attempt to (2^retry * base + jitter) so a
+	// flaky endpoint doesn't get hammered every tick. Honors Retry-After
+	// when the receiver sends one.
+	NextAttemptAt *time.Time `gorm:"column:next_attempt_at" json:"nextAttemptAt,omitempty"`
 }
