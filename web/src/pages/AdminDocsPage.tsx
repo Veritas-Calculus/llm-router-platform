@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
- 
+
 import { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { motion } from 'framer-motion';
 import { DocumentTextIcon, PlusIcon, PencilSquareIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useTranslation } from '@/lib/i18n';
 import { DOCUMENTS_QUERY, CREATE_DOCUMENT, UPDATE_DOCUMENT, DELETE_DOCUMENT } from '@/lib/graphql/operations/documents';
 
@@ -20,22 +22,6 @@ interface Document {
 }
 
 const emptyForm = { title: '', slug: '', content: '', category: 'general', sortOrder: 0, isPublished: false };
-
-/* ── Tiny Markdown renderer ── */
-function renderMarkdown(md: string): string {
-  if (!md) return '<p class="text-apple-gray-400 italic">Nothing to preview</p>';
-  return md
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold mt-3 mb-1">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-semibold mt-4 mb-1">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold mt-4 mb-2">$1</h1>')
-    .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-apple-gray-100 text-sm font-mono">$1</code>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-apple-blue hover:underline" target="_blank" rel="noopener">$1</a>')
-    .replace(/^[-*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-    .replace(/^(?!<[hla-z])(.*\S.*)$/gm, '<p class="my-1">$1</p>');
-}
 
 function AdminDocsPage() {
   const { t } = useTranslation();
@@ -148,8 +134,13 @@ function AdminDocsPage() {
                     onClick={() => setPreviewMode(true)}>{t('common.preview') || 'Preview'}</button>
                 </div>
                 {previewMode ? (
-                  <div className="markdown-preview prose prose-sm max-w-none dark:prose-invert"
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(form.content) }} />
+                  <div className="markdown-preview prose prose-sm max-w-none dark:prose-invert">
+                    {form.content.trim() ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{form.content}</ReactMarkdown>
+                    ) : (
+                      <p className="text-apple-gray-400 italic">Nothing to preview</p>
+                    )}
+                  </div>
                 ) : (
                   <textarea className="w-full px-3 py-3 font-mono text-sm border-0 focus:ring-0 focus:outline-none bg-transparent resize-y"
                     rows={10} value={form.content}

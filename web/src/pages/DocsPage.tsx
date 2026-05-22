@@ -14,6 +14,8 @@ import {
   ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { PUBLISHED_DOCUMENTS_QUERY } from '@/lib/graphql/operations/documents';
 
 /* ── Copy button ───────────────────────────────────────────────── */
@@ -65,31 +67,6 @@ interface PublishedDocument {
   updatedAt: string;
 }
 
-function safeMarkdownHref(rawHref: string): string | null {
-  const href = rawHref.trim();
-  if (href.startsWith('#') || href.startsWith('/')) return href;
-  return /^(https?:|mailto:)/i.test(href) ? href : null;
-}
-
-function renderDocumentMarkdown(md: string): string {
-  if (!md.trim()) return '<p class="text-apple-gray-400 italic">No content yet.</p>';
-  return md
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold text-apple-gray-900 mt-5 mb-2">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-semibold text-apple-gray-900 mt-6 mb-2">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold text-apple-gray-900 mt-6 mb-3">$1</h1>')
-    .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-apple-gray-100 text-sm font-mono text-apple-gray-800">$1</code>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, href: string) => {
-      const safeHref = safeMarkdownHref(href);
-      return safeHref
-        ? `<a href="${safeHref}" class="text-apple-blue hover:underline" target="_blank" rel="noopener noreferrer">${label}</a>`
-        : label;
-    })
-    .replace(/^[-*] (.+)$/gm, '<li class="ml-5 list-disc text-sm leading-6 text-apple-gray-700">$1</li>')
-    .replace(/^(?!<[hla-z])(.*\S.*)$/gm, '<p class="text-sm leading-7 text-apple-gray-700 my-2">$1</p>');
-}
 
 /* ── Endpoint card ─────────────────────────────────────────────── */
 function EndpointCard({ method, path, description, children }: {
@@ -532,10 +509,13 @@ function GuidesTab({ documents, loading }: { documents: PublishedDocument[]; loa
           <p className="text-xs uppercase tracking-wide text-apple-gray-400 font-semibold mb-1">{selectedDoc.category}</p>
           <h2 className="text-xl font-bold text-apple-gray-900">{selectedDoc.title}</h2>
         </div>
-        <div
-          className="max-w-none"
-          dangerouslySetInnerHTML={{ __html: renderDocumentMarkdown(selectedDoc.content) }}
-        />
+        <div className="prose prose-sm max-w-none prose-headings:font-semibold prose-headings:text-apple-gray-900 prose-a:text-apple-blue prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:bg-apple-gray-100 prose-code:text-apple-gray-800 prose-code:before:content-none prose-code:after:content-none">
+          {selectedDoc.content.trim() ? (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedDoc.content}</ReactMarkdown>
+          ) : (
+            <p className="text-apple-gray-400 italic">No content yet.</p>
+          )}
+        </div>
       </article>
     </div>
   );
