@@ -147,6 +147,16 @@ func (s *Service) DeleteIdentityProvider(ctx context.Context, id uuid.UUID) erro
 	return s.orgRepo.DB().Delete(&idp).Error
 }
 
+// ListIdentityProvidersByOrg returns all IdPs configured for an organization,
+// with the parent Organization preloaded for the GraphQL projection.
+func (s *Service) ListIdentityProvidersByOrg(ctx context.Context, orgID uuid.UUID) ([]models.IdentityProvider, error) {
+	var list []models.IdentityProvider
+	if err := s.orgRepo.DB().WithContext(ctx).Preload("Organization").Where("org_id = ?", orgID).Find(&list).Error; err != nil {
+		return nil, fmt.Errorf("failed to fetch identity providers: %w", err)
+	}
+	return list, nil
+}
+
 // ─── Invite Codes ───────────────────────────────────────────────────────
 
 // ValidateAndConsumeInviteCode atomically validates and increments an invite code's usage.

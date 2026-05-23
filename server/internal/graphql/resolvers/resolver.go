@@ -74,6 +74,20 @@ type Resolver struct {
 // ── Backward-compatible infrastructure accessors ────────────────────
 // These delegate to AdminSvc so the Resolver struct no longer stores
 // DB / Redis / Config directly. Existing resolver code calls r.DB, etc.
+//
+// IMPORTANT — direct DB access from resolvers is deprecated.
+//
+// CLAUDE.md defines the layering as Resolver → Service → Repository → Model.
+// New code MUST go through a service method (extend the existing service
+// package or create one if the domain doesn't have one yet). Calling r.DB()
+// inside a resolver defeats testability (no mock seam), spreads query
+// knowledge, and was the root cause of the SEC-C1 incident where an org-
+// scope check on a write path could silently bypass org membership.
+//
+// The identity / sso / cache / dlp / prompt / org / billing resolver files
+// still contain legacy direct calls (~100 sites at the time of writing).
+// They are being migrated incrementally — see the BE-C5 task in the audit
+// roadmap. Do not add new ones.
 
 // DB returns the GORM database handle.
 func (r *Resolver) DB() *gorm.DB { return r.AdminSvc.DB() }

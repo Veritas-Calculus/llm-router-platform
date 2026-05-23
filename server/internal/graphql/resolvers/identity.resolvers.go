@@ -23,7 +23,10 @@ func (r *mutationResolver) CreateIdentityProvider(ctx context.Context, input mod
 	if err := r.UserSvc.RequireOrgRole(ctx, uid, input.OrgID, "OWNER", "ADMIN"); err != nil {
 		return nil, err
 	}
-	orgID, _ := uuid.Parse(input.OrgID)
+	orgID, err := uuid.Parse(input.OrgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid org id")
+	}
 
 	idp := &models.IdentityProvider{
 		OrgID:    orgID,
@@ -65,11 +68,9 @@ func (r *mutationResolver) CreateIdentityProvider(ctx context.Context, input mod
 		idp.GroupRoleMapping = *input.GroupRoleMapping
 	}
 
-	if err := r.AdminSvc.DB().Create(idp).Error; err != nil {
-		return nil, fmt.Errorf("failed to create identity provider: %w", err)
+	if err := r.UserSvc.CreateIdentityProvider(ctx, idp); err != nil {
+		return nil, err
 	}
-
-	r.AdminSvc.DB().Preload("Organization").First(idp, "id = ?", idp.ID)
 	return mapIdentityProviderToGraphQL(idp), nil
 }
 
@@ -84,23 +85,21 @@ func (r *mutationResolver) UpdateIdentityProvider(ctx context.Context, id string
 		return nil, fmt.Errorf("invalid idp id")
 	}
 
-	var idp models.IdentityProvider
-	if err := r.AdminSvc.DB().First(&idp, "id = ?", idpID).Error; err != nil {
-		return nil, fmt.Errorf("identity provider not found")
+	idp, err := r.UserSvc.GetIdentityProvider(ctx, idpID)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := r.UserSvc.RequireOrgRole(ctx, uid, idp.OrgID.String(), "OWNER", "ADMIN"); err != nil {
 		return nil, err
 	}
 
-	applyIdentityProviderUpdates(&idp, input)
+	applyIdentityProviderUpdates(idp, input)
 
-	if err := r.AdminSvc.DB().Save(&idp).Error; err != nil {
-		return nil, fmt.Errorf("failed to update identity provider: %w", err)
+	if err := r.UserSvc.UpdateIdentityProvider(ctx, idp); err != nil {
+		return nil, err
 	}
-
-	r.AdminSvc.DB().Preload("Organization").First(&idp, "id = ?", idp.ID)
-	return mapIdentityProviderToGraphQL(&idp), nil
+	return mapIdentityProviderToGraphQL(idp), nil
 }
 
 // applyIdentityProviderUpdates applies non-nil fields from the input to the identity provider model.
@@ -154,19 +153,18 @@ func (r *mutationResolver) DeleteIdentityProvider(ctx context.Context, id string
 		return false, fmt.Errorf("invalid idp id")
 	}
 
-	var idp models.IdentityProvider
-	if err := r.AdminSvc.DB().First(&idp, "id = ?", idpID).Error; err != nil {
-		return false, fmt.Errorf("identity provider not found")
+	idp, err := r.UserSvc.GetIdentityProvider(ctx, idpID)
+	if err != nil {
+		return false, err
 	}
 
 	if err := r.UserSvc.RequireOrgRole(ctx, uid, idp.OrgID.String(), "OWNER", "ADMIN"); err != nil {
 		return false, err
 	}
 
-	if err := r.AdminSvc.DB().Delete(&idp).Error; err != nil {
-		return false, fmt.Errorf("failed to delete identity provider: %w", err)
+	if err := r.UserSvc.DeleteIdentityProvider(ctx, idpID); err != nil {
+		return false, err
 	}
-
 	return true, nil
 }
 
@@ -180,10 +178,13 @@ func (r *queryResolver) IdentityProviders(ctx context.Context, orgID string) ([]
 		return nil, err
 	}
 
-	orgUUID, _ := uuid.Parse(orgID)
-	var list []models.IdentityProvider
-	if err := r.AdminSvc.DB().Preload("Organization").Where("org_id = ?", orgUUID).Find(&list).Error; err != nil {
-		return nil, fmt.Errorf("failed to fetch identity providers: %w", err)
+	orgUUID, err := uuid.Parse(orgID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid org id")
+	}
+	list, err := r.UserSvc.ListIdentityProvidersByOrg(ctx, orgUUID)
+	if err != nil {
+		return nil, err
 	}
 
 	out := make([]*model.IdentityProvider, len(list))
