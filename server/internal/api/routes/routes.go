@@ -138,6 +138,14 @@ func Setup(
 
 	// ─── Auth & Rate Limiter middleware (created early for /metrics guard) ──
 	authMiddleware := middleware.NewAuthMiddleware(&cfg.JWT, services.User, logger)
+	jwtSigner, jwtSignerErr := middleware.BuildJWTSigner(cfg.JWT)
+	if jwtSignerErr != nil {
+		// Same fallback behavior as the middleware: log loudly but keep the
+		// legacy HS256 path working so existing deployments don't crash on
+		// a partial RS256 misconfiguration.
+		logger.Error("JWT signer build failed for resolver; legacy HS256 fallback in effect",
+			zap.Error(jwtSignerErr))
+	}
 
 	// Prometheus metrics endpoint — admin only to prevent info leakage
 	metricsGroup := engine.Group("/metrics")
@@ -189,6 +197,7 @@ func Setup(
 		AdminSvc:         services.AdminSvc,
 		Logger:           services.Logger,
 		SemanticCache:    services.SemanticCache,
+		JWTSigner:        jwtSigner,
 	}
 	graphqlHandler := gqlhandler.NewHandler(gqlResolver, cfg, logger)
 

@@ -38,6 +38,11 @@ func (r *mutationResolver) generateJWT(u *models.User) (string, error) {
 		"exp":  time.Now().Add(ttl).Unix(),
 		"iat":  time.Now().Unix(),
 	}
+	if r.JWTSigner != nil {
+		return r.JWTSigner.Sign(claims)
+	}
+	// Legacy HS256 fallback — only reached when BuildJWTSigner errored at
+	// boot (a config-misuse safety net). New deployments should not hit this.
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(r.Config().JWT.Secret))
 }
@@ -53,24 +58,36 @@ func (r *mutationResolver) generateRefreshJWT(u *models.User) (string, error) {
 		"exp":  time.Now().Add(ttl).Unix(),
 		"iat":  time.Now().Unix(),
 	}
+	if r.JWTSigner != nil {
+		return r.JWTSigner.Sign(claims)
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(r.Config().JWT.Secret))
 }
 
 func (r *mutationResolver) validateRefreshJWT(tokenStr string) (*jwt.RegisteredClaims, error) {
-	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method")
+	var claims jwt.MapClaims
+	if r.JWTSigner != nil {
+		claims = jwt.MapClaims{}
+		token, err := r.JWTSigner.Parse(tokenStr, &claims)
+		if err != nil || !token.Valid {
+			return nil, fmt.Errorf("invalid token")
 		}
-		return []byte(r.Config().JWT.Secret), nil
-	})
-	if err != nil || !token.Valid {
-		return nil, fmt.Errorf("invalid token")
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return nil, fmt.Errorf("invalid claims")
+	} else {
+		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method")
+			}
+			return []byte(r.Config().JWT.Secret), nil
+		})
+		if err != nil || !token.Valid {
+			return nil, fmt.Errorf("invalid token")
+		}
+		var ok bool
+		claims, ok = token.Claims.(jwt.MapClaims)
+		if !ok {
+			return nil, fmt.Errorf("invalid claims")
+		}
 	}
 
 	// Ensure this is a refresh token, not an access token

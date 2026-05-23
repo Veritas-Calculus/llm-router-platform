@@ -29,6 +29,7 @@ import (
 	"llm-router-platform/internal/service/turnstile"
 	"llm-router-platform/internal/service/user"
 	"llm-router-platform/internal/service/webhook"
+	"llm-router-platform/pkg/jwtsign"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -69,6 +70,10 @@ type Resolver struct {
 	AdminSvc         *admin.Service
 	Logger           *zap.Logger
 	SemanticCache    *semantic.SemanticCacheService
+	// JWTSigner mints + verifies access/refresh tokens. May be nil during
+	// the transition; helpers_auth.go falls back to legacy HS256 in that
+	// case so existing deployments continue to work without config change.
+	JWTSigner *jwtsign.Signer
 }
 
 // ── Backward-compatible infrastructure accessors ────────────────────
