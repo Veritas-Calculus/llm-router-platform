@@ -42,13 +42,35 @@ type verifyResponse struct {
 	ErrorCodes []string `json:"error-codes"`
 }
 
+// Enabled reports whether Turnstile is configured. Used by the login flow to
+// decide whether to even attempt a verification call when the soft per-email
+// failure counter has not been tripped.
+func (s *Service) Enabled() bool { return s.enabled }
+
+// VerifyForced behaves like Verify but never short-circuits on !enabled —
+// the caller (login limiter) has decided that a CAPTCHA solve is required
+// regardless of the global Turnstile-disabled config, typically because
+// the per-email failure threshold has been crossed. If Turnstile isn't
+// configured at all (no secret key), VerifyForced refuses the request
+// rather than silently accepting — that's the safe default for the
+// "brute-force defense kicked in" path.
+func (s *Service) VerifyForced(ctx context.Context, token string, remoteIP string) error {
+	if s.secretKey == "" {
+		return fmt.Errorf("too many failed attempts; CAPTCHA required but not configured on the server")
+	}
+	return s.verify(ctx, token, remoteIP)
+}
+
 // Verify validates a Turnstile token with Cloudflare's siteverify endpoint.
 // If Turnstile is disabled, it always returns nil (permits the request).
 func (s *Service) Verify(ctx context.Context, token string, remoteIP string) error {
 	if !s.enabled {
 		return nil // Turnstile not configured, skip verification
 	}
+	return s.verify(ctx, token, remoteIP)
+}
 
+func (s *Service) verify(ctx context.Context, token string, remoteIP string) error {
 	if token == "" {
 		return fmt.Errorf("CAPTCHA verification required")
 	}

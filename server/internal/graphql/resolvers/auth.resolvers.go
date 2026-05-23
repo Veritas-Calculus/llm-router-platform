@@ -32,11 +32,20 @@ func (r *mutationResolver) Login(ctx context.Context, input model.LoginInput) (*
 	}
 
 	// ── Turnstile CAPTCHA verification ──
+	// Force a CAPTCHA solve once the per-email failure counter trips, even
+	// if Turnstile is otherwise disabled. This is the IP-agnostic brake on
+	// botnets rotating residential IPs (each new IP resets the per-(email,ip)
+	// counter but never the per-email one).
 	captchaToken := ""
 	if input.CaptchaToken != nil {
 		captchaToken = *input.CaptchaToken
 	}
-	if err := r.TurnstileSvc.Verify(ctx, captchaToken, ip); err != nil {
+	if r.LoginLimiter.RequireCaptcha(ctx, input.Email) {
+		if err := r.TurnstileSvc.VerifyForced(ctx, captchaToken, ip); err != nil {
+			r.AuditService.Log(ctx, audit.ActionLoginFailed, uuid.Nil, uuid.Nil, ip, ua, map[string]interface{}{"email": sanitize.LogValue(input.Email), "reason": "captcha_required"})
+			return nil, err
+		}
+	} else if err := r.TurnstileSvc.Verify(ctx, captchaToken, ip); err != nil {
 		return nil, err
 	}
 

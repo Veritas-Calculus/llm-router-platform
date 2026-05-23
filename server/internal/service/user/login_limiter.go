@@ -10,15 +10,27 @@ import (
 )
 
 const (
-	// maxLoginAttempts is the number of failed login attempts before lockout.
+	// maxLoginAttempts is the (email,ip) hard-lockout threshold. After 5
+	// failures within loginLockoutWindow the request is refused outright.
 	maxLoginAttempts = 5
-	// loginLockoutWindow is the duration for which login attempts are tracked / locked out.
+	// loginCaptchaThreshold is the per-email soft threshold that flips
+	// "this login attempt requires a CAPTCHA solve" — independent of IP, so
+	// a botnet rotating residential IPs can't keep guessing without solving
+	// CAPTCHA after a few tries against a single account.
+	loginCaptchaThreshold = 3
+	// loginLockoutWindow is the rolling window for both counters.
 	loginLockoutWindow = 15 * time.Minute
 )
 
-// LoginLimiter enforces a maximum number of failed login attempts per email+IP
-// combination. After 5 consecutive failures within 15 minutes, subsequent login
-// attempts are rejected without checking credentials.
+// LoginLimiter enforces two complementary brute-force defenses:
+//
+//   - (email, ip) hard lockout after 5 failures in 15min. This is precise:
+//     a legitimate user on a single browser can't trigger global lockout for
+//     other users.
+//   - per-email soft trigger after 3 failures in 15min. This survives an
+//     attacker rotating IPs because the counter is IP-independent. The
+//     handler must require CAPTCHA verification once this is hit, even if
+//     CAPTCHA is otherwise disabled.
 type LoginLimiter struct {
 	redis  *redis.Client
 	logger *zap.Logger
@@ -29,8 +41,8 @@ func NewLoginLimiter(redis *redis.Client, logger *zap.Logger) *LoginLimiter {
 	return &LoginLimiter{redis: redis, logger: logger}
 }
 
-// Check returns an error if the email+IP has exceeded the maximum allowed failed
-// login attempts. Must be called BEFORE authentication.
+// Check returns an error if the email+IP has exceeded the hard lockout
+// threshold. Must be called BEFORE authentication.
 func (l *LoginLimiter) Check(ctx context.Context, email, ip string) error {
 	if l.redis == nil {
 		return nil // No Redis → fail-open (don't block logins if infra is down)
@@ -58,31 +70,55 @@ func (l *LoginLimiter) Check(ctx context.Context, email, ip string) error {
 	return nil
 }
 
-// RecordFailure increments the failed login counter for the email+IP.
+// RequireCaptcha returns true if the per-email failure counter has crossed
+// loginCaptchaThreshold within the lockout window. The login handler must
+// then force CAPTCHA verification even if CAPTCHA is otherwise disabled.
+// Returns false when Redis is unavailable so a Redis outage doesn't lock
+// every user out of password login.
+func (l *LoginLimiter) RequireCaptcha(ctx context.Context, email string) bool {
+	if l.redis == nil {
+		return false
+	}
+	count, err := l.redis.Get(ctx, perEmailKey(email)).Int()
+	if err != nil && err != redis.Nil {
+		l.logger.Warn("login limiter: per-email redis read error, allowing attempt", zap.Error(err))
+		return false
+	}
+	return count >= loginCaptchaThreshold
+}
+
+// RecordFailure increments both the per-(email,ip) counter and the per-email
+// counter. Either path bumps both because an attacker that rotates IPs would
+// otherwise reset the per-(email,ip) counter to 0 on every new IP.
 func (l *LoginLimiter) RecordFailure(ctx context.Context, email, ip string) {
 	if l.redis == nil {
 		return
 	}
 
-	key := loginKey(email, ip)
 	pipe := l.redis.Pipeline()
-	pipe.Incr(ctx, key)
-	pipe.Expire(ctx, key, loginLockoutWindow)
+	ipKey := loginKey(email, ip)
+	pipe.Incr(ctx, ipKey)
+	pipe.Expire(ctx, ipKey, loginLockoutWindow)
+	emailK := perEmailKey(email)
+	pipe.Incr(ctx, emailK)
+	pipe.Expire(ctx, emailK, loginLockoutWindow)
 	if _, err := pipe.Exec(ctx); err != nil {
 		l.logger.Warn("login limiter: redis write error", zap.Error(err))
 	}
 }
 
-// ResetOnSuccess clears the failed login counter after a successful login.
+// ResetOnSuccess clears both counters after a successful login.
 func (l *LoginLimiter) ResetOnSuccess(ctx context.Context, email, ip string) {
 	if l.redis == nil {
 		return
 	}
-
-	key := loginKey(email, ip)
-	l.redis.Del(ctx, key)
+	l.redis.Del(ctx, loginKey(email, ip), perEmailKey(email))
 }
 
 func loginKey(email, ip string) string {
 	return fmt.Sprintf("login_fail:%s:%s", email, ip)
+}
+
+func perEmailKey(email string) string {
+	return fmt.Sprintf("login_fail_email:%s", email)
 }

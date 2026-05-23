@@ -213,6 +213,7 @@ const (
 	codeNotFound            = "NOT_FOUND"
 	codeInsufficientBalance = "INSUFFICIENT_BALANCE"
 	codeAccountDisabled     = "ACCOUNT_DISABLED"
+	codeCaptchaRequired     = "CAPTCHA_REQUIRED"
 	codeValidation          = "VALIDATION"
 	codeInternal            = "INTERNAL"
 )
@@ -242,6 +243,11 @@ func classifyClientError(msg string) string {
 		return codeAccountDisabled
 	case "insufficient balance":
 		return codeInsufficientBalance
+	case "CAPTCHA verification required",
+		"CAPTCHA verification failed",
+		"CAPTCHA verification failed, please try again",
+		"too many failed attempts; CAPTCHA required but not configured on the server":
+		return codeCaptchaRequired
 	case "invalid or expired reset token",
 		"record not found",
 		"no organization found for user":
