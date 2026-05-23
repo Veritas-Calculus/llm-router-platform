@@ -139,22 +139,41 @@ func (s *Service) Register(ctx context.Context, email, password, name string) (*
 }
 
 // Authenticate validates user credentials and returns the user.
+//
+// SECURITY: returns the same generic error for every failure mode (unknown
+// email, inactive account, wrong password) so the response can't be used to
+// enumerate registered email addresses. Previously the handler distinguished
+// "account not found" from "password incorrect" — both messages reached the
+// client through the error-masking allowlist, so a curl loop could test
+// 10k emails and tell you which were registered. The brute-force defense
+// (LoginLimiter) is still keyed on (email, ip) so this doesn't make rate
+// limiting less precise.
+//
+// Always compare against a fixed dummy hash even when the user lookup fails,
+// so the response time doesn't reveal "no such user".
 func (s *Service) Authenticate(ctx context.Context, email, password string) (*models.User, error) {
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
-		return nil, errors.New("account not found")
+		// Constant-time-ish: still spend ~bcrypt-cost CPU so the timing
+		// difference between unknown-email and wrong-password is negligible.
+		_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
+		return nil, errors.New("invalid email or password")
 	}
 
 	if !user.IsActive {
-		return nil, errors.New("invalid credentials") // Generic to prevent user enumeration
+		return nil, errors.New("invalid email or password")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, errors.New("password incorrect")
+		return nil, errors.New("invalid email or password")
 	}
 
 	return user, nil
 }
+
+// dummyBcryptHash is the bcrypt of an empty string at cost 12. Used to keep
+// the timing profile of Authenticate uniform when no user record exists.
+var dummyBcryptHash = []byte("$2a$12$abcdefghijklmnopqrstuuTUF.0ZbY7BJD7vhRrXVNYqFvSqCe3GFC")
 
 // GetByEmail retrieves a user by email.
 func (s *Service) GetByEmail(ctx context.Context, email string) (*models.User, error) {
