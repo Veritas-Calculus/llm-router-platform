@@ -231,13 +231,26 @@ function Layout() {
     }
   }, [location.pathname, siteName, t]);
 
-  // If admin switches to user view while on an admin-only page, redirect
-  // If admin switches to admin view while on a user page, redirect to admin dashboard
+  // Redirect ONLY on the adminView toggle transition, not on every
+  // location.pathname change. Previously this effect re-ran on every
+  // navigation: a user-view admin clicking any /admin link got bounced
+  // to /api-keys, and an admin-view admin opening /playground or /docs
+  // got bounced to /admin/dashboard — breaking deep links and the back
+  // button. Now the toggle does its one-time redirect when it flips and
+  // otherwise lets the user navigate wherever they want; the sidebar's
+  // visible nav set still narrows naturally with `showAdminNav`.
+  const prevAdminViewRef = useRef(adminView);
   useEffect(() => {
-    if (isAdmin && !adminView && location.pathname.startsWith('/admin')) {
-      navigate('/api-keys', { replace: true });
+    if (!isAdmin) {
+      prevAdminViewRef.current = adminView;
+      return;
     }
-    if (isAdmin && adminView && !location.pathname.startsWith('/admin')) {
+    const prev = prevAdminViewRef.current;
+    prevAdminViewRef.current = adminView;
+    if (prev === adminView) return;
+    if (!adminView && location.pathname.startsWith('/admin')) {
+      navigate('/api-keys', { replace: true });
+    } else if (adminView && !location.pathname.startsWith('/admin')) {
       navigate('/admin/dashboard', { replace: true });
     }
   }, [adminView, isAdmin, location.pathname, navigate]);
