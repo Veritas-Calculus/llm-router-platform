@@ -8,6 +8,8 @@ import {
 import { MY_ORGANIZATIONS, MY_PROJECTS } from '@/lib/graphql/operations';
 import type { Organization, Project } from '@/lib/types';
 import { useTranslation } from '@/lib/i18n';
+import { useAuthStore } from '@/stores/authStore';
+import { useAuthHydrated } from '@/hooks/useAuthHydrated';
 import toast from 'react-hot-toast';
 
 export interface WebhookFormData {
@@ -20,14 +22,19 @@ export interface WebhookFormData {
 export function useWebhooks() {
   const { t } = useTranslation();
 
-  // Organization state
+  // Organization state — sourced from the persisted auth store so
+  // OrgSwitcher selections propagate here without page-local drift.
+  const selectedOrgId = useAuthStore((s) => s.selectedOrgId) ?? '';
+  const setSelectedOrgId = useAuthStore((s) => s.setSelectedOrgId);
+  const hydrated = useAuthHydrated();
+
   const { data: orgData } = useQuery<any>(MY_ORGANIZATIONS);
   const orgs: Organization[] = useMemo(() => orgData?.myOrganizations || [], [orgData]);
-  const [selectedOrgId, setSelectedOrgId] = useState<string>('');
 
   useEffect(() => {
+    if (!hydrated) return;
     if (orgs.length > 0 && !selectedOrgId) setSelectedOrgId(orgs[0].id);
-  }, [orgs, selectedOrgId]);
+  }, [hydrated, orgs, selectedOrgId, setSelectedOrgId]);
 
   // Project state
   const { data: projData } = useQuery<any>(MY_PROJECTS, { variables: { orgId: selectedOrgId }, skip: !selectedOrgId });

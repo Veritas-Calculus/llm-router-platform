@@ -9,15 +9,22 @@ import { useAuthStore } from '@/stores/authStore';
  * pre-hydration `null` state, writes a default, and gets overwritten when
  * rehydration completes, producing a visible flicker plus a brief period where
  * other components see the wrong value.
+ *
+ * Tests sometimes stub useAuthStore without the persist wrapper; in that case
+ * the helpers are missing and we return true (hydrated) by default — the
+ * defaulting effects then behave like they did before persist was added.
  */
 export function useAuthHydrated(): boolean {
-  const [hydrated, setHydrated] = useState(() => useAuthStore.persist.hasHydrated());
+  const persist = useAuthStore.persist as
+    | { hasHydrated(): boolean; onFinishHydration(cb: () => void): () => void }
+    | undefined;
+  const [hydrated, setHydrated] = useState(() => (persist ? persist.hasHydrated() : true));
   useEffect(() => {
-    if (hydrated) return;
-    const unsub = useAuthStore.persist.onFinishHydration(() => setHydrated(true));
+    if (hydrated || !persist) return;
+    const unsub = persist.onFinishHydration(() => setHydrated(true));
     // Guard against the listener being registered after hydration finished.
-    if (useAuthStore.persist.hasHydrated()) setHydrated(true);
+    if (persist.hasHydrated()) setHydrated(true);
     return () => unsub();
-  }, [hydrated]);
+  }, [hydrated, persist]);
   return hydrated;
 }

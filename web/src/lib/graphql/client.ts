@@ -19,12 +19,17 @@ const httpLink = createHttpLink({
 });
 
 // ── Auth Link ──────────────────────────────────────────────────────
+// Forwards the access token and the currently selected org. Sending
+// selectedOrgId as a header (rather than threading it through every query's
+// variables) lets the backend default org-scoped reads to the user's active
+// org without each resolver having to plumb an explicit argument.
 const authLink = setContext((_, { headers }) => {
-  const token = useAuthStore.getState().token;
+  const { token, selectedOrgId } = useAuthStore.getState();
   return {
     headers: {
       ...headers,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(selectedOrgId ? { 'x-active-org': selectedOrgId } : {}),
     },
   };
 });

@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { useAuthHydrated } from '@/hooks/useAuthHydrated';
 import {
     PlusIcon,
     TrashIcon,
@@ -34,14 +35,18 @@ export default function OrganizationMembersPage() {
     const { data: orgData, loading: orgLoading } = useQuery<any>(MY_ORGANIZATIONS);
     
     const orgs = useMemo(() => orgData?.myOrganizations || [], [orgData]);
-    const [selectedOrgId, setSelectedOrgId] = useState<string>('');
+    const selectedOrgId = useAuthStore((s) => s.selectedOrgId) ?? '';
+    const setSelectedOrgId = useAuthStore((s) => s.setSelectedOrgId);
+    const hydrated = useAuthHydrated();
 
-    // Pre-select first org
-    useMemo(() => {
+    // Pre-select first org (was previously a useMemo with side effects;
+    // useEffect is the right hook for "default when not set").
+    useEffect(() => {
+        if (!hydrated) return;
         if (orgs.length > 0 && !selectedOrgId) {
             setSelectedOrgId(orgs[0].id);
         }
-    }, [orgs, selectedOrgId]);
+    }, [hydrated, orgs, selectedOrgId, setSelectedOrgId]);
 
     const { data: membersData, loading: membersLoading, refetch } = useQuery<any>(GET_ORG_MEMBERS, {
         variables: { orgId: selectedOrgId },

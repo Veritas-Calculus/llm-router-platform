@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useMutation, useQuery } from '@apollo/client/react';
 import { CREATE_PLAYGROUND_TOKEN, MY_API_KEYS, MY_ORGANIZATIONS, MY_PROJECTS } from '@/lib/graphql/operations';
+import { useAuthStore } from '@/stores/authStore';
+import { useAuthHydrated } from '@/hooks/useAuthHydrated';
 import type { Message, ModelRef, UsageStats, ImageAttachment, ContentPart, StreamPhase } from './types';
 import { estimateTokens, estimateMessageTokens, getMessageText, isVisionModel, isTTSModel, runCompletion } from './utils';
 
@@ -109,7 +111,11 @@ export function usePlayground(): PlaygroundState {
   const [manualApiKey, setManualApiKey] = useState('');
   const [playgroundToken, setPlaygroundToken] = useState('');
   const [playgroundTokenExpiresAt, setPlaygroundTokenExpiresAt] = useState('');
-  const [selectedOrgId, setSelectedOrgId] = useState('');
+  // Org selection lives in the persisted auth store so OrgSwitcher
+  // selections take effect on every page without page-local drift.
+  const selectedOrgId = useAuthStore((s) => s.selectedOrgId) ?? '';
+  const setSelectedOrgId = useAuthStore((s) => s.setSelectedOrgId);
+  const hydrated = useAuthHydrated();
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [selectedApiKeyId, setSelectedApiKeyId] = useState('');
   const [tokenLoading, setTokenLoading] = useState(false);
@@ -215,10 +221,11 @@ export function usePlayground(): PlaygroundState {
   }, [isStreaming, isStreamingB]);
 
   useEffect(() => {
+    if (!hydrated) return;
     if (orgs.length > 0 && !selectedOrgId) {
       setSelectedOrgId(orgs[0].id);
     }
-  }, [orgs, selectedOrgId]);
+  }, [hydrated, orgs, selectedOrgId, setSelectedOrgId]);
 
   useEffect(() => {
     if (projects.length > 0) {

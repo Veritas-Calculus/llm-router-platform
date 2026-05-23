@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { MY_API_KEYS, MY_ORGANIZATIONS, MY_PROJECTS, CREATE_API_KEY, REVOKE_API_KEY, DELETE_API_KEY, UPDATE_PROJECT } from '@/lib/graphql/operations';
 import type { ApiKey, Organization, Project } from '@/lib/types';
 import { useTranslation } from '@/lib/i18n';
+import { useAuthStore } from '@/stores/authStore';
+import { useAuthHydrated } from '@/hooks/useAuthHydrated';
 import { mapApiKey, AVAILABLE_SCOPES_BASE } from './ApiKeyComponents';
 import toast from 'react-hot-toast';
 
@@ -18,14 +20,19 @@ export function useApiKeys() {
   const { t } = useTranslation();
   const AVAILABLE_SCOPES = useMemo(() => AVAILABLE_SCOPES_BASE.map(s => ({ ...s, label: t(s.labelKey) })), [t]);
 
-  // Organization state
+  // Organization state — sourced from the persisted auth store so it
+  // stays in sync with OrgSwitcher across every page.
+  const selectedOrgId = useAuthStore((s) => s.selectedOrgId) ?? '';
+  const setSelectedOrgId = useAuthStore((s) => s.setSelectedOrgId);
+  const hydrated = useAuthHydrated();
+
   const { data: orgData } = useQuery<any>(MY_ORGANIZATIONS);
   const orgs: Organization[] = useMemo(() => orgData?.myOrganizations || [], [orgData]);
-  const [selectedOrgId, setSelectedOrgId] = useState<string>('');
 
   useEffect(() => {
+    if (!hydrated) return;
     if (orgs.length > 0 && !selectedOrgId) setSelectedOrgId(orgs[0].id);
-  }, [orgs, selectedOrgId]);
+  }, [hydrated, orgs, selectedOrgId, setSelectedOrgId]);
 
   // Project state
   const { data: projData } = useQuery<any>(MY_PROJECTS, { variables: { orgId: selectedOrgId }, skip: !selectedOrgId });

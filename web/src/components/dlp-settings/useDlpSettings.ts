@@ -5,6 +5,7 @@ import { GET_DLP_CONFIG, UPDATE_DLP_CONFIG, TEST_DLP_REDACTION } from '@/lib/gra
 import { MY_ORGANIZATIONS, MY_PROJECTS } from '@/lib/graphql/operations';
 import type { Organization, Project } from '@/lib/types';
 import { useAuthStore } from '@/stores/authStore';
+import { useAuthHydrated } from '@/hooks/useAuthHydrated';
 import toast from 'react-hot-toast';
 import { detectActivePreset }  from './DlpConstants';
 import type { PolicyPreset } from './DlpConstants';
@@ -14,14 +15,19 @@ export function useDlpSettings() {
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'admin';
 
-  // Organization state
+  // Organization state — sourced from the persisted auth store so
+  // OrgSwitcher selections propagate to this page.
+  const selectedOrgId = useAuthStore((s) => s.selectedOrgId) ?? '';
+  const setSelectedOrgId = useAuthStore((s) => s.setSelectedOrgId);
+  const hydrated = useAuthHydrated();
+
   const { data: orgData } = useQuery<any>(MY_ORGANIZATIONS);
   const orgs: Organization[] = useMemo(() => orgData?.myOrganizations || [], [orgData]);
-  const [selectedOrgId, setSelectedOrgId] = useState<string>('');
 
   useEffect(() => {
+    if (!hydrated) return;
     if (orgs.length > 0 && !selectedOrgId) setSelectedOrgId(orgs[0].id);
-  }, [orgs, selectedOrgId]);
+  }, [hydrated, orgs, selectedOrgId, setSelectedOrgId]);
 
   // Project state
   const { data: projData } = useQuery<any>(MY_PROJECTS, { variables: { orgId: selectedOrgId }, skip: !selectedOrgId });

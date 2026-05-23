@@ -3,6 +3,8 @@ import { useQuery, useMutation } from '@apollo/client/react';
 import { gql } from '@apollo/client';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { useAuthStore } from '@/stores/authStore';
+import { useAuthHydrated } from '@/hooks/useAuthHydrated';
 import {
   PlusIcon,
   TrashIcon,
@@ -28,11 +30,14 @@ function SsoManagementPage() {
   // Load user's orgs to scope IdP listing
   const { data: orgResult } = useQuery<any>(MY_ORGS_INLINE);
   const orgs = useMemo(() => orgResult?.myOrganizations || [], [orgResult]);
-  const [selectedOrgId, setSelectedOrgId] = useState('');
+  const selectedOrgId = useAuthStore((s) => s.selectedOrgId) ?? '';
+  const setSelectedOrgId = useAuthStore((s) => s.setSelectedOrgId);
+  const hydrated = useAuthHydrated();
 
   useEffect(() => {
+    if (!hydrated) return;
     if (orgs.length > 0 && !selectedOrgId) setSelectedOrgId(orgs[0].id);
-  }, [orgs, selectedOrgId]);
+  }, [hydrated, orgs, selectedOrgId, setSelectedOrgId]);
 
   const { data: idpData, loading, refetch } = useQuery<any>(IDENTITY_PROVIDERS_QUERY, {
     variables: { orgId: selectedOrgId },
