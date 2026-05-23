@@ -30,6 +30,7 @@ import {
 } from 'recharts';
 import { useTranslation } from '@/lib/i18n';
 import { ADMIN_DASHBOARD_QUERY } from '@/lib/graphql/operations/adminDashboard';
+import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
 
 /* -- Helpers -- */
 
@@ -122,7 +123,10 @@ function HealthBadge({ healthy, total, icon: Icon, label }: { healthy: number; t
 function DashboardPage() {
   const { t } = useTranslation();
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
-  const { data, loading, refetch } = useQuery<any>(ADMIN_DASHBOARD_QUERY, { pollInterval: 30_000 });
+  const pollMs = 30_000;
+  const queryResult = useQuery<any>(ADMIN_DASHBOARD_QUERY, { pollInterval: pollMs });
+  useVisibilityAwarePolling(queryResult, pollMs);
+  const { data, loading, refetch } = queryResult;
 
   useEffect(() => {
     if (data) {

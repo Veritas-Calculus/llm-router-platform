@@ -1,6 +1,7 @@
 import { useQuery } from '@apollo/client/react';
 import { useTranslation } from '@/lib/i18n';
 import { SYSTEM_LOAD_QUERY } from '@/lib/graphql/operations/health';
+import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
 import {
   BoltIcon,
   CircleStackIcon,
@@ -66,9 +67,12 @@ function ProgressBar({ value, max, color }: { value: number; max: number; color:
 
 export default function SystemLoadPanel() {
   const { t } = useTranslation();
-  const { data, loading, error, refetch } = useQuery<SystemLoadData>(SYSTEM_LOAD_QUERY, {
-    pollInterval: 5000,
+  const pollMs = 5000;
+  const queryResult = useQuery<SystemLoadData>(SYSTEM_LOAD_QUERY, {
+    pollInterval: pollMs,
   });
+  useVisibilityAwarePolling(queryResult, pollMs);
+  const { data, loading, error, refetch } = queryResult;
 
   if (loading && !data) {
     return (

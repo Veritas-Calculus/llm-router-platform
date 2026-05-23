@@ -14,6 +14,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { ALERTS_QUERY, ACKNOWLEDGE_ALERT, RESOLVE_ALERT } from '@/lib/graphql/operations';
+import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
 import type { Alert } from '@/lib/types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -99,10 +100,12 @@ export default function NotificationCenter({ pollInterval = 60000 }: Notificatio
   const [filter, setFilter] = useState<'active' | 'all'>('active');
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const { data, loading, refetch } = useQuery<any>(ALERTS_QUERY, {
+  const queryResult = useQuery<any>(ALERTS_QUERY, {
     variables: { status: filter === 'active' ? 'active' : undefined },
     pollInterval,
   });
+  useVisibilityAwarePolling(queryResult, pollInterval);
+  const { data, loading, refetch } = queryResult;
   const alerts: Alert[] = useMemo(() =>
     (data?.alerts?.data || []).map((a: any) => ({
       id: a.id, target_type: a.targetType, target_id: a.targetId,

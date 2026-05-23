@@ -1,6 +1,7 @@
 import { useQuery, useMutation } from '@apollo/client/react';
 import { gql } from '@apollo/client';
 import { useTranslation } from '@/lib/i18n';
+import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
 import {
   ExclamationTriangleIcon,
   ClockIcon,
@@ -110,9 +111,12 @@ function timeAgo(iso: string): string {
 
 export default function BackupStatusPanel() {
   const { t } = useTranslation();
-  const { data, loading, error, refetch } = useQuery<BackupStatusData>(BACKUP_STATUS_QUERY, {
-    pollInterval: 30000,
+  const pollMs = 30000;
+  const queryResult = useQuery<BackupStatusData>(BACKUP_STATUS_QUERY, {
+    pollInterval: pollMs,
   });
+  useVisibilityAwarePolling(queryResult, pollMs);
+  const { data, loading, error, refetch } = queryResult;
   const [triggerBackup, { loading: triggering }] = useMutation(TRIGGER_BACKUP, {
     onCompleted: () => refetch(),
   });

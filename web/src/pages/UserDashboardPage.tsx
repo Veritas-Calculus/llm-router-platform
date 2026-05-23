@@ -17,6 +17,7 @@ import {
   WrenchScrewdriverIcon,
 } from '@heroicons/react/24/outline';
 import { ACTIVE_ANNOUNCEMENTS_QUERY } from '@/lib/graphql/operations/announcements';
+import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
 import {
   LineChart,
   Line,
@@ -45,9 +46,12 @@ interface AnnouncementItem {
 }
 
 function AnnouncementBanner() {
-  const { data } = useQuery<{ activeAnnouncements: AnnouncementItem[] }>(ACTIVE_ANNOUNCEMENTS_QUERY, {
-    pollInterval: 60000,
+  const pollMs = 60000;
+  const queryResult = useQuery<{ activeAnnouncements: AnnouncementItem[] }>(ACTIVE_ANNOUNCEMENTS_QUERY, {
+    pollInterval: pollMs,
   });
+  useVisibilityAwarePolling(queryResult, pollMs);
+  const { data } = queryResult;
   const [dismissed, setDismissed] = useState<Set<string>>(() => {
     try {
       const stored = localStorage.getItem('dismissedAnnouncements');

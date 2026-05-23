@@ -4,6 +4,7 @@ import { useQuery } from '@apollo/client/react';
 import { ExclamationTriangleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
 import { SUBSCRIPTION_QUOTA_QUERY } from '@/lib/graphql/operations/billing';
 import { API_KEY_RATE_LIMIT_STATUS } from '@/lib/graphql/operations';
+import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
 import { useTranslation } from '@/lib/i18n';
 import type { ApiKey } from '@/lib/types';
 
@@ -103,12 +104,15 @@ function RateLimitMiniBar({ current, limit, label }: { current: number; limit: n
 
 export function RateLimitStatusCell({ keyId, isActive }: { keyId: string; isActive: boolean }) {
   const { t } = useTranslation();
-  const { data } = useQuery<RateLimitStatusData>(API_KEY_RATE_LIMIT_STATUS, {
+  const pollMs = 10000;
+  const queryResult = useQuery<RateLimitStatusData>(API_KEY_RATE_LIMIT_STATUS, {
     variables: { keyId },
     skip: !isActive,
-    pollInterval: 10000,
+    pollInterval: pollMs,
     fetchPolicy: 'network-only',
   });
+  useVisibilityAwarePolling(queryResult, pollMs);
+  const { data } = queryResult;
   if (!isActive) return null;
   const s = data?.apiKeyRateLimitStatus;
   if (!s) return <span className="text-[10px] text-apple-gray-300">—</span>;

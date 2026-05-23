@@ -25,6 +25,7 @@ import {
 } from 'recharts';
 import { useTranslation } from '@/lib/i18n';
 import { ADMIN_FINANCIAL_DASHBOARD_QUERY } from '@/lib/graphql/operations/finance';
+import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
 
 const dayOptions = [7, 30, 90] as const;
 
@@ -91,10 +92,13 @@ function MetricCard({
 function FinancePage() {
   const { t } = useTranslation();
   const [days, setDays] = useState<(typeof dayOptions)[number]>(30);
-  const { data, loading, refetch } = useQuery<any>(ADMIN_FINANCIAL_DASHBOARD_QUERY, {
+  const pollMs = 60_000;
+  const queryResult = useQuery<any>(ADMIN_FINANCIAL_DASHBOARD_QUERY, {
     variables: { days },
-    pollInterval: 60_000,
+    pollInterval: pollMs,
   });
+  useVisibilityAwarePolling(queryResult, pollMs);
+  const { data, loading, refetch } = queryResult;
 
   const finance = data?.adminFinancialDashboard;
   const daily = useMemo(() => finance?.daily || [], [finance]);

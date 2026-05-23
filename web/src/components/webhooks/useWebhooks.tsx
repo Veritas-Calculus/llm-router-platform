@@ -10,6 +10,7 @@ import type { Organization, Project } from '@/lib/types';
 import { useTranslation } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/authStore';
 import { useAuthHydrated } from '@/hooks/useAuthHydrated';
+import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
 import toast from 'react-hot-toast';
 
 export interface WebhookFormData {
@@ -54,7 +55,10 @@ export function useWebhooks() {
 
   // Queries
   const { data, loading, refetch } = useQuery<any>(GET_WEBHOOKS, { variables: { projectId: selectedProjectId }, skip: !selectedProjectId });
-  const { data: deliveriesData, loading: deliveriesLoading } = useQuery<any>(GET_WEBHOOK_DELIVERIES, { variables: { endpointId: selectedEndpointId, limit: 50 }, skip: !selectedEndpointId, pollInterval: 5000 });
+  const deliveriesPollMs = 5000;
+  const deliveriesQuery = useQuery<any>(GET_WEBHOOK_DELIVERIES, { variables: { endpointId: selectedEndpointId, limit: 50 }, skip: !selectedEndpointId, pollInterval: deliveriesPollMs });
+  useVisibilityAwarePolling(deliveriesQuery, deliveriesPollMs);
+  const { data: deliveriesData, loading: deliveriesLoading } = deliveriesQuery;
 
   // Mutations
   const [createWebhook] = useMutation(CREATE_WEBHOOK_ENDPOINT, {

@@ -2,6 +2,7 @@ import { useQuery } from '@apollo/client/react';
 import { motion } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n';
 import { SYSTEM_STATUS_QUERY } from '@/lib/graphql/operations/health';
+import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
 import {
   CheckCircleIcon,
   XCircleIcon,
@@ -98,10 +99,13 @@ function parseDetails(details?: string): Record<string, string> | null {
 
 export default function SystemStatusPanel() {
   const { t } = useTranslation();
-  const { data, loading, refetch } = useQuery<SystemStatusData>(SYSTEM_STATUS_QUERY, {
-    pollInterval: 10000,
+  const pollMs = 10000;
+  const queryResult = useQuery<SystemStatusData>(SYSTEM_STATUS_QUERY, {
+    pollInterval: pollMs,
     fetchPolicy: 'network-only',
   });
+  useVisibilityAwarePolling(queryResult, pollMs);
+  const { data, loading, refetch } = queryResult;
 
   if (loading && !data) {
     return (
