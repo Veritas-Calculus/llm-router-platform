@@ -173,19 +173,43 @@ const errorLink = onError(({ error, operation, forward }) => {
   return undefined;
 });
 
+// Top-level Query fields that return an unpaginated list. The default
+// InMemoryCache merge for an unkeyed list is "concatenate", which produces a
+// stale-flash when a refetch returns fewer items (e.g. after a delete) — the
+// old items linger until cache eviction. `merge: false` replaces the list
+// wholesale on every refetch, which matches the user's mental model for
+// list-of-everything queries.
+//
+// Keep this set authoritative against server/internal/graphql/schema/*.graphqls.
+// New unpaginated list queries should be added here; paginated queries should
+// instead use offsetLimitPagination / relayStylePagination.
+const REPLACE_LIST_FIELDS = [
+  // public/user-scoped
+  'myOrganizations', 'myProjects', 'myApiKeys', 'myOrders', 'myRedeemHistory',
+  'myDailyUsage', 'myUsageByProvider', 'usageChart', 'providerStats', 'modelStats',
+  'organizationMembers', 'identityProviders', 'plans', 'activeAnnouncements',
+  'publishedDocuments',
+  // admin
+  'users', 'providers', 'proxies', 'proxyPools', 'providerApiKeys', 'models',
+  'apiKeys', 'alerts', 'healthApiKeys', 'healthProxies', 'healthProviders',
+  'healthHistory', 'mcpServers', 'mcpTools', 'mcpResources', 'inviteCodes',
+  'integrations', 'promptVersions', 'announcements', 'coupons', 'documents',
+  'adminUsageByUser', 'adminRevenueChart', 'adminUserGrowth', 'userUsage',
+  'userApiKeys', 'requestLogs', 'featureGates', 'notificationChannels',
+  'webhooks', 'webhookDeliveries', 'semanticCaches',
+] as const;
+
+const queryFieldPolicies = Object.fromEntries(
+  REPLACE_LIST_FIELDS.map((field) => [field, { merge: false as const }]),
+);
+
 // ── Apollo Client Instance ─────────────────────────────────────────
 export const apolloClient = new ApolloClient({
   link: from([errorLink, authLink, httpLink]),
   cache: new InMemoryCache({
     typePolicies: {
       Query: {
-        fields: {
-          users: { merge: false },
-          providers: { merge: false },
-          proxies: { merge: false },
-          alerts: { merge: false },
-          apiKeys: { merge: false },
-        },
+        fields: queryFieldPolicies,
       },
     },
   }),
