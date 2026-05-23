@@ -60,3 +60,6 @@ deploy/helm/*/charts/
 
 # Sentry self-hosted (cloned from getsentry/self-hosted)
 deploy/sentry/
+
+# graphql-codegen output — regenerated via `npm run codegen`
+web/src/lib/graphql/generated/
