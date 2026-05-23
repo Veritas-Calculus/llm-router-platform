@@ -202,41 +202,80 @@ func setupPrometheusMetrics(srv *handler.Server) {
 	})
 }
 
+// Stable error codes surfaced in gqlErr.Extensions["code"]. Frontend clients
+// branch on these instead of substring-matching the message text — see
+// FE-H1 in the review document and the matching authLink in web/.
+const (
+	codeUnauthenticated     = "UNAUTHENTICATED"
+	codeForbidden           = "FORBIDDEN"
+	codeRateLimited         = "RATE_LIMITED"
+	codeInvalidCredentials  = "INVALID_CREDENTIALS"
+	codeNotFound            = "NOT_FOUND"
+	codeInsufficientBalance = "INSUFFICIENT_BALANCE"
+	codeAccountDisabled     = "ACCOUNT_DISABLED"
+	codeValidation          = "VALIDATION"
+	codeInternal            = "INTERNAL"
+)
+
+// classifyClientError returns a stable extension code for a known client-visible
+// error message, or "" if the message is internal/unrecognized. The mapping is
+// the source of truth for what the frontend can rely on without parsing text.
+func classifyClientError(msg string) string {
+	switch msg {
+	case "unauthorized: authentication required",
+		"invalid or expired token",
+		"context canceled":
+		return codeUnauthenticated
+	case "forbidden: admin access required",
+		"forbidden: IP not inside admin whitelist",
+		"forbidden: access denied":
+		return codeForbidden
+	case "rate limit exceeded",
+		"rate limit exceeded: try again later",
+		"too many failed login attempts, please try again later":
+		return codeRateLimited
+	case "invalid credentials",
+		"invalid email or password",
+		"account not found":
+		return codeInvalidCredentials
+	case "account is disabled":
+		return codeAccountDisabled
+	case "insufficient balance":
+		return codeInsufficientBalance
+	case "invalid or expired reset token",
+		"record not found",
+		"no organization found for user":
+		return codeNotFound
+	case "email already registered",
+		"payments are currently disabled":
+		return codeValidation
+	}
+	if strings.HasPrefix(msg, "too many failed login attempts") {
+		return codeRateLimited
+	}
+	if strings.HasPrefix(msg, "password ") {
+		return codeValidation
+	}
+	if strings.HasPrefix(msg, "query depth") || strings.HasPrefix(msg, "query contains") {
+		return codeValidation
+	}
+	if isClientGraphQLError(msg) {
+		return codeValidation
+	}
+	return ""
+}
+
 func setupErrorMasking(srv *handler.Server, logger *zap.Logger) {
 	srv.SetErrorPresenter(func(ctx context.Context, err error) *gqlerror.Error {
 		gqlErr := graphql.DefaultErrorPresenter(ctx, err)
 		msg := gqlErr.Message
 
-		clientErrors := map[string]bool{
-			"unauthorized: authentication required":                  true,
-			"forbidden: admin access required":                       true,
-			"forbidden: IP not inside admin whitelist":               true,
-			"invalid credentials":                                    true,
-			"invalid email or password":                              true,
-			"account is disabled":                                    true,
-			"email already registered":                               true,
-			"invalid or expired token":                               true,
-			"invalid or expired reset token":                         true,
-			"insufficient balance":                                   true,
-			"rate limit exceeded":                                    true,
-			"rate limit exceeded: try again later":                   true,
-			"forbidden: access denied":                               true,
-			"account not found":                                      true,
-			"context canceled":                                       true,
-			"no organization found for user":                         true,
-			"payments are currently disabled":                        true,
-			"record not found":                                       true,
-			"too many failed login attempts, please try again later": true,
-		}
-		if clientErrors[msg] || isClientGraphQLError(msg) {
+		if code := classifyClientError(msg); code != "" {
 			graphqlErrorsTotal.WithLabelValues("client").Inc()
-			return gqlErr
-		}
-		if strings.HasPrefix(msg, "password ") ||
-			strings.HasPrefix(msg, "query depth") ||
-			strings.HasPrefix(msg, "query contains") ||
-			strings.HasPrefix(msg, "too many failed login attempts") {
-			graphqlErrorsTotal.WithLabelValues("client").Inc()
+			if gqlErr.Extensions == nil {
+				gqlErr.Extensions = map[string]interface{}{}
+			}
+			gqlErr.Extensions["code"] = code
 			return gqlErr
 		}
 
@@ -251,7 +290,10 @@ func setupErrorMasking(srv *handler.Server, logger *zap.Logger) {
 			zap.String("request_id", requestID),
 		)
 		gqlErr.Message = fmt.Sprintf("internal error [%s]", requestID)
-		gqlErr.Extensions = map[string]interface{}{"request_id": requestID}
+		gqlErr.Extensions = map[string]interface{}{
+			"code":       codeInternal,
+			"request_id": requestID,
+		}
 		return gqlErr
 	})
 }

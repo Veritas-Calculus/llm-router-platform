@@ -23,6 +23,36 @@ type AuthRedirectUser = {
   requirePasswordChange?: boolean | null;
 };
 
+// Codes mirror the server-side classifier (handler.go classifyClientError).
+type AuthErrorCode =
+  | 'UNAUTHENTICATED'
+  | 'FORBIDDEN'
+  | 'RATE_LIMITED'
+  | 'INVALID_CREDENTIALS'
+  | 'NOT_FOUND'
+  | 'INSUFFICIENT_BALANCE'
+  | 'ACCOUNT_DISABLED'
+  | 'VALIDATION'
+  | 'INTERNAL'
+  | undefined;
+
+class AuthError extends Error {
+  readonly code: AuthErrorCode;
+  constructor(message: string, code?: AuthErrorCode) {
+    super(message);
+    this.code = code;
+  }
+}
+
+// apolloErrorToAuthError preserves extensions.code through the Error throw so
+// the catch site can branch on the stable code instead of message text.
+function apolloErrorToAuthError(err: { message: string; errors?: ReadonlyArray<{ message: string; extensions?: Record<string, unknown> }> }): AuthError {
+  const first = err.errors?.[0];
+  const rawCode = first?.extensions?.code;
+  const code = typeof rawCode === 'string' ? (rawCode as AuthErrorCode) : undefined;
+  return new AuthError(first?.message ?? err.message, code);
+}
+
 function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -98,9 +128,9 @@ function LoginPage() {
         const result = await loginMut({
           variables: { input: { email: formData.email, password: formData.password, captchaToken } },
         });
-        if (result.error) throw new Error(result.error.message);
+        if (result.error) throw apolloErrorToAuthError(result.error);
         const resp = (result.data as any)?.login;
-        if (!resp?.token) throw new Error(t('auth.invalid_credentials'));
+        if (!resp?.token) throw new AuthError(t('auth.invalid_credentials'));
         authenticatedUser = resp.user;
         setAuth(resp.token, resp.user, resp.refreshToken ?? null);
         toast.success(t('auth.welcome_back'));
@@ -117,31 +147,41 @@ function LoginPage() {
         const result = await registerMut({
           variables: { input: registerInput },
         });
-        if (result.error) throw new Error(result.error.message);
+        if (result.error) throw apolloErrorToAuthError(result.error);
         const resp = (result.data as any)?.register;
-        if (!resp?.token) throw new Error(t('auth.registration_failed'));
+        if (!resp?.token) throw new AuthError(t('auth.registration_failed'));
         authenticatedUser = resp.user;
         setAuth(resp.token, resp.user, resp.refreshToken ?? null);
         toast.success(t('auth.account_created'));
       }
       navigate(getPostAuthRedirect(authenticatedUser), { replace: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const code = err instanceof AuthError ? err.code : undefined;
+      const msg = err instanceof Error ? err.message : '';
+
       if (isLogin) {
-        if (err.message === 'account not found') {
-          toast.error(t('auth.account_not_found'));
-        } else if (err.message === 'password incorrect') {
-          toast.error(t('auth.password_incorrect'));
-        } else if (err.message?.startsWith('too many failed login attempts, please try again in')) {
-          const match = err.message.match(/in (\d+) minutes/);
-          const minutes = match ? match[1] : '15';
-          toast.error(t('auth.rate_limit_login', { minutes }));
-        } else if (err.message === 'too many failed login attempts, please try again later') {
-          toast.error(t('auth.rate_limit_login_later'));
+        // Branch on the stable server-issued code first; fall back to message
+        // text only when the server hasn't been retrofitted with extensions.code.
+        if (code === 'INVALID_CREDENTIALS') {
+          // Backend collapses "account not found" / "password incorrect" /
+          // generic "invalid credentials" into the same code as a defense
+          // against email enumeration. Show a single neutral message.
+          toast.error(t('auth.invalid_credentials'));
+        } else if (code === 'RATE_LIMITED') {
+          const match = msg.match(/in (\d+) minutes/);
+          if (match) toast.error(t('auth.rate_limit_login', { minutes: match[1] }));
+          else toast.error(t('auth.rate_limit_login_later'));
+        } else if (code === 'ACCOUNT_DISABLED') {
+          toast.error(t('auth.account_disabled') || msg);
         } else {
-          toast.error(err.message || t('auth.invalid_credentials'));
+          toast.error(msg || t('auth.invalid_credentials'));
         }
       } else {
-        toast.error(err.message || t('auth.registration_failed'));
+        if (code === 'VALIDATION') {
+          toast.error(msg);
+        } else {
+          toast.error(msg || t('auth.registration_failed'));
+        }
       }
       // Reset turnstile widget on failure so user can retry
       turnstileRef.current?.reset();

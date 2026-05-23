@@ -80,14 +80,36 @@ function rotateAccessToken(): Promise<string | null> {
   return refreshInFlight;
 }
 
-function isAuthError(message: string): boolean {
-  return /unauthor|authentication required|token has been revoked|invalid token/i.test(message);
+// Stable error codes mirror the server side (handler.go classifyClientError).
+// Branching on these is robust to message-text changes; the legacy substring
+// fallback exists for older code paths that haven't been retrofitted yet.
+type GqlErrorCode =
+  | 'UNAUTHENTICATED'
+  | 'FORBIDDEN'
+  | 'RATE_LIMITED'
+  | 'INVALID_CREDENTIALS'
+  | 'NOT_FOUND'
+  | 'INSUFFICIENT_BALANCE'
+  | 'ACCOUNT_DISABLED'
+  | 'VALIDATION'
+  | 'INTERNAL';
+
+function codeOf(e: { extensions?: Record<string, unknown> }): GqlErrorCode | undefined {
+  const c = e.extensions?.code;
+  return typeof c === 'string' ? (c as GqlErrorCode) : undefined;
+}
+
+function isAuthError(e: { extensions?: Record<string, unknown>; message: string }): boolean {
+  if (codeOf(e) === 'UNAUTHENTICATED') return true;
+  // Fallback for errors emitted before the server was retrofitted with
+  // extensions.code (custom user-service errors, third-party middleware).
+  return /unauthor|authentication required|token has been revoked|invalid token/i.test(e.message);
 }
 
 // ── Error Link (Apollo Client v4 API) ──────────────────────────────
 const errorLink = onError(({ error, operation, forward }) => {
   if (CombinedGraphQLErrors.is(error)) {
-    const hasAuthError = error.errors.some((e) => isAuthError(e.message));
+    const hasAuthError = error.errors.some(isAuthError);
     if (hasAuthError) {
       // Avoid recursing if this *is* the refresh call.
       if (operation.getContext().skipAuthRetry) {
@@ -131,8 +153,9 @@ const errorLink = onError(({ error, operation, forward }) => {
     }
 
     for (const gqlError of error.errors) {
+      const code = codeOf(gqlError);
       const msg = gqlError.message;
-      if (msg.includes('forbidden') || msg.includes('admin access required')) {
+      if (code === 'FORBIDDEN' || (!code && (msg.includes('forbidden') || msg.includes('admin access required')))) {
         toast.error(msg);
         return undefined;
       }
