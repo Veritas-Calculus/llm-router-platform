@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"llm-router-platform/pkg/sanitize"
 )
 
 // VaultEncryptor implements EncryptorInterface using HashiCorp Vault's Transit
@@ -24,14 +26,17 @@ type VaultEncryptor struct {
 
 // NewVaultEncryptor creates a new VaultEncryptor configured to use the given
 // Vault server, authentication token, and transit engine key name.
+//
+// Vault is typically deployed on a private network, so allowLocal=true on the
+// SSRF-safe client is appropriate (rebinding from public→private is still
+// blocked at dial time for any non-Vault hostname the addr might point at if
+// misconfigured).
 func NewVaultEncryptor(addr, token, transitKey string) *VaultEncryptor {
 	return &VaultEncryptor{
 		addr:       strings.TrimRight(addr, "/"),
 		token:      token,
 		transitKey: transitKey,
-		client: &http.Client{
-			Timeout: 5 * time.Second,
-		},
+		client:     sanitize.SafeHTTPClient(true, 5*time.Second),
 	}
 }
 

@@ -24,15 +24,15 @@ type Service struct {
 	logger    *zap.Logger
 }
 
-// New creates a Turnstile verification service.
+// New creates a Turnstile verification service. Uses the SSRF-safe HTTP
+// client so a misconfiguration that ever pointed verifyURL elsewhere can't
+// pivot to internal services via DNS rebinding.
 func New(logger *zap.Logger, enabled bool, secretKey string) *Service {
 	return &Service{
 		secretKey: secretKey,
 		enabled:   enabled,
-		client: &http.Client{
-			Timeout: 5 * time.Second,
-		},
-		logger: logger,
+		client:    sanitize.SafeHTTPClient(false, 5*time.Second),
+		logger:    logger,
 	}
 }
 

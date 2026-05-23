@@ -60,7 +60,10 @@ func NewAlipayService(
 		subRepo:     subRepo,
 		txRepo:      txRepo,
 		logger:      logger,
-		httpClient:  &http.Client{Timeout: 15 * time.Second},
+		// SSRF-safe client: Alipay endpoints are fixed in code today, but if
+		// they ever become configurable a bare http.Client becomes a DNS-
+		// rebinding target. Defense in depth.
+		httpClient: sanitize.SafeHTTPClient(false, 15*time.Second),
 	}
 	if cfg.Enabled {
 		if cfg.PrivateKey != "" {

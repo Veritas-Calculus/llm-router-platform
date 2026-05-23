@@ -129,7 +129,7 @@ func (s *WechatPayService) CreateNativeOrder(ctx context.Context, userID uuid.UU
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", authHeader)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := sanitize.SafeHTTPClient(false, 30*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", "", fmt.Errorf("wechat pay API request failed: %w", err)
@@ -322,7 +322,7 @@ func (s *WechatPayService) QueryOrderStatus(ctx context.Context, orderNo string)
 	req.Header.Set("Authorization", authHeader)
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := sanitize.SafeHTTPClient(false, 10*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "unknown", err
