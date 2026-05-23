@@ -274,38 +274,6 @@ func (r *Router) handleMCPToolCalls(ctx context.Context, resp *provider.ChatResp
 	return anyMCPHandled, mcpCalls, mcpErrors, nil
 }
 
-// isProviderLevelError checks if an error should trigger provider circuit
-// breaking. The canonical signal is the upstream HTTP status carried on a
-// *provider.ProviderError (5xx → trip the breaker). When that's unavailable
-// (network errors, client-side wrapping) we fall back to substring matching
-// on the message.
-func isProviderLevelError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var pe *provider.ProviderError
-	if errors.As(err, &pe) {
-		return pe.StatusCode >= 500 && pe.StatusCode < 600
-	}
-	return messageLooksProviderLevel(err.Error())
-}
-
-// messageLooksProviderLevel keeps the legacy substring heuristic for callers
-// that have no typed error (network failures from net/http, context errors).
-func messageLooksProviderLevel(errMsg string) bool {
-	errLower := strings.ToLower(errMsg)
-	providerKeywords := []string{
-		"timeout", "deadline exceeded", "connection refused",
-		"500", "502", "503", "504", "internal server error",
-		"bad gateway", "service unavailable", "gateway timeout",
-	}
-	for _, keyword := range providerKeywords {
-		if strings.Contains(errLower, keyword) {
-			return true
-		}
-	}
-	return false
-}
 
 // executeChatOnce makes a single chat request using the given provider and key.
 func (r *Router) executeChatOnce(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, req *provider.ChatRequest) (*ChatResult, error) {
@@ -322,48 +290,6 @@ func (r *Router) executeChatOnce(ctx context.Context, p *models.Provider, apiKey
 	return &ChatResult{Response: resp, UsedKey: apiKey}, nil
 }
 
-// isQuotaOrRateLimitError checks if the error indicates a quota or
-// rate-limit problem that should trigger an API-key rotation. The canonical
-// signal is HTTP 429 on a *provider.ProviderError. Some providers also
-// reject over-budget keys with 402/403 — we treat those the same. Falls back
-// to substring matching when no typed error is available.
-func isQuotaOrRateLimitError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var pe *provider.ProviderError
-	if errors.As(err, &pe) {
-		switch pe.StatusCode {
-		case http.StatusTooManyRequests, http.StatusPaymentRequired:
-			return true
-		case http.StatusForbidden:
-			// 403 is overloaded: auth failures vs quota exhaustion. Disambiguate
-			// by body if present, otherwise treat as auth (don't rotate).
-			return messageLooksQuotaLimited(string(pe.Body)) || messageLooksQuotaLimited(pe.Message)
-		}
-		return false
-	}
-	return messageLooksQuotaLimited(err.Error())
-}
-
-// messageLooksQuotaLimited is the legacy substring heuristic, retained as a
-// fallback for non-typed errors and exposed for the unit test that pins the
-// keyword list.
-func messageLooksQuotaLimited(errMsg string) bool {
-	errLower := strings.ToLower(errMsg)
-	quotaKeywords := []string{
-		"quota", "rate limit", "rate_limit", "ratelimit",
-		"too many requests", "429", "insufficient_quota",
-		"billing", "exceeded", "limit reached",
-		"resource exhausted", "resourceexhausted",
-	}
-	for _, keyword := range quotaKeywords {
-		if strings.Contains(errLower, keyword) {
-			return true
-		}
-	}
-	return false
-}
 
 // executeWithKeyRetry runs fn with automatic key-rotation retry.
 // fn receives a provider.Client and should make a single request.
