@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"llm-router-platform/internal/models"
@@ -528,7 +529,51 @@ func TestIsQuotaOrRateLimitError(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.msg, func(t *testing.T) {
-			assert.Equal(t, tc.expect, isQuotaOrRateLimitError(tc.msg))
+			assert.Equal(t, tc.expect, messageLooksQuotaLimited(tc.msg))
+		})
+	}
+}
+
+func TestIsQuotaOrRateLimitErrorTyped(t *testing.T) {
+	cases := []struct {
+		name   string
+		err    error
+		expect bool
+	}{
+		{"429 from typed provider error", &provider.ProviderError{StatusCode: 429, Message: "Too Many Requests"}, true},
+		{"402 quota exhausted typed", &provider.ProviderError{StatusCode: 402, Message: "Payment Required"}, true},
+		{"403 with quota body → rotate", &provider.ProviderError{StatusCode: 403, Body: []byte(`{"error":"quota exceeded"}`)}, true},
+		{"403 plain auth failure → don't rotate", &provider.ProviderError{StatusCode: 403, Message: "Forbidden"}, false},
+		{"500 typed → not quota", &provider.ProviderError{StatusCode: 500, Message: "Internal Server Error"}, false},
+		{"nil error", nil, false},
+		{"plain error with 'billing in metadata'", fmt.Errorf("billing portal misconfigured"), true},
+		{"plain network error", fmt.Errorf("dial tcp: i/o timeout"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expect, isQuotaOrRateLimitError(tc.err))
+		})
+	}
+}
+
+func TestIsProviderLevelErrorTyped(t *testing.T) {
+	cases := []struct {
+		name   string
+		err    error
+		expect bool
+	}{
+		{"500 typed", &provider.ProviderError{StatusCode: 500}, true},
+		{"502 typed", &provider.ProviderError{StatusCode: 502}, true},
+		{"504 typed", &provider.ProviderError{StatusCode: 504}, true},
+		{"429 typed → not provider-level", &provider.ProviderError{StatusCode: 429}, false},
+		{"400 typed → not provider-level", &provider.ProviderError{StatusCode: 400}, false},
+		{"nil error", nil, false},
+		{"plain error containing 'timeout'", fmt.Errorf("context deadline exceeded"), true},
+		{"plain quota-only error", fmt.Errorf("billing portal misconfigured"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expect, isProviderLevelError(tc.err))
 		})
 	}
 }

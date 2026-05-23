@@ -45,7 +45,7 @@ func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *mo
 
 	if !p.RequiresAPIKey {
 		res, err := r.executeChatWithMCP(ctx, p, nil, req)
-		if err != nil && isProviderLevelError(err.Error()) {
+		if err != nil && isProviderLevelError(err) {
 			r.MarkProviderFailure(p.ID)
 		} else if err == nil {
 			r.MarkProviderSuccess(p.ID)
@@ -79,9 +79,9 @@ func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *mo
 		)
 
 		// Mark key as failed if it's a quota/rate-limit error
-		if isQuotaOrRateLimitError(err.Error()) {
+		if isQuotaOrRateLimitError(err) {
 			r.MarkKeyFailed(currentKey.ID, err.Error())
-		} else if isProviderLevelError(err.Error()) {
+		} else if isProviderLevelError(err) {
 			r.MarkProviderFailure(p.ID)
 		}
 
@@ -231,8 +231,25 @@ func (r *Router) handleMCPToolCalls(ctx context.Context, resp *provider.ChatResp
 	return anyMCPHandled, mcpCalls, mcpErrors, nil
 }
 
-// isProviderLevelError checks if an error should trigger provider circuit breaking (e.g. 500, timeout).
-func isProviderLevelError(errMsg string) bool {
+// isProviderLevelError checks if an error should trigger provider circuit
+// breaking. The canonical signal is the upstream HTTP status carried on a
+// *provider.ProviderError (5xx → trip the breaker). When that's unavailable
+// (network errors, client-side wrapping) we fall back to substring matching
+// on the message.
+func isProviderLevelError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pe *provider.ProviderError
+	if errors.As(err, &pe) {
+		return pe.StatusCode >= 500 && pe.StatusCode < 600
+	}
+	return messageLooksProviderLevel(err.Error())
+}
+
+// messageLooksProviderLevel keeps the legacy substring heuristic for callers
+// that have no typed error (network failures from net/http, context errors).
+func messageLooksProviderLevel(errMsg string) bool {
 	errLower := strings.ToLower(errMsg)
 	providerKeywords := []string{
 		"timeout", "deadline exceeded", "connection refused",
@@ -262,8 +279,34 @@ func (r *Router) executeChatOnce(ctx context.Context, p *models.Provider, apiKey
 	return &ChatResult{Response: resp, UsedKey: apiKey}, nil
 }
 
-// isQuotaOrRateLimitError checks if an error message indicates a quota or rate limit issue.
-func isQuotaOrRateLimitError(errMsg string) bool {
+// isQuotaOrRateLimitError checks if the error indicates a quota or
+// rate-limit problem that should trigger an API-key rotation. The canonical
+// signal is HTTP 429 on a *provider.ProviderError. Some providers also
+// reject over-budget keys with 402/403 — we treat those the same. Falls back
+// to substring matching when no typed error is available.
+func isQuotaOrRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pe *provider.ProviderError
+	if errors.As(err, &pe) {
+		switch pe.StatusCode {
+		case http.StatusTooManyRequests, http.StatusPaymentRequired:
+			return true
+		case http.StatusForbidden:
+			// 403 is overloaded: auth failures vs quota exhaustion. Disambiguate
+			// by body if present, otherwise treat as auth (don't rotate).
+			return messageLooksQuotaLimited(string(pe.Body)) || messageLooksQuotaLimited(pe.Message)
+		}
+		return false
+	}
+	return messageLooksQuotaLimited(err.Error())
+}
+
+// messageLooksQuotaLimited is the legacy substring heuristic, retained as a
+// fallback for non-typed errors and exposed for the unit test that pins the
+// keyword list.
+func messageLooksQuotaLimited(errMsg string) bool {
 	errLower := strings.ToLower(errMsg)
 	quotaKeywords := []string{
 		"quota", "rate limit", "rate_limit", "ratelimit",
@@ -316,7 +359,7 @@ func (r *Router) executeWithKeyRetry(ctx context.Context, p *models.Provider, ap
 				zap.Int("attempt", attempt+1),
 				zap.String("provider", p.Name),
 			)
-			if isQuotaOrRateLimitError(err.Error()) {
+			if isQuotaOrRateLimitError(err) {
 				r.MarkKeyFailed(currentKey.ID, err.Error())
 			}
 			currentKey, _ = r.SelectNextAPIKey(ctx, p.ID, currentKey.ID)
@@ -439,7 +482,7 @@ func (r *Router) ExecuteStreamChat(ctx context.Context, p *models.Provider, apiK
 		}
 		stream, err := client.StreamChat(ctx, req)
 		if err != nil {
-			if isProviderLevelError(err.Error()) {
+			if isProviderLevelError(err) {
 				r.MarkProviderFailure(p.ID)
 			}
 			return nil, err
@@ -479,9 +522,9 @@ func (r *Router) ExecuteStreamChat(ctx context.Context, p *models.Provider, apiK
 				zap.Int("attempt", attempt+1),
 				zap.String("provider", p.Name),
 			)
-			if isQuotaOrRateLimitError(err.Error()) {
+			if isQuotaOrRateLimitError(err) {
 				r.MarkKeyFailed(currentKey.ID, err.Error())
-			} else if isProviderLevelError(err.Error()) {
+			} else if isProviderLevelError(err) {
 				r.MarkProviderFailure(p.ID)
 			}
 			currentKey, _ = r.SelectNextAPIKey(ctx, p.ID, currentKey.ID)
