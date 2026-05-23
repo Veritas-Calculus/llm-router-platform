@@ -183,7 +183,11 @@ func (r *APIKeyRepository) Update(ctx context.Context, key *models.APIKey) error
 	return r.db.WithContext(ctx).Save(key).Error
 }
 
-// Delete permanently removes an API key from the database.
+// Delete soft-deletes an API key (sets deleted_at). The FK from
+// usage_logs.api_key_id is ON DELETE RESTRICT so a hard delete would either
+// fail loudly or, before the FK landed, orphan billing rows. Use soft delete
+// so historical usage stays addressable; the row drops out of normal queries
+// via GORM's default WHERE deleted_at IS NULL filter.
 func (r *APIKeyRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Unscoped().Delete(&models.APIKey{}, "id = ?", id).Error
+	return r.db.WithContext(ctx).Delete(&models.APIKey{}, "id = ?", id).Error
 }
