@@ -17,22 +17,39 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+
+	"llm-router-platform/pkg/jwtsign"
 )
 
 // AuthMiddleware handles JWT authentication.
 type AuthMiddleware struct {
 	jwtSecret   []byte
+	signer      *jwtsign.Signer
 	userService *user.Service
 	logger      *zap.Logger
 }
 
 // NewAuthMiddleware creates a new auth middleware.
+//
+// Uses jwtsign.Signer when JWT.Algorithm selects RS256/EdDSA; otherwise
+// keeps the legacy HS256+secret behavior so existing deployments don't
+// need any config change to upgrade.
 func NewAuthMiddleware(cfg *config.JWTConfig, userService *user.Service, logger *zap.Logger) *AuthMiddleware {
-	return &AuthMiddleware{
+	m := &AuthMiddleware{
 		jwtSecret:   []byte(cfg.Secret),
 		userService: userService,
 		logger:      logger,
 	}
+	if signer, err := BuildJWTSigner(*cfg); err == nil {
+		m.signer = signer
+	} else {
+		// Don't fail boot — the legacy path still works as a fallback.
+		// BuildJWTSigner only errors when an explicit non-HS256 algorithm
+		// is mis-configured (missing keys), which we want surfaced loudly.
+		logger.Error("JWT signer build failed; falling back to HS256 secret only",
+			zap.Error(err))
+	}
+	return m
 }
 
 func (m *AuthMiddleware) JWT() gin.HandlerFunc {
@@ -84,6 +101,19 @@ func (m *AuthMiddleware) parseTokenClaims(authHeader string) (jwt.MapClaims, err
 	parts := strings.SplitN(authHeader, " ", 2)
 	if len(parts) != 2 || parts[0] != "Bearer" {
 		return nil, fmt.Errorf("invalid authorization format")
+	}
+
+	// Prefer the configured signer (handles HS256 / RS256 / EdDSA + key
+	// rotation via kid). Fall back to direct HMAC parsing if no signer was
+	// configured — keeps the legacy path working when the build helper
+	// errored.
+	if m.signer != nil {
+		claims := jwt.MapClaims{}
+		token, err := m.signer.Parse(parts[1], &claims)
+		if err != nil || !token.Valid {
+			return nil, fmt.Errorf("invalid token")
+		}
+		return claims, nil
 	}
 
 	token, err := jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {

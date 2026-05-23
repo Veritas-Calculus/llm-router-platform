@@ -197,10 +197,26 @@ type TurnstileConfig struct {
 }
 
 // JWTConfig holds JWT authentication configuration.
+//
+// HS256 path (default, legacy): Algorithm="" or "HS256" + Secret set.
+//
+// Asymmetric path: set Algorithm to "RS256" or "EdDSA", supply
+// PrivateKeyPEM (the active signing key), KeyID (its kid header value),
+// and optionally PreviousKeysPEM keyed by kid so a key rotation accepts
+// pre-rotation tokens until they expire. The matching PublicKeyPEM is
+// surfaced at /.well-known/jwks.json for downstream consumers.
+//
+// Migration runbook lives at docs/jwt-asymmetric-rotation.md.
 type JWTConfig struct {
 	Secret           string // #nosec G101 -- internal config, never serialized to API responses
 	ExpiresIn        time.Duration
 	RefreshExpiresIn time.Duration
+
+	Algorithm       string            // "" / "HS256" / "RS256" / "EdDSA"
+	KeyID           string            // header `kid`, e.g. "v1"
+	PrivateKeyPEM   string            // #nosec G101 -- signing key for RS256/EdDSA
+	PublicKeyPEM    string            // companion verify key (optional; derived from private)
+	PreviousKeysPEM map[string]string // kid → PEM, accepted at verify only
 }
 
 // RateLimitConfig holds rate limiting configuration.
