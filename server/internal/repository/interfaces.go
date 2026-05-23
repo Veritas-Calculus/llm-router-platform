@@ -45,6 +45,7 @@ type APIKeyRepo interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*models.APIKey, error)
 	GetByKeyHash(ctx context.Context, hash string) (*models.APIKey, error)
 	GetByProjectID(ctx context.Context, projectID uuid.UUID) ([]models.APIKey, error)
+	GetByUserIDs(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID][]models.APIKey, error)
 	GetAll(ctx context.Context) ([]models.APIKey, error)
 	GetActive(ctx context.Context) ([]models.APIKey, error)
 	Update(ctx context.Context, key *models.APIKey) error

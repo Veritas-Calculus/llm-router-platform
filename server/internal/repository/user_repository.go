@@ -137,6 +137,29 @@ func (r *APIKeyRepository) GetByProjectID(ctx context.Context, projectID uuid.UU
 	return keys, nil
 }
 
+// GetByUserIDs returns API keys for a batch of users, grouped by UserID.
+// Used by the GraphQL APIKeysByUserID dataloader to collapse N+1 queries
+// into a single round-trip. Users with no keys are present in the map with
+// an empty slice so the dataloader caller can distinguish "no keys" from
+// "unknown user".
+func (r *APIKeyRepository) GetByUserIDs(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID][]models.APIKey, error) {
+	out := make(map[uuid.UUID][]models.APIKey, len(userIDs))
+	for _, id := range userIDs {
+		out[id] = nil
+	}
+	if len(userIDs) == 0 {
+		return out, nil
+	}
+	var keys []models.APIKey
+	if err := r.db.WithContext(ctx).Where("user_id IN ?", userIDs).Find(&keys).Error; err != nil {
+		return nil, err
+	}
+	for _, k := range keys {
+		out[k.UserID] = append(out[k.UserID], k)
+	}
+	return out, nil
+}
+
 // GetAll retrieves all API keys (for admin view).
 func (r *APIKeyRepository) GetAll(ctx context.Context) ([]models.APIKey, error) {
 	var keys []models.APIKey

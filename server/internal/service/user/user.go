@@ -412,6 +412,13 @@ func (s *Service) GetAPIKeys(ctx context.Context, projectID uuid.UUID) ([]models
 	return s.apiKeyRepo.GetByProjectID(ctx, projectID)
 }
 
+// GetAPIKeysByUserIDs returns API keys for many users in a single query.
+// Used by the GraphQL dataloader to collapse parent→children N+1 patterns
+// (a list of users each rendering their apiKeys) into one batch.
+func (s *Service) GetAPIKeysByUserIDs(ctx context.Context, userIDs []uuid.UUID) (map[uuid.UUID][]models.APIKey, error) {
+	return s.apiKeyRepo.GetByUserIDs(ctx, userIDs)
+}
+
 // GetOrganizations returns all organizations a user has access to.
 func (s *Service) GetOrganizations(ctx context.Context, userID uuid.UUID) ([]models.Organization, error) {
 	return s.orgRepo.GetByUserID(ctx, userID)

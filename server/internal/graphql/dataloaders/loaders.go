@@ -53,17 +53,49 @@ func For(ctx context.Context) *Loaders {
 func newAPIKeyBatchFn(userSvc *user.Service) dataloader.BatchFunc[string, []models.APIKey] {
 	return func(ctx context.Context, userIDs []string) []*dataloader.Result[[]models.APIKey] {
 		results := make([]*dataloader.Result[[]models.APIKey], len(userIDs))
+
+		// Parse all IDs up front; collect valid ones for the batch query and
+		// pin Error results for any malformed string so callers see a
+		// per-key error rather than a global failure.
+		uuids := make([]uuid.UUID, 0, len(userIDs))
+		idIndex := make(map[uuid.UUID][]int, len(userIDs)) // duplicates safe
 		for i, uidStr := range userIDs {
 			uid, err := uuid.Parse(uidStr)
 			if err != nil {
 				results[i] = &dataloader.Result[[]models.APIKey]{Error: err}
 				continue
 			}
-			keys, err := userSvc.GetAPIKeys(ctx, uid)
-			if err != nil {
-				results[i] = &dataloader.Result[[]models.APIKey]{Error: err}
-			} else {
-				results[i] = &dataloader.Result[[]models.APIKey]{Data: keys}
+			if _, ok := idIndex[uid]; !ok {
+				uuids = append(uuids, uid)
+			}
+			idIndex[uid] = append(idIndex[uid], i)
+		}
+
+		if len(uuids) == 0 {
+			return results
+		}
+
+		// One IN-query rather than len(uuids) sequential round-trips.
+		grouped, err := userSvc.GetAPIKeysByUserIDs(ctx, uuids)
+		if err != nil {
+			// Fan the same error out to every position that didn't already
+			// fail on UUID parse.
+			for _, positions := range idIndex {
+				for _, i := range positions {
+					if results[i] == nil {
+						results[i] = &dataloader.Result[[]models.APIKey]{Error: err}
+					}
+				}
+			}
+			return results
+		}
+
+		for uid, positions := range idIndex {
+			keys := grouped[uid] // nil → empty slice in Data is fine
+			for _, i := range positions {
+				if results[i] == nil {
+					results[i] = &dataloader.Result[[]models.APIKey]{Data: keys}
+				}
 			}
 		}
 		return results
