@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useQuery } from '@apollo/client/react';
 import { gql } from '@apollo/client';
 import { useAuthStore } from '@/stores/authStore';
+import { useAuthHydrated } from '@/hooks/useAuthHydrated';
 import { ChevronUpDownIcon } from '@heroicons/react/24/outline';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -12,13 +13,16 @@ export default function OrgSwitcher() {
   const { selectedOrgId, setSelectedOrgId } = useAuthStore();
   const { data } = useQuery<any>(MY_ORGS);
   const orgs = useMemo(() => data?.myOrganizations || [], [data]);
+  const hydrated = useAuthHydrated();
 
-  // Auto-select first org
+  // Auto-select first org — gated on hydration so we never overwrite a
+  // persisted selectedOrgId that the rehydration is about to restore.
   useEffect(() => {
+    if (!hydrated) return;
     if (orgs.length > 0 && !selectedOrgId) {
       setSelectedOrgId(orgs[0].id);
     }
-  }, [orgs, selectedOrgId, setSelectedOrgId]);
+  }, [hydrated, orgs, selectedOrgId, setSelectedOrgId]);
 
   if (orgs.length < 2) return null;
 
