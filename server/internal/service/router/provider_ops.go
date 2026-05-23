@@ -102,6 +102,30 @@ func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *mo
 	return nil, errors.New("all API keys failed")
 }
 
+// IterationGate is an optional callback that the MCP tool-call loop invokes
+// before each follow-up LLM call. The caller (typically the chat handler)
+// supplies one to re-check the user's quota and balance, so an adversarial
+// assistant can't drain budget across an unbounded chain of tool calls
+// within a single request. Returning a non-nil error aborts the loop.
+type IterationGate func(ctx context.Context, iteration int) error
+
+type iterationGateCtxKey struct{}
+
+// WithIterationGate attaches a gate to ctx for executeChatWithMCP to honor.
+func WithIterationGate(ctx context.Context, gate IterationGate) context.Context {
+	if gate == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, iterationGateCtxKey{}, gate)
+}
+
+func iterationGateFromContext(ctx context.Context) IterationGate {
+	if v, ok := ctx.Value(iterationGateCtxKey{}).(IterationGate); ok {
+		return v
+	}
+	return nil
+}
+
 // executeChatWithMCP wraps executeChatOnce with MCP tool handling feedback loop.
 func (r *Router) executeChatWithMCP(ctx context.Context, p *models.Provider, apiKey *models.ProviderAPIKey, req *provider.ChatRequest) (*ChatResult, error) {
 	messages := make([]provider.Message, len(req.Messages))
@@ -110,8 +134,20 @@ func (r *Router) executeChatWithMCP(ctx context.Context, p *models.Provider, api
 	var totalMCPCalls int
 	var totalMCPErrors int
 
+	gate := iterationGateFromContext(ctx)
+
 	// Max 5 loops for tool calls to prevent infinite loops
 	for loop := 0; loop < 5; loop++ {
+		// Re-check quota/balance before every iteration after the first so a
+		// tool-call chain can't bill the user 5× their per-request budget.
+		// The very first iteration's budget was already gated by the chat
+		// handler before ExecuteChat was called.
+		if loop > 0 && gate != nil {
+			if err := gate(ctx, loop); err != nil {
+				return nil, fmt.Errorf("mcp tool-call loop aborted: %w", err)
+			}
+		}
+
 		result, err := r.executeChatOnce(ctx, p, apiKey, req)
 		if err != nil {
 			return nil, err

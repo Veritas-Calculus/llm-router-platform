@@ -127,6 +127,25 @@ func (h *ChatHandler) checkProjectQuota(c *gin.Context, projectObj *models.Proje
 	return nil
 }
 
+// buildIterationGate returns a router.IterationGate closure that re-runs
+// checkProjectQuota before each MCP tool-call follow-up LLM call. A nil
+// projectObj/userAPIKey means no gating (which is the conservative choice
+// for legacy callers that didn't run a quota check up front either).
+func (h *ChatHandler) buildIterationGate(c *gin.Context, projectObj *models.Project, userAPIKey *models.APIKey) router.IterationGate {
+	if projectObj == nil || userAPIKey == nil {
+		return nil
+	}
+	return func(_ context.Context, iteration int) error {
+		if msg := h.checkProjectQuota(c, projectObj, userAPIKey); msg != nil {
+			h.logger.Warn("mcp tool-call loop blocked mid-request",
+				zap.Int("iteration", iteration),
+				zap.String("reason", *msg))
+			return fmt.Errorf("quota or balance exhausted before iteration %d: %s", iteration, *msg)
+		}
+		return nil
+	}
+}
+
 // AnthropicMessagesRequest represents an Anthropic messages request.
 type AnthropicMessagesRequest struct {
 	Model       string             `json:"model" binding:"required"`
@@ -217,7 +236,8 @@ func (h *ChatHandler) AnthropicMessages(c *gin.Context) {
 		"max_tokens":  providerReq.MaxTokens,
 	}, providerReq.Messages)
 
-	result, err := h.router.ExecuteChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
+	chatCtx := router.WithIterationGate(c.Request.Context(), h.buildIterationGate(c, projectObj, userAPIKey))
+	result, err := h.router.ExecuteChat(chatCtx, selectedProvider, apiKey, providerReq, 3)
 	if err != nil || result == nil {
 		if err == nil {
 			err = errors.New("empty provider response")
@@ -918,7 +938,8 @@ func (h *ChatHandler) handleNonStreamResponse(c *gin.Context, req ChatCompletion
 		"max_tokens":  req.MaxTokens,
 	}, providerReq.Messages)
 
-	result, err := h.router.ExecuteChat(c.Request.Context(), selectedProvider, apiKey, providerReq, 3)
+	chatCtx := router.WithIterationGate(c.Request.Context(), h.buildIterationGate(c, projectObj, userAPIKey))
+	result, err := h.router.ExecuteChat(chatCtx, selectedProvider, apiKey, providerReq, 3)
 
 	if err != nil || result == nil {
 		if err != nil {
