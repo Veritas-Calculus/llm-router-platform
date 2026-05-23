@@ -62,6 +62,10 @@ func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *mo
 		}
 	}
 	var lastErr error
+	// Aggregate provider-level failures across all attempts so a multi-key
+	// retry that's actually a key-pool problem doesn't trip the breaker
+	// prematurely; mark once at the end if we saw one.
+	sawProviderLevelFailure := false
 
 	for attempt := 0; attempt < maxRetries && currentKey != nil; attempt++ {
 		result, err := r.executeChatWithMCP(ctx, p, currentKey, req)
@@ -82,13 +86,16 @@ func (r *Router) ExecuteChat(ctx context.Context, p *models.Provider, apiKey *mo
 		if isQuotaOrRateLimitError(err) {
 			r.MarkKeyFailed(currentKey.ID, err.Error())
 		} else if isProviderLevelError(err) {
-			r.MarkProviderFailure(p.ID)
+			sawProviderLevelFailure = true
 		}
 
 		// Try next key
 		currentKey, _ = r.SelectNextAPIKey(ctx, p.ID, currentKey.ID)
 	}
 
+	if sawProviderLevelFailure {
+		r.MarkProviderFailure(p.ID)
+	}
 	if lastErr != nil {
 		return nil, lastErr
 	}
@@ -500,6 +507,11 @@ func (r *Router) ExecuteStreamChat(ctx context.Context, p *models.Provider, apiK
 		}
 	}
 	var lastErr error
+	// sawProviderLevelFailure aggregates across retries — we mark the
+	// breaker at most once per call, otherwise a single user request that
+	// rotates through three keys can drive consecutiveErrors from 2 to 5
+	// in one shot and trip the breaker on what's really a key-pool problem.
+	sawProviderLevelFailure := false
 
 	for attempt := 0; attempt < maxRetries && currentKey != nil; attempt++ {
 		client, err := r.GetProviderClientWithKey(ctx, p, currentKey)
@@ -525,7 +537,7 @@ func (r *Router) ExecuteStreamChat(ctx context.Context, p *models.Provider, apiK
 			if isQuotaOrRateLimitError(err) {
 				r.MarkKeyFailed(currentKey.ID, err.Error())
 			} else if isProviderLevelError(err) {
-				r.MarkProviderFailure(p.ID)
+				sawProviderLevelFailure = true
 			}
 			currentKey, _ = r.SelectNextAPIKey(ctx, p.ID, currentKey.ID)
 			continue
@@ -536,6 +548,9 @@ func (r *Router) ExecuteStreamChat(ctx context.Context, p *models.Provider, apiK
 		return &StreamResult{Client: client, Stream: stream, UsedKey: currentKey}, nil
 	}
 
+	if sawProviderLevelFailure {
+		r.MarkProviderFailure(p.ID)
+	}
 	if lastErr != nil {
 		return nil, lastErr
 	}
