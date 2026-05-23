@@ -28,8 +28,12 @@ export default function OrgSwitcher() {
 
   return (
     <div className="px-4 pb-2">
+      <label htmlFor="org-switcher" className="sr-only">
+        Select active organization
+      </label>
       <div className="relative">
         <select
+          id="org-switcher"
           value={selectedOrgId || ''}
           onChange={(e) => setSelectedOrgId(e.target.value)}
           className="w-full appearance-none px-3 py-2 pr-8 bg-apple-gray-50 border border-apple-gray-200 rounded-xl text-sm font-medium text-apple-gray-700 focus:ring-2 focus:ring-apple-blue focus:border-transparent cursor-pointer"
@@ -38,7 +42,7 @@ export default function OrgSwitcher() {
             <option key={org.id} value={org.id}>{org.name}</option>
           ))}
         </select>
-        <ChevronUpDownIcon className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-apple-gray-400 pointer-events-none" />
+        <ChevronUpDownIcon aria-hidden="true" className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-apple-gray-400 pointer-events-none" />
       </div>
     </div>
   );

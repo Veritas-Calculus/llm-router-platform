@@ -1,5 +1,8 @@
 {
     "common": {
+        "user_menu": "用户菜单",
+        "open_menu": "打开导航菜单",
+        "select_org": "选择活动组织",
         "save": "保存",
         "saving": "保存中...",
         "saved": "已保存",
@@ -95,6 +98,7 @@
         "of_all_requests": "所有请求"
     },
     "auth": {
+        "login_register_toggle": "登录或注册",
         "login": "登录",
         "register": "注册",
         "email": "邮箱",

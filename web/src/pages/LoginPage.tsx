@@ -234,11 +234,15 @@ function LoginPage() {
         </div>
 
         <div className="card">
-          {/* Segmented Control */}
-          <div className="flex bg-apple-gray-100 rounded-xl p-1 mb-8 border border-apple-gray-200">
+          {/* Segmented Control — role=tablist so screen readers announce the
+              two buttons as a coordinated pair and report which is active. */}
+          <div role="tablist" aria-label={t('auth.login_register_toggle')} className="flex bg-apple-gray-100 rounded-xl p-1 mb-8 border border-apple-gray-200">
             <button
+              role="tab"
+              aria-selected={isLogin}
+              type="button"
               onClick={() => setIsLogin(true)}
-              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-apple-blue ${
                 isLogin
                   ? 'bg-white text-apple-blue shadow-sm border border-apple-gray-200'
                   : 'text-apple-gray-500 hover:text-apple-gray-700'
@@ -247,13 +251,16 @@ function LoginPage() {
               {t('auth.login')}
             </button>
             <button
+              role="tab"
+              aria-selected={!isLogin}
+              type="button"
               onClick={() => setIsLogin(false)}
               disabled={!registrationOpen}
-              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 ${
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-apple-blue ${
                 !isLogin
                   ? 'bg-white text-apple-blue shadow-sm border border-apple-gray-200'
                   : !registrationOpen
-                    ? 'text-apple-gray-300 cursor-not-allowed'
+                    ? 'text-apple-gray-400 cursor-not-allowed'
                     : 'text-apple-gray-500 hover:text-apple-gray-700'
               }`}
               title={!registrationOpen ? t('auth.registration_closed_hint') : undefined}

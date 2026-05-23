@@ -357,9 +357,13 @@ function Layout() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="p-2 -ml-2 text-apple-gray-600 dark:text-gray-300 lg:hidden"
+              type="button"
+              aria-label={t('common.open_menu') || 'Open navigation menu'}
+              aria-expanded={isSidebarOpen}
+              aria-controls="primary-navigation"
+              className="p-2 -ml-2 text-apple-gray-600 dark:text-gray-300 lg:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-apple-blue rounded-md"
             >
-              <Bars3Icon className="w-5 h-5" />
+              <Bars3Icon className="w-5 h-5" aria-hidden="true" />
             </button>
           </div>
 
@@ -384,7 +388,11 @@ function Layout() {
             <div className="relative" ref={userMenuRef}>
               <button
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className="flex items-center gap-2.5 pl-3 pr-2 py-1.5 rounded-xl hover:bg-apple-gray-50 dark:hover:bg-white/5 transition-colors"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={isUserMenuOpen}
+                aria-label={t('common.user_menu') || 'User menu'}
+                className="flex items-center gap-2.5 pl-3 pr-2 py-1.5 rounded-xl hover:bg-apple-gray-50 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-apple-blue"
               >
                 <div className="hidden sm:block text-right">
                   <p className="text-sm font-medium text-apple-gray-900 dark:text-white leading-tight">

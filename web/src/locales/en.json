@@ -1,5 +1,8 @@
 {
     "common": {
+        "user_menu": "User menu",
+        "open_menu": "Open navigation menu",
+        "select_org": "Select active organization",
         "save": "Save",
         "saving": "Saving...",
         "saved": "Saved",
@@ -97,6 +100,7 @@
     "auth": {
         "login": "Sign In",
         "register": "Sign Up",
+        "login_register_toggle": "Sign in or sign up",
         "email": "Email",
         "password": "Password",
         "new_password": "New Password",
