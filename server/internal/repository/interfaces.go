@@ -230,6 +230,8 @@ type SubscriptionRepo interface {
 	UpdateOrder(ctx context.Context, order *models.Order) error
 	UpdateUserBalance(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID string) error
 	UpdateUserBalanceIdempotent(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID, idempotencyKey string) error
+	FulfillRechargeOrder(ctx context.Context, userID uuid.UUID, amount float64, txType, description string, order *models.Order, idempotencyKey string) error
+	FulfillSubscriptionOrder(ctx context.Context, sub *models.Subscription, order *models.Order) error
 }
 
 // TransactionRepo defines the interface for balance transaction data access.

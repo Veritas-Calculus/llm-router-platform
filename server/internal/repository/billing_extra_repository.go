@@ -181,6 +181,85 @@ func isDuplicateTxIdempotency(err error) bool {
 	return strings.Contains(msg, "duplicate key") || strings.Contains(msg, "23505")
 }
 
+// FulfillRechargeOrder credits the user's balance and marks the order paid
+// inside a single transaction. Used by payment-webhook fulfillment so a DB
+// hiccup between the balance update and the status update cannot leave a
+// paid-but-unrecorded order (which would re-credit on the upstream's next
+// retry). The idempotency key on the transaction insert is the last-line
+// guard against duplicate credits.
+func (r *SubscriptionRepository) FulfillRechargeOrder(ctx context.Context, userID uuid.UUID, amount float64, txType, description string, order *models.Order, idempotencyKey string) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, "id = ?", userID).Error; err != nil {
+			return err
+		}
+		user.Balance += amount
+		if err := tx.Save(&user).Error; err != nil {
+			return err
+		}
+
+		txn := &models.Transaction{
+			OrgID:       userID,
+			UserID:      userID,
+			Type:        txType,
+			Amount:      amount,
+			Balance:     user.Balance,
+			Description: description,
+		}
+		if order != nil {
+			txn.ReferenceID = order.OrderNo
+		}
+		if idempotencyKey != "" {
+			txn.IdempotencyKey = &idempotencyKey
+		}
+		if err := tx.Create(txn).Error; err != nil {
+			return err
+		}
+
+		if order != nil {
+			order.Status = "paid"
+			if err := tx.Save(order).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil && idempotencyKey != "" && isDuplicateTxIdempotency(err) {
+		// Already credited on a previous retry — make sure the order is
+		// marked paid so subsequent webhook retries take the fast-path.
+		if order != nil && order.Status != "paid" {
+			order.Status = "paid"
+			_ = r.db.WithContext(ctx).Save(order).Error
+		}
+		return nil
+	}
+	return err
+}
+
+// FulfillSubscriptionOrder upserts the subscription and marks the related
+// order paid in a single transaction. Mirrors FulfillRechargeOrder so the
+// "subscription activated but order still pending" failure mode goes away.
+func (r *SubscriptionRepository) FulfillSubscriptionOrder(ctx context.Context, sub *models.Subscription, order *models.Order) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if sub.ID == uuid.Nil {
+			if err := tx.Create(sub).Error; err != nil {
+				return err
+			}
+		} else {
+			if err := tx.Save(sub).Error; err != nil {
+				return err
+			}
+		}
+		if order != nil {
+			order.Status = "paid"
+			if err := tx.Save(order).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // TransactionRepository handles transaction data access.
 type TransactionRepository struct {
 	db *gorm.DB

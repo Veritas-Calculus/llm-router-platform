@@ -263,13 +263,6 @@ func (s *PaymentService) fulfillOrder(ctx context.Context, sess *stripe.Checkout
 			return nil
 		}
 	}
-	markOrderPaid := func() error {
-		if err != nil || order == nil {
-			return nil
-		}
-		order.Status = "paid"
-		return s.subRepo.UpdateOrder(ctx, order)
-	}
 
 	if orderType == "recharge" {
 		// Read the authoritative amount from the signed webhook event payload,
@@ -292,14 +285,13 @@ func (s *PaymentService) fulfillOrder(ctx context.Context, sess *stripe.Checkout
 				zap.Float64("order_amount", order.Amount))
 			return fmt.Errorf("amount mismatch: session=%.2f order=%.2f", amount, order.Amount)
 		}
-		// Idempotency-key = orderNo so a Stripe webhook redelivery that bypasses
-		// both the Redis SETNX dedupe and the Order.Status=="paid" guard cannot
-		// double-credit the user (the partial unique index on
-		// transactions(idempotency_key) rejects the second insert).
-		if err := s.subRepo.UpdateUserBalanceIdempotent(ctx, userID, amount, "recharge", "Credit Top-up via Stripe", orderNo, "stripe:"+orderNo); err != nil {
-			return err
-		}
-		return markOrderPaid()
+		// Single transaction: balance update + transaction insert + order
+		// status flip. Previously these were three separate writes, so a DB
+		// blip between balance and order could leave the user credited but
+		// the order still "pending", causing the next webhook retry to
+		// double-credit. idempotency_key="stripe:<orderNo>" is the last-line
+		// guard via the partial unique index on transactions.
+		return s.subRepo.FulfillRechargeOrder(ctx, userID, amount, "recharge", "Credit Top-up via Stripe", order, "stripe:"+orderNo)
 	}
 
 	// Default: Subscription fulfillment
@@ -368,15 +360,11 @@ func (s *PaymentService) fulfillOrder(ctx context.Context, sess *stripe.Checkout
 		sub.StripeSubscriptionID = &subscriptionID
 	}
 
-	if sub.ID == uuid.Nil {
-		err = s.subRepo.Create(ctx, sub)
-	} else {
-		err = s.subRepo.Update(ctx, sub)
-	}
-	if err != nil {
-		return err
-	}
-	return markOrderPaid()
+	// Atomic: subscription upsert + order paid flip. Without this a DB blip
+	// between the subscription Save and UpdateOrder would leave the user
+	// entitled but the order still pending, so the next webhook retry would
+	// attempt a redundant activation against the now-active subscription.
+	return s.subRepo.FulfillSubscriptionOrder(ctx, sub, order)
 }
 
 // CreatePortalSession creates a Stripe billing portal session.
