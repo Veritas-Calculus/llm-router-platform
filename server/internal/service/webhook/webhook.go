@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
 	"llm-router-platform/pkg/sanitize"
@@ -80,6 +81,39 @@ func generateSecret() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// encryptSecretAtRest wraps the plaintext secret with AES-256-GCM if the
+// crypto package is initialized. Returns the original plaintext on failure
+// so first-boot envs without ENCRYPTION_KEY still work (with a logged
+// warning); production deployments initialize crypto in main.go and this
+// path is the normal one.
+func (s *service) encryptSecretAtRest(plaintext string) string {
+	if !crypto.IsInitialized() {
+		return plaintext
+	}
+	enc, err := crypto.Encrypt(plaintext)
+	if err != nil {
+		s.logger.Warn("webhook: failed to encrypt secret, storing plaintext", zap.Error(err))
+		return plaintext
+	}
+	return enc
+}
+
+// decryptSecret reads the at-rest value back into plaintext. Migration from
+// legacy plaintext rows is automatic: anything that doesn't decrypt cleanly
+// is assumed to be a pre-encryption row and returned as-is.
+func (s *service) decryptSecret(stored string) string {
+	if !crypto.IsInitialized() || stored == "" {
+		return stored
+	}
+	dec, err := crypto.Decrypt(stored)
+	if err != nil {
+		// Likely a legacy plaintext row; the next UpdateEndpoint will
+		// re-save it through encryptSecretAtRest.
+		return stored
+	}
+	return dec
 }
 
 // computeBackoff returns the next-attempt delay for a delivery on its
@@ -147,7 +181,7 @@ func (s *service) CreateEndpoint(ctx context.Context, projectID uuid.UUID, url s
 	endpoint := &models.WebhookEndpoint{
 		ProjectID:   projectID,
 		URL:         url,
-		Secret:      secret,
+		Secret:      s.encryptSecretAtRest(secret),
 		Events:      events,
 		IsActive:    isActive,
 		Description: description,
@@ -157,6 +191,9 @@ func (s *service) CreateEndpoint(ctx context.Context, projectID uuid.UUID, url s
 		return nil, fmt.Errorf("failed to create webhook endpoint: %w", err)
 	}
 
+	// Return the plaintext secret in the response so the resolver can show it
+	// to the user exactly once. The DB row holds the encrypted form.
+	endpoint.Secret = secret
 	return endpoint, nil
 }
 
@@ -284,7 +321,17 @@ func (s *service) executeDelivery(ctx context.Context, delivery *models.WebhookD
 	delivery.RetryCount++
 
 	payloadBytes := []byte(delivery.Payload)
-	signature := computeHMAC(payloadBytes, delivery.Endpoint.Secret)
+	secret := s.decryptSecret(delivery.Endpoint.Secret)
+
+	// Stripe-style timestamped signature so receivers can enforce a
+	// freshness window: `t=<unix>,v1=<HMAC(t + "." + payload)>`. We also
+	// keep emitting X-Hub-Signature-256 (HMAC of just the payload) for
+	// backwards compatibility with consumers built against the previous
+	// scheme; new consumers should validate Webhook-Signature.
+	timestamp := time.Now().Unix()
+	signingInput := append([]byte(strconv.FormatInt(timestamp, 10)+"."), payloadBytes...)
+	timestampedSig := computeHMAC(signingInput, secret)
+	legacySig := computeHMAC(payloadBytes, secret)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", delivery.Endpoint.URL, bytes.NewBuffer(payloadBytes))
 	if err != nil {
@@ -297,7 +344,9 @@ func (s *service) executeDelivery(ctx context.Context, delivery *models.WebhookD
 	req.Header.Set("User-Agent", "LLM-Router-Platform/Webhook")
 	req.Header.Set("X-VC-Event", delivery.EventType)
 	req.Header.Set("X-VC-Delivery", delivery.ID.String())
-	req.Header.Set("X-Hub-Signature-256", "sha256="+signature)
+	req.Header.Set("Webhook-Signature", fmt.Sprintf("t=%d,v1=%s", timestamp, timestampedSig))
+	req.Header.Set("Webhook-Timestamp", strconv.FormatInt(timestamp, 10))
+	req.Header.Set("X-Hub-Signature-256", "sha256="+legacySig)
 
 	start := time.Now()
 	resp, err := s.client.Do(req)
