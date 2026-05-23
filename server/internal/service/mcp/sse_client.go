@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"llm-router-platform/internal/models"
@@ -25,24 +26,25 @@ type SSEClient struct {
 
 	httpClient *http.Client
 	postURL    string // The URL to send POST requests to (received via SSE)
-	
+
 	pending   map[int64]chan *JSONRPCResponse
 	pendingMu sync.Mutex
-	nextID    int64
-	
+	nextID    atomic.Int64
+
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
 // NewSSEClient creates a new SSE-based MCP client. allowLocal gates SSRF.
 func NewSSEClient(server models.MCPServer, logger *zap.Logger, allowLocal bool) (*SSEClient, error) {
-	return &SSEClient{
+	c := &SSEClient{
 		server:     server,
 		logger:     logger,
 		pending:    make(map[int64]chan *JSONRPCResponse),
-		nextID:     1,
 		httpClient: sanitize.SafeHTTPClient(allowLocal, 60*time.Second),
-	}, nil
+	}
+	c.nextID.Store(1)
+	return c, nil
 }
 
 func (c *SSEClient) Connect(ctx context.Context) error {
@@ -168,12 +170,18 @@ func (c *SSEClient) handleResponse(resp *JSONRPCResponse) {
 }
 
 func (c *SSEClient) sendRequest(ctx context.Context, method string, params interface{}) (*JSONRPCResponse, error) {
-	c.pendingMu.Lock()
-	id := c.nextID
-	c.nextID++
+	id := c.nextID.Add(1) - 1
 	ch := make(chan *JSONRPCResponse, 1)
+
+	c.pendingMu.Lock()
 	c.pending[id] = ch
 	c.pendingMu.Unlock()
+
+	clearPending := func() {
+		c.pendingMu.Lock()
+		delete(c.pending, id)
+		c.pendingMu.Unlock()
+	}
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
@@ -184,22 +192,26 @@ func (c *SSEClient) sendRequest(ctx context.Context, method string, params inter
 
 	data, err := json.Marshal(req)
 	if err != nil {
+		clearPending()
 		return nil, err
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.postURL, bytes.NewReader(data))
 	if err != nil {
+		clearPending()
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
+		clearPending()
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
+		clearPending()
 		return nil, fmt.Errorf("POST request failed: status %d", resp.StatusCode)
 	}
 
@@ -210,8 +222,10 @@ func (c *SSEClient) sendRequest(ctx context.Context, method string, params inter
 		}
 		return r, nil
 	case <-ctx.Done():
+		clearPending()
 		return nil, ctx.Err()
 	case <-time.After(30 * time.Second):
+		clearPending()
 		return nil, fmt.Errorf("timeout waiting for response from MCP SSE server")
 	}
 }

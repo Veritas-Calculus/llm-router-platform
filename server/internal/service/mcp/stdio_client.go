@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"llm-router-platform/internal/models"
@@ -44,26 +45,33 @@ type JSONRPCError struct {
 type StdioClient struct {
 	server models.MCPServer
 	logger *zap.Logger
-	
+
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout io.ReadCloser
-	
+
+	// writeMu serializes Write() calls against stdin. The OS pipe buffer is
+	// only 4–64KB on Unix, so two concurrent senders pushing larger JSON-RPC
+	// requests would interleave bytes at the buffer boundary and corrupt
+	// every line the child tried to parse.
+	writeMu sync.Mutex
+
 	pending   map[int64]chan *JSONRPCResponse
 	pendingMu sync.Mutex
-	nextID    int64
-	
+	nextID    atomic.Int64
+
 	initialized bool
 }
 
 // NewStdioClient creates a new stdio-based MCP client.
 func NewStdioClient(server models.MCPServer, logger *zap.Logger) (*StdioClient, error) {
-	return &StdioClient{
+	c := &StdioClient{
 		server:  server,
 		logger:  logger,
 		pending: make(map[int64]chan *JSONRPCResponse),
-		nextID:  1,
-	}, nil
+	}
+	c.nextID.Store(1)
+	return c, nil
 }
 
 // allowedMCPCommands is an allowlist of executables permitted for MCP stdio transport.
@@ -268,12 +276,20 @@ func (c *StdioClient) listen() {
 }
 
 func (c *StdioClient) sendRequest(ctx context.Context, method string, params interface{}) (*JSONRPCResponse, error) {
-	c.pendingMu.Lock()
-	id := c.nextID
-	c.nextID++
+	id := c.nextID.Add(1) - 1
 	ch := make(chan *JSONRPCResponse, 1)
+
+	c.pendingMu.Lock()
 	c.pending[id] = ch
 	c.pendingMu.Unlock()
+
+	// Helper so every early return cleans up the pending entry — otherwise
+	// a Marshal/Write failure leaks the channel until process exit.
+	clearPending := func() {
+		c.pendingMu.Lock()
+		delete(c.pending, id)
+		c.pendingMu.Unlock()
+	}
 
 	req := JSONRPCRequest{
 		JSONRPC: "2.0",
@@ -284,11 +300,17 @@ func (c *StdioClient) sendRequest(ctx context.Context, method string, params int
 
 	data, err := json.Marshal(req)
 	if err != nil {
+		clearPending()
 		return nil, err
 	}
 
+	// Serialize the write so two concurrent callers don't interleave bytes
+	// across the OS pipe buffer boundary.
+	c.writeMu.Lock()
 	_, err = c.stdin.Write(append(data, '\n'))
+	c.writeMu.Unlock()
 	if err != nil {
+		clearPending()
 		return nil, err
 	}
 
@@ -299,14 +321,10 @@ func (c *StdioClient) sendRequest(ctx context.Context, method string, params int
 		}
 		return resp, nil
 	case <-ctx.Done():
-		c.pendingMu.Lock()
-		delete(c.pending, id)
-		c.pendingMu.Unlock()
+		clearPending()
 		return nil, ctx.Err()
 	case <-time.After(30 * time.Second):
-		c.pendingMu.Lock()
-		delete(c.pending, id)
-		c.pendingMu.Unlock()
+		clearPending()
 		return nil, fmt.Errorf("timeout waiting for response from MCP server")
 	}
 }
