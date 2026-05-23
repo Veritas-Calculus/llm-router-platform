@@ -389,8 +389,32 @@ func (r *Router) findHealthyProvider(providerID uuid.UUID, providers []models.Pr
 	return nil
 }
 
+// filterHealthyProviders returns providers whose circuit breaker is closed
+// (or half-open and accepting probes). If every provider is unhealthy, the
+// original list is returned so the strategy can still pick something — better
+// to attempt and fail fast than refuse to route entirely.
+func (r *Router) filterHealthyProviders(providers []models.Provider) []models.Provider {
+	healthy := make([]models.Provider, 0, len(providers))
+	for i := range providers {
+		if r.IsProviderHealthy(providers[i].ID) {
+			healthy = append(healthy, providers[i])
+		}
+	}
+	if len(healthy) == 0 {
+		return providers
+	}
+	return healthy
+}
+
 // selectByStrategy selects a provider based on the configured routing strategy.
+//
+// Strategy selectors used to consider any active provider — a tripped circuit
+// breaker only mattered once ExecuteChat ran, so a request would be routed at
+// a provider the breaker had just decided was unhealthy, waste an attempt,
+// and fail. Filter to healthy providers first; only fall back to the unfiltered
+// set if everything is open.
 func (r *Router) selectByStrategy(ctx context.Context, modelName string, providers []models.Provider) *models.Provider {
+	providers = r.filterHealthyProviders(providers)
 	switch r.strategy {
 	case StrategyRoundRobin:
 		return r.selectRoundRobin(providers)
@@ -405,7 +429,9 @@ func (r *Router) selectByStrategy(ctx context.Context, modelName string, provide
 	}
 }
 
-// RouteWithFallback attempts routing with fallback providers.
+// RouteWithFallback attempts routing with fallback providers, in priority
+// order. Skips providers whose circuit breaker is open so an unhealthy
+// high-priority provider doesn't preempt a healthy lower-priority one.
 func (r *Router) RouteWithFallback(ctx context.Context, modelName string, maxRetries int) (*models.Provider, *models.ProviderAPIKey, error) {
 	providers, err := r.providerRepo.GetActive(ctx)
 	if err != nil {
@@ -417,6 +443,7 @@ func (r *Router) RouteWithFallback(ctx context.Context, modelName string, maxRet
 	}
 
 	sortByPriority(providers)
+	providers = r.filterHealthyProviders(providers)
 
 	for i := 0; i < len(providers) && i < maxRetries; i++ {
 		apiKey, err := r.selectAPIKey(ctx, providers[i].ID)
