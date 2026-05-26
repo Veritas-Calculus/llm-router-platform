@@ -119,7 +119,7 @@ func (s *SubscriptionService) ChangePlan(ctx context.Context, orgID uuid.UUID, u
 		return nil, fmt.Errorf("plan is not available")
 	}
 
-	if plan.PriceMonth <= 0 {
+	if !plan.PriceMonth.IsPositive() {
 		return s.changeFreePlan(ctx, orgID, planID, plan)
 	}
 
@@ -178,7 +178,7 @@ func (s *SubscriptionService) changePaidPlanWithBalance(ctx context.Context, org
 
 	now := time.Now()
 	orderNo := fmt.Sprintf("ORD-BAL-%d-%s", now.Unix(), uuid.New().String()[:8])
-	amount := roundCost(plan.PriceMonth)
+	amount := plan.PriceMonth.Round(models.MoneyScale)
 	var updated models.Subscription
 
 	err := s.db.WithContext(txCtx).Transaction(func(tx *gorm.DB) error {
@@ -196,12 +196,12 @@ func (s *SubscriptionService) changePaidPlanWithBalance(ctx context.Context, org
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", userID).Error; err != nil {
 			return err
 		}
-		if user.Balance < amount {
+		if user.Balance.Cmp(amount) < 0 {
 			return fmt.Errorf("insufficient balance")
 		}
 
-		user.Balance = roundCost(user.Balance - amount)
-		if err := tx.Model(&user).Update("balance", user.Balance).Error; err != nil {
+		user.Balance = models.MoneySub(user.Balance, amount)
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("balance", user.Balance).Error; err != nil {
 			return err
 		}
 
@@ -209,7 +209,7 @@ func (s *SubscriptionService) changePaidPlanWithBalance(ctx context.Context, org
 			OrgID:         orgID,
 			PlanID:        plan.ID,
 			OrderNo:       orderNo,
-			Amount:        amount,
+			Amount:        plan.PriceMonth,
 			Status:        "paid",
 			PaymentMethod: "balance",
 		}
@@ -221,7 +221,7 @@ func (s *SubscriptionService) changePaidPlanWithBalance(ctx context.Context, org
 			OrgID:       orgID,
 			UserID:      userID,
 			Type:        "deduction",
-			Amount:      -amount,
+			Amount:      models.MoneyNeg(amount),
 			Balance:     user.Balance,
 			Description: "Subscription plan: " + plan.Name,
 			ReferenceID: orderNo,

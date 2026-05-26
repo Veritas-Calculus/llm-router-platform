@@ -25,6 +25,7 @@ const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const WebhooksPage = lazy(() => import('@/pages/WebhooksPage'));
 const DlpSettingsPage = lazy(() => import('@/pages/DlpSettingsPage'));
 const UserDashboardPage = lazy(() => import('@/pages/UserDashboardPage'));
+const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'));
 
 
 // Admin pages
@@ -193,6 +194,8 @@ function App() {
           <Route path="admin/sla" element={<Navigate to="/admin/monitoring" replace />} />
           <Route path="admin/sla/alerts" element={<Navigate to="/admin/monitoring" replace />} />
           <Route path="admin/visual-router" element={<Navigate to="/admin/routing-rules" replace />} />
+
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
     </Suspense>

@@ -65,6 +65,10 @@ const (
 	failedKeyPrefix = "router:failed_key:"
 	// cacheTTL is the TTL for model caches.
 	cacheTTL = 5 * time.Minute
+
+	metricsLookupTimeout          = 250 * time.Millisecond
+	redisKeyOperationTimeout      = 500 * time.Millisecond
+	modelDiscoveryProviderTimeout = 2 * time.Second
 )
 
 // Router handles request routing to LLM providers.
@@ -154,7 +158,10 @@ func (r *Router) GetProviderCircuitState(providerID uuid.UUID) (CircuitState, in
 // resolveProviderName does a best-effort lookup of a provider's name by ID.
 // Used for Prometheus labels — must not block on DB.
 func (r *Router) resolveProviderName(providerID uuid.UUID) string {
-	p, err := r.providerRepo.GetByID(context.Background(), providerID)
+	ctx, cancel := context.WithTimeout(context.Background(), metricsLookupTimeout)
+	defer cancel()
+
+	p, err := r.providerRepo.GetByID(ctx, providerID)
 	if err != nil {
 		return providerID.String()
 	}
@@ -169,7 +176,7 @@ func (r *Router) SetRedisClient(client *redis.Client) {
 // getModelProviderCache returns a cached map of model name (lowercase) → provider index.
 // Refreshes from DB every 5 minutes. Uses singleflight to prevent thundering herd
 // when multiple goroutines hit an expired cache simultaneously.
-func (r *Router) getModelProviderCache(providers []models.Provider) map[string]int {
+func (r *Router) getModelProviderCache(ctx context.Context, providers []models.Provider) map[string]int {
 	r.modelCacheMu.RLock()
 	if r.modelCache != nil && time.Since(r.modelCache.fetchedAt) < cacheTTL {
 		result := r.modelCache.modelToProviderIdx
@@ -190,7 +197,7 @@ func (r *Router) getModelProviderCache(providers []models.Provider) map[string]i
 
 		result := make(map[string]int)
 		for i := range providers {
-			dbModels, err := r.modelRepo.GetByProvider(context.Background(), providers[i].ID)
+			dbModels, err := r.modelRepo.GetByProvider(ctx, providers[i].ID)
 			if err != nil {
 				continue
 			}
@@ -226,9 +233,12 @@ func (r *Router) getDiscoveryCache() map[string]string {
 }
 
 // refreshDiscoveryCache rebuilds the model→provider cache by querying upstreams.
-func (r *Router) refreshDiscoveryCache(providers []models.Provider) map[string]string {
+func (r *Router) refreshDiscoveryCache(ctx context.Context, providers []models.Provider) map[string]string {
 	result := make(map[string]string)
 	for i := range providers {
+		if ctx.Err() != nil {
+			break
+		}
 		p := &providers[i]
 		client, ok := r.registry.Get(p.Name)
 		if !ok && !p.RequiresAPIKey {
@@ -241,8 +251,8 @@ func (r *Router) refreshDiscoveryCache(providers []models.Provider) map[string]s
 		} else if !ok {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		upstreamModels, err := client.ListModels(ctx)
+		providerCtx, cancel := context.WithTimeout(ctx, modelDiscoveryProviderTimeout)
+		upstreamModels, err := client.ListModels(providerCtx)
 		cancel()
 		if err != nil {
 			continue
@@ -308,13 +318,17 @@ func (r *Router) route(ctx context.Context, modelName string, callerKey *models.
 	}
 
 	var selectedProvider *models.Provider
+	var matchedRoutingRule bool
 
 	// 1. Evaluate explicit Routing Rules
-	selectedProvider = r.evaluateRoutingRules(ctx, modelName, providers)
+	selectedProvider, matchedRoutingRule = r.evaluateRoutingRules(ctx, modelName, providers)
+	if matchedRoutingRule && selectedProvider == nil {
+		return nil, nil, errors.New("routing rule target provider is unavailable")
+	}
 
 	// 2. Try to find provider based on model name patterns (Heuristics)
 	if selectedProvider == nil {
-		selectedProvider = r.findProviderForModel(modelName, providers)
+		selectedProvider = r.findProviderForModel(ctx, modelName, providers)
 	}
 
 	// 3. If no specific provider found, use strategy selection
@@ -335,11 +349,15 @@ func (r *Router) route(ctx context.Context, modelName string, callerKey *models.
 	return selectedProvider, apiKey, nil
 }
 
-// evaluateRoutingRules checks explicit routing rules and returns a matching provider, or nil.
-func (r *Router) evaluateRoutingRules(ctx context.Context, modelName string, providers []models.Provider) *models.Provider {
+// evaluateRoutingRules checks explicit routing rules and returns a matching
+// provider plus whether any rule matched the model. A matched rule is
+// authoritative: if its target and optional fallback are unavailable, callers
+// should fail instead of silently evaluating lower-priority rules or generic
+// strategies.
+func (r *Router) evaluateRoutingRules(ctx context.Context, modelName string, providers []models.Provider) (*models.Provider, bool) {
 	rules, err := r.routingRuleRepo.GetActive(ctx)
 	if err != nil || len(rules) == 0 {
-		return nil
+		return nil, false
 	}
 
 	// Sort by Priority DESC, CreatedAt ASC
@@ -357,22 +375,19 @@ func (r *Router) evaluateRoutingRules(ctx context.Context, modelName string, pro
 
 		// Try to find the target provider
 		if p := r.findHealthyProvider(rule.TargetProviderID, providers); p != nil {
-			return p
+			return p, true
 		}
 
 		// Try fallback provider
 		if rule.FallbackProviderID != nil {
 			if p := r.findHealthyProvider(*rule.FallbackProviderID, providers); p != nil {
-				return p
+				return p, true
 			}
 		}
 
-		// Matched a rule but both providers unavailable -- stop evaluating
-		if rule.FallbackProviderID != nil {
-			break
-		}
+		return nil, true
 	}
-	return nil
+	return nil, false
 }
 
 // findHealthyProvider returns the provider with the given ID if it exists and its circuit is not open.
@@ -459,10 +474,12 @@ func (r *Router) RouteWithFallback(ctx context.Context, modelName string, maxRet
 
 // isKeyTemporarilyFailed checks if a key is temporarily marked as failed.
 // Uses Redis when available (cross-instance), falls back to in-memory map.
-func (r *Router) isKeyTemporarilyFailed(keyID uuid.UUID) bool {
+func (r *Router) isKeyTemporarilyFailed(ctx context.Context, keyID uuid.UUID) bool {
 	if r.redisClient != nil {
 		key := failedKeyPrefix + keyID.String()
-		exists, err := r.redisClient.Exists(context.Background(), key).Result()
+		redisCtx, cancel := context.WithTimeout(ctx, redisKeyOperationTimeout)
+		exists, err := r.redisClient.Exists(redisCtx, key).Result()
+		cancel()
 		if err == nil {
 			return exists > 0
 		}
@@ -488,9 +505,11 @@ func (r *Router) MarkKeyFailed(keyID uuid.UUID, reason string) {
 	// Write to Redis if available
 	if r.redisClient != nil {
 		key := failedKeyPrefix + keyID.String()
-		if err := r.redisClient.Set(context.Background(), key, reason, failedKeyTTL).Err(); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), redisKeyOperationTimeout)
+		if err := r.redisClient.Set(ctx, key, reason, failedKeyTTL).Err(); err != nil {
 			r.logger.Debug("redis failed for key mark, using in-memory fallback", zap.Error(err))
 		}
+		cancel()
 	}
 
 	// Always write to in-memory as fallback
@@ -507,7 +526,9 @@ func (r *Router) MarkKeyFailed(keyID uuid.UUID, reason string) {
 func (r *Router) ClearKeyFailure(keyID uuid.UUID) {
 	if r.redisClient != nil {
 		key := failedKeyPrefix + keyID.String()
-		_ = r.redisClient.Del(context.Background(), key).Err()
+		ctx, cancel := context.WithTimeout(context.Background(), redisKeyOperationTimeout)
+		_ = r.redisClient.Del(ctx, key).Err()
+		cancel()
 	}
 	r.failedKeysMu.Lock()
 	defer r.failedKeysMu.Unlock()
@@ -528,7 +549,7 @@ func (r *Router) selectAPIKey(ctx context.Context, providerID uuid.UUID) (*model
 	// Filter out temporarily failed keys
 	availableKeys := make([]models.ProviderAPIKey, 0, len(keys))
 	for _, k := range keys {
-		if !r.isKeyTemporarilyFailed(k.ID) {
+		if !r.isKeyTemporarilyFailed(ctx, k.ID) {
 			availableKeys = append(availableKeys, k)
 		}
 	}
@@ -559,7 +580,7 @@ func (r *Router) SelectNextAPIKey(ctx context.Context, providerID uuid.UUID, exc
 	// Filter out the excluded key and temporarily failed keys
 	availableKeys := make([]models.ProviderAPIKey, 0, len(keys))
 	for _, k := range keys {
-		if k.ID != excludeKeyID && !r.isKeyTemporarilyFailed(k.ID) {
+		if k.ID != excludeKeyID && !r.isKeyTemporarilyFailed(ctx, k.ID) {
 			availableKeys = append(availableKeys, k)
 		}
 	}

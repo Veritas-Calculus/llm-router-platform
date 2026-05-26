@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useQuery } from '@apollo/client/react';
 import { SITE_CONFIG_QUERY } from '@/lib/graphql/operations';
+import { LOGOUT } from '@/lib/graphql/operations/auth';
 import { apolloClient } from '@/lib/graphql/client';
 import {
   KeyIcon,
@@ -187,13 +188,17 @@ function Layout() {
   const showAdminNav = isAdmin && adminView;
 
   const handleLogout = () => {
-    // Clear Apollo cache before nulling the auth state so the next user's
-    // session can't see the previous user's me/myUsageSummary/myOrganizations
-    // data flash in from cache during the cache-and-network fetch.
-    void apolloClient.clearStore().finally(() => {
-      logout();
-      navigate('/login');
-    });
+    // Ask the backend to invalidate tokens and clear the HttpOnly refresh
+    // cookie, then clear Apollo cache before nulling auth state so the next
+    // user can't see stale me/myUsageSummary/myOrganizations data flash in.
+    void apolloClient.mutate({ mutation: LOGOUT, fetchPolicy: 'no-cache' })
+      .catch(() => undefined)
+      .finally(() => {
+        void apolloClient.clearStore().finally(() => {
+          logout();
+          navigate('/login');
+        });
+      });
   };
 
   const toggleLanguage = () => {
@@ -283,6 +288,7 @@ function Layout() {
 
       {/* Sidebar */}
       <aside
+        id="primary-navigation"
         className={clsx(
           'sidebar-bg fixed inset-y-0 left-0 z-50 w-64 backdrop-blur-xl border-r border-apple-gray-200 dark:border-white/10 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0',
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'

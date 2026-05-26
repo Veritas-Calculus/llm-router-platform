@@ -13,7 +13,7 @@ package billing
 import (
 	"context"
 	"fmt"
-	"math"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -35,12 +36,11 @@ import (
 // than hold a request goroutine indefinitely (deadlock or stuck peer).
 const lockTimeout = 5 * time.Second
 
-// roundCost rounds a USD amount to 6 decimal places. We sum many small
-// per-token charges; without rounding the float64 representation drifts and
-// reports start disagreeing with the underlying transaction log.
-func roundCost(v float64) float64 {
-	return math.Round(v*1e6) / 1e6
-}
+var (
+	decimalThousand     = decimal.NewFromInt(1000)
+	decimalMinuteMs     = decimal.NewFromInt(60_000)
+	lowBalanceThreshold = decimal.NewFromInt(1)
+)
 
 // lockTimeoutCounter is filled in by middleware to avoid an import cycle with
 // the metrics defined in api/middleware. It is set by SetLockTimeoutCounter.
@@ -172,11 +172,11 @@ func (s *Service) UpdateUsageTokensAndDeduct(ctx context.Context, logID uuid.UUI
 	// (5xx, 4xx other than 499) skip deduction.
 	billable := log.IsSuccess || statusCode == 499
 
-	if balanceSvc == nil || !billable || log.Cost <= 0 {
+	if balanceSvc == nil || !billable || !log.Cost.IsPositive() {
 		err := s.usageRepo.Update(ctx, log)
 		if s.redis != nil && err == nil && billable {
 			s.incrUsageCache(ctx, log)
-			quota.IncrementUsage(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
+			quota.IncrementUsageMoney(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
 		}
 		return err
 	}
@@ -188,7 +188,7 @@ func (s *Service) UpdateUsageTokensAndDeduct(ctx context.Context, logID uuid.UUI
 	var (
 		alertEmail   string
 		alertName    string
-		alertBalance float64
+		alertBalance decimal.Decimal
 		shouldAlert  bool
 	)
 
@@ -202,8 +202,8 @@ func (s *Service) UpdateUsageTokensAndDeduct(ctx context.Context, logID uuid.UUI
 			return err
 		}
 
-		user.Balance = roundCost(user.Balance - log.Cost)
-		if err := tx.Save(&user).Error; err != nil {
+		user.Balance = models.MoneySub(user.Balance, log.Cost)
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("balance", user.Balance).Error; err != nil {
 			return err
 		}
 
@@ -211,7 +211,7 @@ func (s *Service) UpdateUsageTokensAndDeduct(ctx context.Context, logID uuid.UUI
 			OrgID:       userID,
 			UserID:      userID,
 			Type:        "deduction",
-			Amount:      roundCost(-log.Cost),
+			Amount:      models.MoneyNeg(log.Cost),
 			Balance:     user.Balance,
 			Description: description,
 			ReferenceID: log.ID.String(),
@@ -222,7 +222,7 @@ func (s *Service) UpdateUsageTokensAndDeduct(ctx context.Context, logID uuid.UUI
 
 		// Capture alert state for after-commit dispatch — emails sent inside
 		// the transaction would still go out on rollback.
-		if user.Balance < 1.0 {
+		if user.Balance.Cmp(lowBalanceThreshold) < 0 {
 			alertEmail = user.Email
 			alertName = user.Name
 			alertBalance = user.Balance
@@ -245,7 +245,7 @@ func (s *Service) UpdateUsageTokensAndDeduct(ctx context.Context, logID uuid.UUI
 
 	if s.redis != nil {
 		s.incrUsageCache(ctx, log)
-		quota.IncrementUsage(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
+		quota.IncrementUsageMoney(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
 	}
 	return nil
 }
@@ -267,7 +267,7 @@ func (s *Service) RecordUsage(ctx context.Context, log *models.UsageLog) error {
 		// Increment per-user quota only if this is a final record (has tokens).
 		// The streaming pre-record has tokens=0; the finalize call will count it.
 		if log.TotalTokens > 0 && log.UserID != uuid.Nil {
-			quota.IncrementUsage(ctx, s.redis, s.logger, log.UserID.String(), int64(log.TotalTokens), log.Cost)
+			quota.IncrementUsageMoney(ctx, s.redis, s.logger, log.UserID.String(), int64(log.TotalTokens), log.Cost)
 		}
 	}
 	if err != nil {
@@ -290,12 +290,12 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 	// If no balance service or zero cost, fall back to simple insert.
 	// Still bump the per-user quota counter so token-limit checks work for
 	// free plans / zero-cost requests.
-	if balanceSvc == nil || log.Cost <= 0 {
+	if balanceSvc == nil || !log.Cost.IsPositive() {
 		err := s.usageRepo.Create(ctx, log)
 		if s.redis != nil && err == nil {
 			s.incrUsageCache(ctx, log)
 			if log.TotalTokens > 0 {
-				quota.IncrementUsage(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
+				quota.IncrementUsageMoney(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
 			}
 		}
 		return err
@@ -308,7 +308,7 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 	var (
 		alertEmail   string
 		alertName    string
-		alertBalance float64
+		alertBalance decimal.Decimal
 		shouldAlert  bool
 	)
 
@@ -324,8 +324,8 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 			return err
 		}
 
-		user.Balance = roundCost(user.Balance - log.Cost)
-		if err := tx.Save(&user).Error; err != nil {
+		user.Balance = models.MoneySub(user.Balance, log.Cost)
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("balance", user.Balance).Error; err != nil {
 			return err
 		}
 
@@ -334,7 +334,7 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 			OrgID:       userID,
 			UserID:      userID,
 			Type:        "deduction",
-			Amount:      roundCost(-log.Cost),
+			Amount:      models.MoneyNeg(log.Cost),
 			Balance:     user.Balance,
 			Description: description,
 			ReferenceID: log.ID.String(),
@@ -344,7 +344,7 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 		}
 
 		// Capture alert state; dispatch only on commit.
-		if user.Balance < 1.0 {
+		if user.Balance.Cmp(lowBalanceThreshold) < 0 {
 			alertEmail = user.Email
 			alertName = user.Name
 			alertBalance = user.Balance
@@ -368,7 +368,7 @@ func (s *Service) RecordUsageAndDeduct(ctx context.Context, log *models.UsageLog
 	// Refresh redis caches outside the transaction.
 	if s.redis != nil {
 		s.incrUsageCache(ctx, log)
-		quota.IncrementUsage(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
+		quota.IncrementUsageMoney(ctx, s.redis, s.logger, userID.String(), int64(log.TotalTokens), log.Cost)
 	}
 	return nil
 }
@@ -380,10 +380,10 @@ func (s *Service) calculateUsageLogCost(ctx context.Context, log *models.UsageLo
 	}
 
 	log.ModelID = model.ID
-	customerCharge := roundCost(s.calculateCustomerCharge(model, log))
+	customerCharge := s.calculateCustomerCharge(model, log)
 	log.Cost = customerCharge
 	log.CustomerCharge = customerCharge
-	log.ProviderCost = roundCost(s.calculateProviderCost(model, log, customerCharge))
+	log.ProviderCost = s.calculateProviderCost(model, log, customerCharge)
 }
 
 func (s *Service) modelForUsageLog(ctx context.Context, log *models.UsageLog) (*models.Model, error) {
@@ -406,8 +406,8 @@ func (s *Service) modelForUsageLog(ctx context.Context, log *models.UsageLog) (*
 
 // sendLowBalanceAlert sends a low-balance warning email if the user's balance drops below $1,
 // with a 24-hour cooldown per user to avoid spam.
-func (bs *BalanceService) sendLowBalanceAlert(ctx context.Context, userID uuid.UUID, email, name string, balance float64) {
-	if bs.redis == nil || bs.emailSvc == nil || balance >= 1.0 {
+func (bs *BalanceService) sendLowBalanceAlert(ctx context.Context, userID uuid.UUID, email, name string, balance decimal.Decimal) {
+	if bs.redis == nil || bs.emailSvc == nil || balance.Cmp(lowBalanceThreshold) >= 0 {
 		return
 	}
 
@@ -416,12 +416,13 @@ func (bs *BalanceService) sendLowBalanceAlert(ctx context.Context, userID uuid.U
 		return // Already sent recently or Redis error
 	}
 
-	bs.logger.Info("sending low balance warning email", zap.String("userID", userID.String()), zap.Float64("balance", balance))
-	go func(to, uname string, currentBalance float64) {
-		if err := bs.emailSvc.SendQuotaWarningEmail(to, uname, fmt.Sprintf("$%.2f", currentBalance), "$1.00"); err != nil {
+	balanceText := balance.Round(models.MoneyScale).StringFixed(2)
+	bs.logger.Info("sending low balance warning email", zap.String("userID", userID.String()), zap.String("balance", balanceText))
+	go func(to, uname, currentBalance string) {
+		if err := bs.emailSvc.SendQuotaWarningEmail(to, uname, "$"+currentBalance, "$1.00"); err != nil {
 			bs.logger.Error("failed to send quota warning email", zap.Error(err))
 		}
-	}(email, name, balance)
+	}(email, name, balanceText)
 	bs.redis.Set(ctx, cacheKey, "1", 24*time.Hour)
 }
 
@@ -431,20 +432,33 @@ func (bs *BalanceService) sendLowBalanceAlert(ctx context.Context, userID uuid.U
 // is best-effort. Persistent failures show up in the
 // llm_router_billing_quota_cache_increment_failures_total counter.
 func (s *Service) incrUsageCache(ctx context.Context, log *models.UsageLog) {
+	if !shouldIncrementUsageSummaryCache(log) {
+		return
+	}
+
 	// Look up the org ID from the project
 	orgID, err := s.usageRepo.GetOrgIDByProjectID(ctx, log.ProjectID)
 	if err != nil || orgID == uuid.Nil {
 		return
 	}
 
-	now := time.Now()
-	monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
-	key := fmt.Sprintf("billing:usage:org:%s:%s", orgID.String(), monthStr)
+	key := usageSummaryCacheKey(orgID, time.Now())
+	customerCharge := usageLogCustomerCharge(log)
 
 	pipe := s.redis.Pipeline()
-	pipe.HIncrBy(ctx, key, "total_requests", 1)
-	pipe.HIncrBy(ctx, key, "total_tokens", int64(log.TotalTokens))
-	pipe.HIncrByFloat(ctx, key, "total_cost", log.Cost)
+	pipe.HIncrBy(ctx, key, usageCacheTotalRequests, 1)
+	pipe.HIncrBy(ctx, key, usageCacheTotalTokens, int64(log.TotalTokens))
+	pipe.HIncrBy(ctx, key, usageCacheTotalCostUnits, models.MoneyToUnits(customerCharge))
+	pipe.HIncrBy(ctx, key, usageCacheLatencySum, log.Latency)
+	if log.StatusCode >= 200 && log.StatusCode < 300 {
+		pipe.HIncrBy(ctx, key, usageCacheSuccessCount, 1)
+		pipe.HIncrBy(ctx, key, usageCacheErrorCount, 0)
+	} else {
+		pipe.HIncrBy(ctx, key, usageCacheSuccessCount, 0)
+		pipe.HIncrBy(ctx, key, usageCacheErrorCount, 1)
+	}
+	pipe.HIncrBy(ctx, key, usageCacheMCPCallCount, int64(log.MCPCallCount))
+	pipe.HIncrBy(ctx, key, usageCacheMCPErrorCount, int64(log.MCPErrorCount))
 	pipe.Expire(ctx, key, 32*24*time.Hour)
 	if _, err := pipe.Exec(ctx); err != nil {
 		quota.IncrementFailuresTotal.Inc()
@@ -456,52 +470,180 @@ func (s *Service) incrUsageCache(ctx context.Context, log *models.UsageLog) {
 }
 
 // calculateCustomerCharge calculates the customer-facing charge for every populated metering dimension.
-func (s *Service) calculateCustomerCharge(model *models.Model, log *models.UsageLog) float64 {
-	inputCost := float64(log.RequestTokens) / 1000 * model.InputPricePer1K
-	outputCost := float64(log.ResponseTokens) / 1000 * model.OutputPricePer1K
-
-	durationSeconds := float64(log.DurationMs) / 1000
-	secondCost := durationSeconds * model.PricePerSecond
-	minuteCost := durationSeconds / 60 * model.PricePerMinute
-	imageCost := float64(log.ItemCount) * model.PricePerImage
-
-	return inputCost + outputCost + secondCost + minuteCost + imageCost
+func (s *Service) calculateCustomerCharge(model *models.Model, log *models.UsageLog) decimal.Decimal {
+	return tokenCost(log.RequestTokens, model.InputPricePer1K).
+		Add(tokenCost(log.ResponseTokens, model.OutputPricePer1K)).
+		Add(durationMsCost(log.DurationMs, model.PricePerSecond, model.PricePerMinute)).
+		Add(itemCost(log.ItemCount, model.PricePerImage)).
+		Round(models.MoneyScale)
 }
 
 // calculateProviderCost calculates upstream provider cost. If provider-side
 // rates are not configured yet, fall back to the customer charge so margin is
 // conservative instead of falsely showing 100%.
-func (s *Service) calculateProviderCost(model *models.Model, log *models.UsageLog, fallback float64) float64 {
-	hasProviderRates := model.ProviderInputCostPer1K > 0 ||
-		model.ProviderOutputCostPer1K > 0 ||
-		model.ProviderCostPerSecond > 0 ||
-		model.ProviderCostPerImage > 0 ||
-		model.ProviderCostPerMinute > 0
+func (s *Service) calculateProviderCost(model *models.Model, log *models.UsageLog, fallback decimal.Decimal) decimal.Decimal {
+	hasProviderRates := model.ProviderInputCostPer1K.IsPositive() ||
+		model.ProviderOutputCostPer1K.IsPositive() ||
+		model.ProviderCostPerSecond.IsPositive() ||
+		model.ProviderCostPerImage.IsPositive() ||
+		model.ProviderCostPerMinute.IsPositive()
 	if !hasProviderRates {
 		return fallback
 	}
 
-	inputCost := float64(log.RequestTokens) / 1000 * model.ProviderInputCostPer1K
-	outputCost := float64(log.ResponseTokens) / 1000 * model.ProviderOutputCostPer1K
+	return tokenCost(log.RequestTokens, model.ProviderInputCostPer1K).
+		Add(tokenCost(log.ResponseTokens, model.ProviderOutputCostPer1K)).
+		Add(durationMsCost(log.DurationMs, model.ProviderCostPerSecond, model.ProviderCostPerMinute)).
+		Add(itemCost(log.ItemCount, model.ProviderCostPerImage)).
+		Round(models.MoneyScale)
+}
 
-	durationSeconds := float64(log.DurationMs) / 1000
-	secondCost := durationSeconds * model.ProviderCostPerSecond
-	minuteCost := durationSeconds / 60 * model.ProviderCostPerMinute
-	imageCost := float64(log.ItemCount) * model.ProviderCostPerImage
+func tokenCost(tokens int, pricePer1K decimal.Decimal) decimal.Decimal {
+	if tokens == 0 || pricePer1K.IsZero() {
+		return decimal.Zero
+	}
+	return decimal.NewFromInt(int64(tokens)).
+		Mul(pricePer1K).
+		Div(decimalThousand)
+}
 
-	return inputCost + outputCost + secondCost + minuteCost + imageCost
+func durationMsCost(durationMs int64, pricePerSecond, pricePerMinute decimal.Decimal) decimal.Decimal {
+	if durationMs == 0 {
+		return decimal.Zero
+	}
+	duration := decimal.NewFromInt(durationMs)
+	cost := decimal.Zero
+	if !pricePerSecond.IsZero() {
+		cost = cost.Add(duration.Div(decimalThousand).Mul(pricePerSecond))
+	}
+	if !pricePerMinute.IsZero() {
+		cost = cost.Add(duration.Div(decimalMinuteMs).Mul(pricePerMinute))
+	}
+	return cost
+}
+
+func itemCost(count int, pricePerItem decimal.Decimal) decimal.Decimal {
+	if count == 0 || pricePerItem.IsZero() {
+		return decimal.Zero
+	}
+	return decimal.NewFromInt(int64(count)).Mul(pricePerItem)
 }
 
 // UsageSummary represents aggregated usage data.
 type UsageSummary struct {
-	TotalRequests int64   `json:"total_requests"`
-	TotalTokens   int64   `json:"total_tokens"`
-	TotalCost     float64 `json:"total_cost"`
-	AvgLatency    float64 `json:"avg_latency"`
-	SuccessRate   float64 `json:"success_rate"`
-	ErrorCount    int64   `json:"error_count"`
-	MCPCallCount  int64   `json:"mcp_call_count"`
-	MCPErrorCount int64   `json:"mcp_error_count"`
+	TotalRequests int64           `json:"total_requests"`
+	TotalTokens   int64           `json:"total_tokens"`
+	TotalCost     decimal.Decimal `json:"total_cost"`
+	AvgLatency    float64         `json:"avg_latency"`
+	SuccessCount  int64           `json:"success_count"`
+	SuccessRate   float64         `json:"success_rate"`
+	ErrorCount    int64           `json:"error_count"`
+	MCPCallCount  int64           `json:"mcp_call_count"`
+	MCPErrorCount int64           `json:"mcp_error_count"`
+}
+
+const (
+	usageCacheTotalRequests  = "total_requests"
+	usageCacheTotalTokens    = "total_tokens"
+	usageCacheTotalCost      = "total_cost"
+	usageCacheTotalCostUnits = "total_cost_units"
+	usageCacheLatencySum     = "latency_sum"
+	usageCacheSuccessCount   = "success_count"
+	usageCacheErrorCount     = "error_count"
+	usageCacheMCPCallCount   = "mcp_call_count"
+	usageCacheMCPErrorCount  = "mcp_error_count"
+)
+
+func usageSummaryCacheKey(orgID uuid.UUID, t time.Time) string {
+	return fmt.Sprintf("billing:usage:org:%s:%d-%02d", orgID.String(), t.Year(), t.Month())
+}
+
+func usageSummaryFromCache(res map[string]string) (*UsageSummary, bool) {
+	totalRequests, ok := cachedInt64(res, usageCacheTotalRequests)
+	if !ok {
+		return nil, false
+	}
+	totalTokens, ok := cachedInt64(res, usageCacheTotalTokens)
+	if !ok {
+		return nil, false
+	}
+	totalCost, ok := cachedMoney(res, usageCacheTotalCostUnits, usageCacheTotalCost)
+	if !ok {
+		return nil, false
+	}
+	latencySum, ok := cachedInt64(res, usageCacheLatencySum)
+	if !ok {
+		return nil, false
+	}
+	successCount, ok := cachedInt64(res, usageCacheSuccessCount)
+	if !ok {
+		return nil, false
+	}
+	errorCount, ok := cachedInt64(res, usageCacheErrorCount)
+	if !ok {
+		return nil, false
+	}
+	mcpCallCount, ok := cachedInt64(res, usageCacheMCPCallCount)
+	if !ok {
+		return nil, false
+	}
+	mcpErrorCount, ok := cachedInt64(res, usageCacheMCPErrorCount)
+	if !ok {
+		return nil, false
+	}
+
+	summary := &UsageSummary{
+		TotalRequests: totalRequests,
+		TotalTokens:   totalTokens,
+		TotalCost:     totalCost,
+		SuccessCount:  successCount,
+		ErrorCount:    errorCount,
+		MCPCallCount:  mcpCallCount,
+		MCPErrorCount: mcpErrorCount,
+	}
+	if totalRequests > 0 {
+		summary.AvgLatency = float64(latencySum) / float64(totalRequests)
+		summary.SuccessRate = float64(successCount) / float64(totalRequests) * 100
+	}
+	return summary, true
+}
+
+func cachedInt64(res map[string]string, field string) (int64, bool) {
+	raw, ok := res[field]
+	if !ok {
+		return 0, false
+	}
+	v, err := strconv.ParseInt(raw, 10, 64)
+	return v, err == nil
+}
+
+func cachedMoney(res map[string]string, unitsField, fallbackField string) (decimal.Decimal, bool) {
+	if raw, ok := res[unitsField]; ok {
+		units, err := strconv.ParseInt(raw, 10, 64)
+		if err == nil {
+			return models.MoneyFromUnits(units), true
+		}
+	}
+	raw, ok := res[fallbackField]
+	if !ok {
+		return decimal.Zero, false
+	}
+	v, err := decimal.NewFromString(raw)
+	if err != nil {
+		return decimal.Zero, false
+	}
+	return v.Round(models.MoneyScale), true
+}
+
+func shouldIncrementUsageSummaryCache(log *models.UsageLog) bool {
+	return log != nil && log.StatusCode != http.StatusProcessing
+}
+
+func usageLogCustomerCharge(log *models.UsageLog) decimal.Decimal {
+	if !log.CustomerCharge.IsZero() {
+		return log.CustomerCharge.Round(models.MoneyScale)
+	}
+	return log.Cost.Round(models.MoneyScale)
 }
 
 // GetUsageSummary returns aggregated usage for an organization or project.
@@ -514,22 +656,12 @@ func (s *Service) GetUsageSummary(ctx context.Context, orgID uuid.UUID, projectI
 	useCache := s.redis != nil && isCurrentMonth && projectID == nil && (channel == nil || *channel == "")
 
 	if useCache {
-		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
-		key := fmt.Sprintf("billing:usage:org:%s:%s", orgID.String(), monthStr)
-
+		key := usageSummaryCacheKey(orgID, now)
 		res, err := s.redis.HGetAll(ctx, key).Result()
-		if err == nil && len(res) > 0 {
-			reqs, _ := strconv.ParseInt(res["total_requests"], 10, 64)
-			tokens, _ := strconv.ParseInt(res["total_tokens"], 10, 64)
-			cost, _ := strconv.ParseFloat(res["total_cost"], 64)
-			successRate, _ := strconv.ParseFloat(res["success_rate"], 64)
-
-			return &UsageSummary{
-				TotalRequests: reqs,
-				TotalTokens:   tokens,
-				TotalCost:     cost,
-				SuccessRate:   successRate,
-			}, nil
+		if err == nil {
+			if summary, ok := usageSummaryFromCache(res); ok {
+				return summary, nil
+			}
 		}
 	}
 
@@ -541,8 +673,9 @@ func (s *Service) GetUsageSummary(ctx context.Context, orgID uuid.UUID, projectI
 	summary := &UsageSummary{
 		TotalRequests: row.TotalRequests,
 		TotalTokens:   row.TotalTokens,
-		TotalCost:     row.TotalCost,
+		TotalCost:     row.TotalCost.Round(models.MoneyScale),
 		AvgLatency:    row.AvgLatency,
+		SuccessCount:  row.SuccessCount,
 		ErrorCount:    row.ErrorCount,
 		MCPCallCount:  row.MCPCallCount,
 		MCPErrorCount: row.MCPErrorCount,
@@ -552,13 +685,19 @@ func (s *Service) GetUsageSummary(ctx context.Context, orgID uuid.UUID, projectI
 	}
 
 	if useCache && summary.TotalRequests > 0 {
-		monthStr := fmt.Sprintf("%d-%02d", now.Year(), now.Month())
-		key := fmt.Sprintf("billing:usage:org:%s:%s", orgID.String(), monthStr)
+		key := usageSummaryCacheKey(orgID, now)
 		pipe := s.redis.Pipeline()
-		pipe.HSet(ctx, key, "total_requests", summary.TotalRequests)
-		pipe.HSet(ctx, key, "total_tokens", summary.TotalTokens)
-		pipe.HSet(ctx, key, "total_cost", summary.TotalCost)
-		pipe.HSet(ctx, key, "success_rate", summary.SuccessRate)
+		pipe.HSet(ctx, key, map[string]interface{}{
+			usageCacheTotalRequests:  summary.TotalRequests,
+			usageCacheTotalTokens:    summary.TotalTokens,
+			usageCacheTotalCost:      summary.TotalCost.StringFixed(models.MoneyScale),
+			usageCacheTotalCostUnits: models.MoneyToUnits(summary.TotalCost),
+			usageCacheLatencySum:     int64(summary.AvgLatency * float64(summary.TotalRequests)),
+			usageCacheSuccessCount:   summary.SuccessCount,
+			usageCacheErrorCount:     summary.ErrorCount,
+			usageCacheMCPCallCount:   summary.MCPCallCount,
+			usageCacheMCPErrorCount:  summary.MCPErrorCount,
+		})
 		pipe.Expire(ctx, key, 30*time.Second)
 		_, _ = pipe.Exec(ctx)
 	}
@@ -576,8 +715,33 @@ func (s *Service) GetSystemUsageSummary(ctx context.Context, channel *string, st
 	summary := &UsageSummary{
 		TotalRequests: row.TotalRequests,
 		TotalTokens:   row.TotalTokens,
-		TotalCost:     row.TotalCost,
+		TotalCost:     row.TotalCost.Round(models.MoneyScale),
 		AvgLatency:    row.AvgLatency,
+		SuccessCount:  row.SuccessCount,
+		ErrorCount:    row.ErrorCount,
+		MCPCallCount:  row.MCPCallCount,
+		MCPErrorCount: row.MCPErrorCount,
+	}
+	if row.TotalRequests > 0 {
+		summary.SuccessRate = float64(row.SuccessCount) / float64(row.TotalRequests) * 100
+	}
+
+	return summary, nil
+}
+
+// GetUserUsageSummary returns aggregated usage for a single user.
+func (s *Service) GetUserUsageSummary(ctx context.Context, userID uuid.UUID, startTime, endTime time.Time) (*UsageSummary, error) {
+	row, err := s.usageRepo.AggregateByUserTimeRange(ctx, userID, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	summary := &UsageSummary{
+		TotalRequests: row.TotalRequests,
+		TotalTokens:   row.TotalTokens,
+		TotalCost:     row.TotalCost.Round(models.MoneyScale),
+		AvgLatency:    row.AvgLatency,
+		SuccessCount:  row.SuccessCount,
 		ErrorCount:    row.ErrorCount,
 		MCPCallCount:  row.MCPCallCount,
 		MCPErrorCount: row.MCPErrorCount,
@@ -591,10 +755,10 @@ func (s *Service) GetSystemUsageSummary(ctx context.Context, channel *string, st
 
 // DailyUsage represents daily usage data.
 type DailyUsage struct {
-	Date     string  `json:"date"`
-	Requests int64   `json:"requests"`
-	Tokens   int64   `json:"tokens"`
-	Cost     float64 `json:"cost"`
+	Date     string          `json:"date"`
+	Requests int64           `json:"requests"`
+	Tokens   int64           `json:"tokens"`
+	Cost     decimal.Decimal `json:"cost"`
 }
 
 // GetDailyUsage returns daily usage statistics (SQL aggregation).
@@ -609,7 +773,24 @@ func (s *Service) GetDailyUsage(ctx context.Context, orgID uuid.UUID, projectID 
 
 	result := make([]DailyUsage, len(rows))
 	for i, r := range rows {
-		result[i] = DailyUsage{Date: r.Date, Requests: r.Requests, Tokens: r.Tokens, Cost: r.Cost}
+		result[i] = DailyUsage{Date: r.Date, Requests: r.Requests, Tokens: r.Tokens, Cost: r.Cost.Round(models.MoneyScale)}
+	}
+	return result, nil
+}
+
+// GetUserDailyUsage returns daily usage statistics for a single user.
+func (s *Service) GetUserDailyUsage(ctx context.Context, userID uuid.UUID, days int) ([]DailyUsage, error) {
+	endTime := time.Now()
+	startTime := endTime.AddDate(0, 0, -days)
+
+	rows, err := s.usageRepo.AggregateDailyByUserTimeRange(ctx, userID, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]DailyUsage, len(rows))
+	for i, r := range rows {
+		result[i] = DailyUsage{Date: r.Date, Requests: r.Requests, Tokens: r.Tokens, Cost: r.Cost.Round(models.MoneyScale)}
 	}
 	return result, nil
 }
@@ -626,20 +807,20 @@ func (s *Service) GetSystemDailyUsage(ctx context.Context, channel *string, days
 
 	result := make([]DailyUsage, len(rows))
 	for i, r := range rows {
-		result[i] = DailyUsage{Date: r.Date, Requests: r.Requests, Tokens: r.Tokens, Cost: r.Cost}
+		result[i] = DailyUsage{Date: r.Date, Requests: r.Requests, Tokens: r.Tokens, Cost: r.Cost.Round(models.MoneyScale)}
 	}
 	return result, nil
 }
 
 // ProviderUsage represents usage per provider.
 type ProviderUsage struct {
-	ProviderID   uuid.UUID `json:"provider_id"`
-	ProviderName string    `json:"provider_name"`
-	Requests     int64     `json:"requests"`
-	Tokens       int64     `json:"tokens"`
-	Cost         float64   `json:"cost"`
-	SuccessRate  float64   `json:"success_rate"`
-	AvgLatency   float64   `json:"avg_latency_ms"`
+	ProviderID   uuid.UUID       `json:"provider_id"`
+	ProviderName string          `json:"provider_name"`
+	Requests     int64           `json:"requests"`
+	Tokens       int64           `json:"tokens"`
+	Cost         decimal.Decimal `json:"cost"`
+	SuccessRate  float64         `json:"success_rate"`
+	AvgLatency   float64         `json:"avg_latency_ms"`
 }
 
 func mapProviderRows(rows []repository.ProviderUsageRow) []ProviderUsage {
@@ -647,7 +828,7 @@ func mapProviderRows(rows []repository.ProviderUsageRow) []ProviderUsage {
 	for i, r := range rows {
 		result[i] = ProviderUsage{
 			ProviderID: r.ProviderID, ProviderName: r.ProviderName,
-			Requests: r.Requests, Tokens: r.Tokens, Cost: r.Cost,
+			Requests: r.Requests, Tokens: r.Tokens, Cost: r.Cost.Round(models.MoneyScale),
 			SuccessRate: r.SuccessRate, AvgLatency: r.AvgLatency,
 		}
 	}
@@ -674,13 +855,13 @@ func (s *Service) GetSystemUsageByProvider(ctx context.Context, channel *string,
 
 // ModelUsage represents usage per model.
 type ModelUsage struct {
-	ModelID      uuid.UUID `json:"model_id"`
-	ModelName    string    `json:"model_name"`
-	Requests     int64     `json:"requests"`
-	InputTokens  int64     `json:"input_tokens"`
-	OutputTokens int64     `json:"output_tokens"`
-	TotalTokens  int64     `json:"total_tokens"`
-	Cost         float64   `json:"cost"`
+	ModelID      uuid.UUID       `json:"model_id"`
+	ModelName    string          `json:"model_name"`
+	Requests     int64           `json:"requests"`
+	InputTokens  int64           `json:"input_tokens"`
+	OutputTokens int64           `json:"output_tokens"`
+	TotalTokens  int64           `json:"total_tokens"`
+	Cost         decimal.Decimal `json:"cost"`
 }
 
 // GetUsageByModel returns usage grouped by model name (SQL aggregation).
@@ -699,7 +880,7 @@ func (s *Service) GetUsageByModel(ctx context.Context, orgID uuid.UUID, projectI
 			InputTokens:  r.InputTokens,
 			OutputTokens: r.OutputTokens,
 			TotalTokens:  r.TotalTokens,
-			Cost:         r.Cost,
+			Cost:         r.Cost.Round(models.MoneyScale),
 		}
 	}
 	return result, nil
@@ -721,7 +902,7 @@ func (s *Service) GetSystemUsageByModel(ctx context.Context, channel *string, st
 			InputTokens:  r.InputTokens,
 			OutputTokens: r.OutputTokens,
 			TotalTokens:  r.TotalTokens,
-			Cost:         r.Cost,
+			Cost:         r.Cost.Round(models.MoneyScale),
 		}
 	}
 	return result, nil

@@ -5,7 +5,7 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useMutation, useQuery } from '@apollo/client/react';
-import { CAPTCHA_CONFIG, DISCOVER_SSO, LOGIN, REGISTER, REGISTRATION_MODE } from '@/lib/graphql/operations';
+import { CAPTCHA_CONFIG, DISCOVER_SSO, LOGIN, REGISTER, REGISTRATION_MODE, SITE_CONFIG_QUERY } from '@/lib/graphql/operations';
 import { useAuthStore } from '@/stores/authStore';
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { useTranslation } from '@/lib/i18n';
@@ -80,10 +80,15 @@ function LoginPage() {
   // Query registration mode (public, no auth required)
   const { data: regModeData } = useQuery<{ registrationMode: { mode: string; inviteCodeRequired: boolean } }>(REGISTRATION_MODE, { fetchPolicy: 'cache-first' });
   const { data: captchaData } = useQuery<{ captchaConfig: { enabled: boolean; siteKey: string } }>(CAPTCHA_CONFIG, { fetchPolicy: 'cache-first' });
+  const { data: siteData } = useQuery<{ siteConfig: { siteName: string; subtitle?: string | null; logoUrl?: string | null } }>(SITE_CONFIG_QUERY, { fetchPolicy: 'cache-first' });
   const captchaConfig = captchaData?.captchaConfig ?? { enabled: false, siteKey: '' };
   const regMode = regModeData?.registrationMode?.mode ?? 'closed';
   const inviteRequired = regModeData?.registrationMode?.inviteCodeRequired ?? false;
   const registrationOpen = regMode === 'open' || regMode === 'invite';
+  const siteName = siteData?.siteConfig?.siteName || t('auth.platform_name');
+  const siteSubtitle = siteData?.siteConfig?.subtitle || t('auth.platform_slogan');
+  const siteLogoUrl = siteData?.siteConfig?.logoUrl || '';
+  const siteInitial = siteName.trim().charAt(0).toUpperCase() || 'R';
   const redirectState = location.state as LoginLocationState | null;
   const from = redirectState?.from;
   const postLoginPath = from?.pathname && from.pathname !== '/login'
@@ -103,12 +108,31 @@ function LoginPage() {
 
   // Fetch available OAuth2 providers
   const [oauthProviders, setOauthProviders] = useState<Array<{ id: string; name: string }>>([]);
+  const [oauthProviderError, setOauthProviderError] = useState<string | null>(null);
   useEffect(() => {
-    fetch('/auth/oauth2/providers')
-      .then(r => r.json())
-      .then(data => setOauthProviders(data.providers || []))
-      .catch(() => {});
-  }, []);
+    let cancelled = false;
+    fetch('/auth/oauth2/providers', { headers: { Accept: 'application/json' } })
+      .then(async (r) => {
+        const contentType = r.headers.get('content-type') || '';
+        if (!r.ok || !contentType.includes('application/json')) {
+          throw new Error('OAuth provider endpoint unavailable');
+        }
+        return r.json();
+      })
+      .then(data => {
+        if (cancelled) return;
+        setOauthProviders(data.providers || []);
+        setOauthProviderError(null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setOauthProviders([]);
+        setOauthProviderError(t('auth.oauth_unavailable'));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,7 +156,7 @@ function LoginPage() {
         const resp = (result.data as any)?.login;
         if (!resp?.token) throw new AuthError(t('auth.invalid_credentials'));
         authenticatedUser = resp.user;
-        setAuth(resp.token, resp.user, resp.refreshToken ?? null);
+        setAuth(resp.token, resp.user);
         toast.success(t('auth.welcome_back'));
       } else {
         const registerInput: Record<string, string | null> = {
@@ -151,7 +175,7 @@ function LoginPage() {
         const resp = (result.data as any)?.register;
         if (!resp?.token) throw new AuthError(t('auth.registration_failed'));
         authenticatedUser = resp.user;
-        setAuth(resp.token, resp.user, resp.refreshToken ?? null);
+        setAuth(resp.token, resp.user);
         toast.success(t('auth.account_created'));
       }
       navigate(getPostAuthRedirect(authenticatedUser), { replace: true });
@@ -226,11 +250,15 @@ function LoginPage() {
       >
         {/* Brand */}
         <div className="text-center mb-10">
-          <div className="w-16 h-16 bg-gradient-to-br from-apple-blue to-blue-600 rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-5">
-            <span className="text-white font-bold text-2xl">R</span>
+          <div className="w-16 h-16 bg-apple-blue rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-5 overflow-hidden">
+            {siteLogoUrl ? (
+              <img src={siteLogoUrl} alt="" className="h-full w-full object-contain p-2" />
+            ) : (
+              <span className="text-white font-bold text-2xl">{siteInitial}</span>
+            )}
           </div>
-          <h1 className="text-3xl font-semibold text-apple-gray-900 mb-2">{t('auth.platform_name')}</h1>
-          <p className="text-apple-gray-500">{t('auth.platform_slogan')}</p>
+          <h1 className="text-3xl font-semibold text-apple-gray-900 mb-2">{siteName}</h1>
+          <p className="text-apple-gray-500">{siteSubtitle}</p>
         </div>
 
         <div className="card">
@@ -270,6 +298,11 @@ function LoginPage() {
           </div>
 
           {/* Registration closed hint */}
+          {isLogin && !registrationOpen && (
+            <div className="mb-6 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
+              {t('auth.registration_closed_inline')}
+            </div>
+          )}
           {!isLogin && !registrationOpen && (
             <div className="mb-6 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
               {t('auth.registration_closed')}
@@ -313,6 +346,11 @@ function LoginPage() {
                   </span>
                 </div>
               </div>
+            </div>
+          )}
+          {oauthProviderError && !isSsoMode && (
+            <div role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              {oauthProviderError}
             </div>
           )}
 

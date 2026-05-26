@@ -6,7 +6,7 @@ type Plan {
   id: ID!
   name: String!
   description: String!
-  priceMonth: Float!
+  priceMonth: Money!
   tokenLimit: Int!
   rateLimit: Int!
   supportLevel: String!
@@ -34,7 +34,7 @@ type UserSubscription {
 type Order {
   id: ID!
   orderNo: String!
-  amount: Float!
+  amount: Money!
   currency: String!
   status: String!
   paymentMethod: String!
@@ -45,7 +45,7 @@ type Order {
 type Budget {
   id: ID!
   orgId: ID!
-  monthlyLimitUsd: Float!
+  monthlyLimitUsd: Money!
   alertThreshold: Float!
   enforceHardLimit: Boolean!
   isActive: Boolean!
@@ -55,8 +55,8 @@ type Budget {
 
 type BudgetStatus {
   budget: Budget
-  currentSpend: Float!
-  remainingBudget: Float!
+  currentSpend: Money!
+  remainingBudget: Money!
   percentUsed: Float!
   isOverBudget: Boolean!
 }
@@ -66,7 +66,7 @@ type CheckoutSession {
 }
 
 input BudgetInput {
-  monthlyLimitUsd: Float!
+  monthlyLimitUsd: Money!
   alertThreshold: Float
   enforceHardLimit: Boolean
   webhookUrl: String
@@ -76,7 +76,7 @@ input BudgetInput {
 input PlanInput {
   name: String!
   description: String
-  priceMonth: Float!
+  priceMonth: Money!
   tokenLimit: Int!
   rateLimit: Int!
   supportLevel: String

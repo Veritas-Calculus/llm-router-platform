@@ -2,6 +2,8 @@
 // Extracted from api.ts after GraphQL migration.
 // These types describe the data shapes used by page components.
 
+export type MoneyValue = number | string;
+
 export interface LoginRequest {
   email: string;
   password: string;
@@ -34,8 +36,8 @@ export interface User {
   role: string;
   require_password_change?: boolean;
   monthly_token_limit?: number;
-  monthly_budget_usd?: number;
-  balance?: number;
+  monthly_budget_usd?: MoneyValue;
+  balance?: MoneyValue;
   created_at?: string;
   mfaEnabled?: boolean;
 }
@@ -43,7 +45,7 @@ export interface User {
 export interface Organization {
   id: string;
   name: string;
-  billing_limit: number;
+  billing_limit: MoneyValue;
   created_at: string;
 }
 
@@ -52,7 +54,7 @@ export interface Project {
   org_id: string;
   name: string;
   description: string;
-  quota_limit: number;
+  quota_limit: MoneyValue;
   whiteListedIps?: string;
   created_at: string;
 }

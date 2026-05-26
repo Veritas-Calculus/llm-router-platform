@@ -101,7 +101,8 @@ func (r *RateLimiter) Limit() gin.HandlerFunc {
 		}
 
 		key := fmt.Sprintf("ratelimit:%s", identifier)
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(c.Request.Context(), rateLimitRedisTimeout)
+		defer cancel()
 		now := time.Now().UnixMilli()
 		windowStart := now - 60000
 

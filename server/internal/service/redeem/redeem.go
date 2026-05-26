@@ -4,7 +4,6 @@ package redeem
 import (
 	"crypto/rand"
 	"fmt"
-	"math"
 	"math/big"
 	"strings"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"llm-router-platform/internal/models"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -37,7 +37,7 @@ func NewService(db *gorm.DB, logger *zap.Logger) *Service {
 type RedeemResult struct {
 	Success      bool
 	Message      string
-	CreditAmount float64
+	CreditAmount decimal.Decimal
 	PlanName     string
 }
 
@@ -84,7 +84,7 @@ func (s *Service) Redeem(userID uuid.UUID, code string) (*RedeemResult, error) {
 		// Older admin UI could generate type=plan codes without a plan_id while
 		// still carrying a credit amount. Those were no-op codes, so redeem them
 		// as credit to preserve the operator's visible intent.
-		legacyCreditCode := codeType == codeTypePlan && rc.PlanID == nil && rc.CreditAmount > 0
+		legacyCreditCode := codeType == codeTypePlan && rc.PlanID == nil && rc.CreditAmount.IsPositive()
 		if codeType == codeTypeCredit || legacyCreditCode {
 			logType = codeTypeCredit
 			return s.redeemCredit(tx, &rc, userID, now, result)
@@ -154,7 +154,7 @@ func (s *Service) ListCodes(page, pageSize int) ([]models.RedeemCode, int64, err
 // GenerateCodes creates a batch of redeem codes.
 func (s *Service) GenerateCodes(
 	codeType string,
-	creditAmount float64,
+	creditAmount decimal.Decimal,
 	planID *uuid.UUID,
 	planDays int,
 	count int,
@@ -168,7 +168,8 @@ func (s *Service) GenerateCodes(
 	if codeType != codeTypeCredit && codeType != codeTypePlan {
 		return nil, fmt.Errorf("unsupported redeem code type: %s", codeType)
 	}
-	if codeType == codeTypeCredit && creditAmount <= 0 {
+	creditAmount = creditAmount.Round(models.MoneyScale)
+	if codeType == codeTypeCredit && !creditAmount.IsPositive() {
 		return nil, fmt.Errorf("credit amount must be positive")
 	}
 	if codeType == codeTypePlan && planID == nil {
@@ -218,7 +219,7 @@ func (s *Service) RevokeCode(id uuid.UUID) error {
 }
 
 func (s *Service) redeemCredit(tx *gorm.DB, rc *models.RedeemCode, userID uuid.UUID, redeemedAt time.Time, result *RedeemResult) error {
-	if rc.CreditAmount <= 0 {
+	if !rc.CreditAmount.IsPositive() {
 		result.Success = false
 		result.Message = "Credit amount must be positive"
 		return nil
@@ -229,9 +230,9 @@ func (s *Service) redeemCredit(tx *gorm.DB, rc *models.RedeemCode, userID uuid.U
 		return err
 	}
 
-	amount := roundAmount(rc.CreditAmount)
-	user.Balance = roundAmount(user.Balance + amount)
-	if err := tx.Save(&user).Error; err != nil {
+	amount := rc.CreditAmount.Round(models.MoneyScale)
+	user.Balance = models.MoneyAdd(user.Balance, amount)
+	if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("balance", user.Balance).Error; err != nil {
 		return err
 	}
 
@@ -261,7 +262,7 @@ func (s *Service) redeemCredit(tx *gorm.DB, rc *models.RedeemCode, userID uuid.U
 
 	result.Success = true
 	result.CreditAmount = amount
-	result.Message = fmt.Sprintf("$%.2f credit added to your account", amount)
+	result.Message = fmt.Sprintf("$%s credit added to your account", amount.Round(2).StringFixed(2))
 	return nil
 }
 
@@ -345,10 +346,6 @@ func findPrimaryOrgID(tx *gorm.DB, userID uuid.UUID) (uuid.UUID, error) {
 func normalizeCodeType(codeType string) string {
 	codeType = strings.ReplaceAll(strings.ReplaceAll(codeType, "\n", ""), "\r", "")
 	return strings.ToLower(strings.TrimSpace(codeType))
-}
-
-func roundAmount(v float64) float64 {
-	return math.Round(v*1_000_000) / 1_000_000
 }
 
 // generateCode produces a random code like "ABCD-1234-EFGH".

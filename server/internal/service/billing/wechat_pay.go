@@ -16,7 +16,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -27,6 +26,7 @@ import (
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
@@ -78,16 +78,20 @@ func NewWechatPayService(
 }
 
 // CreateNativeOrder creates a WeChat Pay Native order and returns a QR code URL.
-func (s *WechatPayService) CreateNativeOrder(ctx context.Context, userID uuid.UUID, amount float64, description string) (string, string, error) {
+func (s *WechatPayService) CreateNativeOrder(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, description string) (string, string, error) {
 	if !s.cfg.Enabled {
 		return "", "", fmt.Errorf("wechat pay is not enabled")
 	}
 	if s.privateKey == nil {
 		return "", "", fmt.Errorf("wechat pay private key not configured")
 	}
+	amount = models.MoneyRoundToCents(amount)
+	if !amount.IsPositive() {
+		return "", "", fmt.Errorf("wechat pay amount must be positive")
+	}
 
 	orderNo := fmt.Sprintf("WX-%d-%s", time.Now().Unix(), uuid.New().String()[:8])
-	amountCents := int64(amount * 100) // WeChat uses cents (分)
+	amountCents := models.MoneyToCents(amount) // WeChat uses fen (分)
 
 	reqBody := map[string]interface{}{
 		"appid":        s.cfg.AppID,
@@ -162,7 +166,7 @@ func (s *WechatPayService) CreateNativeOrder(ctx context.Context, userID uuid.UU
 		s.logger.Error("failed to create wechat order record", zap.Error(err))
 	}
 
-	s.logger.Info("wechat pay native order created", zap.String("order_no", orderNo), zap.Float64("amount", amount))
+	s.logger.Info("wechat pay native order created", zap.String("order_no", orderNo), zap.String("amount", amount.StringFixed(2)))
 	return result.CodeURL, orderNo, nil
 }
 
@@ -231,10 +235,10 @@ func (s *WechatPayService) HandleNotify(ctx context.Context, body []byte, header
 	}
 
 	var txResult struct {
-		OutTradeNo  string `json:"out_trade_no"`
-		TradeState  string `json:"trade_state"`
-		TransID     string `json:"transaction_id"`
-		Amount      struct {
+		OutTradeNo string `json:"out_trade_no"`
+		TradeState string `json:"trade_state"`
+		TransID    string `json:"transaction_id"`
+		Amount     struct {
 			Total    int    `json:"total"`
 			Currency string `json:"currency"`
 		} `json:"amount"`
@@ -258,37 +262,28 @@ func (s *WechatPayService) HandleNotify(ctx context.Context, body []byte, header
 		return txResult.OutTradeNo, nil
 	}
 
-	// txResult.Amount.Total is in CNY fen (smallest subunit of CNY); divide by 100.
-	notifyAmount := float64(txResult.Amount.Total) / 100.0
+	// txResult.Amount.Total is in CNY fen (smallest subunit of CNY).
+	notifyAmount := models.MoneyFromCents(int64(txResult.Amount.Total))
 
 	// Cross-check against the order we created. The signature already proves
 	// the value came from WeChat, but a divergence indicates either a user
 	// pre-paying a different amount or a logic bug — refuse to credit.
-	if math.Abs(notifyAmount-order.Amount) > 0.01 {
+	if !notifyAmount.Equal(order.Amount) {
 		recordPaymentAmountMismatch("wechat")
 		s.logger.Error("wechat pay notify amount mismatch — refusing to credit",
 			zap.String("order_no", sanitize.LogValue(txResult.OutTradeNo)),
-			zap.Float64("notify_amount", notifyAmount),
-			zap.Float64("order_amount", order.Amount),
+			zap.String("notify_amount", notifyAmount.StringFixed(2)),
+			zap.String("order_amount", order.Amount.StringFixed(2)),
 		)
-		return "", fmt.Errorf("amount mismatch: notify=%.2f order=%.2f", notifyAmount, order.Amount)
+		return "", fmt.Errorf("amount mismatch: notify=%s order=%s", notifyAmount.StringFixed(2), order.Amount.StringFixed(2))
 	}
 
-	order.Status = "paid"
 	order.ExternalID = txResult.TransID
-	if err := s.subRepo.UpdateOrder(ctx, order); err != nil {
-		s.logger.Error("failed to mark wechat order paid",
-			zap.Error(err),
-			zap.String("order_no", sanitize.LogValue(txResult.OutTradeNo)),
-		)
-		return "", err
-	}
-
-	if err := s.subRepo.UpdateUserBalance(ctx, order.OrgID, notifyAmount, "recharge", "Credit Top-up via WeChat Pay", txResult.OutTradeNo); err != nil {
+	if err := s.subRepo.FulfillRechargeOrder(ctx, order.OrgID, notifyAmount, "recharge", "Credit Top-up via WeChat Pay", order, "wechat:"+txResult.OutTradeNo); err != nil {
 		s.logger.Error("failed to credit user balance for wechat payment", zap.Error(err), zap.String("order_no", sanitize.LogValue(txResult.OutTradeNo)))
 		return "", err
 	}
-	s.logger.Info("wechat pay order fulfilled", zap.String("order_no", sanitize.LogValue(txResult.OutTradeNo)), zap.Float64("amount", notifyAmount))
+	s.logger.Info("wechat pay order fulfilled", zap.String("order_no", sanitize.LogValue(txResult.OutTradeNo)), zap.String("amount", notifyAmount.StringFixed(2)))
 	return txResult.OutTradeNo, nil
 }
 

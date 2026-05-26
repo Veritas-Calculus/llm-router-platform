@@ -7,8 +7,8 @@ type Coupon {
   code: String!
   name: String!
   type: String!
-  discountValue: Float!
-  minAmount: Float!
+  discountValue: Money!
+  minAmount: Money!
   maxUses: Int!
   useCount: Int!
   maxUsesPerUser: Int!
@@ -21,8 +21,8 @@ input CouponInput {
   code: String!
   name: String!
   type: String!
-  discountValue: Float!
-  minAmount: Float
+  discountValue: Money!
+  minAmount: Money
   maxUses: Int
   maxUsesPerUser: Int
   isActive: Boolean

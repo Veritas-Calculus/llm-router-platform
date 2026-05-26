@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@apollo/client/react';
 import { DASHBOARD_QUERY } from '@/lib/graphql/operations';
+import { moneyNumber, type MoneyValue } from '@/lib/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -31,13 +32,13 @@ export function useDashboard(props?: UseDashboardProps) {
     return {
       total_requests: d.totalRequests,
       total_tokens: d.totalTokens,
-      total_cost: d.totalCost,
+      total_cost: moneyNumber(d.totalCost),
       success_rate: d.successRate,
       active_users: d.activeUsers,
       active_providers: d.activeProviders,
       active_proxies: d.activeProxies,
       requests_today: d.requestsToday,
-      cost_today: d.costToday,
+      cost_today: moneyNumber(d.costToday),
       tokens_today: d.tokensToday,
       error_count: d.errorCount,
       mcp_call_count: d.mcpCallCount,
@@ -47,7 +48,9 @@ export function useDashboard(props?: UseDashboardProps) {
     };
   }, [data]);
 
-  const chartData = useMemo(() => data?.usageChart || [], [data]);
+  const chartData = useMemo(() =>
+    (data?.usageChart || []).map((point: any) => ({ ...point, cost: moneyNumber(point.cost) })),
+  [data]);
   const providerStats = useMemo(() =>
     (data?.providerStats || []).map((p: any) => ({
       provider_id: p.providerId,
@@ -56,7 +59,7 @@ export function useDashboard(props?: UseDashboardProps) {
       tokens: p.tokens,
       success_rate: p.successRate,
       avg_latency_ms: p.avgLatencyMs,
-      total_cost: p.totalCost,
+      total_cost: moneyNumber(p.totalCost),
     })),
   [data]);
   const modelStats = useMemo(() =>
@@ -66,12 +69,12 @@ export function useDashboard(props?: UseDashboardProps) {
       requests: m.requests,
       input_tokens: m.inputTokens,
       output_tokens: m.outputTokens,
-      total_cost: m.totalCost,
+      total_cost: moneyNumber(m.totalCost),
     })),
   [data]);
 
-  const formatCurrency = (value: number): string =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+  const formatCurrency = (value: MoneyValue): string =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(moneyNumber(value));
 
   const formatNumber = (value: number): string => {
     if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@apollo/client/react';
 import { USER_DASHBOARD_QUERY } from '@/lib/graphql/operations/userDashboard';
+import { moneyNumber, type MoneyValue } from '@/lib/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -31,19 +32,21 @@ export function useUserDashboard(props?: UseUserDashboardProps) {
     return {
       totalRequests: s.totalRequests,
       totalTokens: s.totalTokens,
-      totalCost: s.totalCost,
+      totalCost: moneyNumber(s.totalCost),
       successRate: s.successRate,
     };
   }, [data]);
 
-  const chartData = useMemo(() => data?.myDailyUsage || [], [data]);
+  const chartData = useMemo(() =>
+    (data?.myDailyUsage || []).map((point: any) => ({ ...point, totalCost: moneyNumber(point.totalCost) })),
+  [data]);
 
   const providerUsage = useMemo(() =>
     (data?.myUsageByProvider || []).map((p: any) => ({
       providerName: p.providerName,
       requests: p.requests,
       tokens: p.tokens,
-      cost: p.cost,
+      cost: moneyNumber(p.cost),
     })),
   [data]);
 
@@ -51,7 +54,7 @@ export function useUserDashboard(props?: UseUserDashboardProps) {
     if (!data?.myBudgetStatus) return null;
     const b = data.myBudgetStatus;
     return {
-      currentSpend: b.currentSpend,
+      currentSpend: moneyNumber(b.currentSpend),
       percentUsed: b.percentUsed,
       isOverBudget: b.isOverBudget,
       budget: b.budget,
@@ -60,8 +63,8 @@ export function useUserDashboard(props?: UseUserDashboardProps) {
 
   const anomaly = useMemo(() => data?.myAnomalyDetection || null, [data]);
 
-  const formatCurrency = (value: number): string =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+  const formatCurrency = (value: MoneyValue): string =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(moneyNumber(value));
 
   const formatNumber = (value: number): string => {
     if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';

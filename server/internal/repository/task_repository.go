@@ -72,12 +72,19 @@ func (r *TaskRepository) UpdateStatus(ctx context.Context, id uuid.UUID, updates
 
 // CancelByID marks a pending or running task as cancelled.
 func (r *TaskRepository) CancelByID(ctx context.Context, id uuid.UUID, completedAt *time.Time) error {
-	return r.db.WithContext(ctx).Model(&models.AsyncTask{}).
+	result := r.db.WithContext(ctx).Model(&models.AsyncTask{}).
 		Where("id = ? AND status IN ?", id, []string{"pending", "running"}).
 		Updates(map[string]interface{}{
 			"status":       "cancelled",
 			"completed_at": completedAt,
-		}).Error
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // ClaimPending atomically claims up to `limit` pending tasks using SELECT FOR UPDATE SKIP LOCKED,

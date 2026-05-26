@@ -10,8 +10,8 @@ type User {
   isActive: Boolean!
   requirePasswordChange: Boolean!
   monthlyTokenLimit: Int
-  monthlyBudgetUsd: Float
-  balance: Float
+  monthlyBudgetUsd: Money
+  balance: Money
   createdAt: DateTime!
   lastLoginAt: DateTime
   mfaEnabled: Boolean!
@@ -27,7 +27,7 @@ type MfaSecretInfo {
 type Organization {
   id: ID!
   name: String!
-  billingLimit: Float!
+  billingLimit: Money!
   createdAt: DateTime!
 }
 
@@ -44,7 +44,7 @@ type Project {
   orgId: ID!
   name: String!
   description: String
-  quotaLimit: Float!
+  quotaLimit: Money!
   whiteListedIps: String
   createdAt: DateTime!
 }
@@ -52,7 +52,7 @@ type Project {
 input UpdateProjectInput {
   name: String
   description: String
-  quotaLimit: Float
+  quotaLimit: Money
   whiteListedIps: String
 }
 
@@ -139,7 +139,7 @@ type UserDetail {
   createdAt: DateTime!
   apiKeys: Int!
   monthlyTokenLimit: Int
-  monthlyBudgetUsd: Float
+  monthlyBudgetUsd: Money
   mfaEnabled: Boolean!
   usageMonth: UserMonthlyUsage
 }
@@ -147,7 +147,7 @@ type UserDetail {
 type UserMonthlyUsage {
   totalRequests: Int!
   totalTokens: Int!
-  totalCost: Float!
+  totalCost: Money!
   avgLatency: Float!
   successRate: Float!
   errorCount: Int!
@@ -155,5 +155,5 @@ type UserMonthlyUsage {
 
 input QuotaInput {
   monthlyTokenLimit: Int
-  monthlyBudgetUsd: Float
+  monthlyBudgetUsd: Money
 }

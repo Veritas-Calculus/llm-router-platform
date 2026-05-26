@@ -20,6 +20,25 @@
 -- Operators with very large tables should run VALIDATE during a low-traffic
 -- window after the up-migration completes.
 
+-- Legacy rows may contain placeholder UUIDs or references to providers/models/
+-- proxies that were later removed. Those columns are intentionally nullable and
+-- use ON DELETE SET NULL, so normalize orphaned historical references before
+-- validating the new constraints.
+UPDATE usage_logs ul
+SET provider_id = NULL
+WHERE ul.provider_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM providers p WHERE p.id = ul.provider_id);
+
+UPDATE usage_logs ul
+SET model_id = NULL
+WHERE ul.model_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM models m WHERE m.id = ul.model_id);
+
+UPDATE usage_logs ul
+SET proxy_id = NULL
+WHERE ul.proxy_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM proxies p WHERE p.id = ul.proxy_id);
+
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_usage_logs_user') THEN

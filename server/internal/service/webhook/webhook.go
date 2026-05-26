@@ -3,8 +3,8 @@ package webhook
 import (
 	"bytes"
 	"context"
-	cryptorand "crypto/rand"
 	"crypto/hmac"
+	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,6 +27,7 @@ import (
 )
 
 const (
+	encryptedSecretPrefix = "enc:v1:"
 	// maxWebhookRetries matches the repo-side WHERE retry_count < ? cap.
 	maxWebhookRetries = 5
 	// backoffBase is the first retry's nominal delay; subsequent retries
@@ -97,23 +99,43 @@ func (s *service) encryptSecretAtRest(plaintext string) string {
 		s.logger.Warn("webhook: failed to encrypt secret, storing plaintext", zap.Error(err))
 		return plaintext
 	}
-	return enc
+	return encryptedSecretPrefix + enc
 }
 
 // decryptSecret reads the at-rest value back into plaintext. Migration from
-// legacy plaintext rows is automatic: anything that doesn't decrypt cleanly
-// is assumed to be a pre-encryption row and returned as-is.
+// legacy rows is automatic: prefixed values are the current format, unprefixed
+// decryptable values are old encrypted rows, and anything else is assumed to
+// be a pre-encryption plaintext row.
 func (s *service) decryptSecret(stored string) string {
 	if !crypto.IsInitialized() || stored == "" {
 		return stored
 	}
-	dec, err := crypto.Decrypt(stored)
+	ciphertext := stored
+	if strings.HasPrefix(stored, encryptedSecretPrefix) {
+		ciphertext = strings.TrimPrefix(stored, encryptedSecretPrefix)
+	}
+	dec, err := crypto.Decrypt(ciphertext)
 	if err != nil {
-		// Likely a legacy plaintext row; the next UpdateEndpoint will
-		// re-save it through encryptSecretAtRest.
 		return stored
 	}
 	return dec
+}
+
+// normalizeSecretForStorage upgrades legacy webhook secret rows to the current
+// encrypted storage format while preserving the actual secret value.
+func (s *service) normalizeSecretForStorage(stored string) string {
+	if !crypto.IsInitialized() || stored == "" {
+		return stored
+	}
+	if strings.HasPrefix(stored, encryptedSecretPrefix) {
+		return stored
+	}
+	plaintext := stored
+	if dec, err := crypto.Decrypt(stored); err == nil {
+		// Old encrypted row from before webhook secrets were version-prefixed.
+		plaintext = dec
+	}
+	return s.encryptSecretAtRest(plaintext)
 }
 
 // computeBackoff returns the next-attempt delay for a delivery on its
@@ -222,6 +244,7 @@ func (s *service) UpdateEndpoint(ctx context.Context, id uuid.UUID, url string, 
 	}
 	endpoint.IsActive = isActive
 	endpoint.Description = description
+	endpoint.Secret = s.normalizeSecretForStorage(endpoint.Secret)
 
 	if err := s.repo.UpdateEndpoint(ctx, endpoint); err != nil {
 		return nil, fmt.Errorf("failed to update webhook endpoint: %w", err)

@@ -20,7 +20,7 @@ import { MY_BALANCE } from '@/lib/graphql/operations/auth';
 import { MY_REDEEM_HISTORY, REDEEM_CODE_MUTATION } from '@/lib/graphql/operations/redeem';
 import { useTranslation } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/authStore';
-import { formatUSD } from '@/lib/format';
+import { formatUSD, moneyNumber } from '@/lib/format';
 import toast from 'react-hot-toast';
 import RechargeModal from '@/components/RechargeModal';
 
@@ -102,7 +102,7 @@ function SubscriptionPage() {
     () => activePlans.find((p: any) => p.id === subscription?.planId),
     [activePlans, subscription?.planId]
   );
-  const currentPlanPrice = Number(currentPlan?.priceMonth || 0);
+  const currentPlanPrice = moneyNumber(currentPlan?.priceMonth);
 
   const refreshUserBalance = async () => {
     try {
@@ -111,9 +111,9 @@ function SubscriptionPage() {
       if (fresh && user) {
         updateUser({ ...user, balance: fresh.balance });
       }
-      return Number(fresh?.balance ?? user?.balance ?? 0);
+      return moneyNumber(fresh?.balance ?? user?.balance);
     } catch {
-      return Number(user?.balance ?? 0);
+      return moneyNumber(user?.balance);
     }
   };
 
@@ -151,7 +151,7 @@ function SubscriptionPage() {
   const handleChangePlan = async (plan: any) => {
     try {
       setProcessingId(plan.id);
-      const priceMonth = Number(plan.priceMonth || 0);
+      const priceMonth = moneyNumber(plan.priceMonth);
       if (priceMonth > 0) {
         const balance = await refreshUserBalance();
         if (balance >= priceMonth) {
@@ -171,7 +171,7 @@ function SubscriptionPage() {
       await changePlanWithBalance(plan.id);
       toast.success(t('subscription.change_success'));
     } catch (error) {
-      const fallback = plan.priceMonth > 0 ? t('subscription.checkout_error') : t('subscription.change_error');
+      const fallback = moneyNumber(plan.priceMonth) > 0 ? t('subscription.checkout_error') : t('subscription.change_error');
       toast.error(planChangeErrorMessage(error, fallback));
     } finally {
       setProcessingId(null);
@@ -350,7 +350,7 @@ function SubscriptionPage() {
               {activePlans.map((plan: any) => {
                 const isCurrent = subscription?.planId === plan.id;
                 const features = (plan.features || '').split(',').map((f: string) => f.trim()).filter(Boolean);
-                const priceMonth = Number(plan.priceMonth || 0);
+                const priceMonth = moneyNumber(plan.priceMonth);
                 const isUpgrade = priceMonth > currentPlanPrice;
 
                 return (
@@ -385,7 +385,7 @@ function SubscriptionPage() {
 
                     <div className="mt-5 flex items-end gap-1">
                       <span className="text-4xl font-semibold tracking-normal text-apple-gray-900 dark:text-white">
-                        ${priceMonth}
+                        {formatUSD(plan.priceMonth)}
                       </span>
                       <span className="pb-1 text-sm text-apple-gray-500 dark:text-apple-gray-400">
                         {t('subscription.per_month')}
@@ -514,7 +514,7 @@ function SubscriptionPage() {
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">{getStatusBadge(order.status)}</td>
                       <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-apple-gray-900 dark:text-white">
-                        ${order.amount.toFixed(2)}
+                        {formatUSD(order.amount)}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-sm text-apple-gray-500 dark:text-apple-gray-400">
                         {new Date(order.createdAt).toLocaleDateString()}
@@ -549,7 +549,7 @@ function SubscriptionPage() {
                 </thead>
                 <tbody className="divide-y divide-apple-gray-200 bg-white dark:divide-white/10 dark:bg-[#1C1C1E]">
                   {redeemHistory.map((record: any) => {
-                    const creditAmount = Number(record.creditAmount || 0);
+                    const creditAmount = moneyNumber(record.creditAmount);
                     const label = record.planName || t('subscription.credits');
                     return (
                       <tr key={record.id} className="transition-colors hover:bg-apple-gray-50 dark:hover:bg-white/5">

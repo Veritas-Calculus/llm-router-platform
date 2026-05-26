@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 // Provider represents an LLM provider.
@@ -42,22 +43,22 @@ func (p *Provider) GetModelPatterns() []string {
 // Model represents an LLM model.
 type Model struct {
 	BaseModel
-	ProviderID              uuid.UUID `gorm:"type:uuid;not null;index" json:"provider_id"`
-	Name                    string    `gorm:"not null" json:"name"`
-	DisplayName             string    `json:"display_name"`
-	InputPricePer1K         float64   `gorm:"default:0" json:"input_price_per_1k"`
-	OutputPricePer1K        float64   `gorm:"default:0" json:"output_price_per_1k"`
-	PricePerSecond          float64   `gorm:"default:0" json:"price_per_second,omitempty"` // TTS per-second pricing
-	PricePerImage           float64   `gorm:"default:0" json:"price_per_image,omitempty"`  // Image generation per-image pricing
-	PricePerMinute          float64   `gorm:"default:0" json:"price_per_minute,omitempty"` // Video per-minute pricing
-	ProviderInputCostPer1K  float64   `gorm:"default:0" json:"provider_input_cost_per_1k"`
-	ProviderOutputCostPer1K float64   `gorm:"default:0" json:"provider_output_cost_per_1k"`
-	ProviderCostPerSecond   float64   `gorm:"default:0" json:"provider_cost_per_second,omitempty"`
-	ProviderCostPerImage    float64   `gorm:"default:0" json:"provider_cost_per_image,omitempty"`
-	ProviderCostPerMinute   float64   `gorm:"default:0" json:"provider_cost_per_minute,omitempty"`
-	MaxTokens               int       `gorm:"default:4096" json:"max_tokens"`
-	IsActive                bool      `gorm:"default:true" json:"is_active"`
-	Provider                Provider  `gorm:"foreignKey:ProviderID" json:"-"`
+	ProviderID              uuid.UUID       `gorm:"type:uuid;not null;index" json:"provider_id"`
+	Name                    string          `gorm:"not null" json:"name"`
+	DisplayName             string          `json:"display_name"`
+	InputPricePer1K         decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"input_price_per_1k"`
+	OutputPricePer1K        decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"output_price_per_1k"`
+	PricePerSecond          decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"price_per_second,omitempty"` // TTS per-second pricing
+	PricePerImage           decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"price_per_image,omitempty"`  // Image generation per-image pricing
+	PricePerMinute          decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"price_per_minute,omitempty"` // Video per-minute pricing
+	ProviderInputCostPer1K  decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"provider_input_cost_per_1k"`
+	ProviderOutputCostPer1K decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"provider_output_cost_per_1k"`
+	ProviderCostPerSecond   decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"provider_cost_per_second,omitempty"`
+	ProviderCostPerImage    decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"provider_cost_per_image,omitempty"`
+	ProviderCostPerMinute   decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"provider_cost_per_minute,omitempty"`
+	MaxTokens               int             `gorm:"default:4096" json:"max_tokens"`
+	IsActive                bool            `gorm:"default:true" json:"is_active"`
+	Provider                Provider        `gorm:"foreignKey:ProviderID" json:"-"`
 }
 
 // ProviderAPIKey represents a provider-specific API key.

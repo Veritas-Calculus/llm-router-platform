@@ -5,8 +5,11 @@ The audit (DB-C2) flagged that every money column used `float64`/`DOUBLE PRECISI
 ## Status
 
 - **Done:** every money column is `NUMERIC(20,8)` in Postgres. Existing rows up-cast losslessly; new rows store full precision.
-- **In progress:** Go models still carry `float64`. The DB→Go cast is lossy (NUMERIC → float64) but no worse than the previous state.
-- **Not started:** GraphQL API still returns money fields as JSON floats. Clients can't see fractional cents beyond float precision.
+- **Done:** core balance/ledger, model pricing, plan-price, usage-cost, budget, coupon/redeem credit, and org/project/user limit fields (`User.Balance`, `User.MonthlyBudgetUSD`, `Model.*Price*` / `Model.*Cost*`, `Plan.PriceMonth`, `UsageLog.Cost` / `UsageLog.CustomerCharge` / `UsageLog.ProviderCost`, `Order.Amount`, `Transaction.Amount` / `Transaction.Balance`, `Budget.MonthlyLimitUSD`, `Coupon.DiscountValue` / `Coupon.MinAmount`, `RedeemCode.CreditAmount`, `Organization.BillingLimit`, `Project.QuotaLimit`) are `shopspring/decimal.Decimal` in Go and persist at the same 8-digit DB scale.
+- **Done:** billing calculations, usage summary DTOs, current-month Redis usage caches, core balance mutations, budget checks, payment checkout inputs, payment webhook amount checks, balance fulfillment repository methods, and SQL financial/usage aggregate rows now use `shopspring/decimal` internally and round to the DB/provider scale before writing.
+- **Done:** GraphQL now exposes primary persisted money fields and aggregate/reporting money fields through a `Money` scalar serialized as a decimal string: user balance/budgets, org/project limits, model pricing/costs, plans, orders, budgets, coupons, redeem credits, usage summaries, finance dashboards, revenue/cost rollups, and chart points. The web app accepts `Money` inputs as strings or numbers, formats string responses safely, and normalizes chart data to numbers only at visualization boundaries.
+- **Done:** admin revenue stats and the financial dashboard service DTOs now carry `decimal.Decimal` through to GraphQL instead of converting to `float64` internally.
+- **Remaining:** no known money write/enforcement path depends on `float64`. The only intentional floating-point values left are non-money API metrics such as percentages and standard-deviation scores. Deprecated REST payment helpers still emit JSON numbers for backward compatibility, but they serialize from decimal rather than float.
 
 ## Migration plan
 
@@ -14,7 +17,9 @@ The audit (DB-C2) flagged that every money column used `float64`/`DOUBLE PRECISI
 
 Database columns are `NUMERIC(20,8)`. Sum and aggregation queries in SQL are now exact regardless of how many rows you sum.
 
-### Phase 2 (next): Go models adopt `shopspring/decimal.Decimal`
+### Phase 2 (in progress): Go models adopt `shopspring/decimal.Decimal`
+
+The first slices are landed: cost calculation no longer does token/price math with raw `float64`, the old `roundCost` transition helper has been removed, the balance mutation paths for usage deduction, recharge fulfillment, subscription balance payment, onboarding credit, and redeem-code credit now do decimal add/subtract against `User.Balance`, and user/model/plan/usage/order/transaction/budget/coupon/redeem/limit persisted amount fields are decimal-native. GraphQL money responses use the public `Money` scalar; deprecated REST payment DTOs still expose JSON numbers for backward compatibility, generated from decimal values.
 
 For each money field on a model, switch the Go type:
 
@@ -36,20 +41,17 @@ type Transaction struct {
 
 `decimal.Decimal` implements `sql.Scanner` / `driver.Valuer` / `encoding/json.Marshaler` out of the box, so the only mechanical churn is at the boundaries where arithmetic happens (`a + b` → `a.Add(b)`, `a * b` → `a.Mul(b)`). The compiler errors guide you through every site.
 
-Touch the following packages roughly in this order:
+Continue through the remaining model/API fields in this order:
 
-1. `internal/models/billing.go` and `internal/models/identity.go` (User.Balance, Transaction.Amount/Balance, Order.Amount).
-2. `internal/repository/billing_extra_repository.go` — `UpdateUserBalance` / `FulfillRechargeOrder` write paths.
-3. `internal/service/billing/balance.go` / `billing.go` / `payment.go` — comparison + math.
-4. `internal/service/billing/cost.go` — pricing calculation. Keep the inputs as `decimal.Decimal` end-to-end so you don't reintroduce float64 in the middle.
-5. `internal/api/handlers/payment_handler.go` and the Stripe/WeChat/Alipay services for input parsing.
-6. GraphQL resolvers (`billing.resolvers.go`, plan/usage queries) — serialize via the JSON marshaler (default `decimal.Decimal` marshals to a quoted string, which most JS clients handle correctly).
+1. Public API boundary: `Money` scalar/DTO string responses are now in place for primary persisted money fields.
+2. Internal DTO/cache fields: billing usage summary structs are decimal-native, Redis cost counters use `cost_units` / `total_cost_units` fixed at `MoneyScale`, and latency cache sums use integer milliseconds. Old `cost_usd` Redis values are read as a fallback but are not the canonical counter.
+3. Remaining cleanup is API-design work: decide whether deprecated REST payment endpoints should eventually move from JSON numbers to string money responses. This is intentionally separate because it changes response shape for old clients.
 
 ### Phase 3: GraphQL Money scalar
 
-Add a `scalar Money` to `internal/graphql/schema/schema.graphqls` and a custom scalar definition in `internal/graphql/handler/handler.go` that wraps `decimal.Decimal`. Frontend then deserializes via the same string form — pick a JS decimal library on the client (recommended: `decimal.js` or `bignumber.js`).
+`scalar Money` is now wired through gqlgen as a decimal-string scalar. Frontend codegen maps `Money` outputs to `string` and inputs to `string | number`, with formatting helpers normalizing display-time values.
 
-Once Phase 3 lands, remove every remaining `float64` money field in Go and the `roundCost` helpers.
+Next, treat deprecated REST payment endpoint response shape as API-design cleanup. The primary management surface already speaks decimal/`Money`, and the internal billing/quota/anomaly paths no longer depend on float arithmetic for money.
 
 ## Why not flag-day everything
 

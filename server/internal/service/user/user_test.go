@@ -106,6 +106,33 @@ func TestAPIKeyRateLimits(t *testing.T) {
 	assert.True(t, apiKey.DailyLimit > apiKey.RateLimit)
 }
 
+func TestNormalizeAPIKeyScopes(t *testing.T) {
+	tests := []struct {
+		name    string
+		scopes  string
+		want    string
+		wantErr bool
+	}{
+		{name: "empty defaults to chat", scopes: "", want: "chat"},
+		{name: "dedupes and normalizes", scopes: " Chat, embeddings,chat ", want: "chat,embeddings"},
+		{name: "all means all LLM endpoints", scopes: "chat,all,images", want: "all"},
+		{name: "rejects management admin scope", scopes: "admin", wantErr: true},
+		{name: "rejects unknown scope", scopes: "chat,files", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeAPIKeyScopes(tt.scopes)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestInactiveUser(t *testing.T) {
 	user := models.User{
 		Email:    "inactive@example.com",

@@ -26,9 +26,7 @@ type OpenAIClient struct {
 
 // NewOpenAIClient creates a new OpenAI client.
 func NewOpenAIClient(cfg *config.ProviderConfig, logger *zap.Logger) *OpenAIClient {
-	httpClient := &http.Client{
-		Timeout: 600 * time.Second,
-	}
+	httpClient := defaultHTTPClient()
 	if cfg.HTTPClient != nil {
 		httpClient = cfg.HTTPClient()
 	}

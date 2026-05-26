@@ -15,6 +15,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const rateLimitRedisTimeout = 200 * time.Millisecond
+
 // PerKeyRateLimiter enforces per-API-key rate limits using Redis sliding window.
 // It checks both per-minute and per-day limits from the APIKey model.
 // When Redis is unavailable, it falls back to an in-memory counter.
@@ -62,7 +64,8 @@ func (l *PerKeyRateLimiter) Limit() gin.HandlerFunc {
 			return
 		}
 
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(c.Request.Context(), rateLimitRedisTimeout)
+		defer cancel()
 
 		// 1. Per-minute limit (sliding window)
 		if apiKey.RateLimit > 0 {
@@ -111,7 +114,12 @@ func (l *PerKeyRateLimiter) Limit() gin.HandlerFunc {
 		if apiKey.TokenLimit > 0 {
 			tpmKey := fmt.Sprintf("rl:tpm:%s:%d", apiKey.ID.String(), time.Now().Unix()/60)
 
-			currentStr := l.redis.Get(ctx, tpmKey).Val()
+			currentStr, err := l.redis.Get(ctx, tpmKey).Result()
+			if err != nil && err != redis.Nil {
+				l.logger.Warn("per-key token limiter redis error, allowing request", zap.Error(err))
+				c.Next()
+				return
+			}
 			currentTokens, _ := strconv.ParseInt(currentStr, 10, 64)
 
 			c.Header("X-RateLimit-Tokens-Limit", strconv.FormatInt(apiKey.TokenLimit, 10))
@@ -270,7 +278,8 @@ func (l *PerUserRateLimiter) Limit() gin.HandlerFunc {
 
 		now := time.Now()
 		windowStart := now.Add(-time.Minute)
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(c.Request.Context(), rateLimitRedisTimeout)
+		defer cancel()
 
 		pipe := l.redis.Pipeline()
 		pipe.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(windowStart.UnixNano(), 10))

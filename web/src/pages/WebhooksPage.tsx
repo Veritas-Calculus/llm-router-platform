@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   PlusIcon, TrashIcon, PencilSquareIcon, BoltIcon,
   CheckCircleIcon, XCircleIcon, ClockIcon,
 } from '@heroicons/react/24/outline';
 import { useWebhooks } from '@/components/webhooks';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 export default function WebhooksPage() {
   const {
@@ -18,6 +20,8 @@ export default function WebhooksPage() {
     handleOpenModal, handleSubmit, handleDelete, handleTest,
     parseJson,
   } = useWebhooks();
+  const closeModal = useCallback(() => setIsModalOpen(false), [setIsModalOpen]);
+  const dialogRef = useDialogA11y<HTMLDivElement>(isModalOpen, closeModal);
 
   /* ── Shared org/project selector ── */
   const OrgProjectSelectors = (
@@ -196,11 +200,21 @@ export default function WebhooksPage() {
       {/* Create/Edit Modal */}
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsModalOpen(false)} className="absolute inset-0 bg-gray-500/75 dark:bg-black/80 backdrop-blur-sm transition-opacity" />
-            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-lg card overflow-hidden">
+          <div data-modal-root="true" className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeModal} className="absolute inset-0 bg-gray-500/75 dark:bg-black/80 backdrop-blur-sm transition-opacity" />
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="webhook-modal-title"
+              ref={dialogRef}
+              tabIndex={-1}
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-lg card overflow-hidden"
+            >
               <div className="px-6 py-5 border-b" style={{ borderColor: 'var(--theme-border)' }}>
-                <h3 className="text-xl font-semibold" style={{ color: 'var(--theme-text)' }}>{editingWebhook ? t('webhooks.edit_webhook') : t('webhooks.add_webhook')}</h3>
+                <h3 id="webhook-modal-title" className="text-xl font-semibold" style={{ color: 'var(--theme-text)' }}>{editingWebhook ? t('webhooks.edit_webhook') : t('webhooks.add_webhook')}</h3>
               </div>
               <form onSubmit={handleSubmit} className="p-6 space-y-5">
                 <div>
@@ -215,7 +229,7 @@ export default function WebhooksPage() {
                   <input type="text" id="description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     className="mt-2 block w-full rounded-xl px-4 py-2.5 text-sm focus:ring-apple-blue focus:border-apple-blue"
                     style={{ backgroundColor: 'var(--theme-bg-input)', border: '1px solid var(--theme-border)', color: 'var(--theme-text)' }}
-                    placeholder={t('webhooks.url_placeholder')} />
+                    placeholder={t('webhooks.description_placeholder')} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: 'var(--theme-text-secondary)' }}>{t('webhooks.events_to_send')}</label>
@@ -240,7 +254,7 @@ export default function WebhooksPage() {
                   </div>
                 </div>
                 <div className="pt-4 flex items-center justify-end gap-3 border-t mt-6" style={{ borderColor: 'var(--theme-border)' }}>
-                  <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2.5 rounded-xl text-sm font-medium transition-colors hover:opacity-80" style={{ color: 'var(--theme-text-secondary)' }}>{t('common.cancel')}</button>
+                  <button type="button" onClick={closeModal} className="px-4 py-2.5 rounded-xl text-sm font-medium transition-colors hover:opacity-80" style={{ color: 'var(--theme-text-secondary)' }}>{t('common.cancel')}</button>
                   <button type="submit" className="px-4 py-2.5 rounded-xl text-sm font-medium text-white shadow bg-apple-blue hover:bg-blue-600 transition-colors focus:ring-2 focus:ring-offset-2 focus:ring-apple-blue">
                     {editingWebhook ? t('webhooks.save_changes') : t('webhooks.create_webhook')}
                   </button>

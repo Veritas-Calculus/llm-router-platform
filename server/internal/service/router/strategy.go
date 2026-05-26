@@ -15,6 +15,7 @@ import (
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
@@ -37,7 +38,7 @@ var heuristicContains = map[string][]string{
 // findProviderForModel tries to find the appropriate provider for a given model name.
 // It strips client-format prefixes (e.g., "openai/gpt-oss-120b" -> "gpt-oss-120b"),
 // then prioritises explicit DB model assignments over heuristic prefix matching.
-func (r *Router) findProviderForModel(modelName string, providers []models.Provider) *models.Provider {
+func (r *Router) findProviderForModel(ctx context.Context, modelName string, providers []models.Provider) *models.Provider {
 	// Strip client prefix if present (e.g., "openai/gpt-oss-120b" -> "gpt-oss-120b").
 	actualModel := modelName
 	if idx := strings.Index(modelName, "/"); idx > 0 {
@@ -46,7 +47,7 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 
 	// 1. Check cached DB model assignments (refreshed every 5 minutes).
 	if r.modelRepo != nil {
-		modelMap := r.getModelProviderCache(providers)
+		modelMap := r.getModelProviderCache(ctx, providers)
 		if providerIdx, ok := modelMap[strings.ToLower(actualModel)]; ok {
 			r.logger.Debug("model matched via database cache",
 				zap.String("model", sanitize.LogValue(modelName)),
@@ -59,7 +60,7 @@ func (r *Router) findProviderForModel(modelName string, providers []models.Provi
 	// 2. Cached upstream model discovery.
 	discoveryMap := r.getDiscoveryCache()
 	if discoveryMap == nil {
-		discoveryMap = r.refreshDiscoveryCache(providers)
+		discoveryMap = r.refreshDiscoveryCache(ctx, providers)
 	}
 	if providerName, ok := discoveryMap[strings.ToLower(actualModel)]; ok {
 		for i := range providers {
@@ -144,8 +145,9 @@ func (r *Router) selectRoundRobin(providers []models.Provider) *models.Provider 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	idx := r.roundRobinIndex % len(providers)
 	r.roundRobinIndex = (r.roundRobinIndex + 1) % len(providers)
-	return &providers[r.roundRobinIndex]
+	return &providers[idx]
 }
 
 // selectWeighted selects provider based on weights.
@@ -226,22 +228,22 @@ func (r *Router) RecordLatency(providerID uuid.UUID, latencyMs int64) {
 func (r *Router) selectCostOptimized(ctx context.Context, modelName string, providers []models.Provider) *models.Provider {
 	type providerCost struct {
 		provider *models.Provider
-		cost     float64
+		cost     decimal.Decimal
 	}
 
 	var candidates []providerCost
 
 	for i := range providers {
 		p := &providers[i]
-		models, err := r.modelRepo.GetByProvider(ctx, p.ID)
+		providerModels, err := r.modelRepo.GetByProvider(ctx, p.ID)
 		if err != nil {
 			continue
 		}
-		for _, m := range models {
+		for _, m := range providerModels {
 			if strings.EqualFold(m.Name, modelName) && m.IsActive {
 				candidates = append(candidates, providerCost{
 					provider: p,
-					cost:     m.InputPricePer1K,
+					cost:     m.InputPricePer1K.Round(models.MoneyScale),
 				})
 				break
 			}
@@ -256,7 +258,7 @@ func (r *Router) selectCostOptimized(ctx context.Context, modelName string, prov
 	// Find the lowest cost
 	best := candidates[0]
 	for _, c := range candidates[1:] {
-		if c.cost < best.cost {
+		if c.cost.Cmp(best.cost) < 0 {
 			best = c
 		}
 	}
@@ -264,7 +266,7 @@ func (r *Router) selectCostOptimized(ctx context.Context, modelName string, prov
 	r.logger.Debug("cost-optimized routing",
 		zap.String("model", sanitize.LogValue(modelName)),
 		zap.String("provider", best.provider.Name),
-		zap.Float64("cost_per_1k", best.cost),
+		zap.String("cost_per_1k", best.cost.StringFixed(models.MoneyScale)),
 	)
 
 	return best.provider

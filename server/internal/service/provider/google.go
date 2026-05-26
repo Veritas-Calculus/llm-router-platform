@@ -26,9 +26,7 @@ type GoogleClient struct {
 
 // NewGoogleClient creates a new Google Gemini client.
 func NewGoogleClient(cfg *config.ProviderConfig, logger *zap.Logger) *GoogleClient {
-	httpClient := &http.Client{
-		Timeout: 600 * time.Second,
-	}
+	httpClient := defaultHTTPClient()
 	if cfg.HTTPClient != nil {
 		httpClient = cfg.HTTPClient()
 	}

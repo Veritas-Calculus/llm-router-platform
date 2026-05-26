@@ -19,6 +19,7 @@ import (
 	"llm-router-platform/internal/crypto"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
+	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -35,11 +36,9 @@ type Service struct {
 // NewService creates a new proxy service.
 func NewService(proxyRepo *repository.ProxyRepository, logger *zap.Logger) *Service {
 	return &Service{
-		proxyRepo: proxyRepo,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-		logger: logger,
+		proxyRepo:  proxyRepo,
+		httpClient: sanitize.SafeHTTPClient(true, 10*time.Second),
+		logger:     logger,
 	}
 }
 
@@ -309,9 +308,9 @@ func (s *Service) buildProxyTransport(ctx context.Context, proxy *models.Proxy) 
 	}
 
 	// Simple single-proxy transport
-	return &http.Transport{
-		Proxy: http.ProxyURL(proxyURL),
-	}, nil
+	transport := sanitize.SafeTransport(true)
+	transport.Proxy = http.ProxyURL(proxyURL)
+	return transport, nil
 }
 
 // buildChainedTransport creates a transport that connects through an upstream proxy first.
@@ -502,10 +501,8 @@ func (s *Service) checkProxyHealth(ctx context.Context, proxy *models.Proxy) (bo
 		return false, 0, err
 	}
 
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   10 * time.Second,
-	}
+	client := sanitize.SafeHTTPClient(true, 10*time.Second)
+	client.Transport = transport
 
 	// Use ip.plz.ac to test proxy connectivity - it returns the IP address
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://ip.plz.ac", nil)
@@ -574,14 +571,12 @@ func (s *Service) GetHTTPClient(ctx context.Context) (*http.Client, error) {
 		proxyURL.User = url.UserPassword(proxy.Username, password)
 	}
 
-	transport := &http.Transport{
-		Proxy: http.ProxyURL(proxyURL),
-	}
+	transport := sanitize.SafeTransport(true)
+	transport.Proxy = http.ProxyURL(proxyURL)
 
-	return &http.Client{
-		Transport: transport,
-		Timeout:   60 * time.Second,
-	}, nil
+	client := sanitize.SafeHTTPClient(true, 60*time.Second)
+	client.Transport = transport
+	return client, nil
 }
 
 // secureRandomInt returns a cryptographically secure random int in [0, n).

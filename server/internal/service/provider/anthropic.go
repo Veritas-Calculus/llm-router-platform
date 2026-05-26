@@ -25,9 +25,7 @@ type AnthropicClient struct {
 
 // NewAnthropicClient creates a new Anthropic client.
 func NewAnthropicClient(cfg *config.ProviderConfig, logger *zap.Logger) *AnthropicClient {
-	httpClient := &http.Client{
-		Timeout: 600 * time.Second,
-	}
+	httpClient := defaultHTTPClient()
 	if cfg.HTTPClient != nil {
 		httpClient = cfg.HTTPClient()
 	}

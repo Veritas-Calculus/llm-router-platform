@@ -43,3 +43,19 @@ func TestIsClientGraphQLError(t *testing.T) {
 		})
 	}
 }
+
+func TestClassifyClientErrorRefreshTokenFailures(t *testing.T) {
+	tests := []string{
+		"invalid refresh token",
+		"refresh token has been revoked",
+		"token has been revoked",
+	}
+
+	for _, msg := range tests {
+		t.Run(msg, func(t *testing.T) {
+			if got := classifyClientError(msg); got != codeUnauthenticated {
+				t.Fatalf("classifyClientError(%q) = %q, want %q", msg, got, codeUnauthenticated)
+			}
+		})
+	}
+}

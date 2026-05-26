@@ -6,12 +6,13 @@ import { motion } from 'framer-motion';
 import { TicketIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useTranslation } from '@/lib/i18n';
 import { ADMIN_REDEEM_CODES_QUERY, GENERATE_REDEEM_CODES, REVOKE_REDEEM_CODE } from '@/lib/graphql/operations/redeem';
+import { formatUSD, type MoneyValue } from '@/lib/format';
 
 interface RedeemCode {
   id: string;
   code: string;
   type: string;
-  creditAmount: number;
+  creditAmount: MoneyValue;
   planId?: string;
   usedBy?: string;
   usedAt?: string;
@@ -146,7 +147,7 @@ function RedeemCodesPage() {
                 <tr key={code.id} className="hover:bg-apple-gray-50/50 transition-colors">
                   <td className="px-5 py-3.5 font-mono text-xs">{code.code}</td>
                   <td className="px-5 py-3.5 capitalize">{code.type}</td>
-                  <td className="px-5 py-3.5 text-right">${code.creditAmount.toFixed(2)}</td>
+                  <td className="px-5 py-3.5 text-right">{formatUSD(code.creditAmount)}</td>
                   <td className="px-5 py-3.5 text-center">
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
                       code.usedBy ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300' : code.isActive ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300'

@@ -443,7 +443,7 @@ func (h *OAuth2Handler) findOrCreateUser(email, name, provider, oauthID string) 
 			OAuthID:         oauthID,
 			EmailVerified:   true,
 			EmailVerifiedAt: &now,
-			Balance:         5.0,
+			Balance:         models.MoneyFromString("5.00"),
 		}
 		if err := tx.Create(&user).Error; err != nil {
 			return fmt.Errorf("create user: %w", err)
@@ -465,8 +465,8 @@ func (h *OAuth2Handler) findOrCreateUser(email, name, provider, oauthID string) 
 			OrgID:       org.ID,
 			UserID:      user.ID,
 			Type:        "recharge",
-			Amount:      5.0,
-			Balance:     5.0,
+			Amount:      models.MoneyFromString("5.00"),
+			Balance:     models.MoneyFromString("5.00"),
 			Description: "Welcome credit",
 			Currency:    "USD",
 		}

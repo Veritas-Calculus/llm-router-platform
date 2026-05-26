@@ -7,6 +7,45 @@ import reactRefresh from "eslint-plugin-react-refresh";
 export default [
   js.configs.recommended,
 
+  // Node-side tooling files
+  {
+    files: ["codegen.ts"],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: "latest",
+        sourceType: "module",
+      },
+      globals: {
+        console: "readonly",
+        process: "readonly",
+      },
+    },
+    plugins: {
+      "@typescript-eslint": tsPlugin,
+    },
+    rules: {
+      "no-undef": "off",
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": ["warn", {
+        argsIgnorePattern: "^_",
+        varsIgnorePattern: "^_",
+      }],
+    },
+  },
+
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        console: "readonly",
+        process: "readonly",
+      },
+    },
+  },
+
   // TypeScript files
   {
     files: ["src/**/*.{ts,tsx}"],
@@ -68,6 +107,6 @@ export default [
 
   // Ignore patterns
   {
-    ignores: ["dist/", "node_modules/", "*.config.*"],
+    ignores: ["dist/", "node_modules/", "*.config.*", "src/lib/graphql/generated/"],
   },
 ];

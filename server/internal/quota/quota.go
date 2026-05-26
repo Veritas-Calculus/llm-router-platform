@@ -8,11 +8,15 @@ package quota
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
+
+	"llm-router-platform/internal/models"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
@@ -44,6 +48,12 @@ var (
 	)
 )
 
+const (
+	tokensField    = "tokens"
+	costUSDField   = "cost_usd"
+	costUnitsField = "cost_units"
+)
+
 // MonthlyKey returns the Redis hash key that holds the user's current-month
 // token + cost counters. Format: quota:<userID>:YYYY-MM.
 //
@@ -58,22 +68,24 @@ func MonthlyKeyAt(userID string, t time.Time) string {
 	return fmt.Sprintf("quota:%s:%s", userID, t.Format("2006-01"))
 }
 
-// IncrementUsage records a delta of tokens and cost to the user's monthly
-// hash. Errors are logged + counted but never returned: the calling path is
-// always after a successful DB write, and we don't want to fail the request
-// (or roll back the DB transaction) just because Redis blipped.
+// IncrementUsageMoney records a token delta and decimal money delta.
 //
-// The hash is set to expire 35 days after the latest write so a stale month
-// can never serve as input to the next month's quota check.
-func IncrementUsage(ctx context.Context, rdb *redis.Client, logger *zap.Logger, userID string, tokens int64, costUSD float64) {
+// Redis only has native integer and floating increments. To keep monthly budget
+// checks deterministic, the canonical cached cost is stored as a fixed-scale
+// integer in cost_units, where one unit is 10^-8 USD (matching MoneyScale).
+// The legacy cost_usd field is read as a fallback for old Redis keys but new
+// writes avoid floating increments entirely.
+func IncrementUsageMoney(ctx context.Context, rdb *redis.Client, logger *zap.Logger, userID string, tokens int64, costUSD decimal.Decimal) {
 	if rdb == nil || userID == "" {
 		return
 	}
 
+	costUSD = costUSD.Round(models.MoneyScale)
+	costUnits := models.MoneyToUnits(costUSD)
 	key := MonthlyKey(userID)
 	pipe := rdb.Pipeline()
-	pipe.HIncrBy(ctx, key, "tokens", tokens)
-	pipe.HIncrByFloat(ctx, key, "cost_usd", costUSD)
+	pipe.HIncrBy(ctx, key, tokensField, tokens)
+	pipe.HIncrBy(ctx, key, costUnitsField, costUnits)
 	pipe.Expire(ctx, key, 35*24*time.Hour)
 	if _, err := pipe.Exec(ctx); err != nil {
 		IncrementFailuresTotal.Inc()
@@ -81,32 +93,40 @@ func IncrementUsage(ctx context.Context, rdb *redis.Client, logger *zap.Logger, 
 			logger.Warn("quota cache increment failed",
 				zap.String("user_id", userID),
 				zap.Int64("tokens", tokens),
-				zap.Float64("cost_usd", costUSD),
+				zap.String("cost_usd", costUSD.StringFixed(models.MoneyScale)),
+				zap.Int64("cost_units", costUnits),
 				zap.Error(err),
 			)
 		}
 	}
 }
 
-// ReadMonthlyUsage reads the current usage counters for a user. Returns
-// (tokens, costUSD, error). Caller decides whether to fail open or fall back.
-func ReadMonthlyUsage(ctx context.Context, rdb *redis.Client, userID string) (int64, float64, error) {
+// ReadMonthlyUsageMoney reads monthly token and decimal cost counters.
+func ReadMonthlyUsageMoney(ctx context.Context, rdb *redis.Client, userID string) (int64, decimal.Decimal, error) {
 	if rdb == nil {
-		return 0, 0, nil
+		return 0, decimal.Zero, nil
 	}
 	key := MonthlyKey(userID)
 	res, err := rdb.HGetAll(ctx, key).Result()
 	if err != nil {
-		return 0, 0, err
+		return 0, decimal.Zero, err
 	}
 
 	var tokens int64
-	var cost float64
-	if v, ok := res["tokens"]; ok {
-		_, _ = fmt.Sscanf(v, "%d", &tokens)
+	if v, ok := res[tokensField]; ok {
+		tokens, _ = strconv.ParseInt(v, 10, 64)
 	}
-	if v, ok := res["cost_usd"]; ok {
-		_, _ = fmt.Sscanf(v, "%f", &cost)
+	if v, ok := res[costUnitsField]; ok {
+		units, parseErr := strconv.ParseInt(v, 10, 64)
+		if parseErr == nil {
+			return tokens, models.MoneyFromUnits(units), nil
+		}
 	}
-	return tokens, cost, nil
+	if v, ok := res[costUSDField]; ok {
+		cost, parseErr := decimal.NewFromString(v)
+		if parseErr == nil {
+			return tokens, cost.Round(models.MoneyScale), nil
+		}
+	}
+	return tokens, decimal.Zero, nil
 }

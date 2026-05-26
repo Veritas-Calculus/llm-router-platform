@@ -6,12 +6,13 @@ import { motion } from 'framer-motion';
 import { CreditCardIcon, PlusIcon, PencilSquareIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useTranslation } from '@/lib/i18n';
 import { PLANS_QUERY, CREATE_PLAN, UPDATE_PLAN } from '@/lib/graphql/operations/plans';
+import { formatUSD, type MoneyValue } from '@/lib/format';
 
 interface Plan {
   id: string;
   name: string;
   description: string;
-  priceMonth: number;
+  priceMonth: MoneyValue;
   tokenLimit: number;
   rateLimit: number;
   supportLevel: string;
@@ -78,7 +79,7 @@ function AdminPlansPage() {
     try {
       const input = {
         ...form,
-        priceMonth: parseNumberField(form.priceMonth),
+        priceMonth: form.priceMonth.trim() || '0',
         tokenLimit: Math.trunc(parseNumberField(form.tokenLimit)),
         rateLimit: Math.trunc(parseNumberField(form.rateLimit)),
         description: form.description || undefined,
@@ -194,7 +195,7 @@ function AdminPlansPage() {
               {plans.map(plan => (
                 <tr key={plan.id} className="hover:bg-apple-gray-50/50 transition-colors">
                   <td className="px-5 py-3.5 font-medium text-apple-gray-900">{plan.name}</td>
-                  <td className="px-5 py-3.5 text-right">${plan.priceMonth.toFixed(2)}/mo</td>
+                  <td className="px-5 py-3.5 text-right">{formatUSD(plan.priceMonth)}/mo</td>
                   <td className="px-5 py-3.5 text-right">{(plan.tokenLimit / 1000).toFixed(0)}K</td>
                   <td className="px-5 py-3.5 text-right">{plan.rateLimit} req/min</td>
                   <td className="px-5 py-3.5 text-left capitalize">{plan.supportLevel}</td>

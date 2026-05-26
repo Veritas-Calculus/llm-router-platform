@@ -7,16 +7,26 @@ package resolvers
 
 import (
 	"context"
+	"fmt"
+	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/graphql/model"
 	gdbModels "llm-router-platform/internal/models"
 
 	"github.com/google/uuid"
 )
 
+var (
+	webhookManagerRoles = []string{"OWNER", "ADMIN"}
+	webhookReaderRoles  = []string{"OWNER", "ADMIN", "MEMBER", "READONLY"}
+)
+
 // CreateWebhookEndpoint is the resolver for the createWebhookEndpoint field.
 func (r *mutationResolver) CreateWebhookEndpoint(ctx context.Context, input model.CreateWebhookEndpointInput) (*model.WebhookEndpoint, error) {
 	projectID, err := uuid.Parse(input.ProjectID)
 	if err != nil {
+		return nil, err
+	}
+	if err := r.requireWebhookProjectRole(ctx, projectID, webhookManagerRoles...); err != nil {
 		return nil, err
 	}
 	var desc string
@@ -47,6 +57,9 @@ func (r *mutationResolver) UpdateWebhookEndpoint(ctx context.Context, id string,
 	var current *gdbModels.WebhookEndpoint
 	current, err = r.WebhookSvc.GetEndpoint(ctx, endpointID)
 	if err != nil {
+		return nil, err
+	}
+	if err := r.requireWebhookProjectRole(ctx, current.ProjectID, webhookManagerRoles...); err != nil {
 		return nil, err
 	}
 
@@ -81,6 +94,13 @@ func (r *mutationResolver) DeleteWebhookEndpoint(ctx context.Context, id string)
 	if err != nil {
 		return false, err
 	}
+	endpoint, err := r.WebhookSvc.GetEndpoint(ctx, endpointID)
+	if err != nil {
+		return false, err
+	}
+	if err := r.requireWebhookProjectRole(ctx, endpoint.ProjectID, webhookManagerRoles...); err != nil {
+		return false, err
+	}
 	if err := r.WebhookSvc.DeleteEndpoint(ctx, endpointID); err != nil {
 		return false, err
 	}
@@ -96,6 +116,10 @@ func (r *mutationResolver) TestWebhookEndpoint(ctx context.Context, id string) (
 
 	endpoint, err := r.WebhookSvc.GetEndpoint(ctx, endpointID)
 	if err != nil {
+		return false, err
+	}
+
+	if err := r.requireWebhookProjectRole(ctx, endpoint.ProjectID, webhookManagerRoles...); err != nil {
 		return false, err
 	}
 
@@ -119,6 +143,9 @@ func (r *queryResolver) Webhooks(ctx context.Context, projectID string) ([]*mode
 	if err != nil {
 		return nil, err
 	}
+	if err := r.requireWebhookProjectRole(ctx, pID, webhookReaderRoles...); err != nil {
+		return nil, err
+	}
 	endpoints, err := r.WebhookSvc.GetEndpoints(ctx, pID)
 	if err != nil {
 		return nil, err
@@ -136,9 +163,19 @@ func (r *queryResolver) WebhookDeliveries(ctx context.Context, endpointID string
 	if err != nil {
 		return nil, err
 	}
+	endpoint, err := r.WebhookSvc.GetEndpoint(ctx, eID)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.requireWebhookProjectRole(ctx, endpoint.ProjectID, webhookReaderRoles...); err != nil {
+		return nil, err
+	}
 	l := 50
-	if limit != nil {
+	if limit != nil && *limit > 0 {
 		l = *limit
+	}
+	if l > 100 {
+		l = 100
 	}
 	deliveries, err := r.WebhookSvc.GetDeliveries(ctx, eID, l)
 	if err != nil {
@@ -149,4 +186,15 @@ func (r *queryResolver) WebhookDeliveries(ctx context.Context, endpointID string
 		res = append(res, mapWebhookDelivery(d))
 	}
 	return res, nil
+}
+
+func (r *Resolver) requireWebhookProjectRole(ctx context.Context, projectID uuid.UUID, roles ...string) error {
+	userID, err := directives.UserIDFromContext(ctx)
+	if err != nil || userID == "" {
+		return fmt.Errorf("unauthenticated")
+	}
+	if err := r.UserSvc.RequireProjectRole(ctx, userID, projectID.String(), roles...); err != nil {
+		return fmt.Errorf("forbidden: access denied")
+	}
+	return nil
 }

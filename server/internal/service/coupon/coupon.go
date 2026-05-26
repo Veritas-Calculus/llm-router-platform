@@ -9,6 +9,7 @@ import (
 	"llm-router-platform/internal/models"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -87,13 +88,15 @@ func normalizeAndValidate(c *models.Coupon) error {
 	if c.Type != "percent" && c.Type != "fixed" {
 		return fmt.Errorf("coupon type must be percent or fixed")
 	}
-	if c.DiscountValue <= 0 {
+	c.DiscountValue = c.DiscountValue.Round(models.MoneyScale)
+	c.MinAmount = c.MinAmount.Round(models.MoneyScale)
+	if !c.DiscountValue.IsPositive() {
 		return fmt.Errorf("discount value must be positive")
 	}
-	if c.Type == "percent" && c.DiscountValue > 100 {
+	if c.Type == "percent" && c.DiscountValue.Cmp(decimal.NewFromInt(100)) > 0 {
 		return fmt.Errorf("percentage discount cannot exceed 100")
 	}
-	if c.MinAmount < 0 || c.MaxUses < 0 || c.MaxUsesPerUser < 0 {
+	if c.MinAmount.IsNegative() || c.MaxUses < 0 || c.MaxUsesPerUser < 0 {
 		return fmt.Errorf("coupon limits cannot be negative")
 	}
 	return nil

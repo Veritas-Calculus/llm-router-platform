@@ -10,6 +10,7 @@ import {
 import { useQuery } from '@apollo/client/react';
 import { PLANS_QUERY, MY_BILLING_QUERY } from '@/lib/graphql/operations';
 import { useTranslation } from '@/lib/i18n';
+import { formatUSD } from '@/lib/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -82,7 +83,7 @@ function PlansPage() {
                 <p className="mt-2 text-apple-gray-500 text-sm h-10">{plan.description}</p>
                 
                 <div className="mt-6 flex items-baseline">
-                  <span className="text-4xl font-bold text-apple-gray-900">${plan.priceMonth}</span>
+                  <span className="text-4xl font-bold text-apple-gray-900">{formatUSD(plan.priceMonth)}</span>
                   <span className="ml-1 text-apple-gray-500">{t('subscription.per_month')}</span>
                 </div>
 

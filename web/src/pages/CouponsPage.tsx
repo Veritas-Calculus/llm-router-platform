@@ -6,14 +6,15 @@ import { motion } from 'framer-motion';
 import { TagIcon, PlusIcon, PencilSquareIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useTranslation } from '@/lib/i18n';
 import { COUPONS_QUERY, CREATE_COUPON, UPDATE_COUPON, DELETE_COUPON } from '@/lib/graphql/operations/coupons';
+import { formatUSD, moneyNumber, type MoneyValue } from '@/lib/format';
 
 interface Coupon {
   id: string;
   code: string;
   name: string;
   type: string;
-  discountValue: number;
-  minAmount: number;
+  discountValue: MoneyValue;
+  minAmount: MoneyValue;
   maxUses: number;
   useCount: number;
   maxUsesPerUser: number;
@@ -72,7 +73,7 @@ function CouponsPage() {
       name: c.name,
       type: c.type,
       discountValue: String(c.discountValue),
-      minAmount: c.minAmount > 0 ? String(c.minAmount) : '',
+      minAmount: moneyNumber(c.minAmount) > 0 ? String(c.minAmount) : '',
       maxUses: c.maxUses > 0 ? String(c.maxUses) : '',
       maxUsesPerUser: String(c.maxUsesPerUser || 1),
       isActive: c.isActive,
@@ -85,8 +86,8 @@ function CouponsPage() {
     try {
       const input = {
         ...form,
-        discountValue: parseNumberField(form.discountValue, 10),
-        minAmount: form.minAmount.trim() === '' ? undefined : parseNumberField(form.minAmount),
+        discountValue: form.discountValue.trim() || '10',
+        minAmount: form.minAmount.trim() === '' ? undefined : form.minAmount.trim(),
         maxUses: form.maxUses.trim() === '' ? undefined : Math.trunc(parseNumberField(form.maxUses)),
         maxUsesPerUser: form.maxUsesPerUser.trim() === '' ? undefined : Math.trunc(parseNumberField(form.maxUsesPerUser, 1)),
         expiresAt: form.expiresAt ? new Date(`${form.expiresAt}T23:59:59`).toISOString() : undefined,
@@ -203,7 +204,7 @@ function CouponsPage() {
                   <td className="px-5 py-3.5 font-mono text-xs">{c.code}</td>
                   <td className="px-5 py-3.5">{c.name}</td>
                   <td className="px-5 py-3.5 text-right">
-                    {c.type === 'percent' ? `${c.discountValue}%` : `$${c.discountValue.toFixed(2)}`}
+                    {c.type === 'percent' ? `${moneyNumber(c.discountValue)}%` : formatUSD(c.discountValue)}
                   </td>
                   <td className="px-5 py-3.5 text-right">{c.useCount}{c.maxUses > 0 ? `/${c.maxUses}` : ''}</td>
                   <td className="px-5 py-3.5 text-center">

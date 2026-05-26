@@ -69,12 +69,20 @@ func (r *mutationResolver) DeleteAnnouncement(ctx context.Context, id string) (b
 
 // CreateCoupon is the resolver for the createCoupon field.
 func (r *mutationResolver) CreateCoupon(ctx context.Context, input model.CouponInput) (*model.Coupon, error) {
+	discountValue, err := input.DiscountValue.Decimal()
+	if err != nil {
+		return nil, fmt.Errorf("invalid discount value: %w", err)
+	}
 	c := &models.Coupon{
 		Code: input.Code, Name: input.Name, Type: input.Type,
-		DiscountValue: input.DiscountValue, IsActive: true,
+		DiscountValue: discountValue.Round(models.MoneyScale), IsActive: true,
 	}
 	if input.MinAmount != nil {
-		c.MinAmount = *input.MinAmount
+		minAmount, err := input.MinAmount.Decimal()
+		if err != nil {
+			return nil, fmt.Errorf("invalid minimum amount: %w", err)
+		}
+		c.MinAmount = minAmount.Round(models.MoneyScale)
 	}
 	if input.MaxUses != nil {
 		c.MaxUses = *input.MaxUses
@@ -104,9 +112,17 @@ func (r *mutationResolver) UpdateCoupon(ctx context.Context, id string, input mo
 	c.Code = input.Code
 	c.Name = input.Name
 	c.Type = input.Type
-	c.DiscountValue = input.DiscountValue
+	discountValue, err := input.DiscountValue.Decimal()
+	if err != nil {
+		return nil, fmt.Errorf("invalid discount value: %w", err)
+	}
+	c.DiscountValue = discountValue.Round(models.MoneyScale)
 	if input.MinAmount != nil {
-		c.MinAmount = *input.MinAmount
+		minAmount, err := input.MinAmount.Decimal()
+		if err != nil {
+			return nil, fmt.Errorf("invalid minimum amount: %w", err)
+		}
+		c.MinAmount = minAmount.Round(models.MoneyScale)
 	}
 	if input.MaxUses != nil {
 		c.MaxUses = *input.MaxUses

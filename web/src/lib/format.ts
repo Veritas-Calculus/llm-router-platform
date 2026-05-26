@@ -30,14 +30,20 @@ const COMPACT = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 1,
 });
 
-export function formatUSD(amount: number | null | undefined): string {
-  if (amount == null || Number.isNaN(amount)) return '$0.00';
-  return CURRENCY_FRACTION_2.format(amount);
+export type MoneyValue = number | string | null | undefined;
+
+export function moneyNumber(amount: MoneyValue): number {
+  if (amount == null || amount === '') return 0;
+  const parsed = typeof amount === 'number' ? amount : Number(amount);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export function formatUSDPrecise(amount: number | null | undefined): string {
-  if (amount == null || Number.isNaN(amount)) return '$0.0000';
-  return CURRENCY_FRACTION_4.format(amount);
+export function formatUSD(amount: MoneyValue): string {
+  return CURRENCY_FRACTION_2.format(moneyNumber(amount));
+}
+
+export function formatUSDPrecise(amount: MoneyValue): string {
+  return CURRENCY_FRACTION_4.format(moneyNumber(amount));
 }
 
 export function formatNumber(n: number | null | undefined): string {

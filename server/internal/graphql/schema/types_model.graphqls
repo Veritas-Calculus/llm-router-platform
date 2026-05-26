@@ -7,16 +7,16 @@ type Model {
   providerId: ID!
   name: String!
   displayName: String!
-  inputPricePer1k: Float!
-  outputPricePer1k: Float!
-  pricePerSecond: Float
-  pricePerImage: Float
-  pricePerMinute: Float
-  providerInputCostPer1k: Float!
-  providerOutputCostPer1k: Float!
-  providerCostPerSecond: Float
-  providerCostPerImage: Float
-  providerCostPerMinute: Float
+  inputPricePer1k: Money!
+  outputPricePer1k: Money!
+  pricePerSecond: Money
+  pricePerImage: Money
+  pricePerMinute: Money
+  providerInputCostPer1k: Money!
+  providerOutputCostPer1k: Money!
+  providerCostPerSecond: Money
+  providerCostPerImage: Money
+  providerCostPerMinute: Money
   maxTokens: Int!
   isActive: Boolean!
   createdAt: DateTime!
@@ -25,16 +25,16 @@ type Model {
 input ModelInput {
   name: String!
   displayName: String
-  inputPricePer1k: Float
-  outputPricePer1k: Float
-  pricePerSecond: Float
-  pricePerImage: Float
-  pricePerMinute: Float
-  providerInputCostPer1k: Float
-  providerOutputCostPer1k: Float
-  providerCostPerSecond: Float
-  providerCostPerImage: Float
-  providerCostPerMinute: Float
+  inputPricePer1k: Money
+  outputPricePer1k: Money
+  pricePerSecond: Money
+  pricePerImage: Money
+  pricePerMinute: Money
+  providerInputCostPer1k: Money
+  providerOutputCostPer1k: Money
+  providerCostPerSecond: Money
+  providerCostPerImage: Money
+  providerCostPerMinute: Money
   maxTokens: Int
   isActive: Boolean
 }

@@ -26,6 +26,7 @@ import {
 import { useTranslation } from '@/lib/i18n';
 import { ADMIN_FINANCIAL_DASHBOARD_QUERY } from '@/lib/graphql/operations/finance';
 import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
+import { moneyNumber, type MoneyValue } from '@/lib/format';
 
 const dayOptions = [7, 30, 90] as const;
 
@@ -36,8 +37,8 @@ const tooltipStyle = {
   boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
 };
 
-const fmtCurrency = (v: number): string =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v || 0);
+const fmtCurrency = (v: MoneyValue): string =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(moneyNumber(v));
 
 const fmtNum = (v: number): string =>
   new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(v || 0);
@@ -101,9 +102,26 @@ function FinancePage() {
   const { data, loading, refetch } = queryResult;
 
   const finance = data?.adminFinancialDashboard;
-  const daily = useMemo(() => finance?.daily || [], [finance]);
-  const payments = useMemo(() => finance?.paymentBreakdown || [], [finance]);
-  const providers = useMemo(() => finance?.providerBreakdown || [], [finance]);
+  const daily = useMemo(() =>
+    (finance?.daily || []).map((point: any) => ({
+      ...point,
+      cashRevenue: moneyNumber(point.cashRevenue),
+      usageRevenue: moneyNumber(point.usageRevenue),
+      providerCost: moneyNumber(point.providerCost),
+      grossProfit: moneyNumber(point.grossProfit),
+    })),
+  [finance]);
+  const payments = useMemo(() =>
+    (finance?.paymentBreakdown || []).map((item: any) => ({ ...item, amount: moneyNumber(item.amount) })),
+  [finance]);
+  const providers = useMemo(() =>
+    (finance?.providerBreakdown || []).map((provider: any) => ({
+      ...provider,
+      usageRevenue: moneyNumber(provider.usageRevenue),
+      providerCost: moneyNumber(provider.providerCost),
+      grossProfit: moneyNumber(provider.grossProfit),
+    })),
+  [finance]);
 
   if (loading && !finance) {
     return (
@@ -168,7 +186,7 @@ function FinancePage() {
           value={fmtCurrency(finance?.grossProfit)}
           subtitle={`${fmtNum(finance?.payingCustomers)} ${t('admin.finance.paying_customers')}`}
           icon={ChartBarIcon}
-          tone={(finance?.grossProfit || 0) >= 0 ? 'purple' : 'red'}
+          tone={moneyNumber(finance?.grossProfit) >= 0 ? 'purple' : 'red'}
         />
       </div>
 
@@ -196,7 +214,7 @@ function FinancePage() {
         />
         <MetricCard
           title={t('admin.finance.adjustments')}
-          value={fmtCurrency((finance?.refundAmount || 0) + (finance?.creditGrants || 0))}
+          value={fmtCurrency(moneyNumber(finance?.refundAmount) + moneyNumber(finance?.creditGrants))}
           subtitle={`${t('admin.finance.refunds')}: ${fmtCurrency(finance?.refundAmount)}`}
           icon={ReceiptRefundIcon}
           tone="red"

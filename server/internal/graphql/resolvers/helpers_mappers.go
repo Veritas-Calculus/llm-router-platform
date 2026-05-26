@@ -12,11 +12,12 @@ import (
 // ── Model → GQL converters ──────────────────────────────────────────
 
 func userToGQL(u *models.User) *model.User {
-	balance := u.Balance
+	balance := model.NewMoney(u.Balance)
+	monthlyBudget := model.NewMoney(u.MonthlyBudgetUSD)
 	return &model.User{
 		ID: u.ID.String(), Email: u.Email, Name: u.Name,
 		Role: u.Role, IsActive: u.IsActive, Balance: &balance,
-		MonthlyBudgetUsd:      &u.MonthlyBudgetUSD,
+		MonthlyBudgetUsd:      &monthlyBudget,
 		EmailVerified:         u.EmailVerified,
 		RequirePasswordChange: u.RequirePasswordChange,
 		MfaEnabled:            u.MfaEnabled,
@@ -60,7 +61,7 @@ func orgToGQL(o *models.Organization) *model.Organization {
 	return &model.Organization{
 		ID:           o.ID.String(),
 		Name:         o.Name,
-		BillingLimit: o.BillingLimit,
+		BillingLimit: model.NewMoney(o.BillingLimit),
 		CreatedAt:    o.CreatedAt,
 	}
 }
@@ -79,7 +80,7 @@ func projectToGQL(p *models.Project) *model.Project {
 		OrgID:          p.OrgID.String(),
 		Name:           p.Name,
 		Description:    desc,
-		QuotaLimit:     p.QuotaLimit,
+		QuotaLimit:     model.NewMoney(p.QuotaLimit),
 		WhiteListedIps: ips,
 		CreatedAt:      p.CreatedAt,
 	}
@@ -106,21 +107,28 @@ func providerToGQL(p *models.Provider) *model.Provider {
 }
 
 func modelToGQL(m *models.Model) *model.Model {
+	pricePerSecond := model.NewMoney(m.PricePerSecond)
+	pricePerImage := model.NewMoney(m.PricePerImage)
+	pricePerMinute := model.NewMoney(m.PricePerMinute)
+	providerCostPerSecond := model.NewMoney(m.ProviderCostPerSecond)
+	providerCostPerImage := model.NewMoney(m.ProviderCostPerImage)
+	providerCostPerMinute := model.NewMoney(m.ProviderCostPerMinute)
+
 	return &model.Model{
 		ID:                      m.ID.String(),
 		ProviderID:              m.ProviderID.String(),
 		Name:                    m.Name,
 		DisplayName:             m.DisplayName,
-		InputPricePer1k:         m.InputPricePer1K,
-		OutputPricePer1k:        m.OutputPricePer1K,
-		PricePerSecond:          &m.PricePerSecond,
-		PricePerImage:           &m.PricePerImage,
-		PricePerMinute:          &m.PricePerMinute,
-		ProviderInputCostPer1k:  m.ProviderInputCostPer1K,
-		ProviderOutputCostPer1k: m.ProviderOutputCostPer1K,
-		ProviderCostPerSecond:   &m.ProviderCostPerSecond,
-		ProviderCostPerImage:    &m.ProviderCostPerImage,
-		ProviderCostPerMinute:   &m.ProviderCostPerMinute,
+		InputPricePer1k:         model.NewMoney(m.InputPricePer1K),
+		OutputPricePer1k:        model.NewMoney(m.OutputPricePer1K),
+		PricePerSecond:          &pricePerSecond,
+		PricePerImage:           &pricePerImage,
+		PricePerMinute:          &pricePerMinute,
+		ProviderInputCostPer1k:  model.NewMoney(m.ProviderInputCostPer1K),
+		ProviderOutputCostPer1k: model.NewMoney(m.ProviderOutputCostPer1K),
+		ProviderCostPerSecond:   &providerCostPerSecond,
+		ProviderCostPerImage:    &providerCostPerImage,
+		ProviderCostPerMinute:   &providerCostPerMinute,
 		MaxTokens:               m.MaxTokens,
 		IsActive:                m.IsActive,
 		CreatedAt:               m.CreatedAt,
@@ -274,7 +282,7 @@ func budgetToGQL(b *models.Budget) *model.Budget {
 	}
 	return &model.Budget{
 		ID: b.ID.String(), OrgID: b.OrgID.String(),
-		MonthlyLimitUsd: b.MonthlyLimitUSD, AlertThreshold: b.AlertThreshold,
+		MonthlyLimitUsd: model.NewMoney(b.MonthlyLimitUSD), AlertThreshold: b.AlertThreshold,
 		EnforceHardLimit: b.EnforceHardLimit, IsActive: b.IsActive,
 		WebhookURL: wh, Email: em,
 	}
@@ -292,8 +300,8 @@ func announcementToGQL(a *models.Announcement) *model.Announcement {
 func couponToGQL(c *models.Coupon) *model.Coupon {
 	return &model.Coupon{
 		ID: c.ID.String(), Code: c.Code, Name: c.Name,
-		Type: c.Type, DiscountValue: c.DiscountValue,
-		MinAmount: c.MinAmount, MaxUses: c.MaxUses,
+		Type: c.Type, DiscountValue: model.NewMoney(c.DiscountValue),
+		MinAmount: model.NewMoney(c.MinAmount), MaxUses: c.MaxUses,
 		UseCount: c.UseCount, MaxUsesPerUser: c.MaxUsesPerUser,
 		IsActive: c.IsActive, ExpiresAt: c.ExpiresAt,
 		CreatedAt: c.CreatedAt,

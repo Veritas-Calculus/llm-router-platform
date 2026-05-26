@@ -2,36 +2,38 @@ package billing
 
 import (
 	"testing"
+
+	"llm-router-platform/internal/models"
 )
 
 func TestMeanStdDev(t *testing.T) {
 	tests := []struct {
 		name       string
-		values     []float64
+		values     []int64
 		wantMean   float64
 		wantStdDev float64
 	}{
 		{
 			name:       "empty slice",
-			values:     []float64{},
+			values:     []int64{},
 			wantMean:   0,
 			wantStdDev: 0,
 		},
 		{
 			name:       "single value",
-			values:     []float64{5.0},
+			values:     []int64{5},
 			wantMean:   5.0,
 			wantStdDev: 0,
 		},
 		{
 			name:       "uniform values",
-			values:     []float64{10.0, 10.0, 10.0, 10.0},
+			values:     []int64{10, 10, 10, 10},
 			wantMean:   10.0,
 			wantStdDev: 0,
 		},
 		{
 			name:       "known distribution",
-			values:     []float64{2, 4, 4, 4, 5, 5, 7, 9},
+			values:     []int64{2, 4, 4, 4, 5, 5, 7, 9},
 			wantMean:   5.0,
 			wantStdDev: 2.0,
 		},
@@ -39,14 +41,14 @@ func TestMeanStdDev(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotMean, gotStdDev := meanStdDev(tt.values)
+			gotMean, gotStdDev := meanStdDevUnits(tt.values)
 			if gotMean != tt.wantMean {
-				t.Errorf("meanStdDev() mean = %v, want %v", gotMean, tt.wantMean)
+				t.Errorf("meanStdDevUnits() mean = %v, want %v", gotMean, tt.wantMean)
 			}
 			// Allow small floating point difference for stddev
 			diff := gotStdDev - tt.wantStdDev
 			if diff < -0.001 || diff > 0.001 {
-				t.Errorf("meanStdDev() stddev = %v, want %v", gotStdDev, tt.wantStdDev)
+				t.Errorf("meanStdDevUnits() stddev = %v, want %v", gotStdDev, tt.wantStdDev)
 			}
 		})
 	}
@@ -54,8 +56,8 @@ func TestMeanStdDev(t *testing.T) {
 
 func TestBudgetStatusFields(t *testing.T) {
 	status := &BudgetStatus{
-		CurrentSpend:   50.0,
-		RemainingUSD:   50.0,
+		CurrentSpend:   models.MoneyFromFloat(50.0),
+		RemainingUSD:   models.MoneyFromFloat(50.0),
 		UsagePercent:   50.0,
 		IsOverBudget:   false,
 		IsAlertTripped: false,
@@ -69,7 +71,7 @@ func TestBudgetStatusFields(t *testing.T) {
 	if status.IsAlertTripped {
 		t.Error("should not be alert tripped at 50%")
 	}
-	if status.RemainingUSD != 50.0 {
+	if !status.RemainingUSD.Equal(models.MoneyFromFloat(50.0)) {
 		t.Errorf("remaining = %v, want 50", status.RemainingUSD)
 	}
 }
@@ -77,8 +79,8 @@ func TestBudgetStatusFields(t *testing.T) {
 func TestAnomalyResultFields(t *testing.T) {
 	result := &AnomalyResult{
 		IsAnomaly:    true,
-		CurrentCost:  100.0,
-		ExpectedCost: 10.0,
+		CurrentCost:  models.MoneyFromFloat(100.0),
+		ExpectedCost: models.MoneyFromFloat(10.0),
 		Deviation:    5.0,
 		Threshold:    3.0,
 		WindowDays:   14,

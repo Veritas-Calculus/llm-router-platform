@@ -10,10 +10,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/quota"
 )
 
@@ -27,7 +29,7 @@ func newQuotaTestRedis(t *testing.T) (*redis.Client, *miniredis.Miniredis) {
 	return rdb, mr
 }
 
-func setupQuotaRouter(t *testing.T, q *QuotaChecker, userID string, tokenLimit int64, budgetLimit float64) *gin.Engine {
+func setupQuotaRouter(t *testing.T, q *QuotaChecker, userID string, tokenLimit int64, budgetLimit decimal.Decimal) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -36,7 +38,7 @@ func setupQuotaRouter(t *testing.T, q *QuotaChecker, userID string, tokenLimit i
 		if tokenLimit > 0 {
 			c.Set("user_monthly_token_limit", tokenLimit)
 		}
-		if budgetLimit > 0 {
+		if budgetLimit.IsPositive() {
 			c.Set("user_monthly_budget_usd", budgetLimit)
 		}
 		c.Next()
@@ -49,7 +51,7 @@ func setupQuotaRouter(t *testing.T, q *QuotaChecker, userID string, tokenLimit i
 func TestQuotaCheckPassesWithNoUsage(t *testing.T) {
 	rdb, _ := newQuotaTestRedis(t)
 	q := NewQuotaChecker(rdb, zap.NewNop())
-	r := setupQuotaRouter(t, q, "user-1", 1000, 0)
+	r := setupQuotaRouter(t, q, "user-1", 1000, models.MoneyFromFloat(0))
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/v1/test", nil)
@@ -62,10 +64,10 @@ func TestQuotaCheckBlocksWhenTokenLimitExceeded(t *testing.T) {
 	logger := zap.NewNop()
 
 	// Pre-populate the quota hash so the request appears over its limit.
-	quota.IncrementUsage(context.Background(), rdb, logger, "user-2", 10_000, 0.50)
+	quota.IncrementUsageMoney(context.Background(), rdb, logger, "user-2", 10_000, models.MoneyFromFloat(0.50))
 
 	q := NewQuotaChecker(rdb, logger)
-	r := setupQuotaRouter(t, q, "user-2", 5_000, 0)
+	r := setupQuotaRouter(t, q, "user-2", 5_000, models.MoneyFromFloat(0))
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/v1/test", nil)
@@ -79,10 +81,10 @@ func TestQuotaCheckBlocksWhenBudgetLimitExceeded(t *testing.T) {
 	rdb, _ := newQuotaTestRedis(t)
 	logger := zap.NewNop()
 
-	quota.IncrementUsage(context.Background(), rdb, logger, "user-3", 100, 5.00)
+	quota.IncrementUsageMoney(context.Background(), rdb, logger, "user-3", 100, models.MoneyFromFloat(5.00))
 
 	q := NewQuotaChecker(rdb, logger)
-	r := setupQuotaRouter(t, q, "user-3", 0, 1.00)
+	r := setupQuotaRouter(t, q, "user-3", 0, models.MoneyFromFloat(1.00))
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/v1/test", nil)
@@ -96,10 +98,10 @@ func TestQuotaCheckSetsRemainingHeaders(t *testing.T) {
 	rdb, _ := newQuotaTestRedis(t)
 	logger := zap.NewNop()
 
-	quota.IncrementUsage(context.Background(), rdb, logger, "user-4", 1_000, 0.10)
+	quota.IncrementUsageMoney(context.Background(), rdb, logger, "user-4", 1_000, models.MoneyFromFloat(0.10))
 
 	q := NewQuotaChecker(rdb, logger)
-	r := setupQuotaRouter(t, q, "user-4", 5_000, 1.00)
+	r := setupQuotaRouter(t, q, "user-4", 5_000, models.MoneyFromFloat(1.00))
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/v1/test", nil)
@@ -117,12 +119,12 @@ func TestQuotaCheckEnforcesBudgetHardLimit(t *testing.T) {
 	logger := zap.NewNop()
 
 	q := NewQuotaChecker(rdb, logger)
-	q.WithBudget(func(ctx context.Context, userID uuid.UUID) (bool, bool, float64, float64, error) {
+	q.WithBudgetMoney(func(ctx context.Context, userID uuid.UUID) (bool, bool, decimal.Decimal, decimal.Decimal, error) {
 		// User has a $10 budget with hard-limit ON, current spend $12.
-		return true, true, 10.0, 12.0, nil
+		return true, true, models.MoneyFromFloat(10.0), models.MoneyFromFloat(12.0), nil
 	})
 
-	r := setupQuotaRouter(t, q, uuid.NewString(), 0, 0)
+	r := setupQuotaRouter(t, q, uuid.NewString(), 0, models.MoneyFromFloat(0))
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/v1/test", nil)
@@ -137,12 +139,12 @@ func TestQuotaCheckSkipsBudgetWhenHardLimitOff(t *testing.T) {
 	logger := zap.NewNop()
 
 	q := NewQuotaChecker(rdb, logger)
-	q.WithBudget(func(ctx context.Context, userID uuid.UUID) (bool, bool, float64, float64, error) {
+	q.WithBudgetMoney(func(ctx context.Context, userID uuid.UUID) (bool, bool, decimal.Decimal, decimal.Decimal, error) {
 		// Soft alert tripped, but hard limit OFF — should not block.
-		return false, true, 10.0, 12.0, nil
+		return false, true, models.MoneyFromFloat(10.0), models.MoneyFromFloat(12.0), nil
 	})
 
-	r := setupQuotaRouter(t, q, uuid.NewString(), 0, 0)
+	r := setupQuotaRouter(t, q, uuid.NewString(), 0, models.MoneyFromFloat(0))
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/v1/test", nil)
@@ -156,7 +158,7 @@ func TestQuotaCheckRedisFailureFallsThrough(t *testing.T) {
 	mr.Close() // simulate Redis outage
 
 	q := NewQuotaChecker(rdb, zap.NewNop())
-	r := setupQuotaRouter(t, q, "user-5", 5_000, 1.00)
+	r := setupQuotaRouter(t, q, "user-5", 5_000, models.MoneyFromFloat(1.00))
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/v1/test", nil)
@@ -167,8 +169,8 @@ func TestQuotaCheckRedisFailureFallsThrough(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestIncrementUsageBackwardCompatibleWrapper(t *testing.T) {
+func TestIncrementUsageMoneyWritesQuotaHash(t *testing.T) {
 	rdb, mr := newQuotaTestRedis(t)
-	IncrementUsage(rdb, "user-x", 42, 0.05)
+	quota.IncrementUsageMoney(context.Background(), rdb, zap.NewNop(), "user-x", 42, models.MoneyFromFloat(0.05))
 	assert.True(t, mr.Exists(quota.MonthlyKey("user-x")))
 }

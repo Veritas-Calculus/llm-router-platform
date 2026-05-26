@@ -21,6 +21,19 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	streamFinalizeTimeout  = 10 * time.Second
+	asyncCacheStoreTimeout = 5 * time.Second
+)
+
+func streamFinalizeContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), streamFinalizeTimeout)
+}
+
+func asyncCacheContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), asyncCacheStoreTimeout)
+}
+
 // handleStreamingChat handles streaming chat completion requests.
 // It receives a pre-established stream channel (connection already opened with retry by Router).
 func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider.StreamChunk, req *provider.ChatRequest, selectedProvider *models.Provider, projectObj *models.Project, userAPIKey *models.APIKey, start time.Time, trace observability.Trace, conversationID string, originalMessages []MessageRequest, logID uuid.UUID, promptHash string, promptEmbedding []float32) {
@@ -53,6 +66,7 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 			if chunk.Error != nil {
 				streamErr = chunk.Error
 				gen.EndWithError(chunk.Error)
+				writeOpenAIStreamError(w, chunk.Error)
 				return false
 			}
 
@@ -121,7 +135,7 @@ func (h *ChatHandler) finalizeStream(ctx context.Context, req *provider.ChatRequ
 	statusCode := http.StatusOK
 	errStr := ""
 	if streamErr != nil {
-		if errors := ctx.Err(); errors != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
 			// Client disconnected (or request was canceled). Use 499
 			// (nginx-style "Client Closed Request") so it doesn't count as
 			// a successful response but is distinguishable from upstream 5xx.
@@ -132,7 +146,9 @@ func (h *ChatHandler) finalizeStream(ctx context.Context, req *provider.ChatRequ
 		errStr = sanitize.TruncateErrorMessage(streamErr.Error())
 	}
 
-	if err := h.billing.UpdateUsageTokensAndDeduct(context.Background(), logID, promptTokens, completionTokens, statusCode, time.Since(start).Milliseconds(), errStr, h.balance, userAPIKey.UserID, "LLM Stream: "+req.Model); err != nil {
+	billingCtx, cancel := streamFinalizeContext(ctx)
+	defer cancel()
+	if err := h.billing.UpdateUsageTokensAndDeduct(billingCtx, logID, promptTokens, completionTokens, statusCode, time.Since(start).Milliseconds(), errStr, h.balance, userAPIKey.UserID, "LLM Stream: "+req.Model); err != nil {
 		h.logger.Warn("billing update failed after stream", zap.Error(err))
 	}
 
@@ -144,12 +160,29 @@ func (h *ChatHandler) finalizeStream(ctx context.Context, req *provider.ChatRequ
 	}
 
 	if h.cache != nil && promptHash != "" && fullText != "" {
-		// Cache store runs after HTTP response is sent — intentionally detached from request context.
-		go h.storeInCache(promptHash, promptEmbedding, fullText, selectedProvider.Name, req.Model, promptTokens, completionTokens) // #nosec G118 -- fire-and-forget cache write after response
+		// Cache store runs after HTTP response is sent, with a small bounded timeout.
+		go h.storeInCache(ctx, promptHash, promptEmbedding, fullText, selectedProvider.Name, req.Model, promptTokens, completionTokens) // #nosec G118 -- fire-and-forget cache write after response
 	}
 }
 
-func (h *ChatHandler) storeInCache(hash string, emb []float32, text string, pid string, m string, promptTokens int, completionTokens int) {
+func writeOpenAIStreamError(w io.Writer, err error) {
+	payload := map[string]any{
+		"error": map[string]string{
+			"message": sanitize.TruncateErrorMessage(err.Error()),
+			"type":    "server_error",
+			"code":    "upstream_stream_error",
+		},
+	}
+	data, marshalErr := json.Marshal(payload)
+	if marshalErr != nil {
+		return
+	}
+	_, _ = w.Write([]byte("data: "))
+	_, _ = w.Write(data)
+	_, _ = w.Write([]byte("\n\ndata: [DONE]\n\n"))
+}
+
+func (h *ChatHandler) storeInCache(ctx context.Context, hash string, emb []float32, text string, pid string, m string, promptTokens int, completionTokens int) {
 	if len(emb) == 0 {
 		emb = make([]float32, 1536)
 	}
@@ -170,5 +203,7 @@ func (h *ChatHandler) storeInCache(hash string, emb []float32, text string, pid 
 			TotalTokens:      promptTokens + completionTokens,
 		},
 	}
-	_ = h.cache.StoreCache(context.Background(), hash, emb, cachedResp, pid, m, nil)
+	cacheCtx, cancel := asyncCacheContext(ctx)
+	defer cancel()
+	_ = h.cache.StoreCache(cacheCtx, hash, emb, cachedResp, pid, m, nil)
 }

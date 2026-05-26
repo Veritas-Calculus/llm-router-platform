@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"llm-router-platform/internal/models"
+
 	"github.com/alicebob/miniredis/v2"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/redis/go-redis/v9"
@@ -28,22 +30,24 @@ func TestIncrementUsageWritesHash(t *testing.T) {
 	ctx := context.Background()
 	logger := zap.NewNop()
 
-	IncrementUsage(ctx, rdb, logger, "user-1", 100, 0.0125)
+	IncrementUsageMoney(ctx, rdb, logger, "user-1", 100, models.MoneyFromFloat(0.0125))
 
 	key := MonthlyKey("user-1")
 	assert.True(t, mr.Exists(key), "expected hash to exist at %s", key)
 
-	tokens, cost, err := ReadMonthlyUsage(ctx, rdb, "user-1")
+	assert.Equal(t, "1250000", mr.HGet(key, costUnitsField))
+
+	tokens, moneyCost, err := ReadMonthlyUsageMoney(ctx, rdb, "user-1")
 	require.NoError(t, err)
 	assert.Equal(t, int64(100), tokens)
-	assert.InDelta(t, 0.0125, cost, 1e-9)
+	assert.True(t, moneyCost.Equal(models.MoneyFromFloat(0.0125)))
 
 	// Second increment accumulates.
-	IncrementUsage(ctx, rdb, logger, "user-1", 50, 0.005)
-	tokens, cost, err = ReadMonthlyUsage(ctx, rdb, "user-1")
+	IncrementUsageMoney(ctx, rdb, logger, "user-1", 50, models.MoneyFromFloat(0.005))
+	tokens, moneyCost, err = ReadMonthlyUsageMoney(ctx, rdb, "user-1")
 	require.NoError(t, err)
 	assert.Equal(t, int64(150), tokens)
-	assert.InDelta(t, 0.0175, cost, 1e-9)
+	assert.True(t, moneyCost.Equal(models.MoneyFromFloat(0.0175)))
 }
 
 func TestIncrementUsageSetsTTL(t *testing.T) {
@@ -51,7 +55,7 @@ func TestIncrementUsageSetsTTL(t *testing.T) {
 	ctx := context.Background()
 	logger := zap.NewNop()
 
-	IncrementUsage(ctx, rdb, logger, "user-2", 10, 0.01)
+	IncrementUsageMoney(ctx, rdb, logger, "user-2", 10, models.MoneyFromFloat(0.01))
 
 	key := MonthlyKey("user-2")
 	ttl := mr.TTL(key)
@@ -60,21 +64,21 @@ func TestIncrementUsageSetsTTL(t *testing.T) {
 }
 
 func TestIncrementUsageNoOpOnNilClient(t *testing.T) {
-	IncrementUsage(context.Background(), nil, zap.NewNop(), "anyone", 1, 1)
+	IncrementUsageMoney(context.Background(), nil, zap.NewNop(), "anyone", 1, models.MoneyFromFloat(1))
 }
 
 func TestIncrementUsageNoOpOnEmptyUserID(t *testing.T) {
 	rdb, mr := newTestRedis(t)
-	IncrementUsage(context.Background(), rdb, zap.NewNop(), "", 1, 1)
+	IncrementUsageMoney(context.Background(), rdb, zap.NewNop(), "", 1, models.MoneyFromFloat(1))
 	assert.Empty(t, mr.Keys(), "expected no keys to be written for empty userID")
 }
 
 func TestReadMonthlyUsageMissingHash(t *testing.T) {
 	rdb, _ := newTestRedis(t)
-	tokens, cost, err := ReadMonthlyUsage(context.Background(), rdb, "ghost-user")
+	tokens, cost, err := ReadMonthlyUsageMoney(context.Background(), rdb, "ghost-user")
 	require.NoError(t, err)
 	assert.Zero(t, tokens)
-	assert.Zero(t, cost)
+	assert.True(t, cost.IsZero())
 }
 
 func TestMonthlyKeyFormat(t *testing.T) {
@@ -89,7 +93,7 @@ func TestIncrementUsageRecordsFailure(t *testing.T) {
 	defer func() { _ = rdb.Close() }()
 
 	before := testutil.ToFloat64(IncrementFailuresTotal)
-	IncrementUsage(context.Background(), rdb, zap.NewNop(), "user-x", 10, 0.01)
+	IncrementUsageMoney(context.Background(), rdb, zap.NewNop(), "user-x", 10, models.MoneyFromFloat(0.01))
 	after := testutil.ToFloat64(IncrementFailuresTotal)
 	assert.Greater(t, after, before, "expected failure counter to increment when Redis is unreachable")
 }

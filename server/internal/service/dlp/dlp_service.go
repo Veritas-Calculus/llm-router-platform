@@ -2,12 +2,13 @@ package dlp
 
 import (
 	"context"
-	"log"
 	"regexp"
 	"sync"
 	"time"
 
 	"llm-router-platform/internal/models"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -34,7 +35,9 @@ var regexCache sync.Map // map[string]*regexp.Regexp
 // Returns nil if the pattern is invalid or exceeds the length limit.
 func getOrCompileRegex(pattern string) *regexp.Regexp {
 	if len(pattern) > maxCustomPatternLength {
-		log.Printf("[DLP] skipping custom regex: pattern length %d exceeds limit %d", len(pattern), maxCustomPatternLength)
+		zap.L().Warn("DLP custom regex skipped: pattern too long",
+			zap.Int("pattern_length", len(pattern)),
+			zap.Int("max_length", maxCustomPatternLength))
 		return nil
 	}
 
@@ -44,7 +47,9 @@ func getOrCompileRegex(pattern string) *regexp.Regexp {
 
 	re, err := regexp.Compile(pattern)
 	if err != nil {
-		log.Printf("[DLP] skipping invalid custom regex %q: %v", pattern, err)
+		zap.L().Warn("DLP custom regex skipped: invalid pattern",
+			zap.Int("pattern_length", len(pattern)),
+			zap.Error(err))
 		return nil
 	}
 
@@ -134,7 +139,9 @@ func scrubCustomPII(content string, patterns []string) string {
 			return re.ReplaceAllString(result, "[CUSTOM_REDACTED]")
 		})
 		if !ok {
-			log.Printf("[DLP] custom regex timed out after %v: %q", customRegexTimeout, customPattern)
+			zap.L().Warn("DLP custom regex replacement timed out",
+				zap.Duration("timeout", customRegexTimeout),
+				zap.Int("pattern_length", len(customPattern)))
 			continue
 		}
 		result = replaced
@@ -177,7 +184,9 @@ func matchesCustomPII(content string, patterns []string) bool {
 			return re.MatchString(content)
 		})
 		if !ok {
-			log.Printf("[DLP] custom regex timed out after %v: %q", customRegexTimeout, customPattern)
+			zap.L().Warn("DLP custom regex match timed out",
+				zap.Duration("timeout", customRegexTimeout),
+				zap.Int("pattern_length", len(customPattern)))
 			continue
 		}
 		if matched {

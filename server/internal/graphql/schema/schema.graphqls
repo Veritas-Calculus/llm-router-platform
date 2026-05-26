@@ -3,6 +3,7 @@
 # ──────────────────────────────────────────────────
 
 scalar DateTime
+scalar Money
 
 directive @auth(role: Role = USER) on FIELD_DEFINITION | OBJECT
 directive @rateLimit(max: Int!, window: String!) on FIELD_DEFINITION
@@ -178,7 +179,7 @@ type Mutation {
   # ── Plans & Payments ──
   changePlan(planId: ID!): UserSubscription! @auth
   createCheckoutSession(planId: ID!): CheckoutSession! @auth @rateLimit(max: 5, window: "1m")
-  createRechargeSession(amount: Float!): CheckoutSession! @auth @rateLimit(max: 5, window: "1m")
+  createRechargeSession(amount: Money!): CheckoutSession! @auth @rateLimit(max: 5, window: "1m")
 
   # ── Redeem Codes ──
   redeemCode(code: String!): RedeemResult! @auth @rateLimit(max: 5, window: "1m")

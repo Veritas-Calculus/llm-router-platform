@@ -341,14 +341,17 @@ func (app *Application) startBackgroundJobs() {
 	task.RegisterDefaultExecutors(workerPool, app.services.Router, app.logger)
 	go workerPool.Start(lifecycleCtx)
 
-	// Periodic webhook dispatcher (every 5s)
+	// Periodic webhook dispatcher (poll every 5s; individual retries are gated
+	// by next_attempt_at in the repository).
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				app.services.Webhook.ProcessPendingDeliveries(context.Background())
+				dispatchCtx, cancel := context.WithTimeout(lifecycleCtx, 30*time.Second)
+				app.services.Webhook.ProcessPendingDeliveries(dispatchCtx)
+				cancel()
 			case <-lifecycleCtx.Done():
 				return
 			}

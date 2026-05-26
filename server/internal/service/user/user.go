@@ -22,6 +22,7 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -281,7 +282,7 @@ func (s *Service) CountActiveUsers(ctx context.Context, since time.Time) (int64,
 }
 
 // UpdateQuota updates a user's quota limits (admin only).
-func (s *Service) UpdateQuota(ctx context.Context, id uuid.UUID, tokenLimit *int64, budgetLimit *float64) (*models.User, error) {
+func (s *Service) UpdateQuota(ctx context.Context, id uuid.UUID, tokenLimit *int64, budgetLimit *decimal.Decimal) (*models.User, error) {
 	user, err := s.userRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -290,7 +291,7 @@ func (s *Service) UpdateQuota(ctx context.Context, id uuid.UUID, tokenLimit *int
 		user.MonthlyTokenLimit = *tokenLimit
 	}
 	if budgetLimit != nil {
-		user.MonthlyBudgetUSD = *budgetLimit
+		user.MonthlyBudgetUSD = budgetLimit.Round(models.MoneyScale)
 	}
 	if err := s.userRepo.Update(ctx, user); err != nil {
 		return nil, err
@@ -298,7 +299,7 @@ func (s *Service) UpdateQuota(ctx context.Context, id uuid.UUID, tokenLimit *int
 	s.logger.Info("user quota updated",
 		zap.String("user_id", id.String()),
 		zap.Int64("monthly_token_limit", user.MonthlyTokenLimit),
-		zap.Float64("monthly_budget_usd", user.MonthlyBudgetUSD),
+		zap.String("monthly_budget_usd", user.MonthlyBudgetUSD.StringFixed(models.MoneyScale)),
 	)
 	return user, nil
 }
@@ -344,6 +345,45 @@ func (s *Service) ChangePassword(ctx context.Context, id uuid.UUID, oldPass, new
 // MaxAPIKeysPerUser is the maximum number of API keys a user can create.
 const MaxAPIKeysPerUser = 20
 
+var allowedAPIKeyScopes = map[string]struct{}{
+	"all":        {},
+	"chat":       {},
+	"embeddings": {},
+	"images":     {},
+	"audio":      {},
+}
+
+func normalizeAPIKeyScopes(scopes string) (string, error) {
+	raw := strings.TrimSpace(scopes)
+	if raw == "" {
+		return "chat", nil
+	}
+	parts := strings.Split(raw, ",")
+	seen := make(map[string]struct{}, len(parts))
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		scope := strings.ToLower(strings.TrimSpace(part))
+		if scope == "" {
+			continue
+		}
+		if _, ok := allowedAPIKeyScopes[scope]; !ok {
+			return "", fmt.Errorf("invalid API key scope %q", scope)
+		}
+		if scope == "all" {
+			return "all", nil
+		}
+		if _, ok := seen[scope]; ok {
+			continue
+		}
+		seen[scope] = struct{}{}
+		out = append(out, scope)
+	}
+	if len(out) == 0 {
+		return "chat", nil
+	}
+	return strings.Join(out, ","), nil
+}
+
 // CreateAPIKey generates a new API key for a project.
 func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, projectID uuid.UUID, name string, scopes string, rateLimit *int, tokenLimit *int, allowedModels []string, allowedProviders []string) (*models.APIKey, string, error) {
 	// Enforce max API key limit
@@ -366,6 +406,10 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, projectID 
 	if tokenLimit != nil {
 		tl = *tokenLimit
 	}
+	scopeStr, err := normalizeAPIKeyScopes(scopes)
+	if err != nil {
+		return nil, "", err
+	}
 
 	apiKey := &models.APIKey{
 		UserID:           userID,
@@ -374,7 +418,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, projectID 
 		KeyPrefix:        rawKey[:8],
 		Name:             name,
 		IsActive:         true,
-		Scopes:           scopes,
+		Scopes:           scopeStr,
 		AllowedModels:    models.NormalizeAPIKeyPolicyList(allowedModels),
 		AllowedProviders: models.NormalizeAPIKeyPolicyList(allowedProviders),
 		RateLimit:        rl,
@@ -401,7 +445,11 @@ func (s *Service) UpdateAPIKey(ctx context.Context, keyID uuid.UUID, name *strin
 		key.Name = *name
 	}
 	if scopes != nil {
-		key.Scopes = *scopes
+		scopeStr, err := normalizeAPIKeyScopes(*scopes)
+		if err != nil {
+			return nil, err
+		}
+		key.Scopes = scopeStr
 	}
 	if rateLimit != nil {
 		key.RateLimit = *rateLimit

@@ -16,6 +16,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
@@ -39,7 +40,7 @@ func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, n
 		return nil, fmt.Errorf("invalid user ID")
 	}
 
-	scopeStr := "all"
+	scopeStr := "chat"
 	if scopes != nil && *scopes != "" {
 		scopeStr = *scopes
 	}
@@ -157,31 +158,45 @@ func (r *mutationResolver) UpdateAPIKey(ctx context.Context, id string, name *st
 // RevokeAPIKey is the resolver for the revokeApiKey field.
 func (r *mutationResolver) RevokeAPIKey(ctx context.Context, projectID string, id string) (*model.APIKey, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	if err := r.UserSvc.RequireProjectRole(ctx, uid, projectID, "admin", "member"); err != nil {
-		return nil, err
-	}
 
 	userID, _ := uuid.Parse(uid)
-	keyID, _ := uuid.Parse(id)
-	if err := r.UserSvc.RevokeAPIKey(ctx, userID, keyID); err != nil {
+	keyID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid API key ID")
+	}
+	key, err := r.UserSvc.GetAPIKeyByID(ctx, keyID)
+	if err != nil || key == nil || key.ProjectID.String() != projectID {
+		return nil, fmt.Errorf("API key not found")
+	}
+	if err := r.UserSvc.RequireProjectRole(ctx, uid, key.ProjectID.String(), "admin", "member"); err != nil {
+		return nil, err
+	}
+	if err := r.UserSvc.RevokeAPIKey(ctx, key.ProjectID, keyID); err != nil {
 		return nil, err
 	}
 	ip, ua := clientInfo(ctx)
 	r.AuditService.Log(ctx, audit.ActionAPIKeyRevoke, userID, keyID, ip, ua, nil)
-	key, _ := r.UserSvc.GetAPIKeyByID(ctx, keyID)
+	key, _ = r.UserSvc.GetAPIKeyByID(ctx, keyID)
 	return apiKeyToGQL(key), nil
 }
 
 // DeleteAPIKey is the resolver for the deleteApiKey field.
 func (r *mutationResolver) DeleteAPIKey(ctx context.Context, projectID string, id string) (bool, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
-	if err := r.UserSvc.RequireProjectRole(ctx, uid, projectID, "admin"); err != nil {
-		return false, err
-	}
 
 	userID, _ := uuid.Parse(uid)
-	keyID, _ := uuid.Parse(id)
-	if err := r.UserSvc.DeleteAPIKey(ctx, userID, keyID); err != nil {
+	keyID, err := uuid.Parse(id)
+	if err != nil {
+		return false, fmt.Errorf("invalid API key ID")
+	}
+	key, err := r.UserSvc.GetAPIKeyByID(ctx, keyID)
+	if err != nil || key == nil || key.ProjectID.String() != projectID {
+		return false, fmt.Errorf("API key not found")
+	}
+	if err := r.UserSvc.RequireProjectRole(ctx, uid, key.ProjectID.String(), "admin"); err != nil {
+		return false, err
+	}
+	if err := r.UserSvc.DeleteAPIKey(ctx, key.ProjectID, keyID); err != nil {
 		return false, err
 	}
 	ip, ua := clientInfo(ctx)
@@ -254,8 +269,8 @@ func (r *queryResolver) APIKeyRateLimitStatus(ctx context.Context, keyID string)
 				result.Status = "quota_exceeded"
 				result.StatusReason = "unable to verify subscription"
 			} else if sub == nil {
-				var user struct{ Balance float64 }
-				if err := r.AdminSvc.DB().Table("users").Select("balance").Where("id = ?", apiKey.UserID).First(&user).Error; err != nil || user.Balance <= 0 {
+				var user struct{ Balance decimal.Decimal }
+				if err := r.AdminSvc.DB().Table("users").Select("balance").Where("id = ?", apiKey.UserID).First(&user).Error; err != nil || !user.Balance.IsPositive() {
 					result.Status = "quota_exceeded"
 					result.StatusReason = "no active subscription or prepaid balance available"
 				}

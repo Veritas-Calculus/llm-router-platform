@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math"
 	"time"
 
 	"llm-router-platform/internal/config"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 	"github.com/stripe/stripe-go/v76"
 	"github.com/stripe/stripe-go/v76/billingportal/session"
 	checkoutSession "github.com/stripe/stripe-go/v76/checkout/session"
@@ -73,7 +73,7 @@ func (s *PaymentService) CreateCheckoutSession(ctx context.Context, userID uuid.
 	if !plan.IsActive {
 		return "", fmt.Errorf("plan is not available")
 	}
-	if plan.PriceMonth <= 0 {
+	if !plan.PriceMonth.IsPositive() {
 		return "", fmt.Errorf("free plans do not require checkout")
 	}
 
@@ -94,7 +94,7 @@ func (s *PaymentService) CreateCheckoutSession(ctx context.Context, userID uuid.
 						Name:        stripe.String(plan.Name),
 						Description: stripe.String(plan.Description),
 					},
-					UnitAmount: stripe.Int64(int64(plan.PriceMonth * 100)),
+					UnitAmount: stripe.Int64(models.MoneyToCents(plan.PriceMonth)),
 					Recurring: &stripe.CheckoutSessionLineItemPriceDataRecurringParams{
 						Interval: stripe.String("month"),
 					},
@@ -134,12 +134,17 @@ func (s *PaymentService) CreateCheckoutSession(ctx context.Context, userID uuid.
 }
 
 // CreateRechargeSession creates a Stripe session for balance top-up.
-func (s *PaymentService) CreateRechargeSession(ctx context.Context, userID uuid.UUID, amount float64) (string, error) {
+func (s *PaymentService) CreateRechargeSession(ctx context.Context, userID uuid.UUID, amount decimal.Decimal) (string, error) {
 	if !s.cfg.Enabled {
 		return "", fmt.Errorf("payments are currently disabled")
 	}
+	amount = models.MoneyRoundToCents(amount)
+	if !amount.IsPositive() {
+		return "", fmt.Errorf("recharge amount must be positive")
+	}
 
 	orderNo := fmt.Sprintf("RECH-%d-%s", time.Now().Unix(), uuid.New().String()[:8])
+	amountText := amount.StringFixed(2)
 
 	params := &stripe.CheckoutSessionParams{
 		SuccessURL:         stripe.String(s.frontendURL + "/billing?payment=success&order_no=" + orderNo),
@@ -152,16 +157,16 @@ func (s *PaymentService) CreateRechargeSession(ctx context.Context, userID uuid.
 					Currency: stripe.String("usd"),
 					ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
 						Name:        stripe.String("Credit Top-up"),
-						Description: stripe.String(fmt.Sprintf("Top up account with $%.2f", amount)),
+						Description: stripe.String("Top up account with $" + amountText),
 					},
-					UnitAmount: stripe.Int64(int64(amount * 100)),
+					UnitAmount: stripe.Int64(models.MoneyToCents(amount)),
 				},
 				Quantity: stripe.Int64(1),
 			},
 		},
 		Metadata: map[string]string{
 			"user_id":  userID.String(),
-			"amount":   fmt.Sprintf("%.2f", amount),
+			"amount":   amountText,
 			"type":     "recharge",
 			"order_no": orderNo,
 		},
@@ -274,16 +279,16 @@ func (s *PaymentService) fulfillOrder(ctx context.Context, sess *stripe.Checkout
 				zap.Int64("amount_total", sess.AmountTotal))
 			return fmt.Errorf("invalid stripe amount")
 		}
-		amount := float64(sess.AmountTotal) / 100.0
+		amount := models.MoneyFromCents(sess.AmountTotal)
 		// Cross-check against the order amount we recorded at checkout creation.
 		// A divergence indicates a price drift or tampered metadata; refuse.
-		if order != nil && math.Abs(amount-order.Amount) > 0.01 {
+		if order != nil && !amount.Equal(order.Amount) {
 			recordPaymentAmountMismatch("stripe")
 			s.logger.Error("stripe recharge amount mismatch — refusing to credit",
 				zap.String("order_no", orderNo),
-				zap.Float64("session_amount", amount),
-				zap.Float64("order_amount", order.Amount))
-			return fmt.Errorf("amount mismatch: session=%.2f order=%.2f", amount, order.Amount)
+				zap.String("session_amount", amount.StringFixed(2)),
+				zap.String("order_amount", order.Amount.StringFixed(2)))
+			return fmt.Errorf("amount mismatch: session=%s order=%s", amount.StringFixed(2), order.Amount.StringFixed(2))
 		}
 		// Single transaction: balance update + transaction insert + order
 		// status flip. Previously these were three separate writes, so a DB
@@ -324,15 +329,16 @@ func (s *PaymentService) fulfillOrder(ctx context.Context, sess *stripe.Checkout
 			zap.Int64("amount_total", sess.AmountTotal))
 		return fmt.Errorf("invalid stripe amount")
 	}
-	sessionAmount := float64(sess.AmountTotal) / 100.0
-	if math.Abs(sessionAmount-plan.PriceMonth) > 0.01 {
+	sessionAmount := models.MoneyFromCents(sess.AmountTotal)
+	expectedPlanPrice := models.MoneyRoundToCents(plan.PriceMonth)
+	if !sessionAmount.Equal(expectedPlanPrice) {
 		recordPaymentAmountMismatch("stripe")
 		s.logger.Error("stripe subscription amount mismatch — refusing to fulfill",
 			zap.String("order_no", orderNo),
 			zap.String("plan_id", planIDStr),
-			zap.Float64("session_amount", sessionAmount),
-			zap.Float64("plan_price", plan.PriceMonth))
-		return fmt.Errorf("amount mismatch: session=%.2f plan=%.2f", sessionAmount, plan.PriceMonth)
+			zap.String("session_amount", sessionAmount.StringFixed(2)),
+			zap.String("plan_price", plan.PriceMonth.StringFixed(2)))
+		return fmt.Errorf("amount mismatch: session=%s plan=%s", sessionAmount.StringFixed(2), plan.PriceMonth.StringFixed(2))
 	}
 
 	s.logger.Info("fulfilling subscription order", zap.String("user_id", userIDStr), zap.String("plan_id", planIDStr))
@@ -406,11 +412,11 @@ func (s *PaymentService) handleSubscriptionUpdated(ctx context.Context, stripeSu
 
 	// Map the Stripe price to a local PlanID
 	if len(stripeSub.Items.Data) > 0 {
-		priceAmount := float64(stripeSub.Items.Data[0].Price.UnitAmount) / 100.0
+		priceAmount := models.MoneyFromCents(stripeSub.Items.Data[0].Price.UnitAmount)
 		plans, err := s.planRepo.GetActive(ctx)
 		if err == nil {
 			for _, p := range plans {
-				if p.PriceMonth == priceAmount {
+				if models.MoneyRoundToCents(p.PriceMonth).Equal(priceAmount) {
 					sub.PlanID = p.ID
 					s.logger.Info("mapped stripe subscription to local plan", zap.String("plan_name", p.Name))
 					break

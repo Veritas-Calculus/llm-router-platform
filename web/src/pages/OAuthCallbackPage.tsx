@@ -9,7 +9,6 @@ const EXCHANGE_OAUTH_CODE = gql`
   mutation ExchangeOAuthCode {
     exchangeOAuthCode {
       token
-      refreshToken
       user { id email name role isActive mfaEnabled emailVerified }
     }
   }
@@ -51,7 +50,7 @@ export default function OAuthCallbackPage() {
         if (!payload?.token || !payload?.user) {
           throw new Error('Authentication response was incomplete');
         }
-        setAuth(payload.token, payload.user, payload.refreshToken ?? null);
+        setAuth(payload.token, payload.user);
         navigate('/dashboard', { replace: true });
       } catch (err: any) {
         setError(err.message || 'Authentication failed');

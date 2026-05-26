@@ -225,6 +225,9 @@ func classifyClientError(msg string) string {
 	switch msg {
 	case "unauthorized: authentication required",
 		"invalid or expired token",
+		"invalid refresh token",
+		"refresh token has been revoked",
+		"token has been revoked",
 		"context canceled":
 		return codeUnauthenticated
 	case "forbidden: admin access required",

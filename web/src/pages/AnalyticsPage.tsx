@@ -29,6 +29,7 @@ import {
   ADMIN_USER_GROWTH_QUERY,
 } from '@/lib/graphql/operations/adminDashboard';
 import { DASHBOARD_QUERY } from '@/lib/graphql/operations/dashboard';
+import { moneyNumber, type MoneyValue } from '@/lib/format';
 
 /* -- Helpers -- */
 
@@ -38,8 +39,11 @@ const fmtNum = (v: number): string => {
   return new Intl.NumberFormat('en-US').format(v);
 };
 
-const fmtCurrency = (v: number): string =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
+const fmtCurrency = (v: MoneyValue): string =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(moneyNumber(v));
+
+const fmtCostState = (cost: MoneyValue, tokens: number): string =>
+  moneyNumber(cost) === 0 && tokens > 0 ? 'Pricing not configured' : fmtCurrency(cost);
 
 const fmtTokens = (v: number): string => {
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
@@ -72,9 +76,15 @@ function UsageTab() {
   const { t } = useTranslation();
   const { data, loading } = useQuery<any>(DASHBOARD_QUERY, { variables: { days: 30 } });
 
-  const chartData = useMemo(() => data?.usageChart || [], [data]);
-  const providerStats = useMemo(() => data?.providerStats || [], [data]);
-  const modelStats = useMemo(() => data?.modelStats || [], [data]);
+  const chartData = useMemo(() =>
+    (data?.usageChart || []).map((point: any) => ({ ...point, cost: moneyNumber(point.cost) })),
+  [data]);
+  const providerStats = useMemo(() =>
+    (data?.providerStats || []).map((item: any) => ({ ...item, totalCost: moneyNumber(item.totalCost) })),
+  [data]);
+  const modelStats = useMemo(() =>
+    (data?.modelStats || []).map((item: any) => ({ ...item, totalCost: moneyNumber(item.totalCost) })),
+  [data]);
   const d = data?.dashboard;
 
   if (loading && !d) {
@@ -172,7 +182,7 @@ function UsageTab() {
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-sm text-apple-gray-600">{fmtNum(p.requests)} req</span>
-                    <span className="text-sm text-apple-gray-600">{fmtCurrency(p.totalCost)}</span>
+                    <span className="text-sm text-apple-gray-600">{fmtCostState(p.totalCost, p.tokens || 0)}</span>
                     <div className={`px-2 py-0.5 rounded text-xs font-medium ${p.successRate >= 95 ? 'bg-green-100 text-apple-green' : 'bg-orange-100 text-apple-orange'}`}>
                       {p.successRate?.toFixed(0)}%
                     </div>
@@ -199,7 +209,7 @@ function UsageTab() {
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-sm text-apple-gray-600">{fmtNum(m.requests)} req</span>
-                    <span className="text-sm text-apple-gray-600">{fmtCurrency(m.totalCost)}</span>
+                    <span className="text-sm text-apple-gray-600">{fmtCostState(m.totalCost, (m.inputTokens || 0) + (m.outputTokens || 0))}</span>
                   </div>
                 </div>
               ))}
@@ -219,7 +229,9 @@ function RevenueTab() {
   const { t } = useTranslation();
   const { data, loading } = useQuery<any>(ADMIN_REVENUE_CHART_QUERY, { variables: { days: 30 } });
 
-  const chartData = useMemo(() => data?.adminRevenueChart || [], [data]);
+  const chartData = useMemo(() =>
+    (data?.adminRevenueChart || []).map((point: any) => ({ ...point, revenue: moneyNumber(point.revenue) })),
+  [data]);
   const totalRevenue = useMemo(() => chartData.reduce((sum: number, p: any) => sum + (p.revenue || 0), 0), [chartData]);
   const totalTxns = useMemo(() => chartData.reduce((sum: number, p: any) => sum + (p.transactions || 0), 0), [chartData]);
 

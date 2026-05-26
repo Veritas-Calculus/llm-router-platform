@@ -7,6 +7,7 @@ import (
 	"llm-router-platform/internal/models"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -117,14 +118,14 @@ func (r *UsageLogRepository) GetByTimeRangePaginated(ctx context.Context, start,
 
 // UsageSummaryRow holds a single SQL-aggregated usage summary.
 type UsageSummaryRow struct {
-	TotalRequests int64   `json:"total_requests"`
-	TotalTokens   int64   `json:"total_tokens"`
-	TotalCost     float64 `json:"total_cost"`
-	AvgLatency    float64 `json:"avg_latency"`
-	SuccessCount  int64   `json:"success_count"`
-	ErrorCount    int64   `json:"error_count"`
-	MCPCallCount  int64   `json:"mcp_call_count"`
-	MCPErrorCount int64   `json:"mcp_error_count"`
+	TotalRequests int64           `json:"total_requests"`
+	TotalTokens   int64           `json:"total_tokens"`
+	TotalCost     decimal.Decimal `json:"total_cost"`
+	AvgLatency    float64         `json:"avg_latency"`
+	SuccessCount  int64           `json:"success_count"`
+	ErrorCount    int64           `json:"error_count"`
+	MCPCallCount  int64           `json:"mcp_call_count"`
+	MCPErrorCount int64           `json:"mcp_error_count"`
 }
 
 // AggregateByTimeRange returns SQL-aggregated usage for an org/project in a time range.
@@ -157,12 +158,31 @@ func (r *UsageLogRepository) AggregateByTimeRange(ctx context.Context, orgID *uu
 	return &row, nil
 }
 
+// AggregateByUserTimeRange returns SQL-aggregated usage for a single user.
+func (r *UsageLogRepository) AggregateByUserTimeRange(ctx context.Context, userID uuid.UUID, start, end time.Time) (*UsageSummaryRow, error) {
+	var row UsageSummaryRow
+	if err := r.db.WithContext(ctx).Model(&models.UsageLog{}).
+		Select(`COUNT(usage_logs.id) AS total_requests,
+				COALESCE(SUM(usage_logs.total_tokens), 0) AS total_tokens,
+				COALESCE(SUM(COALESCE(usage_logs.customer_charge, usage_logs.cost, 0)), 0) AS total_cost,
+				COALESCE(AVG(usage_logs.latency), 0) AS avg_latency,
+				COALESCE(SUM(CASE WHEN usage_logs.status_code >= 200 AND usage_logs.status_code < 300 THEN 1 ELSE 0 END), 0) AS success_count,
+				COALESCE(SUM(CASE WHEN usage_logs.status_code < 200 OR usage_logs.status_code >= 300 THEN 1 ELSE 0 END), 0) AS error_count,
+				COALESCE(SUM(usage_logs.mcp_call_count), 0) AS mcp_call_count,
+				COALESCE(SUM(usage_logs.mcp_error_count), 0) AS mcp_error_count`).
+		Where("usage_logs.user_id = ? AND usage_logs.created_at >= ? AND usage_logs.created_at <= ?", userID, start, end).
+		Scan(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
 // DailyUsageRow holds a single SQL-aggregated daily usage bucket.
 type DailyUsageRow struct {
-	Date     string  `json:"date"`
-	Requests int64   `json:"requests"`
-	Tokens   int64   `json:"tokens"`
-	Cost     float64 `json:"cost"`
+	Date     string          `json:"date"`
+	Requests int64           `json:"requests"`
+	Tokens   int64           `json:"tokens"`
+	Cost     decimal.Decimal `json:"cost"`
 }
 
 // AggregateDailyByTimeRange returns usage aggregated by day (SQL GROUP BY).
@@ -199,15 +219,32 @@ func (r *UsageLogRepository) AggregateDailyByTimeRange(ctx context.Context, orgI
 	return rows, nil
 }
 
+// AggregateDailyByUserTimeRange returns daily usage buckets for a single user.
+func (r *UsageLogRepository) AggregateDailyByUserTimeRange(ctx context.Context, userID uuid.UUID, start, end time.Time) ([]DailyUsageRow, error) {
+	var rows []DailyUsageRow
+	if err := r.db.WithContext(ctx).Model(&models.UsageLog{}).
+		Select(`TO_CHAR(date_trunc('day', usage_logs.created_at), 'YYYY-MM-DD') AS date,
+				COUNT(usage_logs.id) AS requests,
+				COALESCE(SUM(usage_logs.total_tokens), 0) AS tokens,
+				COALESCE(SUM(COALESCE(usage_logs.customer_charge, usage_logs.cost, 0)), 0) AS cost`).
+		Where("usage_logs.user_id = ? AND usage_logs.created_at >= ? AND usage_logs.created_at <= ?", userID, start, end).
+		Group("date_trunc('day', usage_logs.created_at)").
+		Order("date").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // ProviderUsageRow holds a single SQL-aggregated provider usage bucket.
 type ProviderUsageRow struct {
-	ProviderID   uuid.UUID `json:"provider_id"`
-	ProviderName string    `json:"provider_name"`
-	Requests     int64     `json:"requests"`
-	Tokens       int64     `json:"tokens"`
-	Cost         float64   `json:"cost"`
-	SuccessRate  float64   `json:"success_rate"`
-	AvgLatency   float64   `json:"avg_latency"`
+	ProviderID   uuid.UUID       `json:"provider_id"`
+	ProviderName string          `json:"provider_name"`
+	Requests     int64           `json:"requests"`
+	Tokens       int64           `json:"tokens"`
+	Cost         decimal.Decimal `json:"cost"`
+	SuccessRate  float64         `json:"success_rate"`
+	AvgLatency   float64         `json:"avg_latency"`
 }
 
 // AggregateByProviderByTimeRange returns usage grouped by provider (SQL GROUP BY).
@@ -245,13 +282,13 @@ func (r *UsageLogRepository) AggregateByProviderByTimeRange(ctx context.Context,
 
 // ModelUsageRow holds a single SQL-aggregated model usage bucket.
 type ModelUsageRow struct {
-	ModelID      uuid.UUID `json:"model_id"`
-	ModelName    string    `json:"model_name"`
-	Requests     int64     `json:"requests"`
-	InputTokens  int64     `json:"input_tokens"`
-	OutputTokens int64     `json:"output_tokens"`
-	TotalTokens  int64     `json:"total_tokens"`
-	Cost         float64   `json:"cost"`
+	ModelID      uuid.UUID       `json:"model_id"`
+	ModelName    string          `json:"model_name"`
+	Requests     int64           `json:"requests"`
+	InputTokens  int64           `json:"input_tokens"`
+	OutputTokens int64           `json:"output_tokens"`
+	TotalTokens  int64           `json:"total_tokens"`
+	Cost         decimal.Decimal `json:"cost"`
 }
 
 // AggregateByModelByTimeRange returns usage grouped by model name (SQL GROUP BY).

@@ -5,6 +5,7 @@ import { ExclamationTriangleIcon, ExclamationCircleIcon } from '@heroicons/react
 import { SUBSCRIPTION_QUOTA_QUERY } from '@/lib/graphql/operations/billing';
 import { API_KEY_RATE_LIMIT_STATUS } from '@/lib/graphql/operations';
 import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 import { useTranslation } from '@/lib/i18n';
 import type { ApiKey } from '@/lib/types';
 
@@ -16,7 +17,6 @@ export const AVAILABLE_SCOPES_BASE = [
   { id: 'embeddings', labelKey: 'api_keys.scopes_embeddings' },
   { id: 'images', labelKey: 'api_keys.scopes_images' },
   { id: 'audio', labelKey: 'api_keys.scopes_audio' },
-  { id: 'admin', labelKey: 'api_keys.scopes_admin' },
 ];
 
 const STATUS_BADGE_BASE: Record<string, { labelKey: string; className: string }> = {
@@ -187,17 +187,24 @@ export interface ConfirmModalProps {
 }
 
 export function ConfirmModal({ isOpen, title, message, confirmText, confirmColor, onConfirm, onCancel, loading }: ConfirmModalProps) {
+  const dialogRef = useDialogA11y<HTMLDivElement>(isOpen, onCancel);
+
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div data-modal-root="true" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="api-key-confirm-title"
+        ref={dialogRef}
+        tabIndex={-1}
         className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4">
         <div className="flex items-start gap-4">
           <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${confirmColor === 'red' ? 'bg-red-100' : 'bg-orange-100'}`}>
             <ExclamationTriangleIcon className={`w-6 h-6 ${confirmColor === 'red' ? 'text-apple-red' : 'text-apple-orange'}`} />
           </div>
           <div className="flex-1">
-            <h3 className="text-lg font-semibold text-apple-gray-900">{title}</h3>
+            <h3 id="api-key-confirm-title" className="text-lg font-semibold text-apple-gray-900">{title}</h3>
             <p className="mt-2 text-sm text-apple-gray-600">{message}</p>
           </div>
         </div>

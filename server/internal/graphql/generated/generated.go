@@ -620,7 +620,7 @@ type ComplexityRoot struct {
 		CreateProviderAPIKey         func(childComplexity int, providerID string, input model.ProviderAPIKeyInput) int
 		CreateProxy                  func(childComplexity int, input model.ProxyInput) int
 		CreateProxyPool              func(childComplexity int, input model.ProxyPoolInput) int
-		CreateRechargeSession        func(childComplexity int, amount float64) int
+		CreateRechargeSession        func(childComplexity int, amount model.Money) int
 		CreateRoutingRule            func(childComplexity int, input model.CreateRoutingRuleInput) int
 		CreateTask                   func(childComplexity int, input model.CreateTaskInput) int
 		CreateWebhookEndpoint        func(childComplexity int, input model.CreateWebhookEndpointInput) int
@@ -1389,7 +1389,7 @@ type MutationResolver interface {
 	CancelTask(ctx context.Context, id string) (*model.Task, error)
 	ChangePlan(ctx context.Context, planID string) (*model.UserSubscription, error)
 	CreateCheckoutSession(ctx context.Context, planID string) (*model.CheckoutSession, error)
-	CreateRechargeSession(ctx context.Context, amount float64) (*model.CheckoutSession, error)
+	CreateRechargeSession(ctx context.Context, amount model.Money) (*model.CheckoutSession, error)
 	RedeemCode(ctx context.Context, code string) (*model.RedeemResult, error)
 	ToggleUser(ctx context.Context, id string) (*model.User, error)
 	UpdateUserRole(ctx context.Context, id string, role string) (*model.User, error)
@@ -4335,7 +4335,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Mutation.CreateRechargeSession(childComplexity, args["amount"].(float64)), true
+		return e.ComplexityRoot.Mutation.CreateRechargeSession(childComplexity, args["amount"].(model.Money)), true
 	case "Mutation.createRoutingRule":
 		if e.ComplexityRoot.Mutation.CreateRoutingRule == nil {
 			break
@@ -8431,6 +8431,7 @@ var sources = []*ast.Source{
 # ──────────────────────────────────────────────────
 
 scalar DateTime
+scalar Money
 
 directive @auth(role: Role = USER) on FIELD_DEFINITION | OBJECT
 directive @rateLimit(max: Int!, window: String!) on FIELD_DEFINITION
@@ -8606,7 +8607,7 @@ type Mutation {
   # ── Plans & Payments ──
   changePlan(planId: ID!): UserSubscription! @auth
   createCheckoutSession(planId: ID!): CheckoutSession! @auth @rateLimit(max: 5, window: "1m")
-  createRechargeSession(amount: Float!): CheckoutSession! @auth @rateLimit(max: 5, window: "1m")
+  createRechargeSession(amount: Money!): CheckoutSession! @auth @rateLimit(max: 5, window: "1m")
 
   # ── Redeem Codes ──
   redeemCode(code: String!): RedeemResult! @auth @rateLimit(max: 5, window: "1m")
@@ -8806,7 +8807,7 @@ type Plan {
   id: ID!
   name: String!
   description: String!
-  priceMonth: Float!
+  priceMonth: Money!
   tokenLimit: Int!
   rateLimit: Int!
   supportLevel: String!
@@ -8834,7 +8835,7 @@ type UserSubscription {
 type Order {
   id: ID!
   orderNo: String!
-  amount: Float!
+  amount: Money!
   currency: String!
   status: String!
   paymentMethod: String!
@@ -8845,7 +8846,7 @@ type Order {
 type Budget {
   id: ID!
   orgId: ID!
-  monthlyLimitUsd: Float!
+  monthlyLimitUsd: Money!
   alertThreshold: Float!
   enforceHardLimit: Boolean!
   isActive: Boolean!
@@ -8855,8 +8856,8 @@ type Budget {
 
 type BudgetStatus {
   budget: Budget
-  currentSpend: Float!
-  remainingBudget: Float!
+  currentSpend: Money!
+  remainingBudget: Money!
   percentUsed: Float!
   isOverBudget: Boolean!
 }
@@ -8866,7 +8867,7 @@ type CheckoutSession {
 }
 
 input BudgetInput {
-  monthlyLimitUsd: Float!
+  monthlyLimitUsd: Money!
   alertThreshold: Float
   enforceHardLimit: Boolean
   webhookUrl: String
@@ -8876,7 +8877,7 @@ input BudgetInput {
 input PlanInput {
   name: String!
   description: String
-  priceMonth: Float!
+  priceMonth: Money!
   tokenLimit: Int!
   rateLimit: Int!
   supportLevel: String
@@ -8936,8 +8937,8 @@ type Coupon {
   code: String!
   name: String!
   type: String!
-  discountValue: Float!
-  minAmount: Float!
+  discountValue: Money!
+  minAmount: Money!
   maxUses: Int!
   useCount: Int!
   maxUsesPerUser: Int!
@@ -8950,8 +8951,8 @@ input CouponInput {
   code: String!
   name: String!
   type: String!
-  discountValue: Float!
-  minAmount: Float
+  discountValue: Money!
+  minAmount: Money
   maxUses: Int
   maxUsesPerUser: Int
   isActive: Boolean
@@ -8966,13 +8967,13 @@ type Dashboard {
   totalRequests: Int!
   successRate: Float!
   totalTokens: Int!
-  totalCost: Float!
+  totalCost: Money!
   averageLatencyMs: Float!
   activeUsers: Int!
   activeProviders: Int!
   activeProxies: Int!
   requestsToday: Int!
-  costToday: Float!
+  costToday: Money!
   tokensToday: Int!
   errorCount: Int!
   mcpCallCount: Int!
@@ -8998,15 +8999,15 @@ type AdminDashboard {
   totalUsers: Int!
   activeUsersToday: Int!
   activeUsersMonth: Int!
-  totalRevenue: Float!
-  revenueThisMonth: Float!
+  totalRevenue: Money!
+  revenueThisMonth: Money!
   # Request aggregates (system-wide)
   totalRequests: Int!
   requestsToday: Int!
   totalTokens: Int!
   tokensToday: Int!
-  totalCost: Float!
-  costToday: Float!
+  totalCost: Money!
+  costToday: Money!
   successRate: Float!
   errorCount: Int!
   avgLatencyMs: Float!
@@ -9027,33 +9028,33 @@ type AdminUsageByUser {
   email: String!
   requests: Int!
   tokens: Int!
-  cost: Float!
+  cost: Money!
 }
 
 type RevenueChartPoint {
   date: String!
-  revenue: Float!
+  revenue: Money!
   transactions: Int!
 }
 
 type FinancialDashboard {
   periodStart: DateTime!
   periodEnd: DateTime!
-  cashRevenue: Float!
-  netCashRevenue: Float!
-  subscriptionRevenue: Float!
-  topUpRevenue: Float!
-  usageRevenue: Float!
-  providerCost: Float!
-  grossProfit: Float!
+  cashRevenue: Money!
+  netCashRevenue: Money!
+  subscriptionRevenue: Money!
+  topUpRevenue: Money!
+  usageRevenue: Money!
+  providerCost: Money!
+  grossProfit: Money!
   grossMargin: Float!
-  refundAmount: Float!
-  creditGrants: Float!
-  outstandingBalance: Float!
+  refundAmount: Money!
+  creditGrants: Money!
+  outstandingBalance: Money!
   paidOrders: Int!
   activeSubscriptions: Int!
   payingCustomers: Int!
-  arpu: Float!
+  arpu: Money!
   daily: [FinancialDailyPoint!]!
   paymentBreakdown: [FinancialBreakdown!]!
   providerBreakdown: [FinancialProviderBreakdown!]!
@@ -9061,26 +9062,26 @@ type FinancialDashboard {
 
 type FinancialDailyPoint {
   date: String!
-  cashRevenue: Float!
-  usageRevenue: Float!
-  providerCost: Float!
-  grossProfit: Float!
+  cashRevenue: Money!
+  usageRevenue: Money!
+  providerCost: Money!
+  grossProfit: Money!
   orders: Int!
   requests: Int!
 }
 
 type FinancialBreakdown {
   name: String!
-  amount: Float!
+  amount: Money!
   count: Int!
 }
 
 type FinancialProviderBreakdown {
   providerName: String!
   requests: Int!
-  usageRevenue: Float!
-  providerCost: Float!
-  grossProfit: Float!
+  usageRevenue: Money!
+  providerCost: Money!
+  grossProfit: Money!
   grossMargin: Float!
 }
 
@@ -9094,7 +9095,7 @@ type UsageChartPoint {
   date: String!
   requests: Int!
   tokens: Int!
-  cost: Float!
+  cost: Money!
 }
 
 type ProviderStats {
@@ -9104,7 +9105,7 @@ type ProviderStats {
   tokens: Int!
   successRate: Float!
   avgLatencyMs: Float!
-  totalCost: Float!
+  totalCost: Money!
 }
 
 type ModelStats {
@@ -9113,21 +9114,21 @@ type ModelStats {
   requests: Int!
   inputTokens: Int!
   outputTokens: Int!
-  totalCost: Float!
+  totalCost: Money!
 }
 
 type UsageSummary {
   totalRequests: Int!
   successRate: Float!
   totalTokens: Int!
-  totalCost: Float!
+  totalCost: Money!
 }
 
 type DailyStats {
   date: String!
   requests: Int!
   totalTokens: Int!
-  totalCost: Float!
+  totalCost: Money!
 }
 
 type ProviderUsage {
@@ -9135,7 +9136,7 @@ type ProviderUsage {
   providerName: String!
   requests: Int!
   tokens: Int!
-  cost: Float!
+  cost: Money!
 }
 
 type UsageConnection {
@@ -9148,7 +9149,7 @@ type UsageRecord {
   modelName: String!
   inputTokens: Int!
   outputTokens: Int!
-  cost: Float!
+  cost: Money!
   latencyMs: Int!
   isSuccess: Boolean!
   createdAt: DateTime!
@@ -9170,7 +9171,7 @@ type AnomalyResult {
 type SystemSettings {
   registrationMode: String!
   defaultTokenLimit: Int
-  defaultBudgetUsd: Float
+  defaultBudgetUsd: Money
   site: String          # JSON — site config (name, subtitle, logo, favicon)
   security: String      # JSON — security settings (registration, 2fa, sso)
   defaults: String      # JSON — default user settings (balance, concurrency, plan)
@@ -9604,16 +9605,16 @@ type Model {
   providerId: ID!
   name: String!
   displayName: String!
-  inputPricePer1k: Float!
-  outputPricePer1k: Float!
-  pricePerSecond: Float
-  pricePerImage: Float
-  pricePerMinute: Float
-  providerInputCostPer1k: Float!
-  providerOutputCostPer1k: Float!
-  providerCostPerSecond: Float
-  providerCostPerImage: Float
-  providerCostPerMinute: Float
+  inputPricePer1k: Money!
+  outputPricePer1k: Money!
+  pricePerSecond: Money
+  pricePerImage: Money
+  pricePerMinute: Money
+  providerInputCostPer1k: Money!
+  providerOutputCostPer1k: Money!
+  providerCostPerSecond: Money
+  providerCostPerImage: Money
+  providerCostPerMinute: Money
   maxTokens: Int!
   isActive: Boolean!
   createdAt: DateTime!
@@ -9622,16 +9623,16 @@ type Model {
 input ModelInput {
   name: String!
   displayName: String
-  inputPricePer1k: Float
-  outputPricePer1k: Float
-  pricePerSecond: Float
-  pricePerImage: Float
-  pricePerMinute: Float
-  providerInputCostPer1k: Float
-  providerOutputCostPer1k: Float
-  providerCostPerSecond: Float
-  providerCostPerImage: Float
-  providerCostPerMinute: Float
+  inputPricePer1k: Money
+  outputPricePer1k: Money
+  pricePerSecond: Money
+  pricePerImage: Money
+  pricePerMinute: Money
+  providerInputCostPer1k: Money
+  providerOutputCostPer1k: Money
+  providerCostPerSecond: Money
+  providerCostPerImage: Money
+  providerCostPerMinute: Money
   maxTokens: Int
   isActive: Boolean
 }
@@ -9917,7 +9918,7 @@ type RedeemCode {
   id: ID!
   code: String!
   type: String!
-  creditAmount: Float!
+  creditAmount: Money!
   planId: ID
   planDays: Int!
   usedBy: ID
@@ -9937,14 +9938,14 @@ type RedeemCodeConnection {
 type RedeemResult {
   success: Boolean!
   message: String!
-  creditAmount: Float
+  creditAmount: Money
   planName: String
 }
 
 type RedeemRecord {
   id: ID!
   code: String!
-  creditAmount: Float!
+  creditAmount: Money!
   planName: String
   redeemedAt: DateTime!
 }
@@ -9956,7 +9957,7 @@ type GenerateRedeemCodesResult {
 
 input GenerateRedeemCodesInput {
   type: String!
-  creditAmount: Float
+  creditAmount: Money
   planId: ID
   planDays: Int
   count: Int!
@@ -10112,8 +10113,8 @@ type User {
   isActive: Boolean!
   requirePasswordChange: Boolean!
   monthlyTokenLimit: Int
-  monthlyBudgetUsd: Float
-  balance: Float
+  monthlyBudgetUsd: Money
+  balance: Money
   createdAt: DateTime!
   lastLoginAt: DateTime
   mfaEnabled: Boolean!
@@ -10129,7 +10130,7 @@ type MfaSecretInfo {
 type Organization {
   id: ID!
   name: String!
-  billingLimit: Float!
+  billingLimit: Money!
   createdAt: DateTime!
 }
 
@@ -10146,7 +10147,7 @@ type Project {
   orgId: ID!
   name: String!
   description: String
-  quotaLimit: Float!
+  quotaLimit: Money!
   whiteListedIps: String
   createdAt: DateTime!
 }
@@ -10154,7 +10155,7 @@ type Project {
 input UpdateProjectInput {
   name: String
   description: String
-  quotaLimit: Float
+  quotaLimit: Money
   whiteListedIps: String
 }
 
@@ -10241,7 +10242,7 @@ type UserDetail {
   createdAt: DateTime!
   apiKeys: Int!
   monthlyTokenLimit: Int
-  monthlyBudgetUsd: Float
+  monthlyBudgetUsd: Money
   mfaEnabled: Boolean!
   usageMonth: UserMonthlyUsage
 }
@@ -10249,7 +10250,7 @@ type UserDetail {
 type UserMonthlyUsage {
   totalRequests: Int!
   totalTokens: Int!
-  totalCost: Float!
+  totalCost: Money!
   avgLatency: Float!
   successRate: Float!
   errorCount: Int!
@@ -10257,7 +10258,7 @@ type UserMonthlyUsage {
 
 input QuotaInput {
   monthlyTokenLimit: Int
-  monthlyBudgetUsd: Float
+  monthlyBudgetUsd: Money
 }
 `, BuiltIn: false},
 	{Name: "../schema/types_webhook.graphqls", Input: `type WebhookEndpoint {
@@ -13176,8 +13177,8 @@ func (ec *executionContext) field_Mutation_createRechargeSession_args(ctx contex
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "amount",
-		func(ctx context.Context, v any) (float64, error) {
-			return ec.unmarshalNFloat2float64(ctx, v)
+		func(ctx context.Context, v any) (model.Money, error) {
+			return ec.unmarshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -15621,15 +15622,15 @@ func (ec *executionContext) _AdminDashboard_totalRevenue(ctx context.Context, fi
 			return obj.TotalRevenue, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_AdminDashboard_totalRevenue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("AdminDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("AdminDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _AdminDashboard_revenueThisMonth(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
@@ -15644,15 +15645,15 @@ func (ec *executionContext) _AdminDashboard_revenueThisMonth(ctx context.Context
 			return obj.RevenueThisMonth, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_AdminDashboard_revenueThisMonth(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("AdminDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("AdminDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _AdminDashboard_totalRequests(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
@@ -15759,15 +15760,15 @@ func (ec *executionContext) _AdminDashboard_totalCost(ctx context.Context, field
 			return obj.TotalCost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_AdminDashboard_totalCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("AdminDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("AdminDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _AdminDashboard_costToday(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
@@ -15782,15 +15783,15 @@ func (ec *executionContext) _AdminDashboard_costToday(ctx context.Context, field
 			return obj.CostToday, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_AdminDashboard_costToday(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("AdminDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("AdminDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _AdminDashboard_successRate(ctx context.Context, field graphql.CollectedField, obj *model.AdminDashboard) (ret graphql.Marshaler) {
@@ -16173,15 +16174,15 @@ func (ec *executionContext) _AdminUsageByUser_cost(ctx context.Context, field gr
 			return obj.Cost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_AdminUsageByUser_cost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("AdminUsageByUser", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("AdminUsageByUser", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Alert_id(ctx context.Context, field graphql.CollectedField, obj *model.Alert) (ret graphql.Marshaler) {
@@ -19079,15 +19080,15 @@ func (ec *executionContext) _Budget_monthlyLimitUsd(ctx context.Context, field g
 			return obj.MonthlyLimitUsd, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Budget_monthlyLimitUsd(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Budget", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Budget", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Budget_alertThreshold(ctx context.Context, field graphql.CollectedField, obj *model.Budget) (ret graphql.Marshaler) {
@@ -19249,15 +19250,15 @@ func (ec *executionContext) _BudgetStatus_currentSpend(ctx context.Context, fiel
 			return obj.CurrentSpend, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_BudgetStatus_currentSpend(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("BudgetStatus", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("BudgetStatus", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _BudgetStatus_remainingBudget(ctx context.Context, field graphql.CollectedField, obj *model.BudgetStatus) (ret graphql.Marshaler) {
@@ -19272,15 +19273,15 @@ func (ec *executionContext) _BudgetStatus_remainingBudget(ctx context.Context, f
 			return obj.RemainingBudget, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_BudgetStatus_remainingBudget(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("BudgetStatus", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("BudgetStatus", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _BudgetStatus_percentUsed(ctx context.Context, field graphql.CollectedField, obj *model.BudgetStatus) (ret graphql.Marshaler) {
@@ -19686,15 +19687,15 @@ func (ec *executionContext) _Coupon_discountValue(ctx context.Context, field gra
 			return obj.DiscountValue, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Coupon_discountValue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Coupon", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Coupon", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Coupon_minAmount(ctx context.Context, field graphql.CollectedField, obj *model.Coupon) (ret graphql.Marshaler) {
@@ -19709,15 +19710,15 @@ func (ec *executionContext) _Coupon_minAmount(ctx context.Context, field graphql
 			return obj.MinAmount, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Coupon_minAmount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Coupon", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Coupon", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Coupon_maxUses(ctx context.Context, field graphql.CollectedField, obj *model.Coupon) (ret graphql.Marshaler) {
@@ -19939,15 +19940,15 @@ func (ec *executionContext) _DailyStats_totalCost(ctx context.Context, field gra
 			return obj.TotalCost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_DailyStats_totalCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("DailyStats", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("DailyStats", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Dashboard_totalRequests(ctx context.Context, field graphql.CollectedField, obj *model.Dashboard) (ret graphql.Marshaler) {
@@ -20031,15 +20032,15 @@ func (ec *executionContext) _Dashboard_totalCost(ctx context.Context, field grap
 			return obj.TotalCost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Dashboard_totalCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Dashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Dashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Dashboard_averageLatencyMs(ctx context.Context, field graphql.CollectedField, obj *model.Dashboard) (ret graphql.Marshaler) {
@@ -20169,15 +20170,15 @@ func (ec *executionContext) _Dashboard_costToday(ctx context.Context, field grap
 			return obj.CostToday, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Dashboard_costToday(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Dashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Dashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Dashboard_tokensToday(ctx context.Context, field graphql.CollectedField, obj *model.Dashboard) (ret graphql.Marshaler) {
@@ -21645,15 +21646,15 @@ func (ec *executionContext) _FinancialBreakdown_amount(ctx context.Context, fiel
 			return obj.Amount, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialBreakdown_amount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialBreakdown", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialBreakdown", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialBreakdown_count(ctx context.Context, field graphql.CollectedField, obj *model.FinancialBreakdown) (ret graphql.Marshaler) {
@@ -21714,15 +21715,15 @@ func (ec *executionContext) _FinancialDailyPoint_cashRevenue(ctx context.Context
 			return obj.CashRevenue, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDailyPoint_cashRevenue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDailyPoint", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDailyPoint", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDailyPoint_usageRevenue(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDailyPoint) (ret graphql.Marshaler) {
@@ -21737,15 +21738,15 @@ func (ec *executionContext) _FinancialDailyPoint_usageRevenue(ctx context.Contex
 			return obj.UsageRevenue, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDailyPoint_usageRevenue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDailyPoint", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDailyPoint", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDailyPoint_providerCost(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDailyPoint) (ret graphql.Marshaler) {
@@ -21760,15 +21761,15 @@ func (ec *executionContext) _FinancialDailyPoint_providerCost(ctx context.Contex
 			return obj.ProviderCost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDailyPoint_providerCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDailyPoint", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDailyPoint", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDailyPoint_grossProfit(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDailyPoint) (ret graphql.Marshaler) {
@@ -21783,15 +21784,15 @@ func (ec *executionContext) _FinancialDailyPoint_grossProfit(ctx context.Context
 			return obj.GrossProfit, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDailyPoint_grossProfit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDailyPoint", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDailyPoint", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDailyPoint_orders(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDailyPoint) (ret graphql.Marshaler) {
@@ -21898,15 +21899,15 @@ func (ec *executionContext) _FinancialDashboard_cashRevenue(ctx context.Context,
 			return obj.CashRevenue, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDashboard_cashRevenue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDashboard_netCashRevenue(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDashboard) (ret graphql.Marshaler) {
@@ -21921,15 +21922,15 @@ func (ec *executionContext) _FinancialDashboard_netCashRevenue(ctx context.Conte
 			return obj.NetCashRevenue, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDashboard_netCashRevenue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDashboard_subscriptionRevenue(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDashboard) (ret graphql.Marshaler) {
@@ -21944,15 +21945,15 @@ func (ec *executionContext) _FinancialDashboard_subscriptionRevenue(ctx context.
 			return obj.SubscriptionRevenue, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDashboard_subscriptionRevenue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDashboard_topUpRevenue(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDashboard) (ret graphql.Marshaler) {
@@ -21967,15 +21968,15 @@ func (ec *executionContext) _FinancialDashboard_topUpRevenue(ctx context.Context
 			return obj.TopUpRevenue, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDashboard_topUpRevenue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDashboard_usageRevenue(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDashboard) (ret graphql.Marshaler) {
@@ -21990,15 +21991,15 @@ func (ec *executionContext) _FinancialDashboard_usageRevenue(ctx context.Context
 			return obj.UsageRevenue, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDashboard_usageRevenue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDashboard_providerCost(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDashboard) (ret graphql.Marshaler) {
@@ -22013,15 +22014,15 @@ func (ec *executionContext) _FinancialDashboard_providerCost(ctx context.Context
 			return obj.ProviderCost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDashboard_providerCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDashboard_grossProfit(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDashboard) (ret graphql.Marshaler) {
@@ -22036,15 +22037,15 @@ func (ec *executionContext) _FinancialDashboard_grossProfit(ctx context.Context,
 			return obj.GrossProfit, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDashboard_grossProfit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDashboard_grossMargin(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDashboard) (ret graphql.Marshaler) {
@@ -22082,15 +22083,15 @@ func (ec *executionContext) _FinancialDashboard_refundAmount(ctx context.Context
 			return obj.RefundAmount, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDashboard_refundAmount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDashboard_creditGrants(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDashboard) (ret graphql.Marshaler) {
@@ -22105,15 +22106,15 @@ func (ec *executionContext) _FinancialDashboard_creditGrants(ctx context.Context
 			return obj.CreditGrants, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDashboard_creditGrants(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDashboard_outstandingBalance(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDashboard) (ret graphql.Marshaler) {
@@ -22128,15 +22129,15 @@ func (ec *executionContext) _FinancialDashboard_outstandingBalance(ctx context.C
 			return obj.OutstandingBalance, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDashboard_outstandingBalance(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDashboard_paidOrders(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDashboard) (ret graphql.Marshaler) {
@@ -22220,15 +22221,15 @@ func (ec *executionContext) _FinancialDashboard_arpu(ctx context.Context, field 
 			return obj.Arpu, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialDashboard_arpu(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialDashboard", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialDashboard_daily(ctx context.Context, field graphql.CollectedField, obj *model.FinancialDashboard) (ret graphql.Marshaler) {
@@ -22385,15 +22386,15 @@ func (ec *executionContext) _FinancialProviderBreakdown_usageRevenue(ctx context
 			return obj.UsageRevenue, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialProviderBreakdown_usageRevenue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialProviderBreakdown", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialProviderBreakdown", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialProviderBreakdown_providerCost(ctx context.Context, field graphql.CollectedField, obj *model.FinancialProviderBreakdown) (ret graphql.Marshaler) {
@@ -22408,15 +22409,15 @@ func (ec *executionContext) _FinancialProviderBreakdown_providerCost(ctx context
 			return obj.ProviderCost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialProviderBreakdown_providerCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialProviderBreakdown", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialProviderBreakdown", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialProviderBreakdown_grossProfit(ctx context.Context, field graphql.CollectedField, obj *model.FinancialProviderBreakdown) (ret graphql.Marshaler) {
@@ -22431,15 +22432,15 @@ func (ec *executionContext) _FinancialProviderBreakdown_grossProfit(ctx context.
 			return obj.GrossProfit, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_FinancialProviderBreakdown_grossProfit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("FinancialProviderBreakdown", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("FinancialProviderBreakdown", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _FinancialProviderBreakdown_grossMargin(ctx context.Context, field graphql.CollectedField, obj *model.FinancialProviderBreakdown) (ret graphql.Marshaler) {
@@ -24381,15 +24382,15 @@ func (ec *executionContext) _Model_inputPricePer1k(ctx context.Context, field gr
 			return obj.InputPricePer1k, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Model_inputPricePer1k(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Model_outputPricePer1k(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
@@ -24404,15 +24405,15 @@ func (ec *executionContext) _Model_outputPricePer1k(ctx context.Context, field g
 			return obj.OutputPricePer1k, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Model_outputPricePer1k(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Model_pricePerSecond(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
@@ -24427,15 +24428,15 @@ func (ec *executionContext) _Model_pricePerSecond(ctx context.Context, field gra
 			return obj.PricePerSecond, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
-			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Money) graphql.Marshaler {
+			return ec.marshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
 func (ec *executionContext) fieldContext_Model_pricePerSecond(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Model_pricePerImage(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
@@ -24450,15 +24451,15 @@ func (ec *executionContext) _Model_pricePerImage(ctx context.Context, field grap
 			return obj.PricePerImage, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
-			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Money) graphql.Marshaler {
+			return ec.marshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
 func (ec *executionContext) fieldContext_Model_pricePerImage(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Model_pricePerMinute(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
@@ -24473,15 +24474,15 @@ func (ec *executionContext) _Model_pricePerMinute(ctx context.Context, field gra
 			return obj.PricePerMinute, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
-			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Money) graphql.Marshaler {
+			return ec.marshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
 func (ec *executionContext) fieldContext_Model_pricePerMinute(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Model_providerInputCostPer1k(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
@@ -24496,15 +24497,15 @@ func (ec *executionContext) _Model_providerInputCostPer1k(ctx context.Context, f
 			return obj.ProviderInputCostPer1k, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Model_providerInputCostPer1k(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Model_providerOutputCostPer1k(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
@@ -24519,15 +24520,15 @@ func (ec *executionContext) _Model_providerOutputCostPer1k(ctx context.Context, 
 			return obj.ProviderOutputCostPer1k, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Model_providerOutputCostPer1k(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Model_providerCostPerSecond(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
@@ -24542,15 +24543,15 @@ func (ec *executionContext) _Model_providerCostPerSecond(ctx context.Context, fi
 			return obj.ProviderCostPerSecond, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
-			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Money) graphql.Marshaler {
+			return ec.marshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
 func (ec *executionContext) fieldContext_Model_providerCostPerSecond(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Model_providerCostPerImage(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
@@ -24565,15 +24566,15 @@ func (ec *executionContext) _Model_providerCostPerImage(ctx context.Context, fie
 			return obj.ProviderCostPerImage, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
-			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Money) graphql.Marshaler {
+			return ec.marshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
 func (ec *executionContext) fieldContext_Model_providerCostPerImage(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Model_providerCostPerMinute(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
@@ -24588,15 +24589,15 @@ func (ec *executionContext) _Model_providerCostPerMinute(ctx context.Context, fi
 			return obj.ProviderCostPerMinute, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
-			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Money) graphql.Marshaler {
+			return ec.marshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
 func (ec *executionContext) fieldContext_Model_providerCostPerMinute(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Model_maxTokens(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
@@ -24795,15 +24796,15 @@ func (ec *executionContext) _ModelStats_totalCost(ctx context.Context, field gra
 			return obj.TotalCost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_ModelStats_totalCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("ModelStats", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("ModelStats", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Mutation_login(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -27008,7 +27009,7 @@ func (ec *executionContext) _Mutation_createRechargeSession(ctx context.Context,
 		},
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Mutation().CreateRechargeSession(ctx, fc.Args["amount"].(float64))
+			return ec.Resolvers.Mutation().CreateRechargeSession(ctx, fc.Args["amount"].(model.Money))
 		},
 		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
 			directive0 := next
@@ -32186,15 +32187,15 @@ func (ec *executionContext) _Order_amount(ctx context.Context, field graphql.Col
 			return obj.Amount, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Order_amount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Order", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Order", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Order_currency(ctx context.Context, field graphql.CollectedField, obj *model.Order) (ret graphql.Marshaler) {
@@ -32379,15 +32380,15 @@ func (ec *executionContext) _Organization_billingLimit(ctx context.Context, fiel
 			return obj.BillingLimit, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Organization_billingLimit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Organization", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Organization", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Organization_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.Organization) (ret graphql.Marshaler) {
@@ -32618,15 +32619,15 @@ func (ec *executionContext) _Plan_priceMonth(ctx context.Context, field graphql.
 			return obj.PriceMonth, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Plan_priceMonth(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Plan", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Plan", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Plan_tokenLimit(ctx context.Context, field graphql.CollectedField, obj *model.Plan) (ret graphql.Marshaler) {
@@ -32940,15 +32941,15 @@ func (ec *executionContext) _Project_quotaLimit(ctx context.Context, field graph
 			return obj.QuotaLimit, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Project_quotaLimit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Project", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("Project", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _Project_whiteListedIps(ctx context.Context, field graphql.CollectedField, obj *model.Project) (ret graphql.Marshaler) {
@@ -34604,15 +34605,15 @@ func (ec *executionContext) _ProviderStats_totalCost(ctx context.Context, field 
 			return obj.TotalCost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_ProviderStats_totalCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("ProviderStats", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("ProviderStats", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _ProviderTopologyNode_provider(ctx context.Context, field graphql.CollectedField, obj *model.ProviderTopologyNode) (ret graphql.Marshaler) {
@@ -34806,15 +34807,15 @@ func (ec *executionContext) _ProviderUsage_cost(ctx context.Context, field graph
 			return obj.Cost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_ProviderUsage_cost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("ProviderUsage", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("ProviderUsage", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _ProxiesSummary_total(ctx context.Context, field graphql.CollectedField, obj *model.ProxiesSummary) (ret graphql.Marshaler) {
@@ -40870,15 +40871,15 @@ func (ec *executionContext) _RedeemCode_creditAmount(ctx context.Context, field 
 			return obj.CreditAmount, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_RedeemCode_creditAmount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("RedeemCode", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("RedeemCode", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _RedeemCode_planId(ctx context.Context, field graphql.CollectedField, obj *model.RedeemCode) (ret graphql.Marshaler) {
@@ -41201,15 +41202,15 @@ func (ec *executionContext) _RedeemRecord_creditAmount(ctx context.Context, fiel
 			return obj.CreditAmount, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_RedeemRecord_creditAmount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("RedeemRecord", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("RedeemRecord", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _RedeemRecord_planName(ctx context.Context, field graphql.CollectedField, obj *model.RedeemRecord) (ret graphql.Marshaler) {
@@ -41316,15 +41317,15 @@ func (ec *executionContext) _RedeemResult_creditAmount(ctx context.Context, fiel
 			return obj.CreditAmount, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
-			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Money) graphql.Marshaler {
+			return ec.marshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
 func (ec *executionContext) fieldContext_RedeemResult_creditAmount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("RedeemResult", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("RedeemResult", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _RedeemResult_planName(ctx context.Context, field graphql.CollectedField, obj *model.RedeemResult) (ret graphql.Marshaler) {
@@ -41569,15 +41570,15 @@ func (ec *executionContext) _RevenueChartPoint_revenue(ctx context.Context, fiel
 			return obj.Revenue, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_RevenueChartPoint_revenue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("RevenueChartPoint", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("RevenueChartPoint", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _RevenueChartPoint_transactions(ctx context.Context, field graphql.CollectedField, obj *model.RevenueChartPoint) (ret graphql.Marshaler) {
@@ -42934,15 +42935,15 @@ func (ec *executionContext) _SystemSettings_defaultBudgetUsd(ctx context.Context
 			return obj.DefaultBudgetUsd, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
-			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Money) graphql.Marshaler {
+			return ec.marshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
 func (ec *executionContext) fieldContext_SystemSettings_defaultBudgetUsd(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("SystemSettings", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("SystemSettings", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _SystemSettings_site(ctx context.Context, field graphql.CollectedField, obj *model.SystemSettings) (ret graphql.Marshaler) {
@@ -43637,15 +43638,15 @@ func (ec *executionContext) _UsageChartPoint_cost(ctx context.Context, field gra
 			return obj.Cost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_UsageChartPoint_cost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("UsageChartPoint", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("UsageChartPoint", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _UsageConnection_data(ctx context.Context, field graphql.CollectedField, obj *model.UsageConnection) (ret graphql.Marshaler) {
@@ -43807,15 +43808,15 @@ func (ec *executionContext) _UsageRecord_cost(ctx context.Context, field graphql
 			return obj.Cost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_UsageRecord_cost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("UsageRecord", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("UsageRecord", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _UsageRecord_latencyMs(ctx context.Context, field graphql.CollectedField, obj *model.UsageRecord) (ret graphql.Marshaler) {
@@ -43968,15 +43969,15 @@ func (ec *executionContext) _UsageSummary_totalCost(ctx context.Context, field g
 			return obj.TotalCost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_UsageSummary_totalCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("UsageSummary", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("UsageSummary", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _User_id(ctx context.Context, field graphql.CollectedField, obj *model.User) (ret graphql.Marshaler) {
@@ -44152,15 +44153,15 @@ func (ec *executionContext) _User_monthlyBudgetUsd(ctx context.Context, field gr
 			return obj.MonthlyBudgetUsd, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
-			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Money) graphql.Marshaler {
+			return ec.marshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
 func (ec *executionContext) fieldContext_User_monthlyBudgetUsd(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("User", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("User", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _User_balance(ctx context.Context, field graphql.CollectedField, obj *model.User) (ret graphql.Marshaler) {
@@ -44175,15 +44176,15 @@ func (ec *executionContext) _User_balance(ctx context.Context, field graphql.Col
 			return obj.Balance, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
-			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Money) graphql.Marshaler {
+			return ec.marshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
 func (ec *executionContext) fieldContext_User_balance(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("User", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("User", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _User_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.User) (ret graphql.Marshaler) {
@@ -44529,15 +44530,15 @@ func (ec *executionContext) _UserDetail_monthlyBudgetUsd(ctx context.Context, fi
 			return obj.MonthlyBudgetUsd, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *float64) graphql.Marshaler {
-			return ec.marshalOFloat2ᚖfloat64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Money) graphql.Marshaler {
+			return ec.marshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
 func (ec *executionContext) fieldContext_UserDetail_monthlyBudgetUsd(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("UserDetail", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("UserDetail", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _UserDetail_mfaEnabled(ctx context.Context, field graphql.CollectedField, obj *model.UserDetail) (ret graphql.Marshaler) {
@@ -44906,15 +44907,15 @@ func (ec *executionContext) _UserMonthlyUsage_totalCost(ctx context.Context, fie
 			return obj.TotalCost, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v float64) graphql.Marshaler {
-			return ec.marshalNFloat2float64(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v model.Money) graphql.Marshaler {
+			return ec.marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_UserMonthlyUsage_totalCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("UserMonthlyUsage", field, false, false, errors.New("field of type Float does not have child fields"))
+	return graphql.NewScalarFieldContext("UserMonthlyUsage", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
 func (ec *executionContext) _UserMonthlyUsage_avgLatency(ctx context.Context, field graphql.CollectedField, obj *model.UserMonthlyUsage) (ret graphql.Marshaler) {
@@ -47079,7 +47080,7 @@ func (ec *executionContext) unmarshalInputBudgetInput(ctx context.Context, obj a
 		switch k {
 		case "monthlyLimitUsd":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("monthlyLimitUsd"))
-			data, err := ec.unmarshalNFloat2float64(ctx, v)
+			data, err := ec.unmarshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -47253,14 +47254,14 @@ func (ec *executionContext) unmarshalInputCouponInput(ctx context.Context, obj a
 			it.Type = data
 		case "discountValue":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("discountValue"))
-			data, err := ec.unmarshalNFloat2float64(ctx, v)
+			data, err := ec.unmarshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
 			it.DiscountValue = data
 		case "minAmount":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("minAmount"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -47764,7 +47765,7 @@ func (ec *executionContext) unmarshalInputGenerateRedeemCodesInput(ctx context.C
 			it.Type = data
 		case "creditAmount":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("creditAmount"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -48033,70 +48034,70 @@ func (ec *executionContext) unmarshalInputModelInput(ctx context.Context, obj an
 			it.DisplayName = data
 		case "inputPricePer1k":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("inputPricePer1k"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
 			it.InputPricePer1k = data
 		case "outputPricePer1k":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("outputPricePer1k"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
 			it.OutputPricePer1k = data
 		case "pricePerSecond":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("pricePerSecond"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
 			it.PricePerSecond = data
 		case "pricePerImage":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("pricePerImage"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
 			it.PricePerImage = data
 		case "pricePerMinute":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("pricePerMinute"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
 			it.PricePerMinute = data
 		case "providerInputCostPer1k":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("providerInputCostPer1k"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
 			it.ProviderInputCostPer1k = data
 		case "providerOutputCostPer1k":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("providerOutputCostPer1k"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
 			it.ProviderOutputCostPer1k = data
 		case "providerCostPerSecond":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("providerCostPerSecond"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
 			it.ProviderCostPerSecond = data
 		case "providerCostPerImage":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("providerCostPerImage"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
 			it.ProviderCostPerImage = data
 		case "providerCostPerMinute":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("providerCostPerMinute"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -48205,7 +48206,7 @@ func (ec *executionContext) unmarshalInputPlanInput(ctx context.Context, obj any
 			it.Description = data
 		case "priceMonth":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("priceMonth"))
-			data, err := ec.unmarshalNFloat2float64(ctx, v)
+			data, err := ec.unmarshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -48674,7 +48675,7 @@ func (ec *executionContext) unmarshalInputQuotaInput(ctx context.Context, obj an
 			it.MonthlyTokenLimit = data
 		case "monthlyBudgetUsd":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("monthlyBudgetUsd"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -49161,7 +49162,7 @@ func (ec *executionContext) unmarshalInputUpdateProjectInput(ctx context.Context
 			it.Description = data
 		case "quotaLimit":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("quotaLimit"))
-			data, err := ec.unmarshalOFloat2ᚖfloat64(ctx, v)
+			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -60967,6 +60968,16 @@ func (ec *executionContext) marshalNModelStats2ᚖllmᚑrouterᚑplatformᚋinte
 	return ec._ModelStats(ctx, sel, v)
 }
 
+func (ec *executionContext) unmarshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx context.Context, v any) (model.Money, error) {
+	var res model.Money
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNMoney2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx context.Context, sel ast.SelectionSet, v model.Money) graphql.Marshaler {
+	return v
+}
+
 func (ec *executionContext) marshalNNotificationChannel2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐNotificationChannel(ctx context.Context, sel ast.SelectionSet, v model.NotificationChannel) graphql.Marshaler {
 	return ec._NotificationChannel(ctx, sel, &v)
 }
@@ -62692,6 +62703,22 @@ func (ec *executionContext) marshalOMcpTool2ᚕᚖllmᚑrouterᚑplatformᚋinte
 	}
 
 	return ret
+}
+
+func (ec *executionContext) unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx context.Context, v any) (*model.Money, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(model.Money)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx context.Context, sel ast.SelectionSet, v *model.Money) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
 }
 
 func (ec *executionContext) marshalOPlan2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐPlan(ctx context.Context, sel ast.SelectionSet, v *model.Plan) graphql.Marshaler {

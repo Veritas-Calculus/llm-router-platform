@@ -29,6 +29,12 @@ const config: CodegenConfig = {
       preset: 'client',
       config: {
         useTypeImports: true,
+        scalars: {
+          Money: {
+            input: 'string | number',
+            output: 'string',
+          },
+        },
       },
       presetConfig: {
         // Skip __typename in the document writes — keeps existing operations

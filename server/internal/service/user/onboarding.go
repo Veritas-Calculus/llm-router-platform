@@ -7,14 +7,15 @@ import (
 	"llm-router-platform/internal/models"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 // OnboardAccountParams contains the parameters for post-registration onboarding.
 type OnboardAccountParams struct {
-	GrantWelcomeCredit bool    // Whether to grant welcome credit
-	WelcomeCreditUSD   float64 // Amount of welcome credit (default 5.0)
+	GrantWelcomeCredit bool            // Whether to grant welcome credit
+	WelcomeCreditUSD   decimal.Decimal // Amount of welcome credit (default 5.0)
 }
 
 // OnboardAccount creates the default Organization, Project, membership, and
@@ -24,8 +25,8 @@ type OnboardAccountParams struct {
 // This method MUST be called from a context that already has a valid *gorm.DB
 // (injected via the onboarding flow, not the user service's default repos).
 func OnboardAccount(ctx context.Context, db *gorm.DB, u *models.User, params OnboardAccountParams, logger *zap.Logger) error {
-	if params.WelcomeCreditUSD == 0 {
-		params.WelcomeCreditUSD = 5.0
+	if params.WelcomeCreditUSD.IsZero() {
+		params.WelcomeCreditUSD = models.MoneyFromString("5.00")
 	}
 
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -50,16 +51,17 @@ func OnboardAccount(ctx context.Context, db *gorm.DB, u *models.User, params Onb
 		}
 
 		if params.GrantWelcomeCredit {
-			u.Balance = params.WelcomeCreditUSD
-			if err := tx.Model(u).UpdateColumn("balance", params.WelcomeCreditUSD).Error; err != nil {
+			welcomeCredit := params.WelcomeCreditUSD.Round(models.MoneyScale)
+			u.Balance = welcomeCredit
+			if err := tx.Model(u).UpdateColumn("balance", welcomeCredit).Error; err != nil {
 				return fmt.Errorf("failed to set welcome balance: %w", err)
 			}
 			txn := models.Transaction{
 				OrgID:       org.ID,
 				UserID:      u.ID,
 				Type:        "recharge",
-				Amount:      params.WelcomeCreditUSD,
-				Balance:     params.WelcomeCreditUSD,
+				Amount:      welcomeCredit,
+				Balance:     welcomeCredit,
 				Description: "Welcome credit",
 				Currency:    "USD",
 			}

@@ -310,7 +310,9 @@ func (h *ChatHandler) handleAnthropicStream(c *gin.Context, anthroReq AnthropicM
 complete:
 	if streamErr != nil {
 		latency := time.Since(start)
-		if err := h.billing.UpdateUsageTokens(c.Request.Context(), usageLog.ID, 0, totalOutput, statusCode, latency.Milliseconds(), sanitize.TruncateErrorMessage(streamErr.Error())); err != nil {
+		billingCtx, cancel := streamFinalizeContext(c.Request.Context())
+		defer cancel()
+		if err := h.billing.UpdateUsageTokensAndDeduct(billingCtx, usageLog.ID, 0, totalOutput, statusCode, latency.Milliseconds(), sanitize.TruncateErrorMessage(streamErr.Error()), h.balance, userAPIKey.UserID, "Anthropic stream: "+anthroReq.Model); err != nil {
 			h.logger.Warn("billing update failed", zap.Error(err))
 		}
 		return
@@ -337,7 +339,9 @@ complete:
 	c.Writer.Flush()
 
 	latency := time.Since(start)
-	if err := h.billing.UpdateUsageTokensAndDeduct(c.Request.Context(), usageLog.ID, 0, totalOutput, http.StatusOK, latency.Milliseconds(), "", h.balance, userAPIKey.UserID, "Anthropic stream: "+anthroReq.Model); err != nil {
+	billingCtx, cancel := streamFinalizeContext(c.Request.Context())
+	defer cancel()
+	if err := h.billing.UpdateUsageTokensAndDeduct(billingCtx, usageLog.ID, 0, totalOutput, http.StatusOK, latency.Milliseconds(), "", h.balance, userAPIKey.UserID, "Anthropic stream: "+anthroReq.Model); err != nil {
 		h.logger.Warn("billing update failed", zap.Error(err))
 	}
 }

@@ -6,7 +6,7 @@ type RedeemCode {
   id: ID!
   code: String!
   type: String!
-  creditAmount: Float!
+  creditAmount: Money!
   planId: ID
   planDays: Int!
   usedBy: ID
@@ -26,14 +26,14 @@ type RedeemCodeConnection {
 type RedeemResult {
   success: Boolean!
   message: String!
-  creditAmount: Float
+  creditAmount: Money
   planName: String
 }
 
 type RedeemRecord {
   id: ID!
   code: String!
-  creditAmount: Float!
+  creditAmount: Money!
   planName: String
   redeemedAt: DateTime!
 }
@@ -45,7 +45,7 @@ type GenerateRedeemCodesResult {
 
 input GenerateRedeemCodesInput {
   type: String!
-  creditAmount: Float
+  creditAmount: Money
   planId: ID
   planDays: Int
   count: Int!

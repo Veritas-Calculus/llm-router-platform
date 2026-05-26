@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"llm-router-platform/internal/graphql/dataloaders"
 	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/models"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
@@ -57,7 +59,15 @@ func (r *mutationResolver) UpdateUserQuota(ctx context.Context, id string, input
 		v := int64(*input.MonthlyTokenLimit)
 		tokenLimit = &v
 	}
-	u, err := r.UserSvc.UpdateQuota(ctx, uid, tokenLimit, input.MonthlyBudgetUsd)
+	var budgetLimit *decimal.Decimal
+	if input.MonthlyBudgetUsd != nil {
+		v, err := input.MonthlyBudgetUsd.Decimal()
+		if err != nil {
+			return nil, fmt.Errorf("invalid monthly budget: %w", err)
+		}
+		budgetLimit = &v
+	}
+	u, err := r.UserSvc.UpdateQuota(ctx, uid, tokenLimit, budgetLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +148,7 @@ func (r *mutationResolver) ExportSystemUsageCSV(ctx context.Context) (string, er
 		if l.StatusCode >= 400 {
 			status = "error"
 		}
-		fmt.Fprintf(&buf, "%s,%s,%s,%s,%s,%d,%d,%d,%.6f,%d,%s\n",
+		fmt.Fprintf(&buf, "%s,%s,%s,%s,%s,%d,%d,%d,%s,%d,%s\n",
 			l.CreatedAt.Format("2006-01-02 15:04:05"),
 			l.UserEmail,
 			l.ProviderName,
@@ -147,7 +157,7 @@ func (r *mutationResolver) ExportSystemUsageCSV(ctx context.Context) (string, er
 			l.RequestTokens,
 			l.ResponseTokens,
 			l.TotalTokens,
-			l.Cost,
+			l.Cost.Round(6).StringFixed(6),
 			l.Latency,
 			status,
 		)
@@ -170,9 +180,13 @@ func (r *mutationResolver) GenerateRedeemCodes(ctx context.Context, input model.
 		t := *input.ExpiresAt
 		expiresAt = &t
 	}
-	creditAmount := float64(0)
+	creditAmount := decimal.Zero
 	if input.CreditAmount != nil {
-		creditAmount = *input.CreditAmount
+		var err error
+		creditAmount, err = input.CreditAmount.Decimal()
+		if err != nil {
+			return nil, fmt.Errorf("invalid credit amount: %w", err)
+		}
 	}
 	planDays := 30
 	if input.PlanDays != nil {
@@ -213,7 +227,8 @@ func (r *queryResolver) AdminDashboard(ctx context.Context) (*model.AdminDashboa
 	// System usage summary
 	sysSummary, _ := r.Billing.GetSystemUsageSummary(ctx, nil, time.Time{}, now)
 	totalReq, totalTokens, errorCount, mcpCalls, mcpErrors := 0, 0, 0, 0, 0
-	totalCost, successRate, avgLatency := 0.0, 0.0, 0.0
+	totalCost := decimal.Zero
+	successRate, avgLatency := 0.0, 0.0
 	if sysSummary != nil {
 		totalReq = int(sysSummary.TotalRequests)
 		totalTokens = int(sysSummary.TotalTokens)
@@ -227,7 +242,7 @@ func (r *queryResolver) AdminDashboard(ctx context.Context) (*model.AdminDashboa
 
 	// Today
 	todayReq, todayTokens := 0, 0
-	todayCost := 0.0
+	todayCost := decimal.Zero
 	if ts, err := r.Billing.GetSystemUsageSummary(ctx, nil, todayStart, now); err == nil && ts != nil {
 		todayReq = int(ts.TotalRequests)
 		todayTokens = int(ts.TotalTokens)
@@ -241,14 +256,14 @@ func (r *queryResolver) AdminDashboard(ctx context.Context) (*model.AdminDashboa
 		TotalUsers:       int(totalUsers),
 		ActiveUsersToday: int(activeUsersToday),
 		ActiveUsersMonth: int(activeUsersMonth),
-		TotalRevenue:     totalRevenue,
-		RevenueThisMonth: revenueMonth,
+		TotalRevenue:     model.NewMoney(totalRevenue),
+		RevenueThisMonth: model.NewMoney(revenueMonth),
 		TotalRequests:    totalReq,
 		RequestsToday:    todayReq,
 		TotalTokens:      totalTokens,
 		TokensToday:      todayTokens,
-		TotalCost:        totalCost,
-		CostToday:        todayCost,
+		TotalCost:        model.NewMoney(totalCost),
+		CostToday:        model.NewMoney(todayCost),
 		SuccessRate:      successRate,
 		ErrorCount:       errorCount,
 		AvgLatencyMs:     avgLatency,
@@ -274,7 +289,7 @@ func (r *queryResolver) AdminUsageByUser(ctx context.Context, days *int) ([]*mod
 		Email    string
 		Requests int
 		Tokens   int
-		Cost     float64
+		Cost     decimal.Decimal
 	}
 	var rows []row
 	err := r.AdminSvc.DB().WithContext(ctx).
@@ -298,7 +313,7 @@ func (r *queryResolver) AdminUsageByUser(ctx context.Context, days *int) ([]*mod
 			Email:    row.Email,
 			Requests: row.Requests,
 			Tokens:   row.Tokens,
-			Cost:     row.Cost,
+			Cost:     model.NewMoney(row.Cost),
 		}
 	}
 	return out, nil
@@ -311,7 +326,7 @@ func (r *queryResolver) AdminRevenueChart(ctx context.Context, days *int) ([]*mo
 
 	type row struct {
 		Date         string
-		Revenue      float64
+		Revenue      decimal.Decimal
 		Transactions int
 	}
 	var rows []row
@@ -330,7 +345,7 @@ func (r *queryResolver) AdminRevenueChart(ctx context.Context, days *int) ([]*mo
 	for i, row := range rows {
 		out[i] = &model.RevenueChartPoint{
 			Date:         row.Date,
-			Revenue:      row.Revenue,
+			Revenue:      model.NewMoney(row.Revenue),
 			Transactions: row.Transactions,
 		}
 	}
@@ -351,10 +366,10 @@ func financialDashboardToGQL(in *adminService.FinancialDashboard) *model.Financi
 	for i, point := range in.Daily {
 		daily[i] = &model.FinancialDailyPoint{
 			Date:         point.Date,
-			CashRevenue:  point.CashRevenue,
-			UsageRevenue: point.UsageRevenue,
-			ProviderCost: point.ProviderCost,
-			GrossProfit:  point.GrossProfit,
+			CashRevenue:  model.NewMoney(point.CashRevenue),
+			UsageRevenue: model.NewMoney(point.UsageRevenue),
+			ProviderCost: model.NewMoney(point.ProviderCost),
+			GrossProfit:  model.NewMoney(point.GrossProfit),
 			Orders:       point.Orders,
 			Requests:     point.Requests,
 		}
@@ -364,7 +379,7 @@ func financialDashboardToGQL(in *adminService.FinancialDashboard) *model.Financi
 	for i, item := range in.PaymentBreakdown {
 		payments[i] = &model.FinancialBreakdown{
 			Name:   item.Name,
-			Amount: item.Amount,
+			Amount: model.NewMoney(item.Amount),
 			Count:  item.Count,
 		}
 	}
@@ -374,9 +389,9 @@ func financialDashboardToGQL(in *adminService.FinancialDashboard) *model.Financi
 		providers[i] = &model.FinancialProviderBreakdown{
 			ProviderName: item.ProviderName,
 			Requests:     item.Requests,
-			UsageRevenue: item.UsageRevenue,
-			ProviderCost: item.ProviderCost,
-			GrossProfit:  item.GrossProfit,
+			UsageRevenue: model.NewMoney(item.UsageRevenue),
+			ProviderCost: model.NewMoney(item.ProviderCost),
+			GrossProfit:  model.NewMoney(item.GrossProfit),
 			GrossMargin:  item.GrossMargin,
 		}
 	}
@@ -384,21 +399,21 @@ func financialDashboardToGQL(in *adminService.FinancialDashboard) *model.Financi
 	return &model.FinancialDashboard{
 		PeriodStart:         in.PeriodStart,
 		PeriodEnd:           in.PeriodEnd,
-		CashRevenue:         in.CashRevenue,
-		NetCashRevenue:      in.NetCashRevenue,
-		SubscriptionRevenue: in.SubscriptionRevenue,
-		TopUpRevenue:        in.TopUpRevenue,
-		UsageRevenue:        in.UsageRevenue,
-		ProviderCost:        in.ProviderCost,
-		GrossProfit:         in.GrossProfit,
+		CashRevenue:         model.NewMoney(in.CashRevenue),
+		NetCashRevenue:      model.NewMoney(in.NetCashRevenue),
+		SubscriptionRevenue: model.NewMoney(in.SubscriptionRevenue),
+		TopUpRevenue:        model.NewMoney(in.TopUpRevenue),
+		UsageRevenue:        model.NewMoney(in.UsageRevenue),
+		ProviderCost:        model.NewMoney(in.ProviderCost),
+		GrossProfit:         model.NewMoney(in.GrossProfit),
 		GrossMargin:         in.GrossMargin,
-		RefundAmount:        in.RefundAmount,
-		CreditGrants:        in.CreditGrants,
-		OutstandingBalance:  in.OutstandingBalance,
+		RefundAmount:        model.NewMoney(in.RefundAmount),
+		CreditGrants:        model.NewMoney(in.CreditGrants),
+		OutstandingBalance:  model.NewMoney(in.OutstandingBalance),
 		PaidOrders:          in.PaidOrders,
 		ActiveSubscriptions: in.ActiveSubscriptions,
 		PayingCustomers:     in.PayingCustomers,
-		Arpu:                in.ARPU,
+		Arpu:                model.NewMoney(in.ARPU),
 		Daily:               daily,
 		PaymentBreakdown:    payments,
 		ProviderBreakdown:   providers,
@@ -466,31 +481,56 @@ func (r *queryResolver) Users(ctx context.Context, q *string, page *int, pageSiz
 		end = total
 	}
 	paged := users[start:end]
+	userIDs := make([]uuid.UUID, len(paged))
+	for i := range paged {
+		userIDs[i] = paged[i].ID
+	}
+	apiKeysByUser, err := r.UserSvc.GetAPIKeysByUserIDs(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]*model.UserListItem, len(paged))
 	for i := range paged {
 		out[i] = userToListItem(&paged[i])
+		out[i].APIKeyCount = len(apiKeysByUser[paged[i].ID])
 	}
 	return &model.UserConnection{Data: out, Total: total}, nil
 }
 
 // User is the resolver for the user field.
 func (r *queryResolver) User(ctx context.Context, id string) (*model.UserDetail, error) {
-	uid, _ := uuid.Parse(id)
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID")
+	}
 	u, err := r.UserSvc.GetByID(ctx, uid)
 	if err != nil {
 		return nil, fmt.Errorf("user not found")
 	}
+	keys, err := r.loadAPIKeysForUser(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	monthlyTokenLimit := safeGQLInt(u.MonthlyTokenLimit)
+	monthlyBudget := model.NewMoney(u.MonthlyBudgetUSD)
 	ud := &model.UserDetail{
 		ID: u.ID.String(), Email: u.Email, Name: u.Name,
 		Role: u.Role, IsActive: u.IsActive,
-		CreatedAt: u.CreatedAt,
+		CreatedAt:         u.CreatedAt,
+		APIKeys:           len(keys),
+		MonthlyTokenLimit: &monthlyTokenLimit,
+		MonthlyBudgetUsd:  &monthlyBudget,
+		MfaEnabled:        u.MfaEnabled,
 	}
-	summary, _ := r.Billing.GetUsageSummary(ctx, uid, nil, nil, monthStart(), time.Now())
+	summary, _ := r.Billing.GetUserUsageSummary(ctx, uid, monthStart(), time.Now())
 	if summary != nil {
 		ud.UsageMonth = &model.UserMonthlyUsage{
 			TotalRequests: safeGQLInt(summary.TotalRequests),
 			TotalTokens:   safeGQLInt(summary.TotalTokens),
-			TotalCost:     summary.TotalCost,
+			TotalCost:     model.NewMoney(summary.TotalCost),
+			AvgLatency:    summary.AvgLatency,
+			SuccessRate:   summary.SuccessRate,
+			ErrorCount:    safeGQLInt(summary.ErrorCount),
 		}
 	}
 	return ud, nil
@@ -498,23 +538,30 @@ func (r *queryResolver) User(ctx context.Context, id string) (*model.UserDetail,
 
 // UserUsage is the resolver for the userUsage field.
 func (r *queryResolver) UserUsage(ctx context.Context, id string, days *int) ([]*model.DailyStats, error) {
-	uid, _ := uuid.Parse(id)
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID")
+	}
 	d := valInt(days, 30)
-	usage, err := r.Billing.GetDailyUsage(ctx, uid, nil, nil, d)
+	usage, err := r.Billing.GetUserDailyUsage(ctx, uid, d)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*model.DailyStats, len(usage))
 	for i, u := range usage {
-		out[i] = &model.DailyStats{Date: u.Date, Requests: int(u.Requests), TotalTokens: int(u.Tokens), TotalCost: u.Cost}
+		out[i] = &model.DailyStats{Date: u.Date, Requests: int(u.Requests), TotalTokens: int(u.Tokens), TotalCost: model.NewMoney(u.Cost)}
 	}
 	return out, nil
 }
 
 // UserAPIKeys is the resolver for the userApiKeys field.
 func (r *queryResolver) UserAPIKeys(ctx context.Context, id string) ([]*model.APIKey, error) {
-	uid, _ := uuid.Parse(id)
-	keys, err := r.UserSvc.GetAPIKeys(ctx, uid)
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID")
+	}
+
+	keys, err := r.loadAPIKeysForUser(ctx, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -523,6 +570,18 @@ func (r *queryResolver) UserAPIKeys(ctx context.Context, id string) ([]*model.AP
 		out[i] = apiKeyToGQL(&keys[i])
 	}
 	return out, nil
+}
+
+func (r *queryResolver) loadAPIKeysForUser(ctx context.Context, uid uuid.UUID) ([]models.APIKey, error) {
+	if loaders := dataloaders.For(ctx); loaders != nil && loaders.APIKeysByUserID != nil {
+		return loaders.APIKeysByUserID.Load(ctx, uid.String())()
+	}
+
+	grouped, err := r.UserSvc.GetAPIKeysByUserIDs(ctx, []uuid.UUID{uid})
+	if err != nil {
+		return nil, err
+	}
+	return grouped[uid], nil
 }
 
 // SystemSettings is the resolver for the systemSettings field.
@@ -576,7 +635,7 @@ func (r *queryResolver) RedeemCodes(ctx context.Context, page *int, pageSize *in
 		}
 		out[i] = &model.RedeemCode{
 			ID: c.ID.String(), Code: c.Code, Type: c.Type,
-			CreditAmount: c.CreditAmount, PlanID: planID,
+			CreditAmount: model.NewMoney(c.CreditAmount), PlanID: planID,
 			PlanDays: c.PlanDays,
 			UsedBy:   usedBy, UsedAt: c.UsedAt,
 			ExpiresAt: c.ExpiresAt, IsActive: c.IsActive,

@@ -31,6 +31,7 @@ import {
 import { useTranslation } from '@/lib/i18n';
 import { ADMIN_DASHBOARD_QUERY } from '@/lib/graphql/operations/adminDashboard';
 import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
+import { moneyNumber, type MoneyValue } from '@/lib/format';
 
 /* -- Helpers -- */
 
@@ -40,8 +41,11 @@ const fmtNum = (v: number): string => {
   return new Intl.NumberFormat('en-US').format(v);
 };
 
-const fmtCurrency = (v: number): string =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
+const fmtCurrency = (v: MoneyValue): string =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(moneyNumber(v));
+
+const fmtCostState = (cost: MoneyValue, tokens: number): string =>
+  moneyNumber(cost) === 0 && tokens > 0 ? 'Pricing not configured' : fmtCurrency(cost);
 
 const fmtTokens = (v: number): string => {
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
@@ -135,9 +139,9 @@ function DashboardPage() {
   }, [data]);
 
   const d = data?.adminDashboard;
-  const chartData = data?.usageChart || [];
-  const providerStats = data?.providerStats || [];
-  const modelStats = data?.modelStats || [];
+  const chartData = (data?.usageChart || []).map((point: any) => ({ ...point, cost: moneyNumber(point.cost) }));
+  const providerStats = (data?.providerStats || []).map((item: any) => ({ ...item, totalCost: moneyNumber(item.totalCost) }));
+  const modelStats = (data?.modelStats || []).map((item: any) => ({ ...item, totalCost: moneyNumber(item.totalCost) }));
 
   if (loading && !d) {
     return (
@@ -282,7 +286,7 @@ function DashboardPage() {
                   <div className="flex items-center gap-4">
                     <div className="text-right">
                       <p className="text-sm font-medium text-apple-gray-900">{fmtNum(p.requests)} req</p>
-                      <p className="text-xs text-apple-gray-500">{fmtCurrency(p.totalCost)}</p>
+                      <p className="text-xs text-apple-gray-500">{fmtCostState(p.totalCost, p.tokens || 0)}</p>
                     </div>
                     <div className={`px-2 py-0.5 rounded text-xs font-medium ${p.successRate >= 95 ? 'bg-green-100 text-apple-green' : p.successRate >= 80 ? 'bg-orange-100 text-apple-orange' : 'bg-red-100 text-apple-red'}`}>
                       {p.successRate?.toFixed(0) || 0}%
@@ -313,7 +317,7 @@ function DashboardPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-medium text-apple-gray-900">{fmtNum(m.requests)} req</p>
-                    <p className="text-xs text-apple-gray-500">{fmtCurrency(m.totalCost)}</p>
+                    <p className="text-xs text-apple-gray-500">{fmtCostState(m.totalCost, (m.inputTokens || 0) + (m.outputTokens || 0))}</p>
                   </div>
                 </div>
               ))}

@@ -6,7 +6,7 @@ import { useQuery, useMutation } from '@apollo/client/react';
 import { FEATURE_GATES_QUERY, UPDATE_FEATURE_GATE } from '@/lib/graphql/operations/featuregates';
 import { GET_INTEGRATIONS, UPDATE_INTEGRATION, TEST_LANGFUSE_CONNECTION } from '@/lib/graphql/operations/integrations';
 import {
-  CheckCircleIcon, XCircleIcon, CloudIcon, SignalIcon, EyeIcon, EyeSlashIcon,
+  CheckCircleIcon, XCircleIcon, CloudIcon, SignalIcon, EyeIcon, EyeSlashIcon, ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import { FormField, TextInput, Toggle } from './FormPrimitives';
 import toast from 'react-hot-toast';
@@ -28,6 +28,15 @@ const categoryLabels: Record<string, string> = {
   observability: 'Observability',
 };
 
+const highRiskGateHelp: Record<string, string> = {
+  GraphQLIntrospection: 'Exposes schema details. Enable only temporarily for trusted admin debugging.',
+  GraphQLPlayground: 'Exposes an interactive GraphQL console. Keep off outside controlled debugging windows.',
+  SwaggerDocs: 'Publishes API documentation. Review exposure before enabling on a public edge.',
+  PprofDebug: 'Exposes runtime profiling data that may reveal sensitive internals.',
+  MetricsUnauthenticated: 'Exposes Prometheus metrics without JWT auth. Use only on private networks.',
+  AutoMigrate: 'Allows automatic schema changes. Production deployments should use explicit SQL migrations.',
+};
+
 export function FeatureGatesSettingsTab() {
   const { data, loading, refetch } = useApolloQuery<{ featureGates: FeatureGateItem[] }>(FEATURE_GATES_QUERY, {
     fetchPolicy: 'network-only',
@@ -42,6 +51,12 @@ export function FeatureGatesSettingsTab() {
   }, {});
 
   const handleToggle = async (name: string, currentValue: boolean) => {
+    const riskHelp = highRiskGateHelp[name];
+    if (riskHelp) {
+      const nextState = currentValue ? 'disable' : 'enable';
+      const confirmed = window.confirm(`${name} is a high-risk runtime switch.\n\n${riskHelp}\n\nDo you want to ${nextState} it now?`);
+      if (!confirmed) return;
+    }
     try {
       await updateGate({ variables: { name, enabled: !currentValue } });
       toast.success(`${name} ${!currentValue ? 'enabled' : 'disabled'}`);
@@ -61,9 +76,14 @@ export function FeatureGatesSettingsTab() {
 
   return (
     <div className="space-y-8">
-      <p className="text-sm text-apple-gray-500">
-        Toggle platform capabilities at runtime. Changes take effect immediately.
-      </p>
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="flex gap-2">
+          <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            Runtime gates take effect immediately. Security and observability exposure gates require confirmation before any change.
+          </p>
+        </div>
+      </div>
       {categoryOrder.map((cat) => {
         const items = grouped[cat];
         if (!items || items.length === 0) return null;
@@ -78,11 +98,17 @@ export function FeatureGatesSettingsTab() {
                   <div className="flex-1 min-w-0 pr-4">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-apple-gray-900">{gate.name}</span>
+                      {highRiskGateHelp[gate.name] && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                          <ExclamationTriangleIcon className="h-3 w-3" />
+                          Production risk
+                        </span>
+                      )}
                       {gate.source === 'database' && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-200">DB</span>
                       )}
                     </div>
-                    <p className="text-xs text-apple-gray-500 mt-0.5 truncate">{gate.description}</p>
+                    <p className="text-xs text-apple-gray-500 mt-0.5">{highRiskGateHelp[gate.name] || gate.description}</p>
                   </div>
                   <button type="button" role="switch" aria-checked={gate.enabled} onClick={() => handleToggle(gate.name, gate.enabled)}
                     className={clsx('relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 flex-shrink-0 cursor-pointer',

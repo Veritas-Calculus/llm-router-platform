@@ -60,9 +60,7 @@ type lmStudioLoadedInstance struct {
 
 // NewLMStudioClient creates a new LM Studio client.
 func NewLMStudioClient(cfg *config.ProviderConfig, logger *zap.Logger) *LMStudioClient {
-	httpClient := &http.Client{
-		Timeout: 600 * time.Second,
-	}
+	httpClient := defaultHTTPClient()
 	if cfg.HTTPClient != nil {
 		httpClient = cfg.HTTPClient()
 	}

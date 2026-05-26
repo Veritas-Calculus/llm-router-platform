@@ -6,27 +6,29 @@ import (
 	"time"
 
 	"llm-router-platform/internal/models"
+
+	"github.com/shopspring/decimal"
 )
 
 // FinancialDashboard contains operator-facing financial KPIs for a period.
 type FinancialDashboard struct {
 	PeriodStart         time.Time
 	PeriodEnd           time.Time
-	CashRevenue         float64
-	NetCashRevenue      float64
-	SubscriptionRevenue float64
-	TopUpRevenue        float64
-	UsageRevenue        float64
-	ProviderCost        float64
-	GrossProfit         float64
+	CashRevenue         decimal.Decimal
+	NetCashRevenue      decimal.Decimal
+	SubscriptionRevenue decimal.Decimal
+	TopUpRevenue        decimal.Decimal
+	UsageRevenue        decimal.Decimal
+	ProviderCost        decimal.Decimal
+	GrossProfit         decimal.Decimal
 	GrossMargin         float64
-	RefundAmount        float64
-	CreditGrants        float64
-	OutstandingBalance  float64
+	RefundAmount        decimal.Decimal
+	CreditGrants        decimal.Decimal
+	OutstandingBalance  decimal.Decimal
 	PaidOrders          int
 	ActiveSubscriptions int
 	PayingCustomers     int
-	ARPU                float64
+	ARPU                decimal.Decimal
 	Daily               []FinancialDailyPoint
 	PaymentBreakdown    []FinancialBreakdown
 	ProviderBreakdown   []FinancialProviderBreakdown
@@ -34,41 +36,41 @@ type FinancialDashboard struct {
 
 type FinancialDailyPoint struct {
 	Date         string
-	CashRevenue  float64
-	UsageRevenue float64
-	ProviderCost float64
-	GrossProfit  float64
+	CashRevenue  decimal.Decimal
+	UsageRevenue decimal.Decimal
+	ProviderCost decimal.Decimal
+	GrossProfit  decimal.Decimal
 	Orders       int
 	Requests     int
 }
 
 type FinancialBreakdown struct {
 	Name   string
-	Amount float64
+	Amount decimal.Decimal
 	Count  int
 }
 
 type FinancialProviderBreakdown struct {
 	ProviderName string
 	Requests     int
-	UsageRevenue float64
-	ProviderCost float64
-	GrossProfit  float64
+	UsageRevenue decimal.Decimal
+	ProviderCost decimal.Decimal
+	GrossProfit  decimal.Decimal
 	GrossMargin  float64
 }
 
 type financialOrderSummary struct {
-	CashRevenue         float64 `gorm:"column:cash_revenue"`
-	SubscriptionRevenue float64 `gorm:"column:subscription_revenue"`
-	TopUpRevenue        float64 `gorm:"column:top_up_revenue"`
-	PaidOrders          int64   `gorm:"column:paid_orders"`
-	PayingCustomers     int64   `gorm:"column:paying_customers"`
+	CashRevenue         decimal.Decimal `gorm:"column:cash_revenue"`
+	SubscriptionRevenue decimal.Decimal `gorm:"column:subscription_revenue"`
+	TopUpRevenue        decimal.Decimal `gorm:"column:top_up_revenue"`
+	PaidOrders          int64           `gorm:"column:paid_orders"`
+	PayingCustomers     int64           `gorm:"column:paying_customers"`
 }
 
 type financialUsageSummary struct {
-	UsageRevenue float64 `gorm:"column:usage_revenue"`
-	ProviderCost float64 `gorm:"column:provider_cost"`
-	Requests     int64   `gorm:"column:requests"`
+	UsageRevenue decimal.Decimal `gorm:"column:usage_revenue"`
+	ProviderCost decimal.Decimal `gorm:"column:provider_cost"`
+	Requests     int64           `gorm:"column:requests"`
 }
 
 // FinancialDashboard returns cash, usage revenue, cost, and margin metrics.
@@ -107,14 +109,14 @@ func (s *Service) FinancialDashboard(ctx context.Context, days int) (*FinancialD
 		return nil, fmt.Errorf("load financial usage summary: %w", err)
 	}
 
-	var refundAmount float64
+	var refundAmount decimal.Decimal
 	if err := s.db.WithContext(ctx).Model(&models.Transaction{}).
 		Where("type = ? AND created_at >= ? AND created_at <= ?", "refund", start, now).
 		Select("COALESCE(SUM(ABS(amount)), 0)").Scan(&refundAmount).Error; err != nil {
 		return nil, fmt.Errorf("load financial refunds: %w", err)
 	}
 
-	var creditGrants float64
+	var creditGrants decimal.Decimal
 	if err := s.db.WithContext(ctx).Table("transactions AS t").
 		Joins("LEFT JOIN orders AS o ON t.reference_id = o.order_no AND o.status = ?", "paid").
 		Where("t.amount > 0 AND t.type <> ? AND t.created_at >= ? AND t.created_at <= ? AND o.id IS NULL", "refund", start, now).
@@ -122,9 +124,12 @@ func (s *Service) FinancialDashboard(ctx context.Context, days int) (*FinancialD
 		return nil, fmt.Errorf("load financial credit grants: %w", err)
 	}
 
-	var outstandingBalance float64
+	var outstandingBalance decimal.Decimal
+	// Operator/admin balances are internal testing or staff balances, not
+	// customer credits owed by the platform.
 	if err := s.db.WithContext(ctx).Model(&models.User{}).
 		Select("COALESCE(SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END), 0)").
+		Where("LOWER(COALESCE(role, '')) <> ?", "admin").
 		Scan(&outstandingBalance).Error; err != nil {
 		return nil, fmt.Errorf("load outstanding balance: %w", err)
 	}
@@ -136,7 +141,7 @@ func (s *Service) FinancialDashboard(ctx context.Context, days int) (*FinancialD
 		return nil, fmt.Errorf("load active subscriptions: %w", err)
 	}
 
-	grossProfit := usage.UsageRevenue - usage.ProviderCost
+	grossProfit := usage.UsageRevenue.Sub(usage.ProviderCost).Round(models.MoneyScale)
 	daily, err := s.financialDaily(ctx, start, now, days)
 	if err != nil {
 		return nil, err
@@ -153,21 +158,21 @@ func (s *Service) FinancialDashboard(ctx context.Context, days int) (*FinancialD
 	return &FinancialDashboard{
 		PeriodStart:         start,
 		PeriodEnd:           now,
-		CashRevenue:         orders.CashRevenue,
-		NetCashRevenue:      orders.CashRevenue - refundAmount,
-		SubscriptionRevenue: orders.SubscriptionRevenue,
-		TopUpRevenue:        orders.TopUpRevenue,
-		UsageRevenue:        usage.UsageRevenue,
-		ProviderCost:        usage.ProviderCost,
+		CashRevenue:         orders.CashRevenue.Round(models.MoneyScale),
+		NetCashRevenue:      orders.CashRevenue.Sub(refundAmount).Round(models.MoneyScale),
+		SubscriptionRevenue: orders.SubscriptionRevenue.Round(models.MoneyScale),
+		TopUpRevenue:        orders.TopUpRevenue.Round(models.MoneyScale),
+		UsageRevenue:        usage.UsageRevenue.Round(models.MoneyScale),
+		ProviderCost:        usage.ProviderCost.Round(models.MoneyScale),
 		GrossProfit:         grossProfit,
-		GrossMargin:         percent(grossProfit, usage.UsageRevenue),
-		RefundAmount:        refundAmount,
-		CreditGrants:        creditGrants,
-		OutstandingBalance:  outstandingBalance,
+		GrossMargin:         percentMoney(grossProfit, usage.UsageRevenue),
+		RefundAmount:        refundAmount.Round(models.MoneyScale),
+		CreditGrants:        creditGrants.Round(models.MoneyScale),
+		OutstandingBalance:  outstandingBalance.Round(models.MoneyScale),
 		PaidOrders:          int(orders.PaidOrders),
 		ActiveSubscriptions: int(activeSubscriptions),
 		PayingCustomers:     int(orders.PayingCustomers),
-		ARPU:                ratio(orders.CashRevenue, float64(orders.PayingCustomers)),
+		ARPU:                moneyRatio(orders.CashRevenue, orders.PayingCustomers),
 		Daily:               daily,
 		PaymentBreakdown:    paymentBreakdown,
 		ProviderBreakdown:   providerBreakdown,
@@ -185,9 +190,9 @@ func (s *Service) financialDaily(ctx context.Context, start, end time.Time, days
 	}
 
 	var orderRows []struct {
-		Date        string  `gorm:"column:date"`
-		CashRevenue float64 `gorm:"column:cash_revenue"`
-		Orders      int64   `gorm:"column:orders"`
+		Date        string          `gorm:"column:date"`
+		CashRevenue decimal.Decimal `gorm:"column:cash_revenue"`
+		Orders      int64           `gorm:"column:orders"`
 	}
 	if err := s.db.WithContext(ctx).Table("orders").
 		Select(`TO_CHAR(COALESCE(updated_at, created_at), 'YYYY-MM-DD') AS date,
@@ -200,16 +205,16 @@ func (s *Service) financialDaily(ctx context.Context, start, end time.Time, days
 	}
 	for _, row := range orderRows {
 		if point := byDate[row.Date]; point != nil {
-			point.CashRevenue = row.CashRevenue
+			point.CashRevenue = row.CashRevenue.Round(models.MoneyScale)
 			point.Orders = int(row.Orders)
 		}
 	}
 
 	var usageRows []struct {
-		Date         string  `gorm:"column:date"`
-		UsageRevenue float64 `gorm:"column:usage_revenue"`
-		ProviderCost float64 `gorm:"column:provider_cost"`
-		Requests     int64   `gorm:"column:requests"`
+		Date         string          `gorm:"column:date"`
+		UsageRevenue decimal.Decimal `gorm:"column:usage_revenue"`
+		ProviderCost decimal.Decimal `gorm:"column:provider_cost"`
+		Requests     int64           `gorm:"column:requests"`
 	}
 	if err := s.db.WithContext(ctx).Table("usage_logs").
 		Select(`TO_CHAR(created_at, 'YYYY-MM-DD') AS date,
@@ -224,9 +229,10 @@ func (s *Service) financialDaily(ctx context.Context, start, end time.Time, days
 	}
 	for _, row := range usageRows {
 		if point := byDate[row.Date]; point != nil {
-			point.UsageRevenue = row.UsageRevenue
-			point.ProviderCost = row.ProviderCost
-			point.GrossProfit = row.UsageRevenue - row.ProviderCost
+			grossProfit := row.UsageRevenue.Sub(row.ProviderCost).Round(models.MoneyScale)
+			point.UsageRevenue = row.UsageRevenue.Round(models.MoneyScale)
+			point.ProviderCost = row.ProviderCost.Round(models.MoneyScale)
+			point.GrossProfit = grossProfit
 			point.Requests = int(row.Requests)
 		}
 	}
@@ -241,9 +247,9 @@ func (s *Service) financialDaily(ctx context.Context, start, end time.Time, days
 
 func (s *Service) financialPaymentBreakdown(ctx context.Context, start, end time.Time) ([]FinancialBreakdown, error) {
 	var rows []struct {
-		Name   string  `gorm:"column:name"`
-		Amount float64 `gorm:"column:amount"`
-		Count  int64   `gorm:"column:count"`
+		Name   string          `gorm:"column:name"`
+		Amount decimal.Decimal `gorm:"column:amount"`
+		Count  int64           `gorm:"column:count"`
 	}
 	if err := s.db.WithContext(ctx).Table("orders").
 		Select("COALESCE(NULLIF(payment_method, ''), 'unknown') AS name, COALESCE(SUM(amount), 0) AS amount, COUNT(*) AS count").
@@ -256,17 +262,17 @@ func (s *Service) financialPaymentBreakdown(ctx context.Context, start, end time
 
 	out := make([]FinancialBreakdown, len(rows))
 	for i, row := range rows {
-		out[i] = FinancialBreakdown{Name: row.Name, Amount: row.Amount, Count: int(row.Count)}
+		out[i] = FinancialBreakdown{Name: row.Name, Amount: row.Amount.Round(models.MoneyScale), Count: int(row.Count)}
 	}
 	return out, nil
 }
 
 func (s *Service) financialProviderBreakdown(ctx context.Context, start, end time.Time) ([]FinancialProviderBreakdown, error) {
 	var rows []struct {
-		ProviderName string  `gorm:"column:provider_name"`
-		Requests     int64   `gorm:"column:requests"`
-		UsageRevenue float64 `gorm:"column:usage_revenue"`
-		ProviderCost float64 `gorm:"column:provider_cost"`
+		ProviderName string          `gorm:"column:provider_name"`
+		Requests     int64           `gorm:"column:requests"`
+		UsageRevenue decimal.Decimal `gorm:"column:usage_revenue"`
+		ProviderCost decimal.Decimal `gorm:"column:provider_cost"`
 	}
 	if err := s.db.WithContext(ctx).Table("usage_logs").
 		Joins("LEFT JOIN providers ON usage_logs.provider_id = providers.id").
@@ -285,26 +291,30 @@ func (s *Service) financialProviderBreakdown(ctx context.Context, start, end tim
 
 	out := make([]FinancialProviderBreakdown, len(rows))
 	for i, row := range rows {
-		grossProfit := row.UsageRevenue - row.ProviderCost
+		grossProfit := row.UsageRevenue.Sub(row.ProviderCost).Round(models.MoneyScale)
 		out[i] = FinancialProviderBreakdown{
 			ProviderName: row.ProviderName,
 			Requests:     int(row.Requests),
-			UsageRevenue: row.UsageRevenue,
-			ProviderCost: row.ProviderCost,
+			UsageRevenue: row.UsageRevenue.Round(models.MoneyScale),
+			ProviderCost: row.ProviderCost.Round(models.MoneyScale),
 			GrossProfit:  grossProfit,
-			GrossMargin:  percent(grossProfit, row.UsageRevenue),
+			GrossMargin:  percentMoney(grossProfit, row.UsageRevenue),
 		}
 	}
 	return out, nil
 }
 
-func ratio(numerator, denominator float64) float64 {
+func moneyRatio(numerator decimal.Decimal, denominator int64) decimal.Decimal {
 	if denominator == 0 {
-		return 0
+		return decimal.Zero
 	}
-	return numerator / denominator
+	return numerator.Div(decimal.NewFromInt(denominator)).Round(models.MoneyScale)
 }
 
-func percent(numerator, denominator float64) float64 {
-	return ratio(numerator, denominator) * 100
+func percentMoney(numerator, denominator decimal.Decimal) float64 {
+	if denominator.IsZero() {
+		return 0
+	}
+	out, _ := numerator.Div(denominator).Mul(decimal.NewFromInt(100)).Float64()
+	return out
 }

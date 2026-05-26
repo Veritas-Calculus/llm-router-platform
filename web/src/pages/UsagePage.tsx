@@ -13,7 +13,7 @@ import {
 import { useQuery } from '@apollo/client/react';
 import { MY_USAGE_SUMMARY, MY_DAILY_USAGE, MY_RECENT_USAGE } from '@/lib/graphql/operations';
 import { useTranslation } from '@/lib/i18n';
-import { formatNumber, formatUSDPrecise } from '@/lib/format';
+import { formatNumber, formatUSDPrecise, moneyNumber } from '@/lib/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -54,17 +54,17 @@ function UsagePage() {
   const monthlyUsage = useMemo(() => {
     const s = summaryData?.myUsageSummary;
     if (!s) return null;
-    return { total_requests: s.totalRequests, total_tokens: s.totalTokens, total_cost: s.totalCost, success_rate: s.successRate };
+    return { total_requests: s.totalRequests, total_tokens: s.totalTokens, total_cost: moneyNumber(s.totalCost), success_rate: s.successRate };
   }, [summaryData]);
 
   const dailyStats = useMemo(() =>
-    (dailyData?.myDailyUsage || []).map((d: any) => ({ date: d.date, requests: d.requests, tokens: d.totalTokens, cost: d.totalCost })),
+    (dailyData?.myDailyUsage || []).map((d: any) => ({ date: d.date, requests: d.requests, tokens: d.totalTokens, cost: moneyNumber(d.totalCost) })),
   [dailyData]);
 
   const records = useMemo(() =>
     (recentData?.myRecentUsage?.data || []).map((r: any) => ({
       id: r.id, model_name: r.modelName, input_tokens: r.inputTokens, output_tokens: r.outputTokens,
-      cost: r.cost, latency_ms: r.latencyMs, is_success: r.isSuccess, created_at: r.createdAt,
+      cost: moneyNumber(r.cost), latency_ms: r.latencyMs, is_success: r.isSuccess, created_at: r.createdAt,
     })),
   [recentData]);
   const total = recentData?.myRecentUsage?.total || 0;

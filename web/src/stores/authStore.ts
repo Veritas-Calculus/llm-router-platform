@@ -6,14 +6,13 @@ const AUTH_STORAGE_KEY = 'auth-storage';
 
 interface AuthState {
   token: string | null;
-  refreshToken: string | null;
   user: User | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
   adminView: boolean;
   selectedOrgId: string | null;
-  setAuth: (token: string, user: User, refreshToken?: string | null) => void;
-  setAccessToken: (token: string, refreshToken?: string | null) => void;
+  setAuth: (token: string, user: User) => void;
+  setAccessToken: (token: string) => void;
   logout: () => void;
   updateUser: (user: User) => void;
   toggleAdminView: () => void;
@@ -24,30 +23,26 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       token: null,
-      refreshToken: null,
       user: null,
       isAuthenticated: false,
       isAdmin: false,
       adminView: false,
       selectedOrgId: null,
-      setAuth: (token, user, refreshToken = null) =>
+      setAuth: (token, user) =>
         set({
           token,
-          refreshToken,
           user,
           isAuthenticated: true,
           isAdmin: user.role === 'admin',
           adminView: user.role === 'admin',
         }),
-      setAccessToken: (token, refreshToken) =>
-        set((state) => ({
+      setAccessToken: (token) =>
+        set(() => ({
           token,
-          refreshToken: refreshToken ?? state.refreshToken,
         })),
       logout: () =>
         set({
           token: null,
-          refreshToken: null,
           user: null,
           isAuthenticated: false,
           isAdmin: false,
@@ -69,13 +64,19 @@ export const useAuthStore = create<AuthState>()(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         token: state.token,
-        refreshToken: state.refreshToken,
         user: state.user,
         isAuthenticated: state.isAuthenticated,
         isAdmin: state.isAdmin,
         adminView: state.adminView,
         selectedOrgId: state.selectedOrgId,
       }),
+      version: 2,
+      migrate: (persistedState) => {
+        if (persistedState && typeof persistedState === 'object') {
+          delete (persistedState as { refreshToken?: unknown }).refreshToken;
+        }
+        return persistedState as AuthState;
+      },
     }
   )
 );

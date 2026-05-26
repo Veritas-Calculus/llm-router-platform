@@ -11,9 +11,11 @@ import (
 	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/models"
+	billing "llm-router-platform/internal/service/billing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 // SetBudget is the resolver for the setBudget field.
@@ -31,7 +33,11 @@ func (r *mutationResolver) SetBudget(ctx context.Context, input model.BudgetInpu
 	if input.EnforceHardLimit != nil {
 		enforce = *input.EnforceHardLimit
 	}
-	b, err := r.BudgetService.SetBudget(ctx, id, input.MonthlyLimitUsd, threshold, enforce, derefStr(input.WebhookURL), derefStr(input.Email))
+	limitUSD, err := input.MonthlyLimitUsd.Decimal()
+	if err != nil {
+		return nil, fmt.Errorf("invalid monthly limit: %w", err)
+	}
+	b, err := r.BudgetService.SetBudget(ctx, id, limitUSD, threshold, enforce, derefStr(input.WebhookURL), derefStr(input.Email))
 	if err != nil {
 		return nil, err
 	}
@@ -74,9 +80,11 @@ func (r *mutationResolver) ExportUsageCSV(ctx context.Context) (string, error) {
 
 // CreateTask is the resolver for the createTask field.
 func (r *mutationResolver) CreateTask(ctx context.Context, input model.CreateTaskInput) (*model.Task, error) {
-	uid, _ := directives.UserIDFromContext(ctx)
-	id, _ := uuid.Parse(uid)
-	t, err := r.TaskService.CreateTask(ctx, id, input.Type, input.Input, derefStr(input.WebhookURL))
+	projectID, err := r.resolveAccessibleProjectID(ctx, nil, "OWNER", "ADMIN", "MEMBER")
+	if err != nil {
+		return nil, err
+	}
+	t, err := r.TaskService.CreateTask(ctx, projectID, input.Type, input.Input, derefStr(input.WebhookURL))
 	if err != nil {
 		return nil, err
 	}
@@ -85,12 +93,25 @@ func (r *mutationResolver) CreateTask(ctx context.Context, input model.CreateTas
 
 // CancelTask is the resolver for the cancelTask field.
 func (r *mutationResolver) CancelTask(ctx context.Context, id string) (*model.Task, error) {
-	tid, _ := uuid.Parse(id)
+	uid, _ := directives.UserIDFromContext(ctx)
+	tid, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid task ID")
+	}
+	task, err := r.TaskService.GetTask(ctx, tid)
+	if err != nil {
+		return nil, fmt.Errorf("task not found")
+	}
+	if err := r.UserSvc.RequireProjectRole(ctx, uid, task.ProjectID.String(), "OWNER", "ADMIN", "MEMBER"); err != nil {
+		return nil, fmt.Errorf("forbidden: access denied")
+	}
 	if err := r.TaskService.CancelTask(ctx, tid); err != nil {
 		return nil, err
 	}
-	// Return a minimal task with cancelled status
-	return &model.Task{ID: id, Status: "cancelled"}, nil
+	task.Status = "cancelled"
+	now := time.Now()
+	task.CompletedAt = &now
+	return asyncTaskToGQL(task), nil
 }
 
 // ChangePlan is the resolver for the changePlan field.
@@ -146,11 +167,16 @@ func (r *mutationResolver) CreateCheckoutSession(ctx context.Context, planID str
 }
 
 // CreateRechargeSession is the resolver for the createRechargeSession field.
-func (r *mutationResolver) CreateRechargeSession(ctx context.Context, amount float64) (*model.CheckoutSession, error) {
-	if amount < 1.0 {
+func (r *mutationResolver) CreateRechargeSession(ctx context.Context, amount model.Money) (*model.CheckoutSession, error) {
+	parsedAmount, err := amount.Decimal()
+	if err != nil {
+		return nil, fmt.Errorf("invalid recharge amount: %w", err)
+	}
+	amountMoney := models.MoneyRoundToCents(parsedAmount)
+	if amountMoney.Cmp(decimal.NewFromInt(1)) < 0 {
 		return nil, fmt.Errorf("minimum recharge amount is $1.00")
 	}
-	if amount > 10000.0 {
+	if amountMoney.Cmp(decimal.NewFromInt(10000)) > 0 {
 		return nil, fmt.Errorf("maximum recharge amount is $10,000.00")
 	}
 
@@ -163,7 +189,7 @@ func (r *mutationResolver) CreateRechargeSession(ctx context.Context, amount flo
 		return nil, fmt.Errorf("invalid user ID")
 	}
 
-	url, err := r.Payment.CreateRechargeSession(ctx, userID, amount)
+	url, err := r.Payment.CreateRechargeSession(ctx, userID, amountMoney)
 	if err != nil {
 		return nil, err
 	}
@@ -189,8 +215,9 @@ func (r *mutationResolver) RedeemCode(ctx context.Context, code string) (*model.
 		Success: result.Success,
 		Message: result.Message,
 	}
-	if result.CreditAmount > 0 {
-		out.CreditAmount = &result.CreditAmount
+	if result.CreditAmount.IsPositive() {
+		creditAmount := model.NewMoney(result.CreditAmount)
+		out.CreditAmount = &creditAmount
 	}
 	if result.PlanName != "" {
 		out.PlanName = &result.PlanName
@@ -200,8 +227,12 @@ func (r *mutationResolver) RedeemCode(ctx context.Context, code string) (*model.
 
 // CreatePlan is the resolver for the createPlan field.
 func (r *mutationResolver) CreatePlan(ctx context.Context, input model.PlanInput) (*model.Plan, error) {
+	priceMonth, err := input.PriceMonth.Decimal()
+	if err != nil {
+		return nil, fmt.Errorf("invalid monthly price: %w", err)
+	}
 	plan := &models.Plan{
-		Name: input.Name, PriceMonth: input.PriceMonth,
+		Name: input.Name, PriceMonth: priceMonth.Round(models.MoneyScale),
 		TokenLimit: int64(input.TokenLimit), RateLimit: input.RateLimit, IsActive: true,
 	}
 	if input.Description != nil {
@@ -225,7 +256,7 @@ func (r *mutationResolver) CreatePlan(ctx context.Context, input model.PlanInput
 	}
 	return &model.Plan{
 		ID: plan.ID.String(), Name: plan.Name, Description: plan.Description,
-		PriceMonth: plan.PriceMonth, TokenLimit: int(plan.TokenLimit),
+		PriceMonth: model.NewMoney(plan.PriceMonth), TokenLimit: int(plan.TokenLimit),
 		RateLimit: plan.RateLimit, SupportLevel: plan.SupportLevel,
 		Features: features, IsActive: plan.IsActive,
 	}, nil
@@ -238,8 +269,12 @@ func (r *mutationResolver) UpdatePlan(ctx context.Context, id string, input mode
 	if err := r.AdminSvc.DB().WithContext(ctx).First(&plan, "id = ?", pid).Error; err != nil {
 		return nil, fmt.Errorf("plan not found")
 	}
+	priceMonth, err := input.PriceMonth.Decimal()
+	if err != nil {
+		return nil, fmt.Errorf("invalid monthly price: %w", err)
+	}
 	plan.Name = input.Name
-	plan.PriceMonth = input.PriceMonth
+	plan.PriceMonth = priceMonth.Round(models.MoneyScale)
 	plan.TokenLimit = int64(input.TokenLimit)
 	plan.RateLimit = input.RateLimit
 	if input.Description != nil {
@@ -263,7 +298,7 @@ func (r *mutationResolver) UpdatePlan(ctx context.Context, id string, input mode
 	}
 	return &model.Plan{
 		ID: plan.ID.String(), Name: plan.Name, Description: plan.Description,
-		PriceMonth: plan.PriceMonth, TokenLimit: int(plan.TokenLimit),
+		PriceMonth: model.NewMoney(plan.PriceMonth), TokenLimit: int(plan.TokenLimit),
 		RateLimit: plan.RateLimit, SupportLevel: plan.SupportLevel,
 		Features: features, IsActive: plan.IsActive,
 	}, nil
@@ -283,7 +318,7 @@ func (r *queryResolver) MyUsageSummary(ctx context.Context, orgID *string, proje
 	}
 	return &model.UsageSummary{
 		TotalRequests: safeGQLInt(s.TotalRequests), SuccessRate: s.SuccessRate,
-		TotalTokens: safeGQLInt(s.TotalTokens), TotalCost: s.TotalCost,
+		TotalTokens: safeGQLInt(s.TotalTokens), TotalCost: model.NewMoney(s.TotalCost),
 	}, nil
 }
 
@@ -302,7 +337,7 @@ func (r *queryResolver) MyDailyUsage(ctx context.Context, days *int, orgID *stri
 	}
 	out := make([]*model.DailyStats, len(usage))
 	for i, u := range usage {
-		out[i] = &model.DailyStats{Date: u.Date, Requests: int(u.Requests), TotalTokens: int(u.Tokens), TotalCost: u.Cost}
+		out[i] = &model.DailyStats{Date: u.Date, Requests: int(u.Requests), TotalTokens: int(u.Tokens), TotalCost: model.NewMoney(u.Cost)}
 	}
 	return out, nil
 }
@@ -321,7 +356,7 @@ func (r *queryResolver) MyUsageByProvider(ctx context.Context, orgID *string, pr
 	}
 	out := make([]*model.ProviderUsage, len(usage))
 	for i, u := range usage {
-		out[i] = &model.ProviderUsage{ProviderName: u.ProviderName, Requests: int(u.Requests), Tokens: int(u.Tokens), Cost: u.Cost}
+		out[i] = &model.ProviderUsage{ProviderName: u.ProviderName, Requests: int(u.Requests), Tokens: int(u.Tokens), Cost: model.NewMoney(u.Cost)}
 	}
 	return out, nil
 }
@@ -344,7 +379,7 @@ func (r *queryResolver) MyRecentUsage(ctx context.Context, page *int, pageSize *
 		out[i] = &model.UsageRecord{
 			ID: l.ID.String(), ModelName: l.ModelName,
 			InputTokens: l.RequestTokens, OutputTokens: l.ResponseTokens,
-			Cost: l.Cost, LatencyMs: int(l.Latency),
+			Cost: model.NewMoney(l.Cost), LatencyMs: int(l.Latency),
 			IsSuccess: l.StatusCode >= 200 && l.StatusCode < 400,
 			CreatedAt: l.CreatedAt,
 		}
@@ -388,8 +423,8 @@ func (r *queryResolver) MyBudgetStatus(ctx context.Context, orgID *string) (*mod
 	}
 	return &model.BudgetStatus{
 		Budget:          budget,
-		CurrentSpend:    s.CurrentSpend,
-		RemainingBudget: s.RemainingUSD,
+		CurrentSpend:    model.NewMoney(s.CurrentSpend),
+		RemainingBudget: model.NewMoney(s.RemainingUSD),
 		PercentUsed:     s.UsagePercent,
 		IsOverBudget:    s.IsOverBudget,
 	}, nil
@@ -444,7 +479,7 @@ func (r *queryResolver) MyOrders(ctx context.Context, orgID *string) ([]*model.O
 	for i, o := range orders {
 		out[i] = &model.Order{
 			ID: o.ID.String(), OrderNo: o.OrderNo,
-			Amount: o.Amount, Currency: o.Currency,
+			Amount: model.NewMoney(o.Amount), Currency: o.Currency,
 			Status: o.Status, PaymentMethod: o.PaymentMethod,
 			CreatedAt: o.CreatedAt,
 		}
@@ -454,12 +489,12 @@ func (r *queryResolver) MyOrders(ctx context.Context, orgID *string) ([]*model.O
 
 // MyTasks is the resolver for the myTasks field.
 func (r *queryResolver) MyTasks(ctx context.Context, page *int, pageSize *int) (*model.TaskConnection, error) {
-	projectID := r.resolveProjectID(nil)
-	if projectID == nil {
-		return nil, fmt.Errorf("no active project")
+	projectID, err := r.resolveAccessibleProjectID(ctx, nil, "OWNER", "ADMIN", "MEMBER", "READONLY")
+	if err != nil {
+		return nil, err
 	}
 	p, ps := clampPagination(page, pageSize)
-	tasks, total, err := r.TaskService.ListTasks(ctx, *projectID, "", ps, (p-1)*ps)
+	tasks, total, err := r.TaskService.ListTasks(ctx, projectID, "", ps, (p-1)*ps)
 	if err != nil {
 		return &model.TaskConnection{Data: []*model.Task{}, Total: 0}, nil
 	}
@@ -510,7 +545,7 @@ func (r *queryResolver) MyRedeemHistory(ctx context.Context) ([]*model.RedeemRec
 		}
 		out[i] = &model.RedeemRecord{
 			ID: rc.ID.String(), Code: rc.Code,
-			CreditAmount: rc.CreditAmount, PlanName: planName, RedeemedAt: redeemedAt,
+			CreditAmount: model.NewMoney(rc.CreditAmount), PlanName: planName, RedeemedAt: redeemedAt,
 		}
 	}
 	return out, nil
@@ -518,79 +553,133 @@ func (r *queryResolver) MyRedeemHistory(ctx context.Context) ([]*model.RedeemRec
 
 // Dashboard is the resolver for the dashboard field.
 func (r *queryResolver) Dashboard(ctx context.Context, projectID *string, channel *string) (*model.Dashboard, error) {
-	activeUsers, _ := r.UserSvc.CountActiveUsers(ctx, monthStart())
-	_ = r.resolveProjectID(projectID) // reserved for future project-level filter
+	orgID, scopedProjectID, systemScope, err := r.resolveUsageScope(ctx, projectID, "OWNER", "ADMIN", "MEMBER", "READONLY")
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now()
 
-	// Monthly summary
-	sysSummary, _ := r.Billing.GetSystemUsageSummary(ctx, channel, monthStart(), now)
-	totalReq, totalTokens, errorCount, mcpCalls, mcpErrors := 0, 0, 0, 0, 0
-	totalCost, successRate := 0.0, 0.0
-	if sysSummary != nil {
-		totalReq = int(sysSummary.TotalRequests)
-		totalTokens = int(sysSummary.TotalTokens)
-		totalCost = sysSummary.TotalCost
-		successRate = sysSummary.SuccessRate
-		errorCount = int(sysSummary.ErrorCount)
-		mcpCalls = int(sysSummary.MCPCallCount)
-		mcpErrors = int(sysSummary.MCPErrorCount)
+	var summary *billing.UsageSummary
+	var todaySummary *billing.UsageSummary
+	if systemScope {
+		summary, _ = r.Billing.GetSystemUsageSummary(ctx, channel, monthStart(), now)
+	} else {
+		summary, _ = r.Billing.GetUsageSummary(ctx, orgID, scopedProjectID, channel, monthStart(), now)
 	}
 
-	// Today's summary
+	totalReq, totalTokens, errorCount, mcpCalls, mcpErrors := 0, 0, 0, 0, 0
+	totalCost := decimal.Zero
+	successRate, avgLatency := 0.0, 0.0
+	if summary != nil {
+		totalReq = int(summary.TotalRequests)
+		totalTokens = int(summary.TotalTokens)
+		totalCost = summary.TotalCost
+		successRate = summary.SuccessRate
+		avgLatency = summary.AvgLatency
+		errorCount = int(summary.ErrorCount)
+		mcpCalls = int(summary.MCPCallCount)
+		mcpErrors = int(summary.MCPErrorCount)
+	}
+
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	todayReq, todayTokens := 0, 0
-	todayCost := 0.0
-	if todaySummary, err := r.Billing.GetSystemUsageSummary(ctx, channel, todayStart, now); err == nil && todaySummary != nil {
+	todayCost := decimal.Zero
+	if systemScope {
+		todaySummary, _ = r.Billing.GetSystemUsageSummary(ctx, channel, todayStart, now)
+	} else {
+		todaySummary, _ = r.Billing.GetUsageSummary(ctx, orgID, scopedProjectID, channel, todayStart, now)
+	}
+	if todaySummary != nil {
 		todayReq = int(todaySummary.TotalRequests)
 		todayTokens = int(todaySummary.TotalTokens)
 		todayCost = todaySummary.TotalCost
 	}
 
-	// Infrastructure counts from service
-	infra := r.AdminSvc.GetInfraCounts(ctx)
+	activeUsers, activeProviders, activeProxies := 0, 0, 0
+	apiKeys := &model.APIKeysSummary{}
+	proxies := &model.ProxiesSummary{}
+	if systemScope {
+		active, _ := r.UserSvc.CountActiveUsers(ctx, monthStart())
+		infra := r.AdminSvc.GetInfraCounts(ctx)
+		activeUsers = int(active)
+		activeProviders = int(infra.ProviderActive)
+		activeProxies = int(infra.ProxyActive)
+		apiKeys = &model.APIKeysSummary{Total: int(infra.APIKeyTotal), Healthy: int(infra.APIKeyActive)}
+		proxies = &model.ProxiesSummary{Total: int(infra.ProxyTotal), Healthy: int(infra.ProxyActive)}
+	} else if scopedProjectID != nil {
+		var totalKeys, activeKeys int64
+		_ = r.AdminSvc.DB().WithContext(ctx).Model(&models.APIKey{}).
+			Where("project_id = ?", *scopedProjectID).
+			Count(&totalKeys).Error
+		_ = r.AdminSvc.DB().WithContext(ctx).Model(&models.APIKey{}).
+			Where("project_id = ? AND is_active = ?", *scopedProjectID, true).
+			Count(&activeKeys).Error
+		apiKeys = &model.APIKeysSummary{Total: int(totalKeys), Healthy: int(activeKeys)}
+	}
 
 	return &model.Dashboard{
-		TotalRequests: totalReq, SuccessRate: successRate,
-		TotalTokens: totalTokens, TotalCost: totalCost,
-		ActiveUsers:     int(activeUsers),
-		ActiveProviders: int(infra.ProviderActive),
-		ActiveProxies:   int(infra.ProxyActive),
-		RequestsToday:   todayReq,
-		CostToday:       todayCost,
-		TokensToday:     todayTokens,
-		ErrorCount:      errorCount,
-		McpCallCount:    mcpCalls,
-		McpErrorCount:   mcpErrors,
-		APIKeys:         &model.APIKeysSummary{Total: int(infra.APIKeyTotal), Healthy: int(infra.APIKeyActive)},
-		Proxies:         &model.ProxiesSummary{Total: int(infra.ProxyTotal), Healthy: int(infra.ProxyActive)},
+		TotalRequests:    totalReq,
+		SuccessRate:      successRate,
+		TotalTokens:      totalTokens,
+		TotalCost:        model.NewMoney(totalCost),
+		AverageLatencyMs: avgLatency,
+		ActiveUsers:      int(activeUsers),
+		ActiveProviders:  activeProviders,
+		ActiveProxies:    activeProxies,
+		RequestsToday:    todayReq,
+		CostToday:        model.NewMoney(todayCost),
+		TokensToday:      todayTokens,
+		ErrorCount:       errorCount,
+		McpCallCount:     mcpCalls,
+		McpErrorCount:    mcpErrors,
+		APIKeys:          apiKeys,
+		Proxies:          proxies,
 	}, nil
 }
 
 // UsageChart is the resolver for the usageChart field.
 func (r *queryResolver) UsageChart(ctx context.Context, days *int, projectID *string, channel *string) ([]*model.UsageChartPoint, error) {
+	orgID, scopedProjectID, systemScope, err := r.resolveUsageScope(ctx, projectID, "OWNER", "ADMIN", "MEMBER", "READONLY")
+	if err != nil {
+		return nil, err
+	}
 	d := valInt(days, 30)
-	usage, err := r.Billing.GetSystemDailyUsage(ctx, channel, d)
+	var usage []billing.DailyUsage
+	if systemScope {
+		usage, err = r.Billing.GetSystemDailyUsage(ctx, channel, d)
+	} else {
+		usage, err = r.Billing.GetDailyUsage(ctx, orgID, scopedProjectID, channel, d)
+	}
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*model.UsageChartPoint, len(usage))
 	for i, u := range usage {
-		out[i] = &model.UsageChartPoint{Date: u.Date, Requests: int(u.Requests), Tokens: int(u.Tokens), Cost: u.Cost}
+		out[i] = &model.UsageChartPoint{Date: u.Date, Requests: int(u.Requests), Tokens: int(u.Tokens), Cost: model.NewMoney(u.Cost)}
 	}
 	return out, nil
 }
 
 // ProviderStats is the resolver for the providerStats field.
 func (r *queryResolver) ProviderStats(ctx context.Context, projectID *string, channel *string) ([]*model.ProviderStats, error) {
-	usage, err := r.Billing.GetSystemUsageByProvider(ctx, channel, monthStart(), time.Now())
+	orgID, scopedProjectID, systemScope, err := r.resolveUsageScope(ctx, projectID, "OWNER", "ADMIN", "MEMBER", "READONLY")
+	if err != nil {
+		return nil, err
+	}
+	var usage []billing.ProviderUsage
+	if systemScope {
+		usage, err = r.Billing.GetSystemUsageByProvider(ctx, channel, monthStart(), time.Now())
+	} else {
+		usage, err = r.Billing.GetUsageByProvider(ctx, orgID, scopedProjectID, channel, monthStart(), time.Now())
+	}
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*model.ProviderStats, len(usage))
 	for i, u := range usage {
 		out[i] = &model.ProviderStats{
-			ProviderName: u.ProviderName, Requests: int(u.Requests),
-			Tokens: int(u.Tokens), TotalCost: u.Cost,
+			ProviderID: u.ProviderID.String(), ProviderName: u.ProviderName, Requests: int(u.Requests),
+			Tokens: int(u.Tokens), TotalCost: model.NewMoney(u.Cost),
 			SuccessRate: u.SuccessRate, AvgLatencyMs: u.AvgLatency,
 		}
 	}
@@ -599,13 +688,29 @@ func (r *queryResolver) ProviderStats(ctx context.Context, projectID *string, ch
 
 // ModelStats is the resolver for the modelStats field.
 func (r *queryResolver) ModelStats(ctx context.Context, projectID *string, channel *string) ([]*model.ModelStats, error) {
-	usage, err := r.Billing.GetSystemUsageByModel(ctx, channel, monthStart(), time.Now())
+	orgID, scopedProjectID, systemScope, err := r.resolveUsageScope(ctx, projectID, "OWNER", "ADMIN", "MEMBER", "READONLY")
+	if err != nil {
+		return nil, err
+	}
+	var usage []billing.ModelUsage
+	if systemScope {
+		usage, err = r.Billing.GetSystemUsageByModel(ctx, channel, monthStart(), time.Now())
+	} else {
+		usage, err = r.Billing.GetUsageByModel(ctx, orgID, scopedProjectID, channel, monthStart(), time.Now())
+	}
 	if err != nil {
 		return nil, err
 	}
 	out := make([]*model.ModelStats, len(usage))
 	for i, u := range usage {
-		out[i] = &model.ModelStats{ModelName: u.ModelName, Requests: int(u.Requests), TotalCost: u.Cost}
+		out[i] = &model.ModelStats{
+			ModelID:      u.ModelID.String(),
+			ModelName:    u.ModelName,
+			Requests:     int(u.Requests),
+			InputTokens:  int(u.InputTokens),
+			OutputTokens: int(u.OutputTokens),
+			TotalCost:    model.NewMoney(u.Cost),
+		}
 	}
 	return out, nil
 }
@@ -623,7 +728,7 @@ func (r *queryResolver) Plans(ctx context.Context) ([]*model.Plan, error) {
 			features = &p.Features
 		}
 		out[i] = &model.Plan{
-			ID: p.ID.String(), Name: p.Name, PriceMonth: p.PriceMonth,
+			ID: p.ID.String(), Name: p.Name, PriceMonth: model.NewMoney(p.PriceMonth),
 			TokenLimit: int(p.TokenLimit), RateLimit: p.RateLimit,
 			Description: p.Description, SupportLevel: p.SupportLevel,
 			Features: features, IsActive: p.IsActive,

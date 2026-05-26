@@ -16,6 +16,7 @@ import {
 } from '@/lib/graphql/operations/providers';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useTranslation } from '@/lib/i18n';
+import { moneyNumber, type MoneyValue } from '@/lib/format';
 import toast from 'react-hot-toast';
 
 interface ModelTableProps {
@@ -27,16 +28,16 @@ interface ModelItem {
   id: string;
   name: string;
   displayName: string;
-  inputPricePer1k: number;
-  outputPricePer1k: number;
-  pricePerSecond?: number | null;
-  pricePerImage?: number | null;
-  pricePerMinute?: number | null;
-  providerInputCostPer1k: number;
-  providerOutputCostPer1k: number;
-  providerCostPerSecond?: number | null;
-  providerCostPerImage?: number | null;
-  providerCostPerMinute?: number | null;
+  inputPricePer1k: MoneyValue;
+  outputPricePer1k: MoneyValue;
+  pricePerSecond?: MoneyValue | null;
+  pricePerImage?: MoneyValue | null;
+  pricePerMinute?: MoneyValue | null;
+  providerInputCostPer1k: MoneyValue;
+  providerOutputCostPer1k: MoneyValue;
+  providerCostPerSecond?: MoneyValue | null;
+  providerCostPerImage?: MoneyValue | null;
+  providerCostPerMinute?: MoneyValue | null;
   maxTokens: number;
   isActive: boolean;
 }
@@ -57,7 +58,7 @@ const initialModelForm = {
   maxTokens: 4096,
 };
 
-const fmtRate = (value?: number | null) => `$${Number(value || 0).toFixed(4)}`;
+const fmtRate = (value?: MoneyValue | null) => `$${moneyNumber(value).toFixed(4)}`;
 
 export default function ModelTable({ providerId, providerName }: ModelTableProps) {
   const { t } = useTranslation();

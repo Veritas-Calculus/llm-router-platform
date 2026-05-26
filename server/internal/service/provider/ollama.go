@@ -29,9 +29,7 @@ type OllamaClient struct {
 
 // NewOllamaClient creates a new Ollama client.
 func NewOllamaClient(cfg *config.ProviderConfig, logger *zap.Logger) *OllamaClient {
-	httpClient := &http.Client{
-		Timeout: 600 * time.Second,
-	}
+	httpClient := defaultHTTPClient()
 	if cfg.HTTPClient != nil {
 		httpClient = cfg.HTTPClient()
 	}

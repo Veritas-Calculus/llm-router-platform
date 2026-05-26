@@ -49,7 +49,7 @@ export const CREATE_CHECKOUT_SESSION = gql`
 
 // ── Admin: Plans ──
 export const CREATE_RECHARGE_SESSION = gql`
-  mutation CreateRechargeSession($amount: Float!) {
+  mutation CreateRechargeSession($amount: Money!) {
     createRechargeSession(amount: $amount) { url }
   }
 `;

@@ -78,8 +78,8 @@ func TestModelModelFields(t *testing.T) {
 		ProviderID:       providerID,
 		Name:             "gpt-4",
 		DisplayName:      "GPT-4",
-		InputPricePer1K:  0.03,
-		OutputPricePer1K: 0.06,
+		InputPricePer1K:  models.MoneyFromFloat(0.03),
+		OutputPricePer1K: models.MoneyFromFloat(0.06),
 		MaxTokens:        8192,
 		IsActive:         true,
 	}
@@ -105,13 +105,13 @@ func TestProxyModelFields(t *testing.T) {
 
 func TestUsageLogModelFields(t *testing.T) {
 	log := &models.UsageLog{
-		ProjectID:         uuid.New(),
+		ProjectID:      uuid.New(),
 		APIKeyID:       uuid.New(),
 		ProviderID:     uuid.New(),
 		RequestTokens:  100,
 		ResponseTokens: 200,
 		TotalTokens:    300,
-		Cost:           0.01,
+		Cost:           models.MoneyFromFloat(0.01),
 		Latency:        500,
 		StatusCode:     200,
 	}
@@ -161,7 +161,7 @@ func TestAlertConfigModelFields(t *testing.T) {
 
 func TestConversationMemoryModelFields(t *testing.T) {
 	memory := &models.ConversationMemory{
-		ProjectID:         uuid.New(),
+		ProjectID:      uuid.New(),
 		ConversationID: "conv-123",
 		Role:           "user",
 		Content:        "Hello",

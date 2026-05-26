@@ -3,7 +3,7 @@ package middleware
 import (
 	"context"
 	"errors"
-	"fmt"
+	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/quota"
 	"llm-router-platform/pkg/sanitize"
 	"net/http"
@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
@@ -23,14 +24,14 @@ import (
 type budgetStatus struct {
 	EnforceHardLimit bool
 	IsOverBudget     bool
-	MonthlyLimitUSD  float64
-	CurrentSpend     float64
+	MonthlyLimitUSD  decimal.Decimal
+	CurrentSpend     decimal.Decimal
 }
 
 // QuotaChecker validates monthly token and budget quotas for users.
 // It reads cached usage from Redis to avoid DB queries on every request.
 // Usage is updated synchronously after each LLM request completes via
-// internal/quota.IncrementUsage (called from billing.RecordUsage*).
+// internal/quota.IncrementUsageMoney (called from billing.RecordUsage*).
 type QuotaChecker struct {
 	redis    *redis.Client
 	budgetFn func(ctx context.Context, userID uuid.UUID) (*budgetStatus, error)
@@ -45,10 +46,8 @@ func NewQuotaChecker(redisClient *redis.Client, logger *zap.Logger) *QuotaChecke
 	}
 }
 
-// WithBudget wires a per-user budget lookup. When set and the user has an
-// active budget with EnforceHardLimit=true, the request-time check returns
-// 429 once CurrentSpend >= MonthlyLimitUSD.
-func (q *QuotaChecker) WithBudget(fn func(ctx context.Context, userID uuid.UUID) (enforceHardLimit bool, isOverBudget bool, limit, spend float64, err error)) *QuotaChecker {
+// WithBudgetMoney wires a decimal-native per-user budget lookup.
+func (q *QuotaChecker) WithBudgetMoney(fn func(ctx context.Context, userID uuid.UUID) (enforceHardLimit bool, isOverBudget bool, limit, spend decimal.Decimal, err error)) *QuotaChecker {
 	q.budgetFn = func(ctx context.Context, userID uuid.UUID) (*budgetStatus, error) {
 		enforce, over, limit, spend, err := fn(ctx, userID)
 		if err != nil {
@@ -91,7 +90,7 @@ func (q *QuotaChecker) Check() gin.HandlerFunc {
 
 		// Read quota limits from context (set by auth middleware)
 		tokenLimit := q.getInt64FromCtx(c, "user_monthly_token_limit")
-		budgetLimit := q.getFloat64FromCtx(c, "user_monthly_budget_usd")
+		budgetLimit := q.getMoneyFromCtx(c, "user_monthly_budget_usd")
 
 		// Read current usage from Redis. We DO NOT fail open: a missing or
 		// errored Redis read serves zero usage, but we still proceed to the
@@ -102,10 +101,10 @@ func (q *QuotaChecker) Check() gin.HandlerFunc {
 
 		var (
 			usedTokens int64
-			usedCost   float64
+			usedCost   decimal.Decimal
 		)
 		if q.redis != nil {
-			t, c2, err := quota.ReadMonthlyUsage(ctx, q.redis, userID)
+			t, c2, err := quota.ReadMonthlyUsageMoney(ctx, q.redis, userID)
 			if err != nil {
 				reason := "redis_unavailable"
 				if errors.Is(err, context.DeadlineExceeded) {
@@ -133,12 +132,12 @@ func (q *QuotaChecker) Check() gin.HandlerFunc {
 		}
 
 		// Per-user subscription budget limit (cached counter)
-		if budgetLimit > 0 && usedCost >= budgetLimit {
+		if budgetLimit.IsPositive() && usedCost.Cmp(budgetLimit) >= 0 {
 			QuotaExceededTotal.WithLabelValues("budget_limit").Inc()
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error": "monthly budget quota exceeded",
-				"limit": budgetLimit,
-				"used":  usedCost,
+				"limit": budgetLimit.StringFixed(2),
+				"used":  usedCost.StringFixed(2),
 			})
 			return
 		}
@@ -153,8 +152,8 @@ func (q *QuotaChecker) Check() gin.HandlerFunc {
 						QuotaExceededTotal.WithLabelValues("budget_hard_limit").Inc()
 						c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 							"error": "monthly budget hard limit exceeded",
-							"limit": status.MonthlyLimitUSD,
-							"spend": status.CurrentSpend,
+							"limit": status.MonthlyLimitUSD.StringFixed(2),
+							"spend": status.CurrentSpend.StringFixed(2),
 						})
 						return
 					}
@@ -167,22 +166,17 @@ func (q *QuotaChecker) Check() gin.HandlerFunc {
 			c.Header("X-Quota-Tokens-Limit", strconv.FormatInt(tokenLimit, 10))
 			c.Header("X-Quota-Tokens-Remaining", strconv.FormatInt(max64(0, tokenLimit-usedTokens), 10))
 		}
-		if budgetLimit > 0 {
-			c.Header("X-Quota-Budget-Limit", fmt.Sprintf("%.2f", budgetLimit))
-			c.Header("X-Quota-Budget-Remaining", fmt.Sprintf("%.2f", max64f(0, budgetLimit-usedCost)))
+		if budgetLimit.IsPositive() {
+			remainingBudget := budgetLimit.Sub(usedCost)
+			if remainingBudget.IsNegative() {
+				remainingBudget = decimal.Zero
+			}
+			c.Header("X-Quota-Budget-Limit", budgetLimit.StringFixed(2))
+			c.Header("X-Quota-Budget-Remaining", remainingBudget.StringFixed(2))
 		}
 
 		c.Next()
 	}
-}
-
-// IncrementUsage updates the Redis usage cache after a request completes.
-//
-// Deprecated: prefer calling internal/quota.IncrementUsage directly. This
-// wrapper exists only for backward compatibility — billing service calls the
-// quota package directly under its FOR UPDATE transaction.
-func IncrementUsage(redisClient *redis.Client, userID string, tokens int64, costUSD float64) {
-	quota.IncrementUsage(context.Background(), redisClient, nil, userID, tokens, costUSD)
 }
 
 func (q *QuotaChecker) getInt64FromCtx(c *gin.Context, key string) int64 {
@@ -202,31 +196,24 @@ func (q *QuotaChecker) getInt64FromCtx(c *gin.Context, key string) int64 {
 	}
 }
 
-func (q *QuotaChecker) getFloat64FromCtx(c *gin.Context, key string) float64 {
+func (q *QuotaChecker) getMoneyFromCtx(c *gin.Context, key string) decimal.Decimal {
 	val, exists := c.Get(key)
 	if !exists {
-		return 0
+		return decimal.Zero
 	}
 	switch v := val.(type) {
-	case float64:
-		return v
-	case int64:
-		return float64(v)
-	case int:
-		return float64(v)
-	default:
-		return 0
+	case decimal.Decimal:
+		return v.Round(models.MoneyScale)
+	case string:
+		parsed, err := decimal.NewFromString(v)
+		if err == nil {
+			return parsed.Round(models.MoneyScale)
+		}
 	}
+	return decimal.Zero
 }
 
 func max64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func max64f(a, b float64) float64 {
 	if a > b {
 		return a
 	}

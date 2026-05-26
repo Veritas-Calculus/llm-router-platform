@@ -31,6 +31,8 @@ mutation {
 
 > 创建时返回 `secret`，仅显示一次。请安全保存，用于验证签名。
 
+服务端只在创建响应中返回明文 secret。数据库中保存的是带 `enc:v1:` 版本前缀的 AES-256-GCM 密文；历史明文或无前缀密文会在 endpoint 下次更新时自动归一化为当前密文格式。
+
 ## 事件类型
 
 | 事件 | 触发条件 |
@@ -47,9 +49,12 @@ mutation {
 ```http
 POST /webhook HTTP/1.1
 Content-Type: application/json
-X-Webhook-Signature: sha256=<HMAC_hex>
-X-Webhook-Event: task.completed
-X-Webhook-Delivery: <delivery_uuid>
+User-Agent: LLM-Router-Platform/Webhook
+Webhook-Signature: t=<unix_timestamp>,v1=<HMAC_hex>
+Webhook-Timestamp: <unix_timestamp>
+X-Hub-Signature-256: sha256=<legacy_HMAC_hex>
+X-VC-Event: task.completed
+X-VC-Delivery: <delivery_uuid>
 
 {
   "event": "task.completed",
@@ -64,40 +69,68 @@ X-Webhook-Delivery: <delivery_uuid>
 
 ## 签名验证
 
-每次投递都包含 `X-Webhook-Signature` 头，值为 `sha256=<hex>`:
+每次投递都包含推荐使用的 `Webhook-Signature` 头，格式为：
+
+```text
+t=<unix_timestamp>,v1=<hex_hmac_sha256(timestamp + "." + raw_body)>
+```
+
+接收方应：
+
+1. 解析 `t` 与 `v1`。
+2. 拒绝超出本地容忍窗口的时间戳，例如 5 分钟。
+3. 用 endpoint secret 对 `t + "." + raw_body` 计算 HMAC-SHA256。
+4. 使用 constant-time compare 比较 `v1`。
+
+`X-Hub-Signature-256: sha256=<hex>` 仍会发送给旧消费者兼容，但新集成应使用带时间戳的 `Webhook-Signature`。
 
 ```python
 import hmac
 import hashlib
+import time
 
-def verify_signature(payload: bytes, signature: str, secret: str) -> bool:
-    expected = hmac.new(
-        secret.encode(),
-        payload,
-        hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(f"sha256={expected}", signature)
+def verify_signature(payload: bytes, signature: str, secret: str, tolerance_seconds: int = 300) -> bool:
+    parts = dict(part.split("=", 1) for part in signature.split(",") if "=" in part)
+    timestamp = int(parts.get("t", "0"))
+    received = parts.get("v1", "")
+    if abs(time.time() - timestamp) > tolerance_seconds:
+        return False
+    signed_payload = f"{timestamp}.".encode() + payload
+    expected = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, received)
 ```
 
 ```go
 func verifySignature(payload []byte, signature, secret string) bool {
+    parts := map[string]string{}
+    for _, part := range strings.Split(signature, ",") {
+        kv := strings.SplitN(part, "=", 2)
+        if len(kv) == 2 {
+            parts[kv[0]] = kv[1]
+        }
+    }
+    ts, err := strconv.ParseInt(parts["t"], 10, 64)
+    if err != nil || time.Since(time.Unix(ts, 0)) > 5*time.Minute {
+        return false
+    }
     mac := hmac.New(sha256.New, []byte(secret))
+    mac.Write([]byte(parts["t"] + "."))
     mac.Write(payload)
-    expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
-    return hmac.Equal([]byte(expected), []byte(signature))
+    expected := hex.EncodeToString(mac.Sum(nil))
+    return hmac.Equal([]byte(expected), []byte(parts["v1"]))
 }
 ```
 
 ## 重试策略
 
-| 尝试 | 延迟 |
+| 阶段 | 行为 |
 |------|------|
-| 第 1 次 | 立即 |
-| 第 2 次 | 30 秒 |
-| 第 3 次 | 2 分钟 |
-| 第 4 次 | 10 分钟 |
+| 首次投递 | 新 delivery 入队后由后台 dispatcher 立即捞取 |
+| 失败后重试 | 指数退避，约 1 / 2 / 4 / 8 分钟，带 ±25% jitter |
+| `Retry-After` | 若目标返回合法 `Retry-After`，优先按该值调度，最大 1 小时 |
+| 最大次数 | 5 次投递尝试后标记为 `failed` |
 
-共 4 次尝试。每次投递的状态和响应均记录在 `WebhookDelivery` 中，可通过管理后台查看。
+后台 dispatcher 每 5 秒扫描一次到期的 pending delivery；真实重试节奏由 `next_attempt_at` 控制，不会每 5 秒暴力重试同一失败 endpoint。每次投递的状态和响应均记录在 `WebhookDelivery` 中，可通过管理后台查看。
 
 ## 投递状态
 

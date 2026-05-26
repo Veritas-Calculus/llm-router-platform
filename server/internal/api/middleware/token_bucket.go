@@ -99,7 +99,8 @@ func (l *TokenBucketLimiter) Limit() gin.HandlerFunc {
 		}
 
 		key := fmt.Sprintf("tb:user:%s", userID)
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(c.Request.Context(), rateLimitRedisTimeout)
+		defer cancel()
 		now := float64(time.Now().UnixNano()) / 1e9 // seconds with nanosecond precision
 
 		result, err := l.script.Run(ctx, l.redis, []string{key},

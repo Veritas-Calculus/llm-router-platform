@@ -128,6 +128,7 @@ describe('authStore', () => {
 
         const persisted = JSON.parse(localStorage.getItem('auth-storage') ?? '{}');
         expect(persisted.state.token).toBe('shared-token');
+        expect(persisted.state.refreshToken).toBeUndefined();
         expect(persisted.state.isAuthenticated).toBe(true);
     });
 });

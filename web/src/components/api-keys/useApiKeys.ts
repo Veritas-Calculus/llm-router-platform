@@ -16,6 +16,8 @@ const parsePolicyList = (value: string) => Array.from(new Set(
     .filter(Boolean),
 ));
 
+const DEFAULT_API_KEY_SCOPES = ['chat'];
+
 export function useApiKeys() {
   const { t } = useTranslation();
   const AVAILABLE_SCOPES = useMemo(() => AVAILABLE_SCOPES_BASE.map(s => ({ ...s, label: t(s.labelKey) })), [t]);
@@ -53,7 +55,7 @@ export function useApiKeys() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showQuickGuide, setShowQuickGuide] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
-  const [selectedScopes, setSelectedScopes] = useState<string[]>(['all']);
+  const [selectedScopes, setSelectedScopes] = useState<string[]>(DEFAULT_API_KEY_SCOPES);
   const [newAllowedModels, setNewAllowedModels] = useState('');
   const [newAllowedProviders, setNewAllowedProviders] = useState('');
   const [newKeyRateLimit, setNewKeyRateLimit] = useState<string>('');
@@ -92,7 +94,7 @@ export function useApiKeys() {
       setCreatedKey(key);
       setShowCreateModal(false);
       await refetch();
-      setNewKeyName(''); setSelectedScopes(['all']); setNewAllowedModels(''); setNewAllowedProviders(''); setNewKeyRateLimit(''); setNewKeyTokenLimit('');
+      setNewKeyName(''); setSelectedScopes(DEFAULT_API_KEY_SCOPES); setNewAllowedModels(''); setNewAllowedProviders(''); setNewKeyRateLimit(''); setNewKeyTokenLimit('');
       toast.success(t('api_keys.created_success'));
     } catch (e: any) {
       toast.error(e.message || t('api_keys.create_error'));

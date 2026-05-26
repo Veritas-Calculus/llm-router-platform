@@ -2,8 +2,11 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"llm-router-platform/internal/models"
@@ -12,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
@@ -20,6 +24,71 @@ type PaymentHandler struct {
 	wechatPay      *billing.WechatPayService
 	alipay         *billing.AlipayService
 	logger         *zap.Logger
+}
+
+type paymentTransactionResponse struct {
+	ID             uuid.UUID    `json:"id"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+	OrgID          uuid.UUID    `json:"org_id"`
+	UserID         uuid.UUID    `json:"user_id"`
+	Type           string       `json:"type"`
+	Amount         paymentMoney `json:"amount"`
+	Currency       string       `json:"currency"`
+	Balance        paymentMoney `json:"balance"`
+	Description    string       `json:"description"`
+	ReferenceID    string       `json:"reference_id"`
+	IdempotencyKey *string      `json:"idempotency_key,omitempty"`
+}
+
+type paymentOrderResponse struct {
+	ID            uuid.UUID    `json:"id"`
+	CreatedAt     time.Time    `json:"created_at"`
+	UpdatedAt     time.Time    `json:"updated_at"`
+	OrgID         uuid.UUID    `json:"org_id"`
+	PlanID        uuid.UUID    `json:"plan_id"`
+	OrderNo       string       `json:"order_no"`
+	Amount        paymentMoney `json:"amount"`
+	Currency      string       `json:"currency"`
+	Status        string       `json:"status"`
+	PaymentMethod string       `json:"payment_method"`
+	ExternalID    string       `json:"external_id"`
+}
+
+type paymentMoney struct {
+	decimal.Decimal
+}
+
+func newPaymentMoney(amount decimal.Decimal) paymentMoney {
+	return paymentMoney{Decimal: amount.Round(models.MoneyScale)}
+}
+
+func (m paymentMoney) money() decimal.Decimal {
+	return m.Decimal.Round(models.MoneyScale)
+}
+
+func (m paymentMoney) MarshalJSON() ([]byte, error) {
+	return []byte(m.money().String()), nil
+}
+
+func (m *paymentMoney) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" {
+		return fmt.Errorf("amount is required")
+	}
+	if strings.HasPrefix(raw, "\"") {
+		var text string
+		if err := json.Unmarshal(data, &text); err != nil {
+			return err
+		}
+		raw = strings.TrimSpace(text)
+	}
+	amount, err := decimal.NewFromString(raw)
+	if err != nil {
+		return fmt.Errorf("invalid amount: %w", err)
+	}
+	m.Decimal = amount.Round(models.MoneyScale)
+	return nil
 }
 
 func NewPaymentHandler(
@@ -38,7 +107,7 @@ func NewPaymentHandler(
 
 func (h *PaymentHandler) CreateCheckoutSession(c *gin.Context) {
 	user := c.MustGet("project").(*models.Project)
-	
+
 	var req struct {
 		PlanID uuid.UUID `json:"plan_id" binding:"required"`
 	}
@@ -61,11 +130,16 @@ func (h *PaymentHandler) CreateRechargeSession(c *gin.Context) {
 	user := c.MustGet("project").(*models.Project)
 
 	var req struct {
-		Amount        float64 `json:"amount" binding:"required,gt=0"`
-		PaymentMethod string  `json:"payment_method"` // "stripe" (default), "wechat", "alipay"
+		Amount        paymentMoney `json:"amount"`
+		PaymentMethod string       `json:"payment_method"` // "stripe" (default), "wechat", "alipay"
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
+		return
+	}
+	amount := req.Amount.money()
+	if !amount.IsPositive() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "amount must be positive"})
 		return
 	}
 
@@ -79,7 +153,7 @@ func (h *PaymentHandler) CreateRechargeSession(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "wechat pay is not configured"})
 			return
 		}
-		qrCode, orderNo, err := h.wechatPay.CreateNativeOrder(c.Request.Context(), user.ID, req.Amount, "Credit Top-up")
+		qrCode, orderNo, err := h.wechatPay.CreateNativeOrder(c.Request.Context(), user.ID, amount, "Credit Top-up")
 		if err != nil {
 			h.logger.Error("failed to create wechat pay order", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create wechat pay order"})
@@ -92,7 +166,7 @@ func (h *PaymentHandler) CreateRechargeSession(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "alipay is not configured"})
 			return
 		}
-		qrCode, orderNo, err := h.alipay.CreatePreCreateOrder(c.Request.Context(), user.ID, req.Amount, "Credit Top-up")
+		qrCode, orderNo, err := h.alipay.CreatePreCreateOrder(c.Request.Context(), user.ID, amount, "Credit Top-up")
 		if err != nil {
 			h.logger.Error("failed to create alipay order", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create alipay order"})
@@ -101,7 +175,7 @@ func (h *PaymentHandler) CreateRechargeSession(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"qr_code": qrCode, "order_no": orderNo, "payment_method": "alipay"})
 
 	default: // stripe
-		url, err := h.paymentService.CreateRechargeSession(c.Request.Context(), user.ID, req.Amount)
+		url, err := h.paymentService.CreateRechargeSession(c.Request.Context(), user.ID, amount)
 		if err != nil {
 			h.logger.Error("failed to create recharge session", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create recharge session"})
@@ -119,7 +193,27 @@ func (h *PaymentHandler) GetMyOrders(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve orders"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": orders})
+	c.JSON(http.StatusOK, gin.H{"data": toPaymentOrderResponses(orders)})
+}
+
+func toPaymentOrderResponses(orders []models.Order) []paymentOrderResponse {
+	out := make([]paymentOrderResponse, len(orders))
+	for i, order := range orders {
+		out[i] = paymentOrderResponse{
+			ID:            order.ID,
+			CreatedAt:     order.CreatedAt,
+			UpdatedAt:     order.UpdatedAt,
+			OrgID:         order.OrgID,
+			PlanID:        order.PlanID,
+			OrderNo:       order.OrderNo,
+			Amount:        newPaymentMoney(order.Amount),
+			Currency:      order.Currency,
+			Status:        order.Status,
+			PaymentMethod: order.PaymentMethod,
+			ExternalID:    order.ExternalID,
+		}
+	}
+	return out
 }
 
 func (h *PaymentHandler) GetMyTransactions(c *gin.Context) {
@@ -130,7 +224,28 @@ func (h *PaymentHandler) GetMyTransactions(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve transactions"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": txs})
+	c.JSON(http.StatusOK, gin.H{"data": toPaymentTransactionResponses(txs)})
+}
+
+func toPaymentTransactionResponses(txs []models.Transaction) []paymentTransactionResponse {
+	out := make([]paymentTransactionResponse, len(txs))
+	for i, tx := range txs {
+		out[i] = paymentTransactionResponse{
+			ID:             tx.ID,
+			CreatedAt:      tx.CreatedAt,
+			UpdatedAt:      tx.UpdatedAt,
+			OrgID:          tx.OrgID,
+			UserID:         tx.UserID,
+			Type:           tx.Type,
+			Amount:         newPaymentMoney(tx.Amount),
+			Currency:       tx.Currency,
+			Balance:        newPaymentMoney(tx.Balance),
+			Description:    tx.Description,
+			ReferenceID:    tx.ReferenceID,
+			IdempotencyKey: tx.IdempotencyKey,
+		}
+	}
+	return out
 }
 
 func (h *PaymentHandler) StripeWebhook(c *gin.Context) {
@@ -211,4 +326,3 @@ func (h *PaymentHandler) AlipayNotify(c *gin.Context) {
 	// Alipay expects "success" as plain text response
 	c.String(http.StatusOK, "success")
 }
-

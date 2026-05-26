@@ -42,7 +42,11 @@ func (r *mutationResolver) UpdateProject(ctx context.Context, id string, input m
 		updateData.Description = *input.Description
 	}
 	if input.QuotaLimit != nil {
-		updateData.QuotaLimit = *input.QuotaLimit
+		quotaLimit, err := input.QuotaLimit.Decimal()
+		if err != nil {
+			return nil, fmt.Errorf("invalid quota limit: %w", err)
+		}
+		updateData.QuotaLimit = quotaLimit.Round(models.MoneyScale)
 	}
 	if input.WhiteListedIps != nil {
 		updateData.WhiteListedIps = *input.WhiteListedIps

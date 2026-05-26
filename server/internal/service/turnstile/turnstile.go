@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"llm-router-platform/pkg/sanitize"
@@ -83,15 +84,13 @@ func (s *Service) verify(ctx context.Context, token string, remoteIP string) err
 		form.Set("remoteip", remoteIP)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, verifyURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, verifyURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		s.logger.Error("failed to create turnstile verify request", zap.Error(err))
 		return fmt.Errorf("CAPTCHA verification failed")
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Body = http.NoBody
-	// Use PostForm-style body
-	resp, err := s.client.PostForm(verifyURL, form)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		s.logger.Error("turnstile verify request failed", zap.Error(err))
 		// Fail closed: if we can't reach Cloudflare, reject the request
@@ -114,4 +113,3 @@ func (s *Service) verify(ctx context.Context, token string, remoteIP string) err
 
 	return nil
 }
-

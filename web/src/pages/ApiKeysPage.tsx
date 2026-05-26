@@ -1,9 +1,11 @@
+import { useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   PlusIcon, TrashIcon, ClipboardIcon, XCircleIcon,
   KeyIcon, InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 import QuickStartGuide from '@/components/QuickStartGuide';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 import {
   SubscriptionQuotaBanner, RateLimitStatusCell, ConfirmModal, formatDate,
   useApiKeys,
@@ -46,6 +48,18 @@ function ApiKeysPage() {
     isProjectSettingsOpen, setIsProjectSettingsOpen, projectWhiteListedIps, setProjectWhiteListedIps,
     updatingProject, openProjectSettings, saveProjectSettings,
   } = useApiKeys();
+  const closeCreateModal = useCallback(() => {
+    setShowCreateModal(false);
+    setNewKeyName('');
+    setSelectedScopes(['chat']);
+    setNewAllowedModels('');
+    setNewAllowedProviders('');
+    setNewKeyRateLimit('');
+    setNewKeyTokenLimit('');
+  }, [setNewAllowedModels, setNewAllowedProviders, setNewKeyName, setNewKeyRateLimit, setNewKeyTokenLimit, setSelectedScopes, setShowCreateModal]);
+  const closeProjectSettings = useCallback(() => setIsProjectSettingsOpen(false), [setIsProjectSettingsOpen]);
+  const createDialogRef = useDialogA11y<HTMLDivElement>(showCreateModal, closeCreateModal);
+  const projectDialogRef = useDialogA11y<HTMLDivElement>(isProjectSettingsOpen, closeProjectSettings);
 
   if (loading) {
     return (
@@ -64,35 +78,35 @@ function ApiKeysPage() {
       </AnimatePresence>
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-apple-gray-900">{t('api_keys.title')}</h1>
           <p className="text-apple-gray-500 mt-1">{t('api_keys.subtitle')}</p>
-          <div className="mt-4 flex gap-4 items-end">
-            <div className="flex flex-col gap-1">
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:items-end lg:gap-4">
+            <div className="flex min-w-0 flex-col gap-1">
               <label className="text-xs font-medium text-apple-gray-500">{t('common.organization')}</label>
-              <select value={selectedOrgId} onChange={(e) => setSelectedOrgId(e.target.value)} className="input py-2 pl-3 pr-8 min-w-[220px]">
+              <select value={selectedOrgId} onChange={(e) => setSelectedOrgId(e.target.value)} className="input w-full min-w-0 py-2 pl-3 pr-8 lg:min-w-[220px]">
                 {orgs.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}
               </select>
             </div>
-            <div className="flex flex-col gap-1">
+            <div className="flex min-w-0 flex-col gap-1">
               <label className="text-xs font-medium text-apple-gray-500">{t('common.project')}</label>
-              <select value={selectedProjectId} onChange={(e) => setSelectedProjectId(e.target.value)} className="input py-2 pl-3 pr-8 min-w-[220px]" disabled={!projects.length}>
+              <select value={selectedProjectId} onChange={(e) => setSelectedProjectId(e.target.value)} className="input w-full min-w-0 py-2 pl-3 pr-8 lg:min-w-[220px]" disabled={!projects.length}>
                 {projects.length === 0 && <option value="">{t('common.no_projects')}</option>}
                 {projects.map(proj => <option key={proj.id} value={proj.id}>{proj.name}</option>)}
               </select>
             </div>
             {selectedProjectId && (
-              <button onClick={openProjectSettings} className="btn btn-secondary px-3" title={t('api_keys.project_settings')}>Settings</button>
+              <button onClick={openProjectSettings} className="btn btn-secondary w-full justify-center px-3 sm:col-span-2 lg:w-auto" title={t('api_keys.project_settings')}>Settings</button>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={() => setShowQuickGuide(!showQuickGuide)} className="btn btn-secondary bg-white dark:bg-[#1C1C1E]">
+        <div className="flex w-full flex-col gap-3 sm:flex-row xl:w-auto xl:items-center">
+          <button onClick={() => setShowQuickGuide(!showQuickGuide)} className="btn btn-secondary justify-center bg-white dark:bg-[#1C1C1E]">
             <InformationCircleIcon className="w-5 h-5 mr-2 -ml-1" />Quick API Reference
           </button>
           {apiKeys.length > 0 && (
-            <button onClick={() => setShowCreateModal(true)} className="btn btn-primary" disabled={!selectedProjectId}>
+            <button onClick={() => setShowCreateModal(true)} className="btn btn-primary justify-center" disabled={!selectedProjectId}>
               <PlusIcon className="w-5 h-5 mr-2 -ml-1" />Create API Key
             </button>
           )}
@@ -285,15 +299,27 @@ function ApiKeysPage() {
 
       {/* Create Key Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-semibold text-apple-gray-900 mb-4">Create API Key</h2>
+        <div data-modal-root="true" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-api-key-title"
+            ref={createDialogRef}
+            tabIndex={-1}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto"
+          >
+            <h2 id="create-api-key-title" className="text-xl font-semibold text-apple-gray-900 mb-4">Create API Key</h2>
             <div className="mb-6">
               <label htmlFor="keyName" className="label">Name</label>
               <input type="text" id="keyName" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} className="input" placeholder="e.g., Production, Development" autoFocus />
             </div>
             <div className="mb-6">
               <label className="label mb-2">Permissions (Scopes)</label>
+              <p className="mb-3 text-xs leading-relaxed text-apple-gray-500">
+                {t('api_keys.scopes_help')}
+              </p>
               <div className="space-y-2 max-h-48 overflow-y-auto p-3 border border-apple-gray-200 rounded-apple bg-apple-gray-50/50">
                 {AVAILABLE_SCOPES.map(scope => {
                   const isChecked = selectedScopes.includes(scope.id);
@@ -340,7 +366,7 @@ function ApiKeysPage() {
               </div>
             </div>
             <div className="flex justify-end gap-3">
-              <button onClick={() => { setShowCreateModal(false); setNewKeyName(''); setSelectedScopes(['all']); setNewAllowedModels(''); setNewAllowedProviders(''); setNewKeyRateLimit(''); setNewKeyTokenLimit(''); }} className="btn btn-secondary">Cancel</button>
+              <button onClick={closeCreateModal} className="btn btn-secondary">Cancel</button>
               <button onClick={handleCreate} className="btn btn-primary" disabled={creating}>{creating ? 'Creating...' : 'Create'}</button>
             </div>
           </motion.div>
@@ -360,9 +386,18 @@ function ApiKeysPage() {
 
       {/* Project Settings Modal */}
       {isProjectSettingsOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-lg mx-4">
-            <h3 className="text-xl font-semibold text-apple-gray-900 mb-6">Project Settings</h3>
+        <div data-modal-root="true" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="project-settings-title"
+            ref={projectDialogRef}
+            tabIndex={-1}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-lg mx-4"
+          >
+            <h3 id="project-settings-title" className="text-xl font-semibold text-apple-gray-900 mb-6">Project Settings</h3>
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-apple-gray-700 mb-1">API IP Whitelist</label>
@@ -371,7 +406,7 @@ function ApiKeysPage() {
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-8">
-              <button onClick={() => setIsProjectSettingsOpen(false)} className="btn btn-secondary" disabled={updatingProject}>Cancel</button>
+              <button onClick={closeProjectSettings} className="btn btn-secondary" disabled={updatingProject}>Cancel</button>
               <button onClick={saveProjectSettings} className="btn btn-primary" disabled={updatingProject}>{updatingProject ? 'Saving...' : 'Save Settings'}</button>
             </div>
           </motion.div>

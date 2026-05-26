@@ -89,14 +89,20 @@ func TestSubscriptionStripeIDsAreNullable(t *testing.T) {
 	assert.Contains(t, field.Tag.Get("gorm"), "where:stripe_subscription_id IS NOT NULL")
 }
 
+func TestMoneyToCentsUsesDecimalRounding(t *testing.T) {
+	assert.Equal(t, int64(2999), MoneyToCents(MoneyFromFloat(29.99)))
+	assert.Equal(t, int64(1), MoneyToCents(MoneyFromFloat(0.005)))
+	assert.Equal(t, int64(0), MoneyToCents(MoneyFromFloat(0.004)))
+}
+
 func TestModelModel(t *testing.T) {
 	providerID := uuid.New()
 	model := Model{
 		ProviderID:       providerID,
 		Name:             "gpt-4",
 		DisplayName:      "GPT-4",
-		InputPricePer1K:  0.03,
-		OutputPricePer1K: 0.06,
+		InputPricePer1K:  MoneyFromFloat(0.03),
+		OutputPricePer1K: MoneyFromFloat(0.06),
 		MaxTokens:        8192,
 		IsActive:         true,
 	}
@@ -104,7 +110,7 @@ func TestModelModel(t *testing.T) {
 	assert.Equal(t, providerID, model.ProviderID)
 	assert.Equal(t, "gpt-4", model.Name)
 	assert.Equal(t, "GPT-4", model.DisplayName)
-	assert.Equal(t, 0.03, model.InputPricePer1K)
+	assert.Equal(t, 0.03, MoneyToFloat(model.InputPricePer1K))
 }
 
 func TestProxyModel(t *testing.T) {
@@ -130,7 +136,7 @@ func TestUsageLogModel(t *testing.T) {
 		RequestTokens:  100,
 		ResponseTokens: 200,
 		TotalTokens:    300,
-		Cost:           0.01,
+		Cost:           MoneyFromFloat(0.01),
 		Latency:        500,
 		StatusCode:     200,
 	}
@@ -192,34 +198,34 @@ func TestModelMultiDimensionalPricing(t *testing.T) {
 		ProviderID:     providerID,
 		Name:           "tts-1",
 		DisplayName:    "TTS-1",
-		PricePerSecond: 0.015,
+		PricePerSecond: MoneyFromFloat(0.015),
 		MaxTokens:      0,
 		IsActive:       true,
 	}
 	assert.Equal(t, "tts-1", ttsModel.Name)
-	assert.Equal(t, 0.015, ttsModel.PricePerSecond)
-	assert.Equal(t, 0.0, ttsModel.InputPricePer1K)
+	assert.Equal(t, 0.015, MoneyToFloat(ttsModel.PricePerSecond))
+	assert.Equal(t, 0.0, MoneyToFloat(ttsModel.InputPricePer1K))
 
 	// Image model with per-image pricing
 	imageModel := Model{
 		ProviderID:    providerID,
 		Name:          "dall-e-3",
 		DisplayName:   "DALL-E 3",
-		PricePerImage: 0.04,
+		PricePerImage: MoneyFromFloat(0.04),
 		IsActive:      true,
 	}
-	assert.Equal(t, 0.04, imageModel.PricePerImage)
-	assert.Equal(t, 0.0, imageModel.PricePerSecond)
+	assert.Equal(t, 0.04, MoneyToFloat(imageModel.PricePerImage))
+	assert.Equal(t, 0.0, MoneyToFloat(imageModel.PricePerSecond))
 
 	// Video model with per-minute pricing
 	videoModel := Model{
 		ProviderID:     providerID,
 		Name:           "gemini-2.0-flash",
 		DisplayName:    "Gemini 2.0 Flash",
-		PricePerMinute: 0.05,
+		PricePerMinute: MoneyFromFloat(0.05),
 		IsActive:       true,
 	}
-	assert.Equal(t, 0.05, videoModel.PricePerMinute)
+	assert.Equal(t, 0.05, MoneyToFloat(videoModel.PricePerMinute))
 }
 
 func TestUsageLogExtendedFields(t *testing.T) {
@@ -229,8 +235,8 @@ func TestUsageLogExtendedFields(t *testing.T) {
 		APIKeyID:   uuid.New(),
 		ProviderID: uuid.New(),
 		ModelName:  "tts-1",
-		DurationMs: 15000, // 15 seconds of audio
-		Cost:       0.225, // 15 * 0.015
+		DurationMs: 15000,                 // 15 seconds of audio
+		Cost:       MoneyFromFloat(0.225), // 15 * 0.015
 		StatusCode: 200,
 	}
 	assert.Equal(t, int64(15000), ttsLog.DurationMs)
@@ -244,7 +250,7 @@ func TestUsageLogExtendedFields(t *testing.T) {
 		ProviderID: uuid.New(),
 		ModelName:  "dall-e-3",
 		ItemCount:  2,
-		Cost:       0.08, // 2 * 0.04
+		Cost:       MoneyFromFloat(0.08), // 2 * 0.04
 		StatusCode: 200,
 	}
 	assert.Equal(t, 2, imageLog.ItemCount)
@@ -257,7 +263,7 @@ func TestUsageLogExtendedFields(t *testing.T) {
 		ModelName:      "gemini-2.0-flash",
 		BytesProcessed: 52428800, // 50 MB
 		DurationMs:     120000,   // 2 minutes
-		Cost:           0.10,
+		Cost:           MoneyFromFloat(0.10),
 		StatusCode:     200,
 	}
 	assert.Equal(t, int64(52428800), videoLog.BytesProcessed)

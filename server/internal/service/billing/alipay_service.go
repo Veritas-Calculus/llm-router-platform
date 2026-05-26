@@ -12,11 +12,9 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +24,7 @@ import (
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
@@ -87,12 +86,16 @@ func NewAlipayService(
 }
 
 // CreatePreCreateOrder creates an Alipay precreate order and returns a QR code URL.
-func (s *AlipayService) CreatePreCreateOrder(ctx context.Context, userID uuid.UUID, amount float64, description string) (string, string, error) {
+func (s *AlipayService) CreatePreCreateOrder(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, description string) (string, string, error) {
 	if !s.cfg.Enabled {
 		return "", "", fmt.Errorf("alipay is not enabled")
 	}
 	if s.privateKey == nil {
 		return "", "", fmt.Errorf("alipay private key not configured")
+	}
+	amount = models.MoneyRoundToCents(amount)
+	if !amount.IsPositive() {
+		return "", "", fmt.Errorf("alipay amount must be positive")
 	}
 
 	orderNo := fmt.Sprintf("ALI-%d-%s", time.Now().Unix(), uuid.New().String()[:8])
@@ -100,7 +103,7 @@ func (s *AlipayService) CreatePreCreateOrder(ctx context.Context, userID uuid.UU
 	// Build business content
 	bizContent := map[string]interface{}{
 		"out_trade_no": orderNo,
-		"total_amount": fmt.Sprintf("%.2f", amount),
+		"total_amount": amount.StringFixed(2),
 		"subject":      description,
 	}
 	bizContentJSON, _ := json.Marshal(bizContent)
@@ -181,7 +184,7 @@ func (s *AlipayService) CreatePreCreateOrder(ctx context.Context, userID uuid.UU
 		s.logger.Error("failed to create alipay order record", zap.Error(err))
 	}
 
-	s.logger.Info("alipay precreate order created", zap.String("order_no", orderNo), zap.Float64("amount", amount))
+	s.logger.Info("alipay precreate order created", zap.String("order_no", orderNo), zap.String("amount", amount.StringFixed(2)))
 	return result.AlipayTradePrecreateResponse.QRCode, orderNo, nil
 }
 
@@ -225,29 +228,20 @@ func (s *AlipayService) HandleNotify(ctx context.Context, formValues url.Values)
 		s.logger.Error("alipay notify amount validation failed — refusing to credit",
 			zap.String("order_no", sanitize.LogValue(orderNo)),
 			zap.String("total_amount_raw", sanitize.LogValue(formValues.Get("total_amount"))),
-			zap.Float64("order_amount", order.Amount),
+			zap.String("order_amount", order.Amount.StringFixed(2)),
 			zap.Error(err),
 		)
 		return "", err
 	}
 
-	order.Status = "paid"
 	order.ExternalID = tradeNo
-	if err := s.subRepo.UpdateOrder(ctx, order); err != nil {
-		s.logger.Error("failed to mark alipay order paid",
-			zap.Error(err),
-			zap.String("order_no", sanitize.LogValue(orderNo)),
-		)
-		return "", err
-	}
-
-	if err := s.subRepo.UpdateUserBalance(ctx, order.OrgID, notifyAmount, "recharge", "Credit Top-up via Alipay", orderNo); err != nil {
+	if err := s.subRepo.FulfillRechargeOrder(ctx, order.OrgID, notifyAmount, "recharge", "Credit Top-up via Alipay", order, "alipay:"+orderNo); err != nil {
 		s.logger.Error("failed to credit user balance for alipay payment", zap.Error(err), zap.String("order_no", sanitize.LogValue(orderNo)))
 		return "", err
 	}
 	s.logger.Info("alipay order fulfilled",
 		zap.String("order_no", sanitize.LogValue(orderNo)),
-		zap.Float64("amount", notifyAmount),
+		zap.String("amount", notifyAmount.StringFixed(2)),
 	)
 	return orderNo, nil
 }
@@ -407,18 +401,26 @@ func parsePublicKey(keyPEM string) (*rsa.PublicKey, error) {
 }
 
 // validateAlipayNotifyAmount parses the signed `total_amount` form value and
-// confirms it matches the locally-stored order amount within a 1-cent
-// tolerance. Returns the parsed notify amount on success.
+// confirms it matches the locally-stored order amount. Returns the parsed
+// notify amount on success.
 //
 // Pure helper extracted for testability — the rest of HandleNotify needs the
 // repository / signature setup to invoke directly.
-func validateAlipayNotifyAmount(rawTotalAmount string, orderAmount float64) (float64, error) {
-	notifyAmount, err := strconv.ParseFloat(rawTotalAmount, 64)
+func validateAlipayNotifyAmount(rawTotalAmount string, orderAmount decimal.Decimal) (decimal.Decimal, error) {
+	notifyAmount, err := decimal.NewFromString(rawTotalAmount)
 	if err != nil {
-		return 0, fmt.Errorf("invalid total_amount: %w", err)
+		return decimal.Zero, fmt.Errorf("invalid total_amount: %w", err)
 	}
-	if math.Abs(notifyAmount-orderAmount) > 0.01 {
-		return 0, fmt.Errorf("amount mismatch: notify=%.2f order=%.2f", notifyAmount, orderAmount)
+	notifyAmount = notifyAmount.Round(models.MoneyScale)
+	if !notifyAmount.IsPositive() {
+		return decimal.Zero, fmt.Errorf("invalid total_amount: must be positive")
+	}
+	if !notifyAmount.Equal(models.MoneyRoundToCents(notifyAmount)) {
+		return decimal.Zero, fmt.Errorf("invalid total_amount: precision exceeds cents")
+	}
+	expectedAmount := models.MoneyRoundToCents(orderAmount)
+	if !notifyAmount.Equal(expectedAmount) {
+		return decimal.Zero, fmt.Errorf("amount mismatch: notify=%s order=%s", notifyAmount.StringFixed(2), expectedAmount.StringFixed(2))
 	}
 	return notifyAmount, nil
 }

@@ -80,12 +80,12 @@ func (h *ChatHandler) checkProjectQuota(c *gin.Context, projectObj *models.Proje
 		if h.balance == nil || userAPIKey == nil {
 			return false
 		}
-		bal, err := h.balance.GetBalance(ctx, userAPIKey.UserID)
+		bal, err := h.balance.GetBalanceMoney(ctx, userAPIKey.UserID)
 		if err != nil {
 			h.logger.Warn("prepaid balance check failed", zap.Error(err), zap.String("user_id", userAPIKey.UserID.String()))
 			return false
 		}
-		return bal > 0
+		return bal.IsPositive()
 	}
 
 	if h.subService != nil {
@@ -145,7 +145,6 @@ func (h *ChatHandler) buildIterationGate(c *gin.Context, projectObj *models.Proj
 		return nil
 	}
 }
-
 
 // ChatCompletionRequest represents a chat completion request.
 type ChatCompletionRequest struct {
@@ -697,12 +696,15 @@ func (h *ChatHandler) handleNonStreamResponse(c *gin.Context, req ChatCompletion
 
 	// Save Semantic Cache (Async)
 	if promptHash != "" && len(resp.Choices) > 0 {
-		go func(hash string, emb []float32, response interface{}, pid string, m string) {
+		reqCtx := c.Request.Context()
+		go func(ctx context.Context, hash string, emb []float32, response interface{}, pid string, m string) {
 			if len(emb) == 0 {
 				emb = make([]float32, 1536)
 			}
-			_ = h.cache.StoreCache(context.Background(), hash, emb, response, pid, m, nil)
-		}(promptHash, promptEmbedding, resp, selectedProvider.Name, req.Model)
+			cacheCtx, cancel := asyncCacheContext(ctx)
+			defer cancel()
+			_ = h.cache.StoreCache(cacheCtx, hash, emb, response, pid, m, nil)
+		}(reqCtx, promptHash, promptEmbedding, resp, selectedProvider.Name, req.Model)
 	}
 
 	c.JSON(http.StatusOK, gin.H{

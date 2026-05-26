@@ -17,8 +17,8 @@ func TestTransactionModel_UserID(t *testing.T) {
 		OrgID:       orgID,
 		UserID:      userID,
 		Type:        "recharge",
-		Amount:      5.0,
-		Balance:     5.0,
+		Amount:      models.MoneyFromFloat(5.0),
+		Balance:     models.MoneyFromFloat(5.0),
 		Currency:    "USD",
 		Description: "Welcome credit",
 	}
@@ -26,7 +26,7 @@ func TestTransactionModel_UserID(t *testing.T) {
 	assert.Equal(t, orgID, txn.OrgID)
 	assert.Equal(t, userID, txn.UserID)
 	assert.Equal(t, "recharge", txn.Type)
-	assert.Equal(t, 5.0, txn.Amount)
+	assert.Equal(t, 5.0, models.MoneyToFloat(txn.Amount))
 }
 
 func TestTransactionModel_DeductionNegativeAmount(t *testing.T) {
@@ -34,12 +34,12 @@ func TestTransactionModel_DeductionNegativeAmount(t *testing.T) {
 		OrgID:       uuid.New(),
 		UserID:      uuid.New(),
 		Type:        "deduction",
-		Amount:      -0.05,
-		Balance:     4.95,
+		Amount:      models.MoneyFromFloat(-0.05),
+		Balance:     models.MoneyFromFloat(4.95),
 		Description: "API usage: gpt-4",
 	}
 
-	assert.True(t, txn.Amount < 0, "Deduction should have negative amount")
+	assert.True(t, txn.Amount.IsNegative(), "Deduction should have negative amount")
 	assert.Equal(t, "deduction", txn.Type)
 }
 
@@ -48,13 +48,13 @@ func TestTransactionModel_RefundPositiveAmount(t *testing.T) {
 		OrgID:       uuid.New(),
 		UserID:      uuid.New(),
 		Type:        "refund",
-		Amount:      1.50,
-		Balance:     6.50,
+		Amount:      models.MoneyFromFloat(1.50),
+		Balance:     models.MoneyFromFloat(6.50),
 		Description: "Refund for failed request",
 		ReferenceID: uuid.New().String(),
 	}
 
-	assert.True(t, txn.Amount > 0, "Refund should have positive amount")
+	assert.True(t, txn.Amount.IsPositive(), "Refund should have positive amount")
 	assert.Equal(t, "refund", txn.Type)
 	assert.NotEmpty(t, txn.ReferenceID)
 }
@@ -71,7 +71,7 @@ func TestTransactionTypes(t *testing.T) {
 func TestPaymentWebhookIdempotency_OrderModel(t *testing.T) {
 	order := models.Order{
 		OrderNo:       "ord_test_123",
-		Amount:        10.0,
+		Amount:        models.MoneyFromFloat(10.0),
 		Currency:      "USD",
 		Status:        "pending",
 		PaymentMethod: "stripe",

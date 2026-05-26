@@ -6,15 +6,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
 	"llm-router-platform/internal/graphql/directives"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/pkg/sanitize"
-	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+const refreshTokenCookieName = "llm_router_refresh"
 
 // clientInfo extracts client IP and User-Agent from the Gin context.
 func clientInfo(ctx context.Context) (ip, userAgent string) {
@@ -63,6 +68,54 @@ func (r *mutationResolver) generateRefreshJWT(u *models.User) (string, error) {
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(r.Config().JWT.Secret))
+}
+
+func (r *mutationResolver) setRefreshTokenCookie(ctx context.Context, refresh string) {
+	gc, err := directives.GinContextFromContext(ctx)
+	if err != nil || refresh == "" {
+		return
+	}
+	ttl := r.Config().JWT.RefreshExpiresIn
+	if ttl <= 0 {
+		ttl = 7 * 24 * time.Hour
+	}
+	gc.SetSameSite(http.SameSiteLaxMode)
+	gc.SetCookie(refreshTokenCookieName, refresh, int(ttl.Seconds()), "/", "", r.refreshCookieSecure(ctx), true)
+}
+
+func (r *mutationResolver) clearRefreshTokenCookie(ctx context.Context) {
+	gc, err := directives.GinContextFromContext(ctx)
+	if err != nil {
+		return
+	}
+	gc.SetSameSite(http.SameSiteLaxMode)
+	gc.SetCookie(refreshTokenCookieName, "", -1, "/", "", r.refreshCookieSecure(ctx), true)
+}
+
+func refreshTokenFromCookie(ctx context.Context) (string, bool) {
+	gc, err := directives.GinContextFromContext(ctx)
+	if err != nil {
+		return "", false
+	}
+	refresh, err := gc.Cookie(refreshTokenCookieName)
+	if err != nil || strings.TrimSpace(refresh) == "" {
+		return "", false
+	}
+	return refresh, true
+}
+
+func (r *mutationResolver) refreshCookieSecure(ctx context.Context) bool {
+	if r.Config().Server.Mode == "release" {
+		return true
+	}
+	gc, err := directives.GinContextFromContext(ctx)
+	if err != nil {
+		return true
+	}
+	if strings.EqualFold(gc.GetHeader("X-Forwarded-Proto"), "https") || gc.Request.TLS != nil {
+		return true
+	}
+	return false
 }
 
 func (r *mutationResolver) validateRefreshJWT(tokenStr string) (*jwt.RegisteredClaims, error) {

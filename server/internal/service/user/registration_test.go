@@ -75,15 +75,15 @@ func TestOnboardAccountParams_DefaultCredit(t *testing.T) {
 		GrantWelcomeCredit: true,
 	}
 	assert.True(t, params.GrantWelcomeCredit)
-	assert.Equal(t, float64(0), params.WelcomeCreditUSD) // zero means service uses default 5.0
+	assert.True(t, params.WelcomeCreditUSD.IsZero()) // zero means service uses default 5.0
 }
 
 func TestOnboardAccountParams_CustomCredit(t *testing.T) {
 	params := OnboardAccountParams{
 		GrantWelcomeCredit: true,
-		WelcomeCreditUSD:   10.0,
+		WelcomeCreditUSD:   models.MoneyFromFloat(10.0),
 	}
-	assert.Equal(t, 10.0, params.WelcomeCreditUSD)
+	assert.True(t, params.WelcomeCreditUSD.Equal(models.MoneyFromFloat(10.0)))
 }
 
 func ptrTime(t time.Time) *time.Time {

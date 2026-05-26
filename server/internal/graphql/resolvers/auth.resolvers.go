@@ -66,7 +66,8 @@ func (r *mutationResolver) Login(ctx context.Context, input model.LoginInput) (*
 	if err != nil {
 		return nil, err
 	}
-	return &model.AuthPayload{Token: token, RefreshToken: &refresh, User: userToGQL(u)}, nil
+	r.setRefreshTokenCookie(ctx, refresh)
+	return &model.AuthPayload{Token: token, User: userToGQL(u)}, nil
 }
 
 // Register is the resolver for the register field.
@@ -133,7 +134,8 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 	if err != nil {
 		return nil, err
 	}
-	return &model.AuthPayload{Token: token, RefreshToken: &refresh, User: userToGQL(u)}, nil
+	r.setRefreshTokenCookie(ctx, refresh)
+	return &model.AuthPayload{Token: token, User: userToGQL(u)}, nil
 }
 
 // RefreshToken is the resolver for the refreshToken field.
@@ -175,22 +177,44 @@ func (r *mutationResolver) RefreshToken(ctx context.Context) (*model.AuthPayload
 
 // RotateRefreshToken is the resolver for the rotateRefreshToken field.
 func (r *mutationResolver) RotateRefreshToken(ctx context.Context, refreshToken string) (*model.AuthPayload, error) {
+	usingCookie := false
+	if refreshToken == "" {
+		var ok bool
+		refreshToken, ok = refreshTokenFromCookie(ctx)
+		if !ok {
+			return nil, fmt.Errorf("invalid refresh token")
+		}
+		usingCookie = true
+	}
+
 	// Validate the provided refresh token before issuing new ones
 	claims, err := r.validateRefreshJWT(refreshToken)
 	if err != nil {
+		if usingCookie {
+			r.clearRefreshTokenCookie(ctx)
+		}
 		return nil, fmt.Errorf("invalid refresh token")
 	}
 	id, err := uuid.Parse(claims.Subject)
 	if err != nil {
+		if usingCookie {
+			r.clearRefreshTokenCookie(ctx)
+		}
 		return nil, fmt.Errorf("invalid refresh token")
 	}
 	u, err := r.UserSvc.GetByID(ctx, id)
 	if err != nil {
+		if usingCookie {
+			r.clearRefreshTokenCookie(ctx)
+		}
 		return nil, fmt.Errorf("invalid refresh token")
 	}
 
 	// Reject if user is deactivated
 	if !u.IsActive {
+		if usingCookie {
+			r.clearRefreshTokenCookie(ctx)
+		}
 		return nil, fmt.Errorf("account is disabled")
 	}
 
@@ -198,6 +222,9 @@ func (r *mutationResolver) RotateRefreshToken(ctx context.Context, refreshToken 
 	if !u.TokensInvalidatedAt.IsZero() {
 		iat, _ := claims.GetIssuedAt()
 		if iat != nil && iat.Before(u.TokensInvalidatedAt) {
+			if usingCookie {
+				r.clearRefreshTokenCookie(ctx)
+			}
 			return nil, fmt.Errorf("refresh token has been revoked")
 		}
 	}
@@ -209,6 +236,10 @@ func (r *mutationResolver) RotateRefreshToken(ctx context.Context, refreshToken 
 	refresh, err := r.generateRefreshJWT(u)
 	if err != nil {
 		return nil, err
+	}
+	r.setRefreshTokenCookie(ctx, refresh)
+	if usingCookie {
+		return &model.AuthPayload{Token: token, User: userToGQL(u)}, nil
 	}
 	return &model.AuthPayload{Token: token, RefreshToken: &refresh, User: userToGQL(u)}, nil
 }
@@ -260,7 +291,8 @@ func (r *mutationResolver) ExchangeOAuthCode(ctx context.Context) (*model.AuthPa
 	if err != nil {
 		return nil, err
 	}
-	return &model.AuthPayload{Token: token, RefreshToken: &refresh, User: userToGQL(u)}, nil
+	r.setRefreshTokenCookie(ctx, refresh)
+	return &model.AuthPayload{Token: token, User: userToGQL(u)}, nil
 }
 
 // Logout is the resolver for the logout field.
@@ -271,6 +303,7 @@ func (r *mutationResolver) Logout(ctx context.Context) (bool, error) {
 	}
 	id, _ := uuid.Parse(uid)
 	_ = r.UserSvc.InvalidateTokens(ctx, id)
+	r.clearRefreshTokenCookie(ctx)
 	ip, ua := clientInfo(ctx)
 	r.AuditService.Log(ctx, audit.ActionLogout, id, id, ip, ua, nil)
 	return true, nil

@@ -14,6 +14,7 @@ import (
 	"llm-router-platform/internal/repository"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
@@ -21,14 +22,14 @@ import (
 
 // BudgetStatus represents the current spend vs. budget.
 type BudgetStatus struct {
-	Budget         *models.Budget `json:"budget"`
-	CurrentSpend   float64        `json:"current_spend"`
-	RemainingUSD   float64        `json:"remaining_usd"`
-	UsagePercent   float64        `json:"usage_percent"`
-	IsOverBudget   bool           `json:"is_over_budget"`
-	IsAlertTripped bool           `json:"is_alert_tripped"`
-	PeriodStart    string         `json:"period_start"`
-	PeriodEnd      string         `json:"period_end"`
+	Budget         *models.Budget  `json:"budget"`
+	CurrentSpend   decimal.Decimal `json:"current_spend"`
+	RemainingUSD   decimal.Decimal `json:"remaining_usd"`
+	UsagePercent   float64         `json:"usage_percent"`
+	IsOverBudget   bool            `json:"is_over_budget"`
+	IsAlertTripped bool            `json:"is_alert_tripped"`
+	PeriodStart    string          `json:"period_start"`
+	PeriodEnd      string          `json:"period_end"`
 }
 
 // BudgetService handles budget creation, checking, and alerting.
@@ -53,7 +54,8 @@ func NewBudgetService(usageRepo *repository.UsageLogRepository, budgetRepo *repo
 // (matching the `Budget.AlertThreshold` storage convention). `enforceHardLimit`
 // engages the request-time middleware that returns 429 once `currentSpend`
 // reaches `limitUSD` — without it the budget is alert-only.
-func (s *BudgetService) SetBudget(ctx context.Context, userID uuid.UUID, limitUSD, threshold float64, enforceHardLimit bool, webhookURL, email string) (*models.Budget, error) {
+func (s *BudgetService) SetBudget(ctx context.Context, userID uuid.UUID, limitUSD decimal.Decimal, threshold float64, enforceHardLimit bool, webhookURL, email string) (*models.Budget, error) {
+	limitUSD = limitUSD.Round(models.MoneyScale)
 	budget := &models.Budget{
 		OrgID:            userID,
 		MonthlyLimitUSD:  limitUSD,
@@ -69,7 +71,7 @@ func (s *BudgetService) SetBudget(ctx context.Context, userID uuid.UUID, limitUS
 	}
 	s.logger.Info("budget set",
 		zap.String("user_id", userID.String()),
-		zap.Float64("limit_usd", limitUSD),
+		zap.String("limit_usd", limitUSD.StringFixed(2)),
 		zap.Float64("threshold", threshold),
 		zap.Bool("enforce_hard_limit", enforceHardLimit),
 	)
@@ -112,20 +114,25 @@ func (s *BudgetService) CheckBudget(ctx context.Context, userID uuid.UUID) (*Bud
 		return nil, fmt.Errorf("failed to aggregate usage: %w", err)
 	}
 
-	currentSpend := row.TotalCost
-
-	usagePercent := 0.0
-	if budget.MonthlyLimitUSD > 0 {
-		usagePercent = currentSpend / budget.MonthlyLimitUSD
+	currentSpendMoney := row.TotalCost.Round(models.MoneyScale)
+	remaining := budget.MonthlyLimitUSD.Sub(currentSpendMoney).Round(models.MoneyScale)
+	if remaining.IsNegative() {
+		remaining = decimal.Zero
 	}
+
+	usageRatio := decimal.Zero
+	if budget.MonthlyLimitUSD.IsPositive() {
+		usageRatio = currentSpendMoney.Div(budget.MonthlyLimitUSD)
+	}
+	usagePercent, _ := usageRatio.Mul(decimal.NewFromInt(100)).Round(2).Float64()
 
 	status := &BudgetStatus{
 		Budget:         budget,
-		CurrentSpend:   currentSpend,
-		RemainingUSD:   math.Max(0, budget.MonthlyLimitUSD-currentSpend),
-		UsagePercent:   math.Round(usagePercent*10000) / 100, // 2 decimal places
-		IsOverBudget:   currentSpend >= budget.MonthlyLimitUSD,
-		IsAlertTripped: usagePercent >= budget.AlertThreshold,
+		CurrentSpend:   currentSpendMoney,
+		RemainingUSD:   remaining,
+		UsagePercent:   usagePercent,
+		IsOverBudget:   budget.MonthlyLimitUSD.IsPositive() && currentSpendMoney.Cmp(budget.MonthlyLimitUSD) >= 0,
+		IsAlertTripped: usageRatio.Cmp(decimal.NewFromFloat(budget.AlertThreshold)) >= 0,
 		PeriodStart:    periodStart.Format("2006-01-02"),
 		PeriodEnd:      periodEnd.Format("2006-01-02"),
 	}
@@ -133,8 +140,8 @@ func (s *BudgetService) CheckBudget(ctx context.Context, userID uuid.UUID) (*Bud
 	if status.IsAlertTripped {
 		s.logger.Warn("budget alert triggered",
 			zap.String("user_id", userID.String()),
-			zap.Float64("spend", currentSpend),
-			zap.Float64("limit", budget.MonthlyLimitUSD),
+			zap.String("spend", currentSpendMoney.StringFixed(2)),
+			zap.String("limit", budget.MonthlyLimitUSD.StringFixed(2)),
 			zap.Float64("percent", status.UsagePercent),
 		)
 	}
@@ -146,13 +153,13 @@ func (s *BudgetService) CheckBudget(ctx context.Context, userID uuid.UUID) (*Bud
 
 // AnomalyResult represents the output of anomaly detection.
 type AnomalyResult struct {
-	IsAnomaly    bool    `json:"is_anomaly"`
-	CurrentCost  float64 `json:"current_cost"`
-	ExpectedCost float64 `json:"expected_cost"` // Mean of historical
-	Deviation    float64 `json:"deviation"`     // Standard deviations from mean
-	Threshold    float64 `json:"threshold"`     // σ threshold used
-	WindowDays   int     `json:"window_days"`
-	Message      string  `json:"message,omitempty"`
+	IsAnomaly    bool            `json:"is_anomaly"`
+	CurrentCost  decimal.Decimal `json:"current_cost"`
+	ExpectedCost decimal.Decimal `json:"expected_cost"` // Mean of historical
+	Deviation    float64         `json:"deviation"`     // Standard deviations from mean
+	Threshold    float64         `json:"threshold"`     // σ threshold used
+	WindowDays   int             `json:"window_days"`
+	Message      string          `json:"message,omitempty"`
 }
 
 // DetectCostAnomaly compares today's cost against a sliding window.
@@ -176,56 +183,58 @@ func (s *Service) DetectCostAnomaly(ctx context.Context, orgID uuid.UUID, projec
 		return nil, fmt.Errorf("failed to aggregate daily usage: %w", err)
 	}
 
-	// Build daily cost map from SQL result
-	dailyCosts := make(map[string]float64, len(dailyRows))
+	// Build daily cost map from SQL result as fixed-scale integer units.
+	dailyCostUnits := make(map[string]int64, len(dailyRows))
 	for _, row := range dailyRows {
-		dailyCosts[row.Date] = row.Cost
+		dailyCostUnits[row.Date] = models.MoneyToUnits(row.Cost)
 	}
 
 	todayKey := todayStart.Format("2006-01-02")
-	todayCost := dailyCosts[todayKey]
+	todayCostUnits := dailyCostUnits[todayKey]
+	todayCostMoney := models.MoneyFromUnits(todayCostUnits)
 
 	// Build historical costs (excluding today), filling zero-cost days
-	var historicalCosts []float64
+	var historicalCostUnits []int64
 	for d := 1; d <= windowDays; d++ {
 		dayKey := todayStart.AddDate(0, 0, -d).Format("2006-01-02")
-		historicalCosts = append(historicalCosts, dailyCosts[dayKey]) // 0 if missing
+		historicalCostUnits = append(historicalCostUnits, dailyCostUnits[dayKey]) // 0 if missing
 	}
 
-	if len(historicalCosts) < 3 {
+	if len(historicalCostUnits) < 3 {
 		return &AnomalyResult{
 			IsAnomaly:    false,
-			CurrentCost:  todayCost,
-			ExpectedCost: 0,
+			CurrentCost:  todayCostMoney.Round(models.MoneyScale),
+			ExpectedCost: decimal.Zero,
 			WindowDays:   windowDays,
 			Message:      "insufficient data for anomaly detection",
 		}, nil
 	}
 
-	mean, stddev := meanStdDev(historicalCosts)
+	meanUnits, stddevUnits := meanStdDevUnits(historicalCostUnits)
 
 	deviation := 0.0
-	if stddev > 0 {
-		deviation = (todayCost - mean) / stddev
+	if stddevUnits > 0 {
+		deviation = (float64(todayCostUnits) - meanUnits) / stddevUnits
 	}
 
 	isAnomaly := deviation > sigmaThreshold
+	expectedCost := statUnitsMoney(meanUnits)
 
 	result := &AnomalyResult{
 		IsAnomaly:    isAnomaly,
-		CurrentCost:  math.Round(todayCost*10000) / 10000,
-		ExpectedCost: math.Round(mean*10000) / 10000,
+		CurrentCost:  todayCostMoney.Round(4).Round(models.MoneyScale),
+		ExpectedCost: expectedCost,
 		Deviation:    math.Round(deviation*100) / 100,
 		Threshold:    sigmaThreshold,
 		WindowDays:   windowDays,
 	}
 
 	if isAnomaly {
-		result.Message = fmt.Sprintf("cost anomaly detected: $%.4f is %.1fσ above expected $%.4f", todayCost, deviation, mean)
+		result.Message = fmt.Sprintf("cost anomaly detected: $%s is %.1fσ above expected $%s", todayCostMoney.Round(4).StringFixed(4), deviation, expectedCost.StringFixed(4))
 		s.logger.Warn("cost anomaly detected",
 			zap.String("org_id", orgID.String()),
-			zap.Float64("today_cost", todayCost),
-			zap.Float64("expected", mean),
+			zap.String("today_cost", todayCostMoney.Round(4).StringFixed(4)),
+			zap.String("expected", expectedCost.StringFixed(4)),
 			zap.Float64("sigma", deviation),
 		)
 	}
@@ -251,57 +260,60 @@ func (s *Service) DetectSystemCostAnomaly(ctx context.Context, windowDays int, s
 		return nil, fmt.Errorf("failed to get usage logs: %w", err)
 	}
 
-	dailyCosts := make(map[string]float64)
-	var todayCost float64
+	dailyCostUnits := make(map[string]int64)
+	var todayCostUnits int64
 	todayKey := todayStart.Format("2006-01-02")
 
 	for _, log := range logs {
 		dayKey := log.CreatedAt.Format("2006-01-02")
-		dailyCosts[dayKey] += log.Cost
+		costUnits := models.MoneyToUnits(log.Cost)
+		dailyCostUnits[dayKey] += costUnits
 		if dayKey == todayKey {
-			todayCost += log.Cost
+			todayCostUnits += costUnits
 		}
 	}
+	todayCostMoney := models.MoneyFromUnits(todayCostUnits)
 
-	var historicalCosts []float64
-	for key, cost := range dailyCosts {
+	var historicalCostUnits []int64
+	for key, costUnits := range dailyCostUnits {
 		if key != todayKey {
-			historicalCosts = append(historicalCosts, cost)
+			historicalCostUnits = append(historicalCostUnits, costUnits)
 		}
 	}
 
 	for d := 0; d < windowDays; d++ {
 		dayKey := todayStart.AddDate(0, 0, -d-1).Format("2006-01-02")
-		if _, exists := dailyCosts[dayKey]; !exists {
-			historicalCosts = append(historicalCosts, 0)
+		if _, exists := dailyCostUnits[dayKey]; !exists {
+			historicalCostUnits = append(historicalCostUnits, 0)
 		}
 	}
 
-	if len(historicalCosts) < 3 {
+	if len(historicalCostUnits) < 3 {
 		return &AnomalyResult{
 			IsAnomaly:   false,
-			CurrentCost: todayCost,
+			CurrentCost: todayCostMoney.Round(models.MoneyScale),
 			WindowDays:  windowDays,
 			Message:     "insufficient data for anomaly detection",
 		}, nil
 	}
 
-	mean, stddev := meanStdDev(historicalCosts)
+	meanUnits, stddevUnits := meanStdDevUnits(historicalCostUnits)
 	deviation := 0.0
-	if stddev > 0 {
-		deviation = (todayCost - mean) / stddev
+	if stddevUnits > 0 {
+		deviation = (float64(todayCostUnits) - meanUnits) / stddevUnits
 	}
+	expectedCost := statUnitsMoney(meanUnits)
 
 	return &AnomalyResult{
 		IsAnomaly:    deviation > sigmaThreshold,
-		CurrentCost:  math.Round(todayCost*10000) / 10000,
-		ExpectedCost: math.Round(mean*10000) / 10000,
+		CurrentCost:  todayCostMoney.Round(4).Round(models.MoneyScale),
+		ExpectedCost: expectedCost,
 		Deviation:    math.Round(deviation*100) / 100,
 		Threshold:    sigmaThreshold,
 		WindowDays:   windowDays,
 		Message: func() string {
 			if deviation > sigmaThreshold {
-				return fmt.Sprintf("system cost anomaly: $%.4f is %.1fσ above expected $%.4f", todayCost, deviation, mean)
+				return fmt.Sprintf("system cost anomaly: $%s is %.1fσ above expected $%s", todayCostMoney.Round(4).StringFixed(4), deviation, expectedCost.StringFixed(4))
 			}
 			return ""
 		}(),
@@ -340,7 +352,7 @@ func (s *Service) ExportUsageCSV(ctx context.Context, userID uuid.UUID, startTim
 				strconv.Itoa(log.RequestTokens),
 				strconv.Itoa(log.ResponseTokens),
 				strconv.Itoa(log.TotalTokens),
-				fmt.Sprintf("%.6f", log.Cost),
+				log.Cost.Round(6).StringFixed(6),
 				strconv.FormatInt(log.Latency, 10),
 				strconv.Itoa(log.StatusCode),
 				log.ErrorMessage,
@@ -390,7 +402,7 @@ func (s *Service) ExportSystemUsageCSV(ctx context.Context, startTime, endTime t
 				strconv.Itoa(log.RequestTokens),
 				strconv.Itoa(log.ResponseTokens),
 				strconv.Itoa(log.TotalTokens),
-				fmt.Sprintf("%.6f", log.Cost),
+				log.Cost.Round(6).StringFixed(6),
 				strconv.FormatInt(log.Latency, 10),
 				strconv.Itoa(log.StatusCode),
 				log.ErrorMessage,
@@ -414,21 +426,29 @@ func (s *Service) ExportSystemUsageCSV(ctx context.Context, startTime, endTime t
 
 // ─── Helpers ────────────────────────────────────────────────
 
-// meanStdDev computes mean and population standard deviation.
-func meanStdDev(values []float64) (float64, float64) {
+func statUnitsMoney(units float64) decimal.Decimal {
+	return decimal.NewFromFloat(units).
+		Div(decimal.NewFromInt(models.MoneyUnitsFactor)).
+		Round(4).
+		Round(models.MoneyScale)
+}
+
+// meanStdDevUnits computes mean and population standard deviation over
+// fixed-scale money units. The float boundary is statistics-only.
+func meanStdDevUnits(values []int64) (float64, float64) {
 	if len(values) == 0 {
 		return 0, 0
 	}
 
 	var sum float64
 	for _, v := range values {
-		sum += v
+		sum += float64(v)
 	}
 	mean := sum / float64(len(values))
 
 	var varianceSum float64
 	for _, v := range values {
-		d := v - mean
+		d := float64(v) - mean
 		varianceSum += d * d
 	}
 	stddev := math.Sqrt(varianceSum / float64(len(values)))

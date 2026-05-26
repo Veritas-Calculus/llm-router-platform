@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/authStore';
 // ── HTTP Link ──────────────────────────────────────────────────────
 const httpLink = createHttpLink({
   uri: '/graphql',
+  credentials: 'same-origin',
 });
 
 // ── Auth Link ──────────────────────────────────────────────────────
@@ -35,18 +36,18 @@ const authLink = setContext((_, { headers }) => {
 });
 
 // ── Silent refresh ─────────────────────────────────────────────────
-// rotateRefreshToken is called when a request comes back with an auth error
-// and the store has a refresh token. The result either yields a fresh access
-// token (caller retries) or null (caller must log the user out).
+// rotateRefreshToken is called when a request comes back with an auth error.
+// The refresh token lives in an HttpOnly cookie; JS never reads or persists it.
+// The result either yields a fresh access token (caller retries) or null
+// (caller must log the user out).
 //
 // We deduplicate concurrent refreshes by caching the in-flight promise on the
 // module — a burst of unauthenticated requests must not start N parallel
 // rotations and burn N refresh tokens.
 const ROTATE_MUTATION = gql`
-  mutation RotateRefreshToken($refreshToken: String!) {
-    rotateRefreshToken(refreshToken: $refreshToken) {
+  mutation RotateRefreshToken {
+    rotateRefreshToken(refreshToken: "") {
       token
-      refreshToken
     }
   }
 `;
@@ -56,25 +57,16 @@ let refreshInFlight: Promise<string | null> | null = null;
 function rotateAccessToken(): Promise<string | null> {
   if (refreshInFlight) return refreshInFlight;
 
-  const stored = useAuthStore.getState().refreshToken;
-  if (!stored) return Promise.resolve(null);
-
   refreshInFlight = (async () => {
     try {
       const result = await apolloClient.mutate({
         mutation: ROTATE_MUTATION,
-        variables: { refreshToken: stored },
-        // The auth link will skip the Authorization header because we'll have
-        // cleared the token below... actually no, the access token is still
-        // there. That's fine: rotateRefreshToken doesn't require a valid
-        // access token; it validates the refresh token signature + iat
-        // server-side.
         fetchPolicy: 'no-cache',
         context: { skipAuthRetry: true },
       });
-      const payload = (result.data as { rotateRefreshToken?: { token: string; refreshToken: string | null } } | null | undefined)?.rotateRefreshToken;
+      const payload = (result.data as { rotateRefreshToken?: { token: string } } | null | undefined)?.rotateRefreshToken;
       if (!payload?.token) return null;
-      useAuthStore.getState().setAccessToken(payload.token, payload.refreshToken ?? null);
+      useAuthStore.getState().setAccessToken(payload.token);
       return payload.token;
     } catch {
       return null;
@@ -121,8 +113,8 @@ const errorLink = onError(({ error, operation, forward }) => {
         return undefined;
       }
 
-      const hasRefresh = !!useAuthStore.getState().refreshToken;
-      if (!hasRefresh) {
+      const shouldAttemptRefresh = !!useAuthStore.getState().isAuthenticated;
+      if (!shouldAttemptRefresh) {
         void apolloClient.clearStore().finally(() => {
           useAuthStore.getState().logout();
           if (typeof window !== 'undefined' && window.location.pathname !== '/login') {

@@ -10,6 +10,7 @@ import (
 	"llm-router-platform/internal/models"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 // UserRepo defines the interface for user data access.
@@ -229,9 +230,9 @@ type SubscriptionRepo interface {
 	GetOrderByNo(ctx context.Context, orderNo string) (*models.Order, error)
 	GetOrdersByUserID(ctx context.Context, userID uuid.UUID) ([]models.Order, error)
 	UpdateOrder(ctx context.Context, order *models.Order) error
-	UpdateUserBalance(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID string) error
-	UpdateUserBalanceIdempotent(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID, idempotencyKey string) error
-	FulfillRechargeOrder(ctx context.Context, userID uuid.UUID, amount float64, txType, description string, order *models.Order, idempotencyKey string) error
+	UpdateUserBalance(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, txType, description, referenceID string) error
+	UpdateUserBalanceIdempotent(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, txType, description, referenceID, idempotencyKey string) error
+	FulfillRechargeOrder(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, txType, description string, order *models.Order, idempotencyKey string) error
 	FulfillSubscriptionOrder(ctx context.Context, sub *models.Subscription, order *models.Order) error
 }
 

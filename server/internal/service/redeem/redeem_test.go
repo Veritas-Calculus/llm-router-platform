@@ -96,24 +96,24 @@ func TestRedeemCreditAddsBalanceAndTransaction(t *testing.T) {
 		BaseModel:    models.BaseModel{ID: codeID},
 		Code:         "ABCD-1234-EFGH",
 		Type:         "credit",
-		CreditAmount: 12.3456789,
+		CreditAmount: models.MoneyFromFloat(12.3456789),
 		IsActive:     true,
 	}).Error)
 
 	result, err := svc.Redeem(userID, " abcd-1234-efgh ")
 	require.NoError(t, err)
 	require.True(t, result.Success)
-	require.Equal(t, 12.345679, result.CreditAmount)
+	require.True(t, result.CreditAmount.Equal(models.MoneyFromFloat(12.3456789)))
 
 	var user models.User
 	require.NoError(t, db.First(&user, "id = ?", userID).Error)
-	require.Equal(t, 12.345679, user.Balance)
+	require.Equal(t, 12.3456789, models.MoneyToFloat(user.Balance))
 
 	var tx models.Transaction
 	require.NoError(t, db.First(&tx, "reference_id = ?", codeID.String()).Error)
 	require.Equal(t, "recharge", tx.Type)
-	require.Equal(t, 12.345679, tx.Amount)
-	require.Equal(t, user.Balance, tx.Balance)
+	require.Equal(t, 12.3456789, models.MoneyToFloat(tx.Amount))
+	require.True(t, user.Balance.Equal(tx.Balance))
 }
 
 func TestRedeemLegacyPlanCodeWithoutPlanCreditsBalance(t *testing.T) {
@@ -132,18 +132,18 @@ func TestRedeemLegacyPlanCodeWithoutPlanCreditsBalance(t *testing.T) {
 		BaseModel:    models.BaseModel{ID: codeID},
 		Code:         "PLAN-NOPE-CASH",
 		Type:         "plan",
-		CreditAmount: 10,
+		CreditAmount: models.MoneyFromFloat(10),
 		IsActive:     true,
 	}).Error)
 
 	result, err := svc.Redeem(userID, "PLAN-NOPE-CASH")
 	require.NoError(t, err)
 	require.True(t, result.Success)
-	require.Equal(t, 10.0, result.CreditAmount)
+	require.True(t, result.CreditAmount.Equal(models.MoneyFromFloat(10)))
 
 	var user models.User
 	require.NoError(t, db.First(&user, "id = ?", userID).Error)
-	require.Equal(t, 10.0, user.Balance)
+	require.Equal(t, 10.0, models.MoneyToFloat(user.Balance))
 
 	var redeemed models.RedeemCode
 	require.NoError(t, db.First(&redeemed, "id = ?", codeID).Error)
@@ -167,7 +167,7 @@ func TestRedeemUnsupportedTypeDoesNotUseCode(t *testing.T) {
 		BaseModel:    models.BaseModel{ID: codeID},
 		Code:         "BAD-TYPE-CODE",
 		Type:         "coupon",
-		CreditAmount: 10,
+		CreditAmount: models.MoneyFromFloat(10),
 		IsActive:     true,
 	}).Error)
 
@@ -185,9 +185,9 @@ func TestGenerateCodesRejectsInvalidCreditAndPlanInputs(t *testing.T) {
 	db := setupRedeemTestDB(t)
 	svc := NewService(db, zap.NewNop())
 
-	_, err := svc.GenerateCodes("credit", 0, nil, 30, 1, nil, "")
+	_, err := svc.GenerateCodes("credit", models.MoneyFromFloat(0), nil, 30, 1, nil, "")
 	require.ErrorContains(t, err, "credit amount must be positive")
 
-	_, err = svc.GenerateCodes("plan", 10, nil, 30, 1, nil, "")
+	_, err = svc.GenerateCodes("plan", models.MoneyFromFloat(10), nil, 30, 1, nil, "")
 	require.ErrorContains(t, err, "plan code requires a plan")
 }

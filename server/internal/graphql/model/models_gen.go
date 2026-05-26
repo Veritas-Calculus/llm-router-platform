@@ -14,14 +14,14 @@ type AdminDashboard struct {
 	TotalUsers       int     `json:"totalUsers"`
 	ActiveUsersToday int     `json:"activeUsersToday"`
 	ActiveUsersMonth int     `json:"activeUsersMonth"`
-	TotalRevenue     float64 `json:"totalRevenue"`
-	RevenueThisMonth float64 `json:"revenueThisMonth"`
+	TotalRevenue     Money   `json:"totalRevenue"`
+	RevenueThisMonth Money   `json:"revenueThisMonth"`
 	TotalRequests    int     `json:"totalRequests"`
 	RequestsToday    int     `json:"requestsToday"`
 	TotalTokens      int     `json:"totalTokens"`
 	TokensToday      int     `json:"tokensToday"`
-	TotalCost        float64 `json:"totalCost"`
-	CostToday        float64 `json:"costToday"`
+	TotalCost        Money   `json:"totalCost"`
+	CostToday        Money   `json:"costToday"`
 	SuccessRate      float64 `json:"successRate"`
 	ErrorCount       int     `json:"errorCount"`
 	AvgLatencyMs     float64 `json:"avgLatencyMs"`
@@ -36,12 +36,12 @@ type AdminDashboard struct {
 }
 
 type AdminUsageByUser struct {
-	UserID   string  `json:"userId"`
-	UserName string  `json:"userName"`
-	Email    string  `json:"email"`
-	Requests int     `json:"requests"`
-	Tokens   int     `json:"tokens"`
-	Cost     float64 `json:"cost"`
+	UserID   string `json:"userId"`
+	UserName string `json:"userName"`
+	Email    string `json:"email"`
+	Requests int    `json:"requests"`
+	Tokens   int    `json:"tokens"`
+	Cost     Money  `json:"cost"`
 }
 
 type Alert struct {
@@ -250,7 +250,7 @@ type BatchProxyResult struct {
 type Budget struct {
 	ID               string  `json:"id"`
 	OrgID            string  `json:"orgId"`
-	MonthlyLimitUsd  float64 `json:"monthlyLimitUsd"`
+	MonthlyLimitUsd  Money   `json:"monthlyLimitUsd"`
 	AlertThreshold   float64 `json:"alertThreshold"`
 	EnforceHardLimit bool    `json:"enforceHardLimit"`
 	IsActive         bool    `json:"isActive"`
@@ -259,7 +259,7 @@ type Budget struct {
 }
 
 type BudgetInput struct {
-	MonthlyLimitUsd  float64  `json:"monthlyLimitUsd"`
+	MonthlyLimitUsd  Money    `json:"monthlyLimitUsd"`
 	AlertThreshold   *float64 `json:"alertThreshold,omitempty"`
 	EnforceHardLimit *bool    `json:"enforceHardLimit,omitempty"`
 	WebhookURL       *string  `json:"webhookUrl,omitempty"`
@@ -268,8 +268,8 @@ type BudgetInput struct {
 
 type BudgetStatus struct {
 	Budget          *Budget `json:"budget,omitempty"`
-	CurrentSpend    float64 `json:"currentSpend"`
-	RemainingBudget float64 `json:"remainingBudget"`
+	CurrentSpend    Money   `json:"currentSpend"`
+	RemainingBudget Money   `json:"remainingBudget"`
 	PercentUsed     float64 `json:"percentUsed"`
 	IsOverBudget    bool    `json:"isOverBudget"`
 }
@@ -315,8 +315,8 @@ type Coupon struct {
 	Code           string     `json:"code"`
 	Name           string     `json:"name"`
 	Type           string     `json:"type"`
-	DiscountValue  float64    `json:"discountValue"`
-	MinAmount      float64    `json:"minAmount"`
+	DiscountValue  Money      `json:"discountValue"`
+	MinAmount      Money      `json:"minAmount"`
 	MaxUses        int        `json:"maxUses"`
 	UseCount       int        `json:"useCount"`
 	MaxUsesPerUser int        `json:"maxUsesPerUser"`
@@ -329,8 +329,8 @@ type CouponInput struct {
 	Code           string     `json:"code"`
 	Name           string     `json:"name"`
 	Type           string     `json:"type"`
-	DiscountValue  float64    `json:"discountValue"`
-	MinAmount      *float64   `json:"minAmount,omitempty"`
+	DiscountValue  Money      `json:"discountValue"`
+	MinAmount      *Money     `json:"minAmount,omitempty"`
 	MaxUses        *int       `json:"maxUses,omitempty"`
 	MaxUsesPerUser *int       `json:"maxUsesPerUser,omitempty"`
 	IsActive       *bool      `json:"isActive,omitempty"`
@@ -390,23 +390,23 @@ type CreateWebhookEndpointInput struct {
 }
 
 type DailyStats struct {
-	Date        string  `json:"date"`
-	Requests    int     `json:"requests"`
-	TotalTokens int     `json:"totalTokens"`
-	TotalCost   float64 `json:"totalCost"`
+	Date        string `json:"date"`
+	Requests    int    `json:"requests"`
+	TotalTokens int    `json:"totalTokens"`
+	TotalCost   Money  `json:"totalCost"`
 }
 
 type Dashboard struct {
 	TotalRequests    int             `json:"totalRequests"`
 	SuccessRate      float64         `json:"successRate"`
 	TotalTokens      int             `json:"totalTokens"`
-	TotalCost        float64         `json:"totalCost"`
+	TotalCost        Money           `json:"totalCost"`
 	AverageLatencyMs float64         `json:"averageLatencyMs"`
 	ActiveUsers      int             `json:"activeUsers"`
 	ActiveProviders  int             `json:"activeProviders"`
 	ActiveProxies    int             `json:"activeProxies"`
 	RequestsToday    int             `json:"requestsToday"`
-	CostToday        float64         `json:"costToday"`
+	CostToday        Money           `json:"costToday"`
 	TokensToday      int             `json:"tokensToday"`
 	ErrorCount       int             `json:"errorCount"`
 	McpCallCount     int             `json:"mcpCallCount"`
@@ -504,39 +504,39 @@ type FeatureGate struct {
 }
 
 type FinancialBreakdown struct {
-	Name   string  `json:"name"`
-	Amount float64 `json:"amount"`
-	Count  int     `json:"count"`
+	Name   string `json:"name"`
+	Amount Money  `json:"amount"`
+	Count  int    `json:"count"`
 }
 
 type FinancialDailyPoint struct {
-	Date         string  `json:"date"`
-	CashRevenue  float64 `json:"cashRevenue"`
-	UsageRevenue float64 `json:"usageRevenue"`
-	ProviderCost float64 `json:"providerCost"`
-	GrossProfit  float64 `json:"grossProfit"`
-	Orders       int     `json:"orders"`
-	Requests     int     `json:"requests"`
+	Date         string `json:"date"`
+	CashRevenue  Money  `json:"cashRevenue"`
+	UsageRevenue Money  `json:"usageRevenue"`
+	ProviderCost Money  `json:"providerCost"`
+	GrossProfit  Money  `json:"grossProfit"`
+	Orders       int    `json:"orders"`
+	Requests     int    `json:"requests"`
 }
 
 type FinancialDashboard struct {
 	PeriodStart         time.Time                     `json:"periodStart"`
 	PeriodEnd           time.Time                     `json:"periodEnd"`
-	CashRevenue         float64                       `json:"cashRevenue"`
-	NetCashRevenue      float64                       `json:"netCashRevenue"`
-	SubscriptionRevenue float64                       `json:"subscriptionRevenue"`
-	TopUpRevenue        float64                       `json:"topUpRevenue"`
-	UsageRevenue        float64                       `json:"usageRevenue"`
-	ProviderCost        float64                       `json:"providerCost"`
-	GrossProfit         float64                       `json:"grossProfit"`
+	CashRevenue         Money                         `json:"cashRevenue"`
+	NetCashRevenue      Money                         `json:"netCashRevenue"`
+	SubscriptionRevenue Money                         `json:"subscriptionRevenue"`
+	TopUpRevenue        Money                         `json:"topUpRevenue"`
+	UsageRevenue        Money                         `json:"usageRevenue"`
+	ProviderCost        Money                         `json:"providerCost"`
+	GrossProfit         Money                         `json:"grossProfit"`
 	GrossMargin         float64                       `json:"grossMargin"`
-	RefundAmount        float64                       `json:"refundAmount"`
-	CreditGrants        float64                       `json:"creditGrants"`
-	OutstandingBalance  float64                       `json:"outstandingBalance"`
+	RefundAmount        Money                         `json:"refundAmount"`
+	CreditGrants        Money                         `json:"creditGrants"`
+	OutstandingBalance  Money                         `json:"outstandingBalance"`
 	PaidOrders          int                           `json:"paidOrders"`
 	ActiveSubscriptions int                           `json:"activeSubscriptions"`
 	PayingCustomers     int                           `json:"payingCustomers"`
-	Arpu                float64                       `json:"arpu"`
+	Arpu                Money                         `json:"arpu"`
 	Daily               []*FinancialDailyPoint        `json:"daily"`
 	PaymentBreakdown    []*FinancialBreakdown         `json:"paymentBreakdown"`
 	ProviderBreakdown   []*FinancialProviderBreakdown `json:"providerBreakdown"`
@@ -545,15 +545,15 @@ type FinancialDashboard struct {
 type FinancialProviderBreakdown struct {
 	ProviderName string  `json:"providerName"`
 	Requests     int     `json:"requests"`
-	UsageRevenue float64 `json:"usageRevenue"`
-	ProviderCost float64 `json:"providerCost"`
-	GrossProfit  float64 `json:"grossProfit"`
+	UsageRevenue Money   `json:"usageRevenue"`
+	ProviderCost Money   `json:"providerCost"`
+	GrossProfit  Money   `json:"grossProfit"`
 	GrossMargin  float64 `json:"grossMargin"`
 }
 
 type GenerateRedeemCodesInput struct {
 	Type         string     `json:"type"`
-	CreditAmount *float64   `json:"creditAmount,omitempty"`
+	CreditAmount *Money     `json:"creditAmount,omitempty"`
 	PlanID       *string    `json:"planId,omitempty"`
 	PlanDays     *int       `json:"planDays,omitempty"`
 	Count        int        `json:"count"`
@@ -700,45 +700,45 @@ type Model struct {
 	ProviderID              string    `json:"providerId"`
 	Name                    string    `json:"name"`
 	DisplayName             string    `json:"displayName"`
-	InputPricePer1k         float64   `json:"inputPricePer1k"`
-	OutputPricePer1k        float64   `json:"outputPricePer1k"`
-	PricePerSecond          *float64  `json:"pricePerSecond,omitempty"`
-	PricePerImage           *float64  `json:"pricePerImage,omitempty"`
-	PricePerMinute          *float64  `json:"pricePerMinute,omitempty"`
-	ProviderInputCostPer1k  float64   `json:"providerInputCostPer1k"`
-	ProviderOutputCostPer1k float64   `json:"providerOutputCostPer1k"`
-	ProviderCostPerSecond   *float64  `json:"providerCostPerSecond,omitempty"`
-	ProviderCostPerImage    *float64  `json:"providerCostPerImage,omitempty"`
-	ProviderCostPerMinute   *float64  `json:"providerCostPerMinute,omitempty"`
+	InputPricePer1k         Money     `json:"inputPricePer1k"`
+	OutputPricePer1k        Money     `json:"outputPricePer1k"`
+	PricePerSecond          *Money    `json:"pricePerSecond,omitempty"`
+	PricePerImage           *Money    `json:"pricePerImage,omitempty"`
+	PricePerMinute          *Money    `json:"pricePerMinute,omitempty"`
+	ProviderInputCostPer1k  Money     `json:"providerInputCostPer1k"`
+	ProviderOutputCostPer1k Money     `json:"providerOutputCostPer1k"`
+	ProviderCostPerSecond   *Money    `json:"providerCostPerSecond,omitempty"`
+	ProviderCostPerImage    *Money    `json:"providerCostPerImage,omitempty"`
+	ProviderCostPerMinute   *Money    `json:"providerCostPerMinute,omitempty"`
 	MaxTokens               int       `json:"maxTokens"`
 	IsActive                bool      `json:"isActive"`
 	CreatedAt               time.Time `json:"createdAt"`
 }
 
 type ModelInput struct {
-	Name                    string   `json:"name"`
-	DisplayName             *string  `json:"displayName,omitempty"`
-	InputPricePer1k         *float64 `json:"inputPricePer1k,omitempty"`
-	OutputPricePer1k        *float64 `json:"outputPricePer1k,omitempty"`
-	PricePerSecond          *float64 `json:"pricePerSecond,omitempty"`
-	PricePerImage           *float64 `json:"pricePerImage,omitempty"`
-	PricePerMinute          *float64 `json:"pricePerMinute,omitempty"`
-	ProviderInputCostPer1k  *float64 `json:"providerInputCostPer1k,omitempty"`
-	ProviderOutputCostPer1k *float64 `json:"providerOutputCostPer1k,omitempty"`
-	ProviderCostPerSecond   *float64 `json:"providerCostPerSecond,omitempty"`
-	ProviderCostPerImage    *float64 `json:"providerCostPerImage,omitempty"`
-	ProviderCostPerMinute   *float64 `json:"providerCostPerMinute,omitempty"`
-	MaxTokens               *int     `json:"maxTokens,omitempty"`
-	IsActive                *bool    `json:"isActive,omitempty"`
+	Name                    string  `json:"name"`
+	DisplayName             *string `json:"displayName,omitempty"`
+	InputPricePer1k         *Money  `json:"inputPricePer1k,omitempty"`
+	OutputPricePer1k        *Money  `json:"outputPricePer1k,omitempty"`
+	PricePerSecond          *Money  `json:"pricePerSecond,omitempty"`
+	PricePerImage           *Money  `json:"pricePerImage,omitempty"`
+	PricePerMinute          *Money  `json:"pricePerMinute,omitempty"`
+	ProviderInputCostPer1k  *Money  `json:"providerInputCostPer1k,omitempty"`
+	ProviderOutputCostPer1k *Money  `json:"providerOutputCostPer1k,omitempty"`
+	ProviderCostPerSecond   *Money  `json:"providerCostPerSecond,omitempty"`
+	ProviderCostPerImage    *Money  `json:"providerCostPerImage,omitempty"`
+	ProviderCostPerMinute   *Money  `json:"providerCostPerMinute,omitempty"`
+	MaxTokens               *int    `json:"maxTokens,omitempty"`
+	IsActive                *bool   `json:"isActive,omitempty"`
 }
 
 type ModelStats struct {
-	ModelID      string  `json:"modelId"`
-	ModelName    string  `json:"modelName"`
-	Requests     int     `json:"requests"`
-	InputTokens  int     `json:"inputTokens"`
-	OutputTokens int     `json:"outputTokens"`
-	TotalCost    float64 `json:"totalCost"`
+	ModelID      string `json:"modelId"`
+	ModelName    string `json:"modelName"`
+	Requests     int    `json:"requests"`
+	InputTokens  int    `json:"inputTokens"`
+	OutputTokens int    `json:"outputTokens"`
+	TotalCost    Money  `json:"totalCost"`
 }
 
 type Mutation struct {
@@ -764,7 +764,7 @@ type NotificationChannelInput struct {
 type Order struct {
 	ID            string    `json:"id"`
 	OrderNo       string    `json:"orderNo"`
-	Amount        float64   `json:"amount"`
+	Amount        Money     `json:"amount"`
 	Currency      string    `json:"currency"`
 	Status        string    `json:"status"`
 	PaymentMethod string    `json:"paymentMethod"`
@@ -775,7 +775,7 @@ type Order struct {
 type Organization struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
-	BillingLimit float64   `json:"billingLimit"`
+	BillingLimit Money     `json:"billingLimit"`
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
@@ -791,7 +791,7 @@ type Plan struct {
 	ID           string  `json:"id"`
 	Name         string  `json:"name"`
 	Description  string  `json:"description"`
-	PriceMonth   float64 `json:"priceMonth"`
+	PriceMonth   Money   `json:"priceMonth"`
 	TokenLimit   int     `json:"tokenLimit"`
 	RateLimit    int     `json:"rateLimit"`
 	SupportLevel string  `json:"supportLevel"`
@@ -802,7 +802,7 @@ type Plan struct {
 type PlanInput struct {
 	Name         string  `json:"name"`
 	Description  *string `json:"description,omitempty"`
-	PriceMonth   float64 `json:"priceMonth"`
+	PriceMonth   Money   `json:"priceMonth"`
 	TokenLimit   int     `json:"tokenLimit"`
 	RateLimit    int     `json:"rateLimit"`
 	SupportLevel *string `json:"supportLevel,omitempty"`
@@ -822,7 +822,7 @@ type Project struct {
 	OrgID          string    `json:"orgId"`
 	Name           string    `json:"name"`
 	Description    *string   `json:"description,omitempty"`
-	QuotaLimit     float64   `json:"quotaLimit"`
+	QuotaLimit     Money     `json:"quotaLimit"`
 	WhiteListedIps *string   `json:"whiteListedIps,omitempty"`
 	CreatedAt      time.Time `json:"createdAt"`
 }
@@ -954,7 +954,7 @@ type ProviderStats struct {
 	Tokens       int     `json:"tokens"`
 	SuccessRate  float64 `json:"successRate"`
 	AvgLatencyMs float64 `json:"avgLatencyMs"`
-	TotalCost    float64 `json:"totalCost"`
+	TotalCost    Money   `json:"totalCost"`
 }
 
 type ProviderTopologyNode struct {
@@ -964,11 +964,11 @@ type ProviderTopologyNode struct {
 }
 
 type ProviderUsage struct {
-	ProviderID   string  `json:"providerId"`
-	ProviderName string  `json:"providerName"`
-	Requests     int     `json:"requests"`
-	Tokens       int     `json:"tokens"`
-	Cost         float64 `json:"cost"`
+	ProviderID   string `json:"providerId"`
+	ProviderName string `json:"providerName"`
+	Requests     int    `json:"requests"`
+	Tokens       int    `json:"tokens"`
+	Cost         Money  `json:"cost"`
 }
 
 type ProxiesSummary struct {
@@ -1066,15 +1066,15 @@ type Query struct {
 }
 
 type QuotaInput struct {
-	MonthlyTokenLimit *int     `json:"monthlyTokenLimit,omitempty"`
-	MonthlyBudgetUsd  *float64 `json:"monthlyBudgetUsd,omitempty"`
+	MonthlyTokenLimit *int   `json:"monthlyTokenLimit,omitempty"`
+	MonthlyBudgetUsd  *Money `json:"monthlyBudgetUsd,omitempty"`
 }
 
 type RedeemCode struct {
 	ID           string     `json:"id"`
 	Code         string     `json:"code"`
 	Type         string     `json:"type"`
-	CreditAmount float64    `json:"creditAmount"`
+	CreditAmount Money      `json:"creditAmount"`
 	PlanID       *string    `json:"planId,omitempty"`
 	PlanDays     int        `json:"planDays"`
 	UsedBy       *string    `json:"usedBy,omitempty"`
@@ -1094,16 +1094,16 @@ type RedeemCodeConnection struct {
 type RedeemRecord struct {
 	ID           string    `json:"id"`
 	Code         string    `json:"code"`
-	CreditAmount float64   `json:"creditAmount"`
+	CreditAmount Money     `json:"creditAmount"`
 	PlanName     *string   `json:"planName,omitempty"`
 	RedeemedAt   time.Time `json:"redeemedAt"`
 }
 
 type RedeemResult struct {
-	Success      bool     `json:"success"`
-	Message      string   `json:"message"`
-	CreditAmount *float64 `json:"creditAmount,omitempty"`
-	PlanName     *string  `json:"planName,omitempty"`
+	Success      bool    `json:"success"`
+	Message      string  `json:"message"`
+	CreditAmount *Money  `json:"creditAmount,omitempty"`
+	PlanName     *string `json:"planName,omitempty"`
 }
 
 type RedisLoad struct {
@@ -1134,9 +1134,9 @@ type ResetPasswordInput struct {
 }
 
 type RevenueChartPoint struct {
-	Date         string  `json:"date"`
-	Revenue      float64 `json:"revenue"`
-	Transactions int     `json:"transactions"`
+	Date         string `json:"date"`
+	Revenue      Money  `json:"revenue"`
+	Transactions int    `json:"transactions"`
 }
 
 type RoutingRule struct {
@@ -1223,16 +1223,16 @@ type SystemSLA struct {
 }
 
 type SystemSettings struct {
-	RegistrationMode  string   `json:"registrationMode"`
-	DefaultTokenLimit *int     `json:"defaultTokenLimit,omitempty"`
-	DefaultBudgetUsd  *float64 `json:"defaultBudgetUsd,omitempty"`
-	Site              *string  `json:"site,omitempty"`
-	Security          *string  `json:"security,omitempty"`
-	Defaults          *string  `json:"defaults,omitempty"`
-	Email             *string  `json:"email,omitempty"`
-	Backup            *string  `json:"backup,omitempty"`
-	Payment           *string  `json:"payment,omitempty"`
-	Oauth             *string  `json:"oauth,omitempty"`
+	RegistrationMode  string  `json:"registrationMode"`
+	DefaultTokenLimit *int    `json:"defaultTokenLimit,omitempty"`
+	DefaultBudgetUsd  *Money  `json:"defaultBudgetUsd,omitempty"`
+	Site              *string `json:"site,omitempty"`
+	Security          *string `json:"security,omitempty"`
+	Defaults          *string `json:"defaults,omitempty"`
+	Email             *string `json:"email,omitempty"`
+	Backup            *string `json:"backup,omitempty"`
+	Payment           *string `json:"payment,omitempty"`
+	Oauth             *string `json:"oauth,omitempty"`
 }
 
 type SystemSettingsInput struct {
@@ -1311,10 +1311,10 @@ type UpdateProfileInput struct {
 }
 
 type UpdateProjectInput struct {
-	Name           *string  `json:"name,omitempty"`
-	Description    *string  `json:"description,omitempty"`
-	QuotaLimit     *float64 `json:"quotaLimit,omitempty"`
-	WhiteListedIps *string  `json:"whiteListedIps,omitempty"`
+	Name           *string `json:"name,omitempty"`
+	Description    *string `json:"description,omitempty"`
+	QuotaLimit     *Money  `json:"quotaLimit,omitempty"`
+	WhiteListedIps *string `json:"whiteListedIps,omitempty"`
 }
 
 type UpdateProviderAPIKeyInput struct {
@@ -1343,10 +1343,10 @@ type UpdateWebhookEndpointInput struct {
 }
 
 type UsageChartPoint struct {
-	Date     string  `json:"date"`
-	Requests int     `json:"requests"`
-	Tokens   int     `json:"tokens"`
-	Cost     float64 `json:"cost"`
+	Date     string `json:"date"`
+	Requests int    `json:"requests"`
+	Tokens   int    `json:"tokens"`
+	Cost     Money  `json:"cost"`
 }
 
 type UsageConnection struct {
@@ -1359,7 +1359,7 @@ type UsageRecord struct {
 	ModelName    string    `json:"modelName"`
 	InputTokens  int       `json:"inputTokens"`
 	OutputTokens int       `json:"outputTokens"`
-	Cost         float64   `json:"cost"`
+	Cost         Money     `json:"cost"`
 	LatencyMs    int       `json:"latencyMs"`
 	IsSuccess    bool      `json:"isSuccess"`
 	CreatedAt    time.Time `json:"createdAt"`
@@ -1369,7 +1369,7 @@ type UsageSummary struct {
 	TotalRequests int     `json:"totalRequests"`
 	SuccessRate   float64 `json:"successRate"`
 	TotalTokens   int     `json:"totalTokens"`
-	TotalCost     float64 `json:"totalCost"`
+	TotalCost     Money   `json:"totalCost"`
 }
 
 type User struct {
@@ -1380,8 +1380,8 @@ type User struct {
 	IsActive              bool       `json:"isActive"`
 	RequirePasswordChange bool       `json:"requirePasswordChange"`
 	MonthlyTokenLimit     *int       `json:"monthlyTokenLimit,omitempty"`
-	MonthlyBudgetUsd      *float64   `json:"monthlyBudgetUsd,omitempty"`
-	Balance               *float64   `json:"balance,omitempty"`
+	MonthlyBudgetUsd      *Money     `json:"monthlyBudgetUsd,omitempty"`
+	Balance               *Money     `json:"balance,omitempty"`
 	CreatedAt             time.Time  `json:"createdAt"`
 	LastLoginAt           *time.Time `json:"lastLoginAt,omitempty"`
 	MfaEnabled            bool       `json:"mfaEnabled"`
@@ -1402,7 +1402,7 @@ type UserDetail struct {
 	CreatedAt         time.Time         `json:"createdAt"`
 	APIKeys           int               `json:"apiKeys"`
 	MonthlyTokenLimit *int              `json:"monthlyTokenLimit,omitempty"`
-	MonthlyBudgetUsd  *float64          `json:"monthlyBudgetUsd,omitempty"`
+	MonthlyBudgetUsd  *Money            `json:"monthlyBudgetUsd,omitempty"`
 	MfaEnabled        bool              `json:"mfaEnabled"`
 	UsageMonth        *UserMonthlyUsage `json:"usageMonth,omitempty"`
 }
@@ -1427,7 +1427,7 @@ type UserListItem struct {
 type UserMonthlyUsage struct {
 	TotalRequests int     `json:"totalRequests"`
 	TotalTokens   int     `json:"totalTokens"`
-	TotalCost     float64 `json:"totalCost"`
+	TotalCost     Money   `json:"totalCost"`
 	AvgLatency    float64 `json:"avgLatency"`
 	SuccessRate   float64 `json:"successRate"`
 	ErrorCount    int     `json:"errorCount"`

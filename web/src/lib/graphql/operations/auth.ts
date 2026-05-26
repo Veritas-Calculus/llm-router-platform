@@ -6,7 +6,6 @@ export const LOGIN = gql`
   mutation Login($input: LoginInput!) {
     login(input: $input) {
       token
-      refreshToken
       user { id email name role isActive mfaEnabled emailVerified }
     }
   }
@@ -16,7 +15,6 @@ export const REGISTER = gql`
   mutation Register($input: RegisterInput!) {
     register(input: $input) {
       token
-      refreshToken
       user { id email name role isActive mfaEnabled emailVerified }
     }
   }
@@ -26,20 +24,18 @@ export const REFRESH_TOKEN = gql`
   mutation RefreshToken {
     refreshToken {
       token
-      refreshToken
       user { id email name role isActive mfaEnabled emailVerified }
     }
   }
 `;
 
-// ROTATE_REFRESH_TOKEN is the canonical refresh path. It validates the
-// refresh token's iat against the user's TokensInvalidatedAt server-side so
-// that logout / password change / admin reset actually revoke sessions.
+// ROTATE_REFRESH_TOKEN is the canonical refresh path. The refresh token is
+// carried by an HttpOnly cookie so browser JavaScript never reads or persists
+// it; the empty argument keeps the legacy schema signature compatible.
 export const ROTATE_REFRESH_TOKEN = gql`
-  mutation RotateRefreshToken($refreshToken: String!) {
-    rotateRefreshToken(refreshToken: $refreshToken) {
+  mutation RotateRefreshToken {
+    rotateRefreshToken(refreshToken: "") {
       token
-      refreshToken
       user { id email name role isActive mfaEnabled emailVerified }
     }
   }

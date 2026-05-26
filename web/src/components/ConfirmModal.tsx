@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -22,11 +23,18 @@ export default function ConfirmModal({
   onCancel,
   loading,
 }: ConfirmModalProps) {
+  const dialogRef = useDialogA11y<HTMLDivElement>(isOpen, onCancel);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div data-modal-root="true" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-modal-title"
+        ref={dialogRef}
+        tabIndex={-1}
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-md mx-4"
@@ -41,7 +49,7 @@ export default function ConfirmModal({
             />
           </div>
           <div className="flex-1">
-            <h3 className="text-lg font-semibold text-apple-gray-900">{title}</h3>
+            <h3 id="confirm-modal-title" className="text-lg font-semibold text-apple-gray-900">{title}</h3>
             <p className="mt-2 text-sm text-apple-gray-600">{message}</p>
           </div>
         </div>

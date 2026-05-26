@@ -228,8 +228,8 @@ func (d *Database) SeedDefaultModels() error {
 			ProviderID:       openaiProvider.ID,
 			Name:             "gpt-4",
 			DisplayName:      "GPT-4",
-			InputPricePer1K:  0.03,
-			OutputPricePer1K: 0.06,
+			InputPricePer1K:  models.MoneyFromString("0.03"),
+			OutputPricePer1K: models.MoneyFromString("0.06"),
 			MaxTokens:        8192,
 			IsActive:         true,
 		},
@@ -237,8 +237,8 @@ func (d *Database) SeedDefaultModels() error {
 			ProviderID:       openaiProvider.ID,
 			Name:             "gpt-4-turbo",
 			DisplayName:      "GPT-4 Turbo",
-			InputPricePer1K:  0.01,
-			OutputPricePer1K: 0.03,
+			InputPricePer1K:  models.MoneyFromString("0.01"),
+			OutputPricePer1K: models.MoneyFromString("0.03"),
 			MaxTokens:        128000,
 			IsActive:         true,
 		},
@@ -246,8 +246,8 @@ func (d *Database) SeedDefaultModels() error {
 			ProviderID:       openaiProvider.ID,
 			Name:             "gpt-3.5-turbo",
 			DisplayName:      "GPT-3.5 Turbo",
-			InputPricePer1K:  0.0005,
-			OutputPricePer1K: 0.0015,
+			InputPricePer1K:  models.MoneyFromString("0.0005"),
+			OutputPricePer1K: models.MoneyFromString("0.0015"),
 			MaxTokens:        16385,
 			IsActive:         true,
 		},
@@ -393,10 +393,18 @@ func (d *Database) ensureDefaultOrgProject(user *models.User) {
 	d.DB.Create(&models.Project{OrgID: org.ID, Name: "Default", Description: "Auto-created project"})
 
 	// Grant welcome credit
-	if user.Balance == 0 {
-		user.Balance = 5.0
-		d.DB.Model(user).UpdateColumn("balance", 5.0)
-		d.DB.Create(&models.Transaction{OrgID: org.ID, UserID: user.ID, Type: "recharge", Amount: 5.0, Balance: 5.0, Description: "Welcome credit", Currency: "USD"})
+	if user.Balance.IsZero() {
+		user.Balance = models.MoneyFromString("5.00")
+		d.DB.Model(user).UpdateColumn("balance", user.Balance)
+		d.DB.Create(&models.Transaction{
+			OrgID:       org.ID,
+			UserID:      user.ID,
+			Type:        "recharge",
+			Amount:      models.MoneyFromString("5.00"),
+			Balance:     models.MoneyFromString("5.00"),
+			Description: "Welcome credit",
+			Currency:    "USD",
+		})
 	}
 
 	d.logger.Info("created default org+project for user", zap.String("email", sanitize.MaskEmail(user.Email)), zap.String("orgId", org.ID.String()))

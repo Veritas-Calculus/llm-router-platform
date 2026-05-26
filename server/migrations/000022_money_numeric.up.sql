@@ -33,6 +33,12 @@
 -- low-traffic window. The new partial indexes from earlier migrations
 -- remain valid (NUMERIC is btree-orderable).
 
+-- Migration 000020 created this materialized view over usage_logs.cost /
+-- customer_charge / provider_cost. PostgreSQL will not alter a column type
+-- while a view depends on it, so rebuild the view after the money columns move
+-- to NUMERIC(20,8).
+DROP MATERIALIZED VIEW IF EXISTS usage_logs_daily_rollup;
+
 -- ── transactions ──
 ALTER TABLE transactions
     ALTER COLUMN amount  TYPE NUMERIC(20,8) USING amount::numeric,
@@ -86,3 +92,34 @@ ALTER TABLE models
 -- shopspring/decimal.Decimal at the boundary, then to Money scalar at the
 -- GraphQL layer. This DB-side migration is a strict superset of the
 -- float64 precision so it's safe to land independently.
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS usage_logs_daily_rollup AS
+SELECT
+    date_trunc('day', created_at)::date AS day,
+    project_id,
+    channel,
+    provider_id,
+    model_id,
+    model_name,
+    COUNT(*)                       AS request_count,
+    COALESCE(SUM(request_tokens),  0)::bigint AS request_tokens,
+    COALESCE(SUM(response_tokens), 0)::bigint AS response_tokens,
+    COALESCE(SUM(total_tokens),    0)::bigint AS total_tokens,
+    COALESCE(SUM(cost),            0)::numeric(20,8) AS cost,
+    COALESCE(SUM(customer_charge), 0)::numeric(20,8) AS customer_charge,
+    COALESCE(SUM(provider_cost),   0)::numeric(20,8) AS provider_cost,
+    COALESCE(AVG(latency),         0)::bigint AS avg_latency_ms,
+    COUNT(*) FILTER (WHERE status_code >= 200 AND status_code < 300) AS success_count,
+    COUNT(*) FILTER (WHERE status_code >= 500)                       AS server_error_count
+FROM usage_logs
+WHERE deleted_at IS NULL
+GROUP BY day, project_id, channel, provider_id, model_id, model_name;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_logs_daily_rollup_pk
+    ON usage_logs_daily_rollup (day, project_id, channel, provider_id, model_id, model_name);
+
+CREATE INDEX IF NOT EXISTS idx_usage_logs_daily_rollup_project_day
+    ON usage_logs_daily_rollup (project_id, day DESC);
+
+CREATE INDEX IF NOT EXISTS idx_usage_logs_daily_rollup_project_channel_day
+    ON usage_logs_daily_rollup (project_id, channel, day DESC);

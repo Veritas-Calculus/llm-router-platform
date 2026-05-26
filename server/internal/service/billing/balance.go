@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -52,15 +53,16 @@ func NewBalanceService(
 	}
 }
 
-// DeductBalance subtracts the cost of a request from the user's balance.
+// DeductBalanceMoney subtracts the cost of a request using decimal money.
 //
 // The deduction and the matching transaction record are committed atomically
 // under a row lock on the user. The low-balance alert is dispatched only
 // AFTER the transaction commits — sending it inside the closure would still
 // fire on rollback, producing false alerts. The lock acquisition is bounded
 // by lockTimeout so a stuck peer cannot pin a request goroutine indefinitely.
-func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, amount float64, description string, referenceID string) error {
-	if amount <= 0 {
+func (s *BalanceService) DeductBalanceMoney(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, description string, referenceID string) error {
+	amount = amount.Round(models.MoneyScale)
+	if !amount.IsPositive() {
 		return nil
 	}
 
@@ -70,7 +72,7 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 	var (
 		alertEmail   string
 		alertName    string
-		alertBalance float64
+		alertBalance decimal.Decimal
 		shouldAlert  bool
 	)
 
@@ -83,12 +85,12 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 		// Refuse to overdraft so the new CHECK (balance >= 0) constraint
 		// never aborts a billing transaction mid-write. Callers should
 		// gate on GetBalance / quotas; this is the last-line guard.
-		newBalance := roundCost(user.Balance - amount)
-		if newBalance < 0 {
+		newBalance := models.MoneySub(user.Balance, amount)
+		if newBalance.IsNegative() {
 			return ErrInsufficientBalance
 		}
 		user.Balance = newBalance
-		if err := tx.Save(&user).Error; err != nil {
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("balance", user.Balance).Error; err != nil {
 			return err
 		}
 
@@ -96,7 +98,7 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 			OrgID:       userID,
 			UserID:      userID,
 			Type:        "deduction",
-			Amount:      roundCost(-amount),
+			Amount:      models.MoneyNeg(amount),
 			Balance:     user.Balance,
 			Description: description,
 			ReferenceID: referenceID,
@@ -106,7 +108,7 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 			return err
 		}
 
-		if user.Balance < 1.0 {
+		if user.Balance.Cmp(lowBalanceThreshold) < 0 {
 			alertEmail = user.Email
 			alertName = user.Name
 			alertBalance = user.Balance
@@ -128,8 +130,8 @@ func (s *BalanceService) DeductBalance(ctx context.Context, userID uuid.UUID, am
 	return nil
 }
 
-// AddBalance adds credits to the user's balance (recharge or refund).
-func (s *BalanceService) AddBalance(ctx context.Context, userID uuid.UUID, amount float64, txType string, description string, referenceID string) error {
+// AddBalanceMoney adds decimal credits to the user's balance.
+func (s *BalanceService) AddBalanceMoney(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, txType string, description string, referenceID string) error {
 	return s.addBalance(ctx, userID, amount, txType, description, referenceID, "")
 }
 
@@ -138,12 +140,13 @@ func (s *BalanceService) AddBalance(ctx context.Context, userID uuid.UUID, amoun
 // id, e.g. Stripe evt_…, WeChat transaction_id, Alipay trade_no — is rejected
 // by the partial unique index on transactions(idempotency_key) and surfaces as
 // a no-op (returns nil so the webhook can ack the duplicate retry).
-func (s *BalanceService) AddBalanceIdempotent(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID, idempotencyKey string) error {
+func (s *BalanceService) AddBalanceMoneyIdempotent(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, txType, description, referenceID, idempotencyKey string) error {
 	return s.addBalance(ctx, userID, amount, txType, description, referenceID, idempotencyKey)
 }
 
-func (s *BalanceService) addBalance(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID, idempotencyKey string) error {
-	if amount <= 0 {
+func (s *BalanceService) addBalance(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, txType, description, referenceID, idempotencyKey string) error {
+	amount = amount.Round(models.MoneyScale)
+	if !amount.IsPositive() {
 		return fmt.Errorf("amount must be positive")
 	}
 
@@ -156,8 +159,8 @@ func (s *BalanceService) addBalance(ctx context.Context, userID uuid.UUID, amoun
 			return err
 		}
 
-		user.Balance = roundCost(user.Balance + amount)
-		if err := tx.Save(&user).Error; err != nil {
+		user.Balance = models.MoneyAdd(user.Balance, amount)
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("balance", user.Balance).Error; err != nil {
 			return err
 		}
 
@@ -165,7 +168,7 @@ func (s *BalanceService) addBalance(ctx context.Context, userID uuid.UUID, amoun
 			OrgID:       userID,
 			UserID:      userID,
 			Type:        txType,
-			Amount:      roundCost(amount),
+			Amount:      amount,
 			Balance:     user.Balance,
 			Description: description,
 			ReferenceID: referenceID,
@@ -200,19 +203,22 @@ func isDuplicateIdempotencyKey(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := err.Error()
+	msg := strings.ToLower(err.Error())
 	if !strings.Contains(msg, "idempotency_key") {
 		return false
 	}
-	return strings.Contains(msg, "duplicate key") || strings.Contains(msg, "23505")
+	return strings.Contains(msg, "duplicate key") ||
+		strings.Contains(msg, "23505") ||
+		strings.Contains(msg, "unique constraint failed")
 }
 
-func (s *BalanceService) GetBalance(ctx context.Context, userID uuid.UUID) (float64, error) {
+// GetBalanceMoney returns the user's balance without converting it through float64.
+func (s *BalanceService) GetBalanceMoney(ctx context.Context, userID uuid.UUID) (decimal.Decimal, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
-		return 0, err
+		return decimal.Zero, err
 	}
-	return user.Balance, nil
+	return user.Balance.Round(models.MoneyScale), nil
 }
 
 func (s *BalanceService) GetTransactions(ctx context.Context, userID uuid.UUID, limit, offset int) ([]models.Transaction, int64, error) {

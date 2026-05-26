@@ -8,6 +8,7 @@ import ModelTable from '@/components/providers/ModelTable';
 import LocalProviderCard from '@/components/providers/LocalProviderCard';
 import ProxyTopologyGraph from '@/components/providers/ProxyTopologyGraph';
 import { useProviders } from '@/hooks/useProviders';
+import { useDialogA11y } from '@/hooks/useDialogA11y';
 import { useTranslation } from '@/lib/i18n';
 import toast from 'react-hot-toast';
 
@@ -68,6 +69,7 @@ function AddProviderModal({
   const [apiKeyAlias, setApiKeyAlias] = useState('');
   const [validateConnection, setValidateConnection] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const dialogRef = useDialogA11y<HTMLDivElement>(open, onClose);
 
   const isCustom = selected === '__custom__';
 
@@ -132,6 +134,7 @@ function AddProviderModal({
   return (
     <AnimatePresence>
       <motion.div
+        data-modal-root="true"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -139,6 +142,11 @@ function AddProviderModal({
         onClick={onClose}
       >
         <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-provider-title"
+          ref={dialogRef}
+          tabIndex={-1}
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -147,10 +155,10 @@ function AddProviderModal({
           onClick={(e) => e.stopPropagation()}
         >
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-apple-gray-900">
+              <h2 id="add-provider-title" className="text-lg font-semibold text-apple-gray-900">
                 {t('providers.addProvider')}
               </h2>
-              <button onClick={onClose} className="p-1 rounded-lg hover:bg-apple-gray-100 transition-colors">
+              <button onClick={onClose} aria-label={t('common.close')} className="p-1 rounded-lg hover:bg-apple-gray-100 transition-colors">
                 <XMarkIcon className="w-5 h-5 text-apple-gray-500" />
               </button>
             </div>

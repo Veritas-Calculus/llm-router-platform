@@ -375,7 +375,8 @@ func (l *AuthRateLimiter) Limit() gin.HandlerFunc {
 		}
 
 		key := fmt.Sprintf("auth_ratelimit:%s", ip)
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(c.Request.Context(), rateLimitRedisTimeout)
+		defer cancel()
 
 		count, err := l.redisClient.Incr(ctx, key).Result()
 		if err != nil {

@@ -14,9 +14,56 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 const allowLocalProviderURLs = true
+
+func applyModelMoneyInputs(m *models.Model, input model.ModelInput) error {
+	setMoney := func(dst *decimal.Decimal, value *model.Money, label string) error {
+		if value == nil {
+			return nil
+		}
+		parsed, err := value.Decimal()
+		if err != nil {
+			return fmt.Errorf("invalid %s: %w", label, err)
+		}
+		*dst = parsed.Round(models.MoneyScale)
+		return nil
+	}
+
+	if err := setMoney(&m.InputPricePer1K, input.InputPricePer1k, "input price per 1k"); err != nil {
+		return err
+	}
+	if err := setMoney(&m.OutputPricePer1K, input.OutputPricePer1k, "output price per 1k"); err != nil {
+		return err
+	}
+	if err := setMoney(&m.PricePerSecond, input.PricePerSecond, "price per second"); err != nil {
+		return err
+	}
+	if err := setMoney(&m.PricePerImage, input.PricePerImage, "price per image"); err != nil {
+		return err
+	}
+	if err := setMoney(&m.PricePerMinute, input.PricePerMinute, "price per minute"); err != nil {
+		return err
+	}
+	if err := setMoney(&m.ProviderInputCostPer1K, input.ProviderInputCostPer1k, "provider input cost per 1k"); err != nil {
+		return err
+	}
+	if err := setMoney(&m.ProviderOutputCostPer1K, input.ProviderOutputCostPer1k, "provider output cost per 1k"); err != nil {
+		return err
+	}
+	if err := setMoney(&m.ProviderCostPerSecond, input.ProviderCostPerSecond, "provider cost per second"); err != nil {
+		return err
+	}
+	if err := setMoney(&m.ProviderCostPerImage, input.ProviderCostPerImage, "provider cost per image"); err != nil {
+		return err
+	}
+	if err := setMoney(&m.ProviderCostPerMinute, input.ProviderCostPerMinute, "provider cost per minute"); err != nil {
+		return err
+	}
+	return nil
+}
 
 // CreateProvider is the resolver for the createProvider field.
 func (r *mutationResolver) CreateProvider(ctx context.Context, input model.CreateProviderInput) (*model.Provider, error) {
@@ -280,35 +327,8 @@ func (r *mutationResolver) CreateModel(ctx context.Context, providerID string, i
 		IsActive:    derefBool(input.IsActive, true),
 		MaxTokens:   valInt(input.MaxTokens, 4096),
 	}
-	if input.InputPricePer1k != nil {
-		m.InputPricePer1K = *input.InputPricePer1k
-	}
-	if input.OutputPricePer1k != nil {
-		m.OutputPricePer1K = *input.OutputPricePer1k
-	}
-	if input.PricePerSecond != nil {
-		m.PricePerSecond = *input.PricePerSecond
-	}
-	if input.PricePerImage != nil {
-		m.PricePerImage = *input.PricePerImage
-	}
-	if input.PricePerMinute != nil {
-		m.PricePerMinute = *input.PricePerMinute
-	}
-	if input.ProviderInputCostPer1k != nil {
-		m.ProviderInputCostPer1K = *input.ProviderInputCostPer1k
-	}
-	if input.ProviderOutputCostPer1k != nil {
-		m.ProviderOutputCostPer1K = *input.ProviderOutputCostPer1k
-	}
-	if input.ProviderCostPerSecond != nil {
-		m.ProviderCostPerSecond = *input.ProviderCostPerSecond
-	}
-	if input.ProviderCostPerImage != nil {
-		m.ProviderCostPerImage = *input.ProviderCostPerImage
-	}
-	if input.ProviderCostPerMinute != nil {
-		m.ProviderCostPerMinute = *input.ProviderCostPerMinute
+	if err := applyModelMoneyInputs(&m, input); err != nil {
+		return nil, err
 	}
 	if err := r.AdminSvc.DB().Create(&m).Error; err != nil {
 		return nil, fmt.Errorf("failed to create model: %w", err)
@@ -336,35 +356,8 @@ func (r *mutationResolver) UpdateModel(ctx context.Context, id string, input mod
 	if input.IsActive != nil {
 		m.IsActive = *input.IsActive
 	}
-	if input.InputPricePer1k != nil {
-		m.InputPricePer1K = *input.InputPricePer1k
-	}
-	if input.OutputPricePer1k != nil {
-		m.OutputPricePer1K = *input.OutputPricePer1k
-	}
-	if input.PricePerSecond != nil {
-		m.PricePerSecond = *input.PricePerSecond
-	}
-	if input.PricePerImage != nil {
-		m.PricePerImage = *input.PricePerImage
-	}
-	if input.PricePerMinute != nil {
-		m.PricePerMinute = *input.PricePerMinute
-	}
-	if input.ProviderInputCostPer1k != nil {
-		m.ProviderInputCostPer1K = *input.ProviderInputCostPer1k
-	}
-	if input.ProviderOutputCostPer1k != nil {
-		m.ProviderOutputCostPer1K = *input.ProviderOutputCostPer1k
-	}
-	if input.ProviderCostPerSecond != nil {
-		m.ProviderCostPerSecond = *input.ProviderCostPerSecond
-	}
-	if input.ProviderCostPerImage != nil {
-		m.ProviderCostPerImage = *input.ProviderCostPerImage
-	}
-	if input.ProviderCostPerMinute != nil {
-		m.ProviderCostPerMinute = *input.ProviderCostPerMinute
+	if err := applyModelMoneyInputs(&m, input); err != nil {
+		return nil, err
 	}
 	if err := r.AdminSvc.DB().Save(&m).Error; err != nil {
 		return nil, fmt.Errorf("failed to update model: %w", err)

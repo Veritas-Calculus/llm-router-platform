@@ -15,6 +15,7 @@ import {
 import { useQuery, useMutation } from '@apollo/client/react';
 import { USER_DETAIL_QUERY, TOGGLE_USER, UPDATE_USER_ROLE, UPDATE_USER_QUOTA } from '@/lib/graphql/operations';
 import { useTranslation } from '@/lib/i18n';
+import { formatUSD, formatUSDPrecise, moneyNumber } from '@/lib/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -33,15 +34,15 @@ function UserDetailPage() {
         return {
             ...u, name: u.name, email: u.email, role: u.role, is_active: u.isActive,
             created_at: u.createdAt, api_keys: u.apiKeys ?? u.apiKeyCount ?? 0,
-            monthly_token_limit: u.monthlyTokenLimit || 0, monthly_budget_usd: u.monthlyBudgetUsd || 0,
+            monthly_token_limit: u.monthlyTokenLimit || 0, monthly_budget_usd: u.monthlyBudgetUsd || '0',
             usage_month: u.usageMonth ? {
                 total_requests: u.usageMonth.totalRequests, total_tokens: u.usageMonth.totalTokens,
-                total_cost: u.usageMonth.totalCost, success_rate: u.usageMonth.successRate,
+                total_cost: moneyNumber(u.usageMonth.totalCost), success_rate: u.usageMonth.successRate,
             } : null,
         };
     }, [data]);
     const usage = useMemo(() =>
-        (data?.userUsage || []).map((d: any) => ({ date: d.date, requests: d.requests, tokens: d.totalTokens, cost: d.totalCost })),
+        (data?.userUsage || []).map((d: any) => ({ date: d.date, requests: d.requests, tokens: d.totalTokens, cost: moneyNumber(d.totalCost) })),
     [data]);
     const apiKeys = useMemo(() =>
         (data?.userApiKeys || []).map((k: any) => ({
@@ -87,7 +88,7 @@ function UserDetailPage() {
         if (!id) return;
         try {
             await updateQuotaMut({
-                variables: { id, input: { monthlyTokenLimit: parseInt(tokenLimit) || 0, monthlyBudgetUsd: parseFloat(budgetLimit) || 0 } },
+                variables: { id, input: { monthlyTokenLimit: parseInt(tokenLimit) || 0, monthlyBudgetUsd: budgetLimit.trim() || '0' } },
             });
             toast.success('Quota updated');
             refetch();
@@ -118,8 +119,9 @@ function UserDetailPage() {
     const tokenUsagePct = user.monthly_token_limit > 0
         ? Math.min(100, ((user.usage_month?.total_tokens || 0) / user.monthly_token_limit) * 100)
         : 0;
-    const budgetUsagePct = user.monthly_budget_usd > 0
-        ? Math.min(100, ((user.usage_month?.total_cost || 0) / user.monthly_budget_usd) * 100)
+    const monthlyBudgetUSD = moneyNumber(user.monthly_budget_usd);
+    const budgetUsagePct = monthlyBudgetUSD > 0
+        ? Math.min(100, (moneyNumber(user.usage_month?.total_cost) / monthlyBudgetUSD) * 100)
         : 0;
 
     const stats = [
@@ -137,7 +139,7 @@ function UserDetailPage() {
         },
         {
             label: 'Cost (Month)',
-            value: `$${(user.usage_month?.total_cost || 0).toFixed(4)}`,
+            value: formatUSDPrecise(user.usage_month?.total_cost || 0),
             icon: CurrencyDollarIcon,
             color: 'text-green-600 bg-green-50',
         },
@@ -262,11 +264,11 @@ function UserDetailPage() {
                             min={0}
                             step={0.01}
                         />
-                        {user.monthly_budget_usd > 0 && (
+                        {monthlyBudgetUSD > 0 && (
                             <div className="mt-2">
                                 <div className="flex justify-between text-xs text-apple-gray-500 mb-1">
-                                    <span>${(user.usage_month?.total_cost || 0).toFixed(4)} used</span>
-                                    <span>${user.monthly_budget_usd.toFixed(2)} limit</span>
+                                    <span>{formatUSDPrecise(user.usage_month?.total_cost || 0)} used</span>
+                                    <span>{formatUSD(user.monthly_budget_usd)} limit</span>
                                 </div>
                                 <div className="h-2 bg-apple-gray-100 rounded-full overflow-hidden">
                                     <div

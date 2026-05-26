@@ -447,6 +447,87 @@ func TestSetStrategy(t *testing.T) {
 	assert.Equal(t, StrategyLeastLatency, r.strategy)
 }
 
+func TestSelectRoundRobin_StartsWithFirstProvider(t *testing.T) {
+	r := newTestRouter(&mockProviderRepo{}, nil)
+	providers := []models.Provider{
+		{Name: "first"},
+		{Name: "second"},
+		{Name: "third"},
+	}
+
+	assert.Equal(t, "first", r.selectRoundRobin(providers).Name)
+	assert.Equal(t, "second", r.selectRoundRobin(providers).Name)
+	assert.Equal(t, "third", r.selectRoundRobin(providers).Name)
+	assert.Equal(t, "first", r.selectRoundRobin(providers).Name)
+}
+
+func TestRoute_RoutingRuleWithoutFallbackIsAuthoritative(t *testing.T) {
+	targetID := uuid.New()
+	lowerPriorityID := uuid.New()
+	repo := &mockProviderRepo{
+		providers: []models.Provider{
+			{BaseModel: models.BaseModel{ID: targetID}, Name: "target", IsActive: true, RequiresAPIKey: false},
+			{BaseModel: models.BaseModel{ID: lowerPriorityID}, Name: "lower-priority", IsActive: true, RequiresAPIKey: false},
+		},
+	}
+	r := newTestRouter(repo, nil)
+	r.routingRuleRepo = &mockRoutingRuleRepo{rules: []models.RoutingRule{
+		{
+			TargetProviderID: targetID,
+			ModelPattern:     "gpt-*",
+			Priority:         100,
+			IsEnabled:        true,
+		},
+		{
+			TargetProviderID: lowerPriorityID,
+			ModelPattern:     "gpt-*",
+			Priority:         10,
+			IsEnabled:        true,
+		},
+	}}
+
+	for i := 0; i < DefaultCircuitBreakerConfig().FailureThreshold; i++ {
+		r.MarkProviderFailure(targetID)
+	}
+
+	p, key, err := r.Route(context.Background(), "gpt-4")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "routing rule target provider is unavailable")
+	assert.Nil(t, p)
+	assert.Nil(t, key)
+}
+
+func TestRoute_RoutingRuleFallbackCanServeWhenTargetUnavailable(t *testing.T) {
+	targetID := uuid.New()
+	fallbackID := uuid.New()
+	repo := &mockProviderRepo{
+		providers: []models.Provider{
+			{BaseModel: models.BaseModel{ID: targetID}, Name: "target", IsActive: true, RequiresAPIKey: false},
+			{BaseModel: models.BaseModel{ID: fallbackID}, Name: "fallback", IsActive: true, RequiresAPIKey: false},
+		},
+	}
+	r := newTestRouter(repo, nil)
+	r.routingRuleRepo = &mockRoutingRuleRepo{rules: []models.RoutingRule{
+		{
+			TargetProviderID:   targetID,
+			FallbackProviderID: &fallbackID,
+			ModelPattern:       "gpt-*",
+			Priority:           100,
+			IsEnabled:          true,
+		},
+	}}
+
+	for i := 0; i < DefaultCircuitBreakerConfig().FailureThreshold; i++ {
+		r.MarkProviderFailure(targetID)
+	}
+
+	p, key, err := r.Route(context.Background(), "gpt-4")
+	require.NoError(t, err)
+	require.NotNil(t, p)
+	assert.Equal(t, "fallback", p.Name)
+	assert.Nil(t, key)
+}
+
 func TestRoute_MultipleProviders_WeightedStrategy(t *testing.T) {
 	pid1 := uuid.New()
 	pid2 := uuid.New()

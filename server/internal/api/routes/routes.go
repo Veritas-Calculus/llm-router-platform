@@ -8,6 +8,7 @@ import (
 	"net/http/pprof"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 
 	"llm-router-platform/internal/api/handlers"
 	"llm-router-platform/internal/api/middleware"
@@ -238,10 +239,10 @@ func Setup(
 		// only enforces when the user has an active budget with
 		// EnforceHardLimit=true; soft alerts continue to fire from the
 		// usual budget-status read paths.
-		quotaChecker.WithBudget(func(ctx context.Context, userID uuid.UUID) (bool, bool, float64, float64, error) {
+		quotaChecker.WithBudgetMoney(func(ctx context.Context, userID uuid.UUID) (bool, bool, decimal.Decimal, decimal.Decimal, error) {
 			status, err := services.BudgetService.CheckBudget(ctx, userID)
 			if err != nil || status == nil || status.Budget == nil {
-				return false, false, 0, 0, err
+				return false, false, decimal.Zero, decimal.Zero, err
 			}
 			return status.Budget.EnforceHardLimit, status.IsOverBudget, status.Budget.MonthlyLimitUSD, status.CurrentSpend, nil
 		})

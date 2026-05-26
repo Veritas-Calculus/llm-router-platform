@@ -7,6 +7,7 @@ import (
 	"llm-router-platform/internal/models"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -128,7 +129,7 @@ func (r *SubscriptionRepository) UpdateOrder(ctx context.Context, order *models.
 	return r.db.WithContext(ctx).Save(order).Error
 }
 
-func (r *SubscriptionRepository) UpdateUserBalance(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID string) error {
+func (r *SubscriptionRepository) UpdateUserBalance(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, txType, description, referenceID string) error {
 	return r.UpdateUserBalanceIdempotent(ctx, userID, amount, txType, description, referenceID, "")
 }
 
@@ -137,15 +138,16 @@ func (r *SubscriptionRepository) UpdateUserBalance(ctx context.Context, userID u
 // the signal that this exact credit was already applied (Stripe redelivery,
 // WeChat double-notify, Alipay async retry); we swallow it so the upstream
 // gets a 2xx and stops retrying.
-func (r *SubscriptionRepository) UpdateUserBalanceIdempotent(ctx context.Context, userID uuid.UUID, amount float64, txType, description, referenceID, idempotencyKey string) error {
+func (r *SubscriptionRepository) UpdateUserBalanceIdempotent(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, txType, description, referenceID, idempotencyKey string) error {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user models.User
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, "id = ?", userID).Error; err != nil {
 			return err
 		}
 
-		user.Balance += amount
-		if err := tx.Save(&user).Error; err != nil {
+		amount = amount.Round(models.MoneyScale)
+		user.Balance = models.MoneyAdd(user.Balance, amount)
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("balance", user.Balance).Error; err != nil {
 			return err
 		}
 
@@ -174,11 +176,13 @@ func isDuplicateTxIdempotency(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := err.Error()
+	msg := strings.ToLower(err.Error())
 	if !strings.Contains(msg, "idempotency_key") {
 		return false
 	}
-	return strings.Contains(msg, "duplicate key") || strings.Contains(msg, "23505")
+	return strings.Contains(msg, "duplicate key") ||
+		strings.Contains(msg, "23505") ||
+		strings.Contains(msg, "unique constraint failed")
 }
 
 // FulfillRechargeOrder credits the user's balance and marks the order paid
@@ -187,14 +191,15 @@ func isDuplicateTxIdempotency(err error) bool {
 // paid-but-unrecorded order (which would re-credit on the upstream's next
 // retry). The idempotency key on the transaction insert is the last-line
 // guard against duplicate credits.
-func (r *SubscriptionRepository) FulfillRechargeOrder(ctx context.Context, userID uuid.UUID, amount float64, txType, description string, order *models.Order, idempotencyKey string) error {
+func (r *SubscriptionRepository) FulfillRechargeOrder(ctx context.Context, userID uuid.UUID, amount decimal.Decimal, txType, description string, order *models.Order, idempotencyKey string) error {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user models.User
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, "id = ?", userID).Error; err != nil {
 			return err
 		}
-		user.Balance += amount
-		if err := tx.Save(&user).Error; err != nil {
+		amount = amount.Round(models.MoneyScale)
+		user.Balance = models.MoneyAdd(user.Balance, amount)
+		if err := tx.Model(&models.User{}).Where("id = ?", userID).Update("balance", user.Balance).Error; err != nil {
 			return err
 		}
 
@@ -278,7 +283,7 @@ func (r *TransactionRepository) GetByUserID(ctx context.Context, userID uuid.UUI
 	var total int64
 
 	query := r.db.WithContext(ctx).Model(&models.Transaction{}).Where("user_id = ?", userID)
-	
+
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}

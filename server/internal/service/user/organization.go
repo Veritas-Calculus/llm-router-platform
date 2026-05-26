@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"llm-router-platform/internal/models"
@@ -17,6 +18,13 @@ import (
 // RequireOrgRole checks if userID has at least one of the allowed roles in orgID.
 // Global admins bypass org-level checks for management flexibility.
 func (s *Service) RequireOrgRole(ctx context.Context, userID, orgID string, allowedRoles ...string) error {
+	// Platform admins are operator-level users and intentionally bypass org
+	// membership checks. Do this before looking up organization_members so
+	// admins can operate across tenants without synthetic memberships.
+	if s.isPlatformAdmin(ctx, userID) {
+		return nil
+	}
+
 	var member struct{ Role string }
 	err := s.orgRepo.DB().Table("organization_members").
 		Select("role").
@@ -30,18 +38,20 @@ func (s *Service) RequireOrgRole(ctx context.Context, userID, orgID string, allo
 	}
 
 	for _, role := range allowedRoles {
-		if member.Role == role || member.Role == "OWNER" {
+		if strings.EqualFold(member.Role, role) || strings.EqualFold(member.Role, "OWNER") {
 			return nil
 		}
 	}
 
-	// Global admins bypass org-level checks
-	var u struct{ Role string }
-	if err := s.orgRepo.DB().Table("users").Select("role").Where("id = ?", userID).First(&u).Error; err == nil && u.Role == "admin" {
-		return nil
-	}
-
 	return fmt.Errorf("forbidden: requires one of %v roles", allowedRoles)
+}
+
+func (s *Service) isPlatformAdmin(ctx context.Context, userID string) bool {
+	var u struct{ Role string }
+	if err := s.orgRepo.DB().Table("users").Select("role").Where("id = ?", userID).First(&u).Error; err == nil && strings.EqualFold(u.Role, "admin") {
+		return true
+	}
+	return false
 }
 
 // RequireProjectRole checks if the user has a sufficient role in the org that owns the project.

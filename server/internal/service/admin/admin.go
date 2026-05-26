@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -700,17 +701,19 @@ func (s *Service) TotalUserCount(ctx context.Context) int64 {
 }
 
 // RevenueStats returns total revenue and period revenue from completed paid orders.
-func (s *Service) RevenueStats(ctx context.Context, periodStart time.Time) (totalRevenue, periodRevenue float64) {
+func (s *Service) RevenueStats(ctx context.Context, periodStart time.Time) (totalRevenue, periodRevenue decimal.Decimal) {
+	var totalRevenueMoney decimal.Decimal
+	var periodRevenueMoney decimal.Decimal
 	s.db.WithContext(ctx).Model(&models.Order{}).
 		Where("status = ?", "paid").
 		Where("amount > 0").
-		Select("COALESCE(SUM(amount), 0)").Scan(&totalRevenue)
+		Select("COALESCE(SUM(amount), 0)").Scan(&totalRevenueMoney)
 	s.db.WithContext(ctx).Model(&models.Order{}).
 		Where("status = ?", "paid").
 		Where("amount > 0").
 		Where("COALESCE(updated_at, created_at) >= ?", periodStart).
-		Select("COALESCE(SUM(amount), 0)").Scan(&periodRevenue)
-	return
+		Select("COALESCE(SUM(amount), 0)").Scan(&periodRevenueMoney)
+	return totalRevenueMoney.Round(models.MoneyScale), periodRevenueMoney.Round(models.MoneyScale)
 }
 
 // ─── Audit / Error Logs ─────────────────────────────────────────────────
