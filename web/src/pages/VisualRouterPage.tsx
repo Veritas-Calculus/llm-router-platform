@@ -11,6 +11,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { GET_ROUTING_RULES } from '@/lib/graphql/operations/routingRules';
 import { PROVIDERS_QUERY } from '@/lib/graphql/operations';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -32,6 +33,7 @@ function getProviderColor(index: number) {
 // ─── Provider Node Card ─────────────────────────────────────────────
 
 function ProviderNode({ provider, index, ruleCount }: { provider: any; index: number; ruleCount: number }) {
+  const { t } = useTranslation();
   const c = getProviderColor(index);
   const weightPct = Math.min(100, Math.round((provider.weight || 1) * 100));
 
@@ -59,7 +61,7 @@ function ProviderNode({ provider, index, ruleCount }: { provider: any; index: nu
 
       <div className="space-y-2">
         <div className="flex items-center justify-between text-xs">
-          <span className="text-apple-gray-500">Weight</span>
+          <span className="text-apple-gray-500">{t('visual_router.weight')}</span>
           <span className={`font-semibold ${c.text}`}>{provider.weight?.toFixed(1) ?? '1.0'}</span>
         </div>
         <div className="w-full bg-white/60 rounded-full h-1.5">
@@ -67,11 +69,11 @@ function ProviderNode({ provider, index, ruleCount }: { provider: any; index: nu
         </div>
 
         <div className="flex items-center justify-between text-xs mt-2">
-          <span className="text-apple-gray-500">Priority</span>
+          <span className="text-apple-gray-500">{t('visual_router.priority')}</span>
           <span className={`font-medium ${c.text}`}>{provider.priority ?? 0}</span>
         </div>
         <div className="flex items-center justify-between text-xs">
-          <span className="text-apple-gray-500">Routes</span>
+          <span className="text-apple-gray-500">{t('visual_router.routes')}</span>
           <span className={`font-medium ${c.text}`}>{ruleCount}</span>
         </div>
       </div>
@@ -82,6 +84,7 @@ function ProviderNode({ provider, index, ruleCount }: { provider: any; index: nu
 // ─── Rule Row ───────────────────────────────────────────────────────
 
 function RuleRow({ rule, providerMap, providerColorMap }: { rule: any; providerMap: Map<string, any>; providerColorMap: Map<string, number> }) {
+  const { t } = useTranslation();
   const target = providerMap.get(rule.targetProviderId);
   const fallback = rule.fallbackProviderId ? providerMap.get(rule.fallbackProviderId) : null;
   const tc = getProviderColor(providerColorMap.get(rule.targetProviderId) ?? 0);
@@ -108,7 +111,7 @@ function RuleRow({ rule, providerMap, providerColorMap }: { rule: any; providerM
       {/* Target */}
       <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${tc.bg} ${tc.text} ${tc.border} border`}>
         <span className={`w-1.5 h-1.5 rounded-full ${tc.dot}`} />
-        {target?.name || 'Unknown'}
+        {target?.name || t('visual_router.unknown_provider')}
       </span>
 
       {/* Fallback */}
@@ -116,7 +119,7 @@ function RuleRow({ rule, providerMap, providerColorMap }: { rule: any; providerM
         <>
           <div className="flex items-center gap-1 text-xs text-apple-gray-400">
             <ArrowPathIcon className="w-3 h-3" />
-            <span>fallback</span>
+            <span>{t('visual_router.fallback')}</span>
           </div>
           <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${fc.bg} ${fc.text} ${fc.border} border`}>
             <span className={`w-1.5 h-1.5 rounded-full ${fc.dot}`} />
@@ -138,7 +141,7 @@ function RuleRow({ rule, providerMap, providerColorMap }: { rule: any; providerM
             : 'bg-apple-gray-100 text-apple-gray-500'
         }`}
       >
-        {rule.isEnabled ? 'Active' : 'Disabled'}
+        {rule.isEnabled ? t('visual_router.rule_active') : t('visual_router.rule_disabled')}
       </span>
     </motion.div>
   );
@@ -147,6 +150,7 @@ function RuleRow({ rule, providerMap, providerColorMap }: { rule: any; providerM
 // ─── Main Page ──────────────────────────────────────────────────────
 
 function VisualRouterPage() {
+  const { t } = useTranslation();
   const { data: providersData, loading: provLoading, refetch: refetchProviders } = useQuery<any>(PROVIDERS_QUERY);
   const { data: rulesData, loading: rulesLoading, refetch: refetchRules } = useQuery<any>(GET_ROUTING_RULES, {
     variables: { page: 1, pageSize: 200 },
@@ -199,9 +203,9 @@ function VisualRouterPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-apple-gray-900">Visual Router</h1>
+          <h1 className="text-2xl font-semibold text-apple-gray-900">{t('visual_router.title')}</h1>
           <p className="text-apple-gray-500 mt-1">
-            Real-time routing topology and load distribution overview
+            {t('visual_router.subtitle')}
           </p>
         </div>
         <button
@@ -215,21 +219,21 @@ function VisualRouterPage() {
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="card p-4">
-          <div className="text-xs text-apple-gray-500 mb-1">Total Providers</div>
+          <div className="text-xs text-apple-gray-500 mb-1">{t('visual_router.total_providers')}</div>
           <div className="text-2xl font-semibold text-apple-gray-900">{providers.length}</div>
         </div>
         <div className="card p-4">
-          <div className="text-xs text-apple-gray-500 mb-1">Active Providers</div>
+          <div className="text-xs text-apple-gray-500 mb-1">{t('visual_router.active_providers')}</div>
           <div className="text-2xl font-semibold text-apple-green">
             {providers.filter((p) => p.isActive).length}
           </div>
         </div>
         <div className="card p-4">
-          <div className="text-xs text-apple-gray-500 mb-1">Routing Rules</div>
+          <div className="text-xs text-apple-gray-500 mb-1">{t('visual_router.routing_rules')}</div>
           <div className="text-2xl font-semibold text-apple-gray-900">{rules.length}</div>
         </div>
         <div className="card p-4">
-          <div className="text-xs text-apple-gray-500 mb-1">Active Rules</div>
+          <div className="text-xs text-apple-gray-500 mb-1">{t('visual_router.active_rules')}</div>
           <div className="text-2xl font-semibold text-apple-blue">
             {rules.filter((r: any) => r.isEnabled).length}
           </div>
@@ -238,7 +242,7 @@ function VisualRouterPage() {
 
       {/* Flow Diagram: Request → Router → Providers */}
       <div className="card p-6">
-        <h2 className="text-lg font-semibold text-apple-gray-900 mb-6">Traffic Flow</h2>
+        <h2 className="text-lg font-semibold text-apple-gray-900 mb-6">{t('visual_router.traffic_flow')}</h2>
         <div className="grid grid-cols-1 md:grid-cols-[200px_1fr_1fr] gap-6 items-start">
           {/* Entry Node */}
           <motion.div
@@ -247,7 +251,7 @@ function VisualRouterPage() {
             className="card p-5 text-center border-2 border-dashed border-apple-gray-300"
           >
             <GlobeAltIcon className="w-10 h-10 text-apple-gray-400 mx-auto mb-2" />
-            <div className="text-sm font-semibold text-apple-gray-900">Incoming Request</div>
+            <div className="text-sm font-semibold text-apple-gray-900">{t('visual_router.incoming_request')}</div>
             <div className="text-xs text-apple-gray-500 mt-1">/v1/chat/completions</div>
           </motion.div>
 
@@ -261,10 +265,10 @@ function VisualRouterPage() {
             <div className="text-center mb-4">
               <div className="inline-flex items-center gap-2 bg-apple-blue text-white rounded-full px-4 py-1.5 text-sm font-semibold">
                 <ArrowPathIcon className="w-4 h-4" />
-                Routing Engine
+                {t('visual_router.routing_engine')}
               </div>
               <p className="text-xs text-apple-gray-500 mt-2">
-                Priority-based rule matching with weighted load balancing
+                {t('visual_router.routing_engine_desc')}
               </p>
             </div>
 
@@ -272,7 +276,7 @@ function VisualRouterPage() {
             <div className="space-y-2">
               {rules.length === 0 ? (
                 <div className="text-center py-6 text-apple-gray-400 text-sm">
-                  No routing rules configured. Requests use default provider selection.
+                  {t('visual_router.no_rules_default')}
                 </div>
               ) : (
                 rules.map((r: any) => (
@@ -290,7 +294,7 @@ function VisualRouterPage() {
           {/* Provider Nodes */}
           <div className="space-y-3">
             <div className="text-xs font-semibold text-apple-gray-500 uppercase tracking-wider mb-2">
-              Providers ({providers.length})
+              {t('visual_router.providers_count', { count: providers.length })}
             </div>
             {providers.map((p: any, i: number) => (
               <ProviderNode
@@ -307,7 +311,7 @@ function VisualRouterPage() {
       {/* Weight Distribution */}
       {totalWeight > 0 && (
         <div className="card p-6">
-          <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">Load Distribution</h2>
+          <h2 className="text-lg font-semibold text-apple-gray-900 mb-4">{t('visual_router.load_distribution')}</h2>
           <div className="flex rounded-xl overflow-hidden h-10 bg-apple-gray-100">
             {providers
               .filter((p) => p.isActive)

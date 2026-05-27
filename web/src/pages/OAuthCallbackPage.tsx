@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation } from '@apollo/client/react';
 import { gql } from '@apollo/client';
 import { useAuthStore } from '@/stores/authStore';
+import { useTranslation } from '@/lib/i18n';
 
 const EXCHANGE_OAUTH_CODE = gql`
   mutation ExchangeOAuthCode {
@@ -23,6 +24,7 @@ const EXCHANGE_OAUTH_CODE = gql`
  * We trade that cookie for a real AuthPayload via a GraphQL mutation.
  */
 export default function OAuthCallbackPage() {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -48,15 +50,15 @@ export default function OAuthCallbackPage() {
         if (result.error) throw new Error(result.error.message);
         const payload = (result.data as any)?.exchangeOAuthCode;
         if (!payload?.token || !payload?.user) {
-          throw new Error('Authentication response was incomplete');
+          throw new Error(t('auth.oauth_incomplete_response'));
         }
         setAuth(payload.token, payload.user);
         navigate('/dashboard', { replace: true });
       } catch (err: any) {
-        setError(err.message || 'Authentication failed');
+        setError(err.message || t('auth.oauth_failed_generic'));
       }
     })();
-  }, [searchParams, exchange, setAuth, navigate]);
+  }, [searchParams, exchange, setAuth, navigate, t]);
 
   if (error) {
     return (
@@ -65,10 +67,10 @@ export default function OAuthCallbackPage() {
           <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl font-bold text-red-500">X</span>
           </div>
-          <h1 className="text-xl font-semibold text-apple-gray-900 mb-2">Authentication Failed</h1>
+          <h1 className="text-xl font-semibold text-apple-gray-900 mb-2">{t('auth.oauth_failed_heading')}</h1>
           <p className="text-sm text-apple-gray-500 mb-6">{error}</p>
           <button onClick={() => navigate('/login')} className="btn-primary px-6 py-2 rounded-xl text-sm font-semibold">
-            Back to Login
+            {t('auth.oauth_back_to_login')}
           </button>
         </div>
       </div>
@@ -79,7 +81,7 @@ export default function OAuthCallbackPage() {
     <div className="min-h-screen flex items-center justify-center bg-apple-gray-50">
       <div className="text-center">
         <div className="w-10 h-10 border-3 border-apple-blue border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-sm text-apple-gray-500">Completing sign in...</p>
+        <p className="text-sm text-apple-gray-500">{t('auth.oauth_completing')}</p>
       </div>
     </div>
   );

@@ -99,7 +99,7 @@ function SsoManagementPage() {
 
   const handleSave = async () => {
     if (!name.trim() || !domains.trim()) {
-      toast.error('Name and domains are required');
+      toast.error(t('sso.name_required'));
       return;
     }
     setSaving(true);
@@ -116,7 +116,7 @@ function SsoManagementPage() {
             },
           },
         });
-        toast.success('Identity provider updated');
+        toast.success(t('sso.updated_success'));
       } else {
         await createMut({
           variables: {
@@ -128,35 +128,35 @@ function SsoManagementPage() {
             },
           },
         });
-        toast.success('Identity provider created');
+        toast.success(t('sso.created_success'));
       }
       setShowModal(false);
       refetch();
     } catch (e: any) {
-      toast.error(e.message || 'Failed to save');
+      toast.error(e.message || t('sso.save_error'));
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this identity provider? SSO users will no longer be able to log in.')) return;
+    if (!window.confirm(t('sso.delete_confirm'))) return;
     try {
       await deleteMut({ variables: { id } });
-      toast.success('Identity provider deleted');
+      toast.success(t('sso.deleted_success'));
       refetch();
     } catch {
-      toast.error('Failed to delete');
+      toast.error(t('sso.delete_error'));
     }
   };
 
   const handleToggle = async (idp: any) => {
     try {
       await updateMut({ variables: { id: idp.id, input: { isActive: !idp.isActive } } });
-      toast.success(`Provider ${idp.isActive ? 'disabled' : 'enabled'}`);
+      toast.success(idp.isActive ? t('sso.toggle_success_disabled') : t('sso.toggle_success_enabled'));
       refetch();
     } catch {
-      toast.error('Failed to toggle status');
+      toast.error(t('sso.toggle_error'));
     }
   };
 
@@ -172,17 +172,17 @@ function SsoManagementPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-apple-gray-900">SSO / Identity Providers</h1>
-          <p className="text-apple-gray-500 mt-1">Configure OIDC and SAML identity providers for your organization</p>
+          <h1 className="text-2xl font-semibold text-apple-gray-900">{t('sso.title')}</h1>
+          <p className="text-apple-gray-500 mt-1">{t('sso.subtitle')}</p>
         </div>
         <button onClick={openCreate} className="btn btn-primary" disabled={!selectedOrgId}>
-          <PlusIcon className="w-5 h-5 mr-2" /> Add Provider
+          <PlusIcon className="w-5 h-5 mr-2" /> {t('sso.add_provider')}
         </button>
       </div>
 
       {orgs.length > 1 && (
         <div className="flex items-center gap-3">
-          <label className="text-sm font-medium text-apple-gray-700">Organization:</label>
+          <label className="text-sm font-medium text-apple-gray-700">{t('sso.organization_label')}</label>
           <select value={selectedOrgId} onChange={(e) => setSelectedOrgId(e.target.value)} className="input max-w-xs">
             {orgs.map((o: any) => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
@@ -192,12 +192,12 @@ function SsoManagementPage() {
       {idps.length === 0 ? (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card text-center py-16">
           <ShieldCheckIcon className="w-12 h-12 text-apple-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-apple-gray-900 mb-1">No Identity Providers</h3>
+          <h3 className="text-lg font-semibold text-apple-gray-900 mb-1">{t('sso.no_providers')}</h3>
           <p className="text-apple-gray-500 text-sm mb-6 max-w-sm mx-auto">
-            Add an OIDC or SAML provider to enable single sign-on for your organization.
+            {t('sso.no_providers_desc')}
           </p>
           <button onClick={openCreate} className="btn btn-primary rounded-xl" disabled={!selectedOrgId}>
-            Configure SSO
+            {t('sso.configure_sso')}
           </button>
         </motion.div>
       ) : (
@@ -225,21 +225,21 @@ function SsoManagementPage() {
                       </span>
                     </div>
                     <p className="text-sm text-apple-gray-500 mt-0.5">
-                      Domains: <code className="text-xs bg-apple-gray-100 px-1.5 py-0.5 rounded">{idp.domains}</code>
+                      {t('sso.domains_label')}: <code className="text-xs bg-apple-gray-100 px-1.5 py-0.5 rounded">{idp.domains}</code>
                     </p>
                     {idp.type === 'OIDC' && idp.oidcIssuerUrl && (
-                      <p className="text-xs text-apple-gray-400 mt-1">Issuer: {idp.oidcIssuerUrl}</p>
+                      <p className="text-xs text-apple-gray-400 mt-1">{t('sso.issuer_label')}: {idp.oidcIssuerUrl}</p>
                     )}
                     {idp.type === 'SAML' && idp.samlSsoUrl && (
-                      <p className="text-xs text-apple-gray-400 mt-1">SSO URL: {idp.samlSsoUrl}</p>
+                      <p className="text-xs text-apple-gray-400 mt-1">{t('sso.sso_url_label')}: {idp.samlSsoUrl}</p>
                     )}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2 text-xs text-apple-gray-500">
-                    <span>JIT: {idp.enableJit ? 'Yes' : 'No'}</span>
-                    <span>Role: {idp.defaultRole}</span>
+                    <span>{t('sso.jit_short')}: {idp.enableJit ? t('sso.jit_yes') : t('sso.jit_no')}</span>
+                    <span>{t('sso.role')}: {idp.defaultRole}</span>
                   </div>
                   <button
                     onClick={() => handleToggle(idp)}
@@ -251,10 +251,10 @@ function SsoManagementPage() {
                       idp.isActive ? 'translate-x-4' : 'translate-x-0'
                     }`} />
                   </button>
-                  <button onClick={() => openEdit(idp)} className="p-1.5 text-apple-gray-400 hover:text-apple-blue transition-colors" title="Edit">
+                  <button onClick={() => openEdit(idp)} className="p-1.5 text-apple-gray-400 hover:text-apple-blue transition-colors" title={t('common.edit')}>
                     <PencilIcon className="w-4 h-4" />
                   </button>
-                  <button onClick={() => handleDelete(idp.id)} className="p-1.5 text-apple-gray-400 hover:text-red-500 transition-colors" title="Delete">
+                  <button onClick={() => handleDelete(idp.id)} className="p-1.5 text-apple-gray-400 hover:text-red-500 transition-colors" title={t('common.delete')}>
                     <TrashIcon className="w-4 h-4" />
                   </button>
                 </div>
@@ -273,24 +273,24 @@ function SsoManagementPage() {
             className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto"
           >
             <h2 className="text-xl font-semibold text-apple-gray-900 mb-4">
-              {editing ? 'Edit Identity Provider' : 'Add Identity Provider'}
+              {editing ? t('sso.edit_provider') : t('sso.add_idp')}
             </h2>
 
             <div className="space-y-4">
               {!editing && (
                 <div>
-                  <label className="label">Protocol</label>
+                  <label className="label">{t('sso.protocol')}</label>
                   <div className="grid grid-cols-2 gap-3 mt-1">
-                    {(['OIDC', 'SAML'] as const).map((t) => (
+                    {(['OIDC', 'SAML'] as const).map((typeOpt) => (
                       <button
-                        key={t}
+                        key={typeOpt}
                         type="button"
-                        onClick={() => setIdpType(t)}
+                        onClick={() => setIdpType(typeOpt)}
                         className={`p-3 rounded-xl border text-center text-sm font-medium transition-colors ${
-                          idpType === t ? 'border-apple-blue bg-apple-blue/5 text-apple-blue' : 'border-apple-gray-200 text-apple-gray-600 hover:border-apple-gray-300'
+                          idpType === typeOpt ? 'border-apple-blue bg-apple-blue/5 text-apple-blue' : 'border-apple-gray-200 text-apple-gray-600 hover:border-apple-gray-300'
                         }`}
                       >
-                        {t === 'OIDC' ? 'OpenID Connect' : 'SAML 2.0'}
+                        {typeOpt === 'OIDC' ? t('sso.oidc') : t('sso.saml')}
                       </button>
                     ))}
                   </div>
@@ -298,51 +298,51 @@ function SsoManagementPage() {
               )}
 
               <div>
-                <label className="label">Display Name *</label>
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="input" placeholder="e.g. Google Workspace" />
+                <label className="label">{t('sso.display_name')} *</label>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="input" placeholder={t('sso.display_name_placeholder')} />
               </div>
 
               <div>
-                <label className="label">Allowed Domains *</label>
-                <input type="text" value={domains} onChange={(e) => setDomains(e.target.value)} className="input" placeholder="company.com,subsidiary.com" />
-                <p className="text-xs text-apple-gray-400 mt-1">Comma-separated email domains</p>
+                <label className="label">{t('sso.allowed_domains')} *</label>
+                <input type="text" value={domains} onChange={(e) => setDomains(e.target.value)} className="input" placeholder={t('sso.allowed_domains_placeholder')} />
+                <p className="text-xs text-apple-gray-400 mt-1">{t('sso.allowed_domains_hint')}</p>
               </div>
 
               {idpType === 'OIDC' ? (
                 <>
                   <div>
-                    <label className="label">Client ID</label>
+                    <label className="label">{t('sso.client_id')}</label>
                     <input type="text" value={oidcClientId} onChange={(e) => setOidcClientId(e.target.value)} className="input font-mono text-sm" />
                   </div>
                   <div>
-                    <label className="label">Client Secret</label>
-                    <input type="password" value={oidcClientSecret} onChange={(e) => setOidcClientSecret(e.target.value)} className="input" placeholder={editing ? '(unchanged)' : ''} />
+                    <label className="label">{t('sso.client_secret')}</label>
+                    <input type="password" value={oidcClientSecret} onChange={(e) => setOidcClientSecret(e.target.value)} className="input" placeholder={editing ? t('sso.unchanged_placeholder') : ''} />
                   </div>
                   <div>
-                    <label className="label">Issuer URL</label>
+                    <label className="label">{t('sso.issuer_url')}</label>
                     <input type="url" value={oidcIssuerUrl} onChange={(e) => setOidcIssuerUrl(e.target.value)} className="input font-mono text-sm" placeholder="https://accounts.google.com" />
                   </div>
                 </>
               ) : (
                 <>
                   <div>
-                    <label className="label">Entity ID</label>
+                    <label className="label">{t('sso.entity_id')}</label>
                     <input type="text" value={samlEntityId} onChange={(e) => setSamlEntityId(e.target.value)} className="input font-mono text-sm" />
                   </div>
                   <div>
-                    <label className="label">SSO URL</label>
+                    <label className="label">{t('sso.sso_url')}</label>
                     <input type="url" value={samlSsoUrl} onChange={(e) => setSamlSsoUrl(e.target.value)} className="input font-mono text-sm" />
                   </div>
                   <div>
-                    <label className="label">IdP Certificate (PEM)</label>
-                    <textarea value={samlIdpCert} onChange={(e) => setSamlIdpCert(e.target.value)} className="input font-mono text-xs h-24" placeholder={editing ? '(unchanged)' : '-----BEGIN CERTIFICATE-----'} />
+                    <label className="label">{t('sso.idp_cert')}</label>
+                    <textarea value={samlIdpCert} onChange={(e) => setSamlIdpCert(e.target.value)} className="input font-mono text-xs h-24" placeholder={editing ? t('sso.unchanged_placeholder') : t('sso.idp_cert_placeholder')} />
                   </div>
                 </>
               )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="label">Default Role</label>
+                  <label className="label">{t('sso.default_role')}</label>
                   <select value={defaultRole} onChange={(e) => setDefaultRole(e.target.value)} className="input">
                     <option value="MEMBER">{t('common.member')}</option>
                     <option value="ADMIN">{t('common.admin')}</option>
@@ -352,16 +352,16 @@ function SsoManagementPage() {
                 <div className="flex flex-col justify-end pb-1">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={enableJit} onChange={(e) => setEnableJit(e.target.checked)} className="rounded border-apple-gray-300 text-apple-blue" />
-                    <span className="text-sm text-apple-gray-700">Just-in-Time provisioning</span>
+                    <span className="text-sm text-apple-gray-700">{t('sso.jit')}</span>
                   </label>
                 </div>
               </div>
             </div>
 
             <div className="flex justify-end gap-3 mt-8">
-              <button onClick={() => setShowModal(false)} className="btn btn-secondary">Cancel</button>
+              <button onClick={() => setShowModal(false)} className="btn btn-secondary">{t('common.cancel')}</button>
               <button onClick={handleSave} className="btn btn-primary" disabled={saving}>
-                {saving ? 'Saving...' : 'Save Provider'}
+                {saving ? t('common.saving') : t('sso.save_provider')}
               </button>
             </div>
           </motion.div>

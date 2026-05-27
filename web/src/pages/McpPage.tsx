@@ -89,15 +89,15 @@ function McpPage() {
       };
       if (selectedServer) {
         await updateMut({ variables: { id: selectedServer.id, input } });
-        toast.success('MCP server updated');
+        toast.success(t('mcp.server_updated'));
       } else {
         await createMut({ variables: { input } });
-        toast.success('MCP server created');
+        toast.success(t('mcp.server_created'));
       }
       setIsModalOpen(false);
       refetch();
     } catch {
-      toast.error('Failed to save MCP server');
+      toast.error(t('mcp.create_error'));
     }
   };
 
@@ -105,21 +105,21 @@ function McpPage() {
     if (!selectedServer) return;
     try {
       await deleteMut({ variables: { id: selectedServer.id } });
-      toast.success('MCP server deleted');
+      toast.success(t('mcp.server_deleted'));
       setIsModalDeleteOpen(false);
       refetch();
     } catch {
-      toast.error('Failed to delete MCP server');
+      toast.error(t('mcp.delete_error'));
     }
   };
 
   const handleRefreshTools = async (id: string) => {
     try {
       await refreshMut({ variables: { id } });
-      toast.success('Tools refreshed');
+      toast.success(t('mcp.tools_refreshed'));
       refetch();
     } catch {
-      toast.error('Failed to refresh tools');
+      toast.error(t('mcp.tools_refresh_error'));
     }
   };
 
@@ -136,21 +136,21 @@ function McpPage() {
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
             <CheckCircleIcon className="w-3 h-3 mr-1" />
-            Connected
+            {t('mcp.connected')}
           </span>
         );
       case 'error':
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
             <XCircleIcon className="w-3 h-3 mr-1" />
-            Error
+            {t('mcp.error_status')}
           </span>
         );
       default:
         return (
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
             <ArrowPathIcon className="w-3 h-3 mr-1 animate-spin" />
-            Disconnected
+            {t('mcp.disconnected')}
           </span>
         );
     }
@@ -160,8 +160,8 @@ function McpPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-apple-gray-900">MCP Servers</h1>
-          <p className="text-apple-gray-500">Manage Model Context Protocol servers and tools</p>
+          <h1 className="text-2xl font-semibold text-apple-gray-900">{t('mcp.title')}</h1>
+          <p className="text-apple-gray-500">{t('mcp.subtitle')}</p>
         </div>
         {!loading && servers.length > 0 && (
           <button
@@ -169,7 +169,7 @@ function McpPage() {
             className="apple-button-primary flex items-center"
           >
             <PlusIcon className="w-5 h-5 mr-2" />
-            Add Server
+            {t('mcp.add_server')}
           </button>
         )}
       </div>
@@ -181,16 +181,16 @@ function McpPage() {
       ) : servers.length === 0 ? (
         <div className="bg-white rounded-apple border border-apple-gray-200 p-12 text-center">
           <ServerIcon className="w-12 h-12 text-apple-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-apple-gray-900">No MCP Servers</h3>
+          <h3 className="text-lg font-medium text-apple-gray-900">{t('mcp.no_servers')}</h3>
           <p className="text-apple-gray-500 max-w-sm mx-auto mt-2">
-            Add your first MCP server to extend the capabilities of your LLM models.
+            {t('mcp.no_servers_desc')}
           </p>
           <button
             onClick={() => handleOpenModal()}
             className="mt-6 apple-button-secondary inline-flex items-center"
           >
             <PlusIcon className="w-5 h-5 mr-2" />
-            Add Server
+            {t('mcp.add_server')}
           </button>
         </div>
       ) : (
@@ -264,12 +264,12 @@ function McpPage() {
                     {expandedServers[server.id] ? (
                       <>
                         <ChevronUpIcon className="w-4 h-4 mr-1" />
-                        Hide Tools ({server.tools?.length || 0})
+                        {t('mcp.hide_tools', { count: server.tools?.length || 0 })}
                       </>
                     ) : (
                       <>
                         <ChevronDownIcon className="w-4 h-4 mr-1" />
-                        Show Tools ({server.tools?.length || 0})
+                        {t('mcp.show_tools', { count: server.tools?.length || 0 })}
                       </>
                     )}
                   </button>
@@ -293,7 +293,7 @@ function McpPage() {
                           ))}
                         </div>
                       ) : (
-                        <p className="text-sm text-apple-gray-400 italic py-2">No tools discovered</p>
+                        <p className="text-sm text-apple-gray-400 italic py-2">{t('mcp.no_tools_short')}</p>
                       )}
                     </motion.div>
                   )}
@@ -314,7 +314,7 @@ function McpPage() {
           >
             <div className="px-6 py-4 border-b border-apple-gray-100 flex justify-between items-center">
               <h3 className="text-lg font-semibold text-apple-gray-900">
-                {selectedServer ? 'Edit MCP Server' : 'Add MCP Server'}
+                {selectedServer ? t('mcp.edit_server') : t('mcp.add_server')}
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-apple-gray-400 hover:text-apple-gray-600">
                 <PlusIcon className="w-6 h-6 rotate-45" />
@@ -322,63 +322,63 @@ function McpPage() {
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-apple-gray-700 mb-1">Server Name</label>
+                <label className="block text-sm font-medium text-apple-gray-700 mb-1">{t('mcp.server_name')}</label>
                 <input
                   type="text"
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="apple-input w-full"
-                  placeholder="e.g. google-search"
+                  placeholder={t('mcp.server_name_placeholder')}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-apple-gray-700 mb-1">Transport Type</label>
+                <label className="block text-sm font-medium text-apple-gray-700 mb-1">{t('mcp.server_type')}</label>
                 <select
                   value={formData.type}
                   onChange={(e) => setFormData({ ...formData, type: e.target.value as 'stdio' | 'sse' })}
                   className="apple-input w-full"
                 >
-                  <option value="stdio">Stdio (Local Process)</option>
-                  <option value="sse">SSE (HTTP/Remote)</option>
+                  <option value="stdio">{t('mcp.transport_stdio')}</option>
+                  <option value="sse">{t('mcp.transport_sse')}</option>
                 </select>
               </div>
 
               {formData.type === 'stdio' ? (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-apple-gray-700 mb-1">Command</label>
+                    <label className="block text-sm font-medium text-apple-gray-700 mb-1">{t('mcp.command')}</label>
                     <input
                       type="text"
                       required
                       value={formData.command}
                       onChange={(e) => setFormData({ ...formData, command: e.target.value })}
                       className="apple-input w-full font-mono text-sm"
-                      placeholder="e.g. npx"
+                      placeholder={t('mcp.command_placeholder')}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-apple-gray-700 mb-1">Arguments (comma separated)</label>
+                    <label className="block text-sm font-medium text-apple-gray-700 mb-1">{t('mcp.args')}</label>
                     <input
                       type="text"
                       value={formData.args?.join(', ')}
                       onChange={(e) => setFormData({ ...formData, args: e.target.value.split(',').map(s => s.trim()).filter(s => s) })}
                       className="apple-input w-full font-mono text-sm"
-                      placeholder="e.g. -y, @modelcontextprotocol/server-google-search"
+                      placeholder={t('mcp.args_placeholder')}
                     />
                   </div>
                 </>
               ) : (
                 <div>
-                  <label className="block text-sm font-medium text-apple-gray-700 mb-1">Server URL</label>
+                  <label className="block text-sm font-medium text-apple-gray-700 mb-1">{t('mcp.server_url')}</label>
                   <input
                     type="url"
                     required
                     value={formData.url}
                     onChange={(e) => setFormData({ ...formData, url: e.target.value })}
                     className="apple-input w-full font-mono text-sm"
-                    placeholder="https://mcp.example.com/sse"
+                    placeholder={t('mcp.server_url_placeholder')}
                   />
                 </div>
               )}
@@ -391,7 +391,7 @@ function McpPage() {
                   onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                   className="rounded text-apple-blue focus:ring-apple-blue mr-2"
                 />
-                <label htmlFor="is_active" className="text-sm text-apple-gray-700">Server is active</label>
+                <label htmlFor="is_active" className="text-sm text-apple-gray-700">{t('mcp.server_active')}</label>
               </div>
 
               <div className="mt-8 flex space-x-3">
@@ -400,13 +400,13 @@ function McpPage() {
                   onClick={() => setIsModalOpen(false)}
                   className="apple-button-secondary flex-1"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="apple-button-primary flex-1"
                 >
-                  Save Server
+                  {t('mcp.save_server')}
                 </button>
               </div>
             </form>
@@ -419,7 +419,7 @@ function McpPage() {
         onCancel={() => setIsModalDeleteOpen(false)}
         onConfirm={handleDelete}
         title={t('mcp.delete_confirm')}
-        message={`Are you sure you want to delete "${selectedServer?.name}"? This will also remove all its discovered tools.`}
+        message={t('mcp.delete_confirm_named', { name: selectedServer?.name ?? '' })}
         confirmText={t('common.delete')}
         confirmColor="red"
       />

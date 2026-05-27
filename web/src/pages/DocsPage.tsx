@@ -17,15 +17,17 @@ import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PUBLISHED_DOCUMENTS_QUERY } from '@/lib/graphql/operations/documents';
+import { useTranslation } from '@/lib/i18n';
 
 /* ── Copy button ───────────────────────────────────────────────── */
 function CopyButton({ text }: { text: string }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   return (
     <button
       onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
       className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-apple-gray-400 hover:text-white transition-all"
-      title="Copy"
+      title={t('docs.copy')}
     >
       {copied ? <CheckIcon className="w-4 h-4 text-green-400" /> : <ClipboardDocumentIcon className="w-4 h-4" />}
     </button>
@@ -48,11 +50,11 @@ function CodeBlock({ code }: { code: string; lang?: string }) {
 const BASE_URL = `${window.location.protocol}//${window.location.host}/v1`;
 
 const tabs = [
-  { id: 'quickstart', label: 'Quick Start', icon: BookOpenIcon },
-  { id: 'api', label: 'API Reference', icon: CodeBracketIcon },
-  { id: 'sdk', label: 'SDKs & Examples', icon: CubeIcon },
-  { id: 'mcp', label: 'MCP Protocol', icon: CommandLineIcon },
-  { id: 'guides', label: 'Guides', icon: DocumentTextIcon },
+  { id: 'quickstart', labelKey: 'docs.quick_start', icon: BookOpenIcon },
+  { id: 'api', labelKey: 'docs.api_reference', icon: CodeBracketIcon },
+  { id: 'sdk', labelKey: 'docs.sdks_examples', icon: CubeIcon },
+  { id: 'mcp', labelKey: 'docs.mcp_protocol', icon: CommandLineIcon },
+  { id: 'guides', labelKey: 'docs.guides', icon: DocumentTextIcon },
 ] as const;
 
 type TabId = (typeof tabs)[number]['id'];
@@ -104,6 +106,7 @@ function EndpointCard({ method, path, description, children }: {
 
 /* ── Main component ────────────────────────────────────────────── */
 function DocsPage() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabId>('quickstart');
   const { data: docsData, loading: docsLoading } = useQuery<{ publishedDocuments: PublishedDocument[] }>(PUBLISHED_DOCUMENTS_QUERY);
   const publishedDocuments = docsData?.publishedDocuments ?? [];
@@ -113,12 +116,12 @@ function DocsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-apple-gray-900">Documentation</h1>
-          <p className="text-apple-gray-500 mt-1 text-sm">API reference, SDKs, and integration guides</p>
+          <h1 className="text-2xl font-bold text-apple-gray-900">{t('docs.title')}</h1>
+          <p className="text-apple-gray-500 mt-1 text-sm">{t('docs.subtitle')}</p>
         </div>
         <Link to="/playground"
           className="flex items-center gap-2 px-4 py-2 bg-apple-blue text-white rounded-xl text-sm font-semibold hover:bg-blue-600 transition-colors shadow-sm">
-          <PlayIcon className="w-4 h-4" /> Open Playground
+          <PlayIcon className="w-4 h-4" /> {t('docs.open_playground')}
         </Link>
       </div>
 
@@ -136,7 +139,7 @@ function DocsPage() {
             )}
           >
             <tab.icon className="w-4 h-4" />
-            <span className="hidden sm:inline">{tab.label}</span>
+            <span className="hidden sm:inline">{t(tab.labelKey)}</span>
           </button>
         ))}
       </div>
@@ -163,20 +166,21 @@ function DocsPage() {
 
 /* ── Quick Start ───────────────────────────────────────────────── */
 function QuickStartTab() {
+  const { t } = useTranslation();
   return (
     <div className="space-y-6">
       {/* Steps */}
       {[
         {
           step: 1,
-          title: 'Get your API Key',
-          desc: 'Navigate to the API Keys page to create a new key. Copy and save it — you won\'t see it again.',
-          action: <Link to="/api-keys" className="text-sm text-apple-blue hover:underline font-medium flex items-center gap-1">Go to API Keys <ArrowTopRightOnSquareIcon className="w-3 h-3" /></Link>,
+          title: t('docs.step1_title'),
+          desc: t('docs.step1_desc'),
+          action: <Link to="/api-keys" className="text-sm text-apple-blue hover:underline font-medium flex items-center gap-1">{t('docs.go_to_api_keys')} <ArrowTopRightOnSquareIcon className="w-3 h-3" /></Link>,
         },
         {
           step: 2,
-          title: 'Make your first request',
-          desc: 'Use any HTTP client or OpenAI-compatible SDK. Simply change the base URL.',
+          title: t('docs.step2_title'),
+          desc: t('docs.step2_desc'),
           code: `curl ${BASE_URL}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
@@ -187,9 +191,9 @@ function QuickStartTab() {
         },
         {
           step: 3,
-          title: 'Explore in the Playground',
-          desc: 'Use our built-in Playground to test prompts, compare models side-by-side, and monitor token usage.',
-          action: <Link to="/playground" className="text-sm text-apple-blue hover:underline font-medium flex items-center gap-1">Open Playground <ArrowTopRightOnSquareIcon className="w-3 h-3" /></Link>,
+          title: t('docs.step3_title'),
+          desc: t('docs.step3_desc'),
+          action: <Link to="/playground" className="text-sm text-apple-blue hover:underline font-medium flex items-center gap-1">{t('docs.open_playground')} <ArrowTopRightOnSquareIcon className="w-3 h-3" /></Link>,
         },
       ].map(item => (
         <div key={item.step} className="bg-white rounded-2xl p-6 border border-apple-gray-200 shadow-sm">
@@ -209,10 +213,9 @@ function QuickStartTab() {
 
       {/* Key info */}
       <div className="bg-blue-50 rounded-2xl p-5 border border-blue-100">
-        <h4 className="font-semibold text-blue-800 mb-2">Tip: OpenAI SDK Compatible</h4>
+        <h4 className="font-semibold text-blue-800 mb-2">{t('docs.tip_sdk_title')}</h4>
         <p className="text-sm text-blue-700">
-          Any library that supports OpenAI's API format works out of the box.
-          Just set <code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs">base_url</code> to <code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs">{BASE_URL}</code>.
+          {t('docs.tip_sdk_body_prefix')}<code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs">base_url</code>{t('docs.tip_sdk_body_middle')}<code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs">{BASE_URL}</code>{t('docs.tip_sdk_body_suffix')}
         </p>
       </div>
     </div>
@@ -221,24 +224,25 @@ function QuickStartTab() {
 
 /* ── API Reference ─────────────────────────────────────────────── */
 function ApiReferenceTab() {
+  const { t } = useTranslation();
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl p-5 border border-apple-gray-200 shadow-sm mb-6">
-        <h3 className="font-semibold text-apple-gray-900 mb-2">Authentication</h3>
-        <p className="text-sm text-apple-gray-600 mb-3">All API requests require a Bearer token in the <code className="bg-apple-gray-100 px-1.5 py-0.5 rounded text-xs">Authorization</code> header.</p>
+        <h3 className="font-semibold text-apple-gray-900 mb-2">{t('docs.authentication')}</h3>
+        <p className="text-sm text-apple-gray-600 mb-3">{t('docs.auth_desc_prefix')}<code className="bg-apple-gray-100 px-1.5 py-0.5 rounded text-xs">Authorization</code>{t('docs.auth_desc_suffix')}</p>
         <CodeBlock code={`Authorization: Bearer YOUR_API_KEY`} />
       </div>
 
-      <EndpointCard method="POST" path="/v1/chat/completions" description="Create a chat completion">
-        <p className="text-sm text-apple-gray-600">Generate a model response for a conversation. Supports streaming via SSE.</p>
-        <h4 className="text-sm font-semibold text-apple-gray-800 mt-3">Request Body</h4>
+      <EndpointCard method="POST" path="/v1/chat/completions" description={t('docs.chat_completions')}>
+        <p className="text-sm text-apple-gray-600">{t('docs.chat_completions_desc')}</p>
+        <h4 className="text-sm font-semibold text-apple-gray-800 mt-3">{t('docs.request_body')}</h4>
         <div className="text-sm space-y-1 mt-2">
-          <div className="flex gap-2"><code className="text-apple-blue font-mono text-xs">model</code> <span className="text-apple-gray-500">string, required</span></div>
-          <div className="flex gap-2"><code className="text-apple-blue font-mono text-xs">messages</code> <span className="text-apple-gray-500">array of {`{role, content}`}, required</span></div>
-          <div className="flex gap-2"><code className="text-apple-blue font-mono text-xs">temperature</code> <span className="text-apple-gray-500">float, 0-2, default 1</span></div>
-          <div className="flex gap-2"><code className="text-apple-blue font-mono text-xs">max_tokens</code> <span className="text-apple-gray-500">integer, optional</span></div>
-          <div className="flex gap-2"><code className="text-apple-blue font-mono text-xs">stream</code> <span className="text-apple-gray-500">boolean, default false</span></div>
-          <div className="flex gap-2"><code className="text-apple-blue font-mono text-xs">tools</code> <span className="text-apple-gray-500">array, optional (MCP tools auto-injected)</span></div>
+          <div className="flex gap-2"><code className="text-apple-blue font-mono text-xs">model</code> <span className="text-apple-gray-500">{t('docs.field_string_required')}</span></div>
+          <div className="flex gap-2"><code className="text-apple-blue font-mono text-xs">messages</code> <span className="text-apple-gray-500">{t('docs.field_messages_required')}</span></div>
+          <div className="flex gap-2"><code className="text-apple-blue font-mono text-xs">temperature</code> <span className="text-apple-gray-500">{t('docs.field_temperature')}</span></div>
+          <div className="flex gap-2"><code className="text-apple-blue font-mono text-xs">max_tokens</code> <span className="text-apple-gray-500">{t('docs.field_max_tokens')}</span></div>
+          <div className="flex gap-2"><code className="text-apple-blue font-mono text-xs">stream</code> <span className="text-apple-gray-500">{t('docs.field_stream')}</span></div>
+          <div className="flex gap-2"><code className="text-apple-blue font-mono text-xs">tools</code> <span className="text-apple-gray-500">{t('docs.field_tools')}</span></div>
         </div>
         <CodeBlock lang="json" code={`{
   "model": "gpt-4o-mini",
@@ -251,16 +255,16 @@ function ApiReferenceTab() {
 }`} />
       </EndpointCard>
 
-      <EndpointCard method="POST" path="/v1/embeddings" description="Create embeddings">
-        <p className="text-sm text-apple-gray-600">Generate vector embeddings for text input.</p>
+      <EndpointCard method="POST" path="/v1/embeddings" description={t('docs.embeddings')}>
+        <p className="text-sm text-apple-gray-600">{t('docs.embeddings_desc')}</p>
         <CodeBlock code={`{
   "model": "text-embedding-3-small",
   "input": "Hello world"
 }`} />
       </EndpointCard>
 
-      <EndpointCard method="POST" path="/v1/images/generations" description="Generate images">
-        <p className="text-sm text-apple-gray-600">Create images from text prompts.</p>
+      <EndpointCard method="POST" path="/v1/images/generations" description={t('docs.image_generation')}>
+        <p className="text-sm text-apple-gray-600">{t('docs.images_desc')}</p>
         <CodeBlock code={`{
   "model": "dall-e-3",
   "prompt": "A sunset over mountains",
@@ -268,8 +272,8 @@ function ApiReferenceTab() {
 }`} />
       </EndpointCard>
 
-      <EndpointCard method="POST" path="/v1/audio/speech" description="Text to speech">
-        <p className="text-sm text-apple-gray-600">Generate audio from text input.</p>
+      <EndpointCard method="POST" path="/v1/audio/speech" description={t('docs.text_to_speech')}>
+        <p className="text-sm text-apple-gray-600">{t('docs.tts_desc')}</p>
         <CodeBlock code={`{
   "model": "tts-1",
   "input": "Hello, how are you?",
@@ -277,8 +281,8 @@ function ApiReferenceTab() {
 }`} />
       </EndpointCard>
 
-      <EndpointCard method="GET" path="/v1/models" description="List available models">
-        <p className="text-sm text-apple-gray-600">Returns a list of all active models available through the router.</p>
+      <EndpointCard method="GET" path="/v1/models" description={t('docs.list_models')}>
+        <p className="text-sm text-apple-gray-600">{t('docs.models_desc')}</p>
         <CodeBlock code={`curl ${BASE_URL}/models \\
   -H "Authorization: Bearer YOUR_API_KEY"`} />
       </EndpointCard>
@@ -288,6 +292,7 @@ function ApiReferenceTab() {
 
 /* ── SDKs & Examples ───────────────────────────────────────────── */
 function SdkTab() {
+  const { t } = useTranslation();
   const [lang, setLang] = useState<'curl' | 'python' | 'node' | 'go'>('python');
 
   const examples: Record<string, { label: string; code: string }> = {
@@ -372,9 +377,9 @@ func main() {
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-2xl p-5 border border-apple-gray-200 shadow-sm">
-        <h3 className="font-semibold text-apple-gray-900 mb-1">SDK Compatibility</h3>
+        <h3 className="font-semibold text-apple-gray-900 mb-1">{t('docs.sdk_compat_title')}</h3>
         <p className="text-sm text-apple-gray-500 mb-4">
-          Use any OpenAI-compatible SDK — just change the <code className="bg-apple-gray-100 px-1.5 py-0.5 rounded text-xs">base_url</code> to point to this platform.
+          {t('docs.sdk_compat_desc_prefix')}<code className="bg-apple-gray-100 px-1.5 py-0.5 rounded text-xs">base_url</code>{t('docs.sdk_compat_desc_suffix')}
         </p>
 
         {/* Language tabs */}
@@ -395,7 +400,7 @@ func main() {
 
       {/* Installation */}
       <div className="bg-white rounded-2xl p-5 border border-apple-gray-200 shadow-sm">
-        <h3 className="font-semibold text-apple-gray-900 mb-3">Installation</h3>
+        <h3 className="font-semibold text-apple-gray-900 mb-3">{t('docs.installation')}</h3>
         <div className="space-y-3">
           <div>
             <p className="text-xs font-medium text-apple-gray-500 mb-1">Python</p>
@@ -417,20 +422,20 @@ func main() {
 
 /* ── MCP Protocol ──────────────────────────────────────────────── */
 function McpTab() {
+  const { t } = useTranslation();
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-2xl p-6 border border-apple-gray-200 shadow-sm">
-        <h3 className="text-lg font-semibold text-apple-gray-900 mb-2">Model Context Protocol</h3>
+        <h3 className="text-lg font-semibold text-apple-gray-900 mb-2">{t('docs.mcp_title')}</h3>
         <p className="text-sm text-apple-gray-600 mb-4">
-          MCP extends LLMs with real-world capabilities. When MCP servers are configured in the admin panel,
-          tools are automatically injected into chat completion requests — no client-side changes required.
+          {t('docs.mcp_desc')}
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {[
-            { label: 'Server Config', desc: 'Add MCP servers via admin panel with connection URLs' },
-            { label: 'Auto Injection', desc: 'Tools are injected into /chat/completions automatically' },
-            { label: 'Zero Changes', desc: 'Your existing OpenAI SDK code works without modification' },
+            { label: t('docs.mcp_server_config'), desc: t('docs.mcp_server_config_desc') },
+            { label: t('docs.mcp_auto_injection'), desc: t('docs.mcp_auto_injection_desc') },
+            { label: t('docs.mcp_zero_changes'), desc: t('docs.mcp_zero_changes_desc') },
           ].map(item => (
             <div key={item.label} className="bg-apple-gray-50 rounded-xl p-4 border border-apple-gray-100">
               <h4 className="text-sm font-semibold text-apple-gray-800 mb-1">{item.label}</h4>
@@ -439,7 +444,7 @@ function McpTab() {
           ))}
         </div>
 
-        <h4 className="text-sm font-semibold text-apple-gray-800 mb-2">How it Works</h4>
+        <h4 className="text-sm font-semibold text-apple-gray-800 mb-2">{t('docs.mcp_how_it_works')}</h4>
         <CodeBlock code={`# 1. Admin adds MCP server (e.g., a web search tool)
 # 2. Your regular API call automatically gets tool access:
 
@@ -456,6 +461,7 @@ curl ${BASE_URL}/chat/completions \\
 }
 
 function GuidesTab({ documents, loading }: { documents: PublishedDocument[]; loading: boolean }) {
+  const { t } = useTranslation();
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const sortedDocs = [...documents].sort((a, b) => (
     a.category.localeCompare(b.category) || a.sortOrder - b.sortOrder || a.title.localeCompare(b.title)
@@ -465,7 +471,7 @@ function GuidesTab({ documents, loading }: { documents: PublishedDocument[]; loa
   if (loading) {
     return (
       <div className="bg-white rounded-2xl p-8 border border-apple-gray-200 shadow-sm text-center text-apple-gray-400">
-        Loading guides...
+        {t('docs.loading_guides')}
       </div>
     );
   }
@@ -474,7 +480,7 @@ function GuidesTab({ documents, loading }: { documents: PublishedDocument[]; loa
     return (
       <div className="bg-white rounded-2xl p-8 border border-apple-gray-200 shadow-sm text-center">
         <DocumentTextIcon className="w-10 h-10 mx-auto mb-3 text-apple-gray-300" />
-        <p className="text-sm text-apple-gray-500">No published guides yet.</p>
+        <p className="text-sm text-apple-gray-500">{t('docs.no_published_guides')}</p>
       </div>
     );
   }
@@ -483,7 +489,7 @@ function GuidesTab({ documents, loading }: { documents: PublishedDocument[]; loa
     <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5">
       <aside className="bg-white rounded-2xl border border-apple-gray-200 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-apple-gray-100">
-          <h3 className="text-sm font-semibold text-apple-gray-900">Published Guides</h3>
+          <h3 className="text-sm font-semibold text-apple-gray-900">{t('docs.published_guides')}</h3>
         </div>
         <div className="p-2">
           {sortedDocs.map(doc => (
@@ -513,7 +519,7 @@ function GuidesTab({ documents, loading }: { documents: PublishedDocument[]; loa
           {selectedDoc.content.trim() ? (
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{selectedDoc.content}</ReactMarkdown>
           ) : (
-            <p className="text-apple-gray-400 italic">No content yet.</p>
+            <p className="text-apple-gray-400 italic">{t('docs.no_content')}</p>
           )}
         </div>
       </article>
