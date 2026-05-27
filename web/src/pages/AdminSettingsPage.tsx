@@ -61,8 +61,8 @@ function AdminSettingsPage() {
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
 
-  const { data, loading } = useQuery<any>(SYSTEM_SETTINGS_QUERY, { fetchPolicy: 'network-only' });
-  const [updateSettings, { loading: saving }] = useMutation<any>(UPDATE_SYSTEM_SETTINGS);
+  const { data, loading } = useQuery(SYSTEM_SETTINGS_QUERY, { fetchPolicy: 'network-only' });
+  const [updateSettings, { loading: saving }] = useMutation(UPDATE_SYSTEM_SETTINGS);
 
   // Initialize form data from server
   useEffect(() => {
@@ -71,9 +71,20 @@ function AdminSettingsPage() {
       const parsed: Record<TabKey, any> = { site: {}, security: {}, defaults: {}, captcha: {}, email: {}, backup: {}, payment: {}, sso: {}, integrations: {}, featuregates: {} };
       for (const key of Object.keys(parsed) as TabKey[]) {
         try {
-          // Map GraphQL 'oauth' field → frontend 'sso' tab
-          const gqlKey = key === 'sso' ? 'oauth' : key;
-          if (s[gqlKey]) parsed[key] = JSON.parse(s[gqlKey]);
+          // Map GraphQL 'oauth' field → frontend 'sso' tab. Apollo 4.2's
+          // typed selection set narrows `s` to the codegen union, which
+          // doesn't include the synthetic `integrations`/`featuregates`
+          // tab keys — those are client-only categories whose payload is
+          // not stored under a top-level systemSettings field. The
+          // dynamic index is intentional and skipped at runtime via the
+          // truthiness check.
+          const gqlKey = (key === 'sso' ? 'oauth' : key) as keyof typeof s;
+          const raw = s[gqlKey];
+          // systemSettings returns either JSON-encoded strings for the
+          // category bundles or scalar numbers (e.g. defaultTokenLimit).
+          // We only attempt JSON.parse on string payloads — the scalar
+          // fields are handled directly in their owning tabs.
+          if (typeof raw === 'string' && raw) parsed[key] = JSON.parse(raw);
         } catch { /* empty */ }
       }
       setFormData(parsed);

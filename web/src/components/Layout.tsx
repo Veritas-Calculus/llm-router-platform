@@ -182,7 +182,7 @@ function Layout() {
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   // Load site config
-  const { data: siteData } = useQuery<{ siteConfig: { siteName: string } }>(SITE_CONFIG_QUERY);
+  const { data: siteData } = useQuery(SITE_CONFIG_QUERY);
   const siteName = siteData?.siteConfig?.siteName || 'Router';
   const siteInitial = siteName.charAt(0).toUpperCase();
 

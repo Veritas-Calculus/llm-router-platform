@@ -3,7 +3,6 @@ import { useApolloClient } from '@apollo/client/react';
 import { ME } from '@/lib/graphql/operations';
 import { useAuthStore } from '@/stores/authStore';
 import { useAuthHydrated } from '@/hooks/useAuthHydrated';
-import type { User } from '@/lib/types';
 
 /**
  * AuthBootstrap rehydrates the auth session on app load.
@@ -28,7 +27,7 @@ export default function AuthBootstrap() {
     if (!hydrated || !isAuthenticated) return;
     let cancelled = false;
     void client
-      .query<{ me: User }>({ query: ME, fetchPolicy: 'network-only' })
+      .query({ query: ME, fetchPolicy: 'network-only' })
       .then((res) => {
         if (cancelled) return;
         if (res.data?.me) {

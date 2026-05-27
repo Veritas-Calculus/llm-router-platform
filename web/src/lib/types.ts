@@ -426,21 +426,22 @@ export interface UserDetail {
 export interface RoutingRule {
 	id: string;
 	name: string;
-	description?: string;
+	description: string;
 	modelPattern: string;
 	targetProviderId: string;
-	fallbackProviderId?: string | null;
+	fallbackProviderId: string | null;
 	priority: number;
 	isEnabled: boolean;
 	createdAt: string;
-	targetProvider?: {
+	updatedAt?: string;
+	targetProvider: {
 		id: string;
 		name: string;
 		isActive: boolean;
-	};
-	fallbackProvider?: {
+	} | null;
+	fallbackProvider: {
 		id: string;
 		name: string;
 		isActive: boolean;
-	};
+	} | null;
 }

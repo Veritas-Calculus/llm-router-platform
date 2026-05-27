@@ -3,7 +3,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { CombinedGraphQLErrors } from '@apollo/client/errors';
 import { MY_API_KEYS, MY_ORGANIZATIONS, MY_PROJECTS, CREATE_API_KEY, REVOKE_API_KEY, DELETE_API_KEY, UPDATE_PROJECT } from '@/lib/graphql/operations';
-import type { ApiKey, Organization, Project } from '@/lib/types';
+import type { ApiKey } from '@/lib/types';
 import { useTranslation } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/authStore';
 import { useAuthHydrated } from '@/hooks/useAuthHydrated';
@@ -70,17 +70,21 @@ export function useApiKeys() {
   const setSelectedOrgId = useAuthStore((s) => s.setSelectedOrgId);
   const hydrated = useAuthHydrated();
 
-  const { data: orgData } = useQuery<any>(MY_ORGANIZATIONS);
-  const orgs: Organization[] = useMemo(() => orgData?.myOrganizations || [], [orgData]);
+  const { data: orgData } = useQuery(MY_ORGANIZATIONS);
+  // Apollo 4.2 infers the row shape from the typed document; downstream
+  // callers (OrgSwitcher select, project picker) only touch `id` / `name`
+  // so we deliberately keep the inferred shape rather than coerce to the
+  // legacy snake_case Organization type.
+  const orgs = useMemo(() => orgData?.myOrganizations || [], [orgData]);
 
   useEffect(() => {
     if (!hydrated) return;
     if (orgs.length > 0 && !selectedOrgId) setSelectedOrgId(orgs[0].id);
   }, [hydrated, orgs, selectedOrgId, setSelectedOrgId]);
 
-  // Project state
-  const { data: projData } = useQuery<any>(MY_PROJECTS, { variables: { orgId: selectedOrgId }, skip: !selectedOrgId });
-  const projects: Project[] = useMemo(() => projData?.myProjects || [], [projData]);
+  // Project state — same inference rationale as orgs above.
+  const { data: projData } = useQuery(MY_PROJECTS, { variables: { orgId: selectedOrgId }, skip: !selectedOrgId });
+  const projects = useMemo(() => projData?.myProjects || [], [projData]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
 
   useEffect(() => {
@@ -90,7 +94,7 @@ export function useApiKeys() {
   }, [projects, selectedProjectId]);
 
   // API Keys
-  const { data, loading, refetch } = useQuery<any>(MY_API_KEYS, { variables: { projectId: selectedProjectId }, skip: !selectedProjectId });
+  const { data, loading, refetch } = useQuery(MY_API_KEYS, { variables: { projectId: selectedProjectId }, skip: !selectedProjectId });
   const apiKeys: ApiKey[] = useMemo(() => (data?.myApiKeys || []).map(mapApiKey), [data]);
 
   // Modals

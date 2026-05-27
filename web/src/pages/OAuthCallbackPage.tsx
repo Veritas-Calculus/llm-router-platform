@@ -29,7 +29,7 @@ export default function OAuthCallbackPage() {
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
   const [error, setError] = useState('');
-  const [exchange] = useMutation<any>(EXCHANGE_OAUTH_CODE);
+  const [exchange] = useMutation(EXCHANGE_OAUTH_CODE);
   // useEffect runs twice under React.StrictMode in dev — make sure the
   // single-use cookie isn't redeemed twice (the second call would 401).
   const didRunRef = useRef(false);

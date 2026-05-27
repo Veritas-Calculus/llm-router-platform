@@ -20,7 +20,7 @@ import { useTranslation } from '@/lib/i18n';
 
 function CacheConfigPanel() {
   const { t } = useTranslation();
-  const { data, refetch } = useQuery<any>(CACHE_CONFIG_QUERY, { fetchPolicy: 'cache-and-network' });
+  const { data, refetch } = useQuery(CACHE_CONFIG_QUERY, { fetchPolicy: 'cache-and-network' });
   const [updateMut, { loading: saving }] = useMutation(UPDATE_CACHE_CONFIG);
   const [expanded, setExpanded] = useState(false);
 
@@ -174,8 +174,8 @@ function CacheConfigPanel() {
 
 function SemanticCachePage() {
   const { t } = useTranslation();
-  const { data: statsData, refetch: refetchStats } = useQuery<{ cacheStats: any }>(GET_CACHE_STATS);
-  const { data: cachesData, loading, refetch: refetchCaches } = useQuery<{ semanticCaches: any[] }>(GET_SEMANTIC_CACHES, {
+  const { data: statsData, refetch: refetchStats } = useQuery(GET_CACHE_STATS);
+  const { data: cachesData, loading, refetch: refetchCaches } = useQuery(GET_SEMANTIC_CACHES, {
     variables: { limit: 100, offset: 0 },
   });
 

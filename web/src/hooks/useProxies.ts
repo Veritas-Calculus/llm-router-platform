@@ -71,8 +71,8 @@ function mapProxyPool(d: any): ProxyPool {
 
 export function useProxies() {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { data, loading, refetch } = useQuery<any>(PROXIES_QUERY);
-  const { data: poolsData, refetch: refetchPools } = useQuery<any>(PROXY_POOLS_QUERY);
+  const { data, loading, refetch } = useQuery(PROXIES_QUERY);
+  const { data: poolsData, refetch: refetchPools } = useQuery(PROXY_POOLS_QUERY);
   const proxies: Proxy[] = useMemo(() => (data?.proxies || []).map(mapProxy), [data]);
   const proxyPools: ProxyPool[] = useMemo(() => (poolsData?.proxyPools || []).map(mapProxyPool), [poolsData]);
 

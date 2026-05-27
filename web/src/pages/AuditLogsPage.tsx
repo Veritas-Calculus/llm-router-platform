@@ -12,8 +12,8 @@ export default function AuditLogsPage() {
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, loading } = useQuery<any>(GET_AUDIT_LOGS, {
+   
+  const { data, loading } = useQuery(GET_AUDIT_LOGS, {
     variables: { page, pageSize },
     fetchPolicy: 'cache-and-network',
   });

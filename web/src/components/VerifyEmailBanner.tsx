@@ -6,14 +6,6 @@ import { ME, RESEND_VERIFICATION_EMAIL } from '@/lib/graphql/operations';
 import { useAuthStore } from '@/stores/authStore';
 import { useTranslation } from '@/lib/i18n';
 
-interface MeResult {
-  me: {
-    id: string;
-    email: string;
-    emailVerified: boolean;
-  };
-}
-
 /**
  * VerifyEmailBanner is rendered above every authenticated route. It reads
  * the verification status from the Apollo cache (refreshed by the
@@ -28,7 +20,7 @@ interface MeResult {
 export default function VerifyEmailBanner() {
   const { t } = useTranslation();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const { data } = useQuery<MeResult>(ME, {
+  const { data } = useQuery(ME, {
     skip: !isAuthenticated,
     fetchPolicy: 'cache-first',
   });

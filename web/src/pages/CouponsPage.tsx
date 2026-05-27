@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
  
 import { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
@@ -19,7 +19,7 @@ interface Coupon {
   useCount: number;
   maxUsesPerUser: number;
   isActive: boolean;
-  expiresAt?: string;
+  expiresAt: string | null;
   createdAt: string;
 }
 
@@ -59,10 +59,10 @@ function CouponsPage() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
-  const { data, loading, refetch } = useQuery<any>(COUPONS_QUERY);
-  const [createCoupon, { loading: saving }] = useMutation<any>(CREATE_COUPON);
-  const [updateCoupon] = useMutation<any>(UPDATE_COUPON);
-  const [deleteCoupon] = useMutation<any>(DELETE_COUPON);
+  const { data, loading, refetch } = useQuery(COUPONS_QUERY);
+  const [createCoupon, { loading: saving }] = useMutation(CREATE_COUPON);
+  const [updateCoupon] = useMutation(UPDATE_COUPON);
+  const [deleteCoupon] = useMutation(DELETE_COUPON);
 
   const items: Coupon[] = data?.coupons || [];
 

@@ -16,8 +16,8 @@ import { formatUSD } from '@/lib/format';
 
 function PlansPage() {
   const { t } = useTranslation();
-  const { data: plansData, loading: plansLoading } = useQuery<any>(PLANS_QUERY);
-  const { data: billingData, loading: billingLoading } = useQuery<any>(MY_BILLING_QUERY);
+  const { data: plansData, loading: plansLoading } = useQuery(PLANS_QUERY);
+  const { data: billingData, loading: billingLoading } = useQuery(MY_BILLING_QUERY);
   const loading = plansLoading || billingLoading;
 
   const plans = useMemo(() => (plansData?.plans || []) as any[], [plansData]);

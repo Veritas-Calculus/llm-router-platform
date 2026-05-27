@@ -10,7 +10,6 @@ import {
 } from '@/lib/graphql/operations/providers';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useTranslation } from '@/lib/i18n';
-import type { MoneyValue } from '@/lib/format';
 import ModelKindGroup, {
   type ModelGroupItem,
   type ModelKind,
@@ -20,28 +19,6 @@ import toast from 'react-hot-toast';
 interface ModelTableProps {
   providerId: string;
   providerName: string;
-}
-
-interface ModelItem {
-  id: string;
-  name: string;
-  displayName: string;
-  modelKind: ModelKind | null;
-  inputPricePer1k: MoneyValue;
-  outputPricePer1k: MoneyValue;
-  pricePerSecond?: MoneyValue | null;
-  pricePerImage?: MoneyValue | null;
-  pricePerMinute?: MoneyValue | null;
-  providerInputCostPer1k: MoneyValue;
-  providerOutputCostPer1k: MoneyValue;
-  providerCostPerSecond?: MoneyValue | null;
-  providerCostPerImage?: MoneyValue | null;
-  providerCostPerMinute?: MoneyValue | null;
-  contextWindow?: number | null;
-  maxOutputTokens?: number | null;
-  catalogWarnings?: string | null;
-  maxTokens: number;
-  isActive: boolean;
 }
 
 // Stable grouping order in the admin UI. We always render groups in this
@@ -70,7 +47,7 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
   const [newModel, setNewModel] = useState(initialModelForm);
   const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; modelId: string }>({ isOpen: false, modelId: '' });
 
-  const { data, loading, refetch } = useQuery<{ models: ModelItem[] }>(MODELS_QUERY, {
+  const { data, loading, refetch } = useQuery(MODELS_QUERY, {
     variables: { providerId },
     fetchPolicy: 'cache-and-network',
   });
@@ -89,7 +66,7 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
     variables: { providerId },
     onCompleted: async (result) => {
       await refetch();
-      const count = (result as { syncProviderModels?: ModelItem[] })?.syncProviderModels?.length ?? 0;
+      const count = result?.syncProviderModels?.length ?? 0;
       toast.success(
         count > 0
           ? t('providers.sync_models_success', { count })
@@ -102,8 +79,11 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
   });
 
   // Memoize models so the grouping useMemo below doesn't re-execute on
-  // every render just because `??` returns a fresh array literal.
-  const models = useMemo<ModelItem[]>(() => data?.models ?? [], [data?.models]);
+  // every render just because `??` returns a fresh array literal. The
+  // row shape comes from MODELS_QUERY (TypedDocumentNode) so we let
+  // Apollo 4.2 infer it rather than narrow to the local ModelItem; the
+  // codegen output covers the same fields with cleaner nullability.
+  const models = useMemo(() => data?.models ?? [], [data?.models]);
 
   // Group models by kind for the M-08 grouped admin table. Unknown rows
   // (e.g. rows created before migration 000024 ran) end up in their own
@@ -128,7 +108,10 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
         providerCostPerImage: m.providerCostPerImage,
         contextWindow: m.contextWindow,
         maxOutputTokens: m.maxOutputTokens,
-        maxTokens: m.maxTokens,
+        // Legacy `maxTokens` is no longer selected; ModelKindGroup only
+        // reads it as a fallback when contextWindow is missing so 0 keeps
+        // rendering correct.
+        maxTokens: 0,
         catalogWarnings: m.catalogWarnings,
         isActive: m.isActive,
       });

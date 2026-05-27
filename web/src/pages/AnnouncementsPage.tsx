@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
  
 import { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
@@ -9,6 +9,7 @@ import remarkGfm from 'remark-gfm';
 import { useTranslation } from '@/lib/i18n';
 import { ANNOUNCEMENTS_QUERY, CREATE_ANNOUNCEMENT, UPDATE_ANNOUNCEMENT, DELETE_ANNOUNCEMENT } from '@/lib/graphql/operations/announcements';
 
+// Announcement shape aligned with codegen's nullability for ANNOUNCEMENTS_QUERY.
 interface Announcement {
   id: string;
   title: string;
@@ -16,9 +17,10 @@ interface Announcement {
   type: string;
   priority: number;
   isActive: boolean;
-  startsAt?: string;
-  endsAt?: string;
+  startsAt: string | null;
+  endsAt: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 const emptyForm = { title: '', content: '', type: 'info', priority: 0, isActive: false, startsAt: '', endsAt: '' };
@@ -30,10 +32,10 @@ function AnnouncementsPage() {
   const [form, setForm] = useState(emptyForm);
   const [previewMode, setPreviewMode] = useState(false);
 
-  const { data, loading, refetch } = useQuery<any>(ANNOUNCEMENTS_QUERY);
-  const [createAnnouncement, { loading: saving }] = useMutation<any>(CREATE_ANNOUNCEMENT);
-  const [updateAnnouncement] = useMutation<any>(UPDATE_ANNOUNCEMENT);
-  const [deleteAnnouncement] = useMutation<any>(DELETE_ANNOUNCEMENT);
+  const { data, loading, refetch } = useQuery(ANNOUNCEMENTS_QUERY);
+  const [createAnnouncement, { loading: saving }] = useMutation(CREATE_ANNOUNCEMENT);
+  const [updateAnnouncement] = useMutation(UPDATE_ANNOUNCEMENT);
+  const [deleteAnnouncement] = useMutation(DELETE_ANNOUNCEMENT);
 
   const items: Announcement[] = data?.announcements || [];
 

@@ -32,7 +32,7 @@ export default function OrganizationMembersPage() {
   const { t } = useTranslation();
     const { user } = useAuthStore();
     
-    const { data: orgData, loading: orgLoading } = useQuery<any>(MY_ORGANIZATIONS);
+    const { data: orgData, loading: orgLoading } = useQuery(MY_ORGANIZATIONS);
     
     const orgs = useMemo(() => orgData?.myOrganizations || [], [orgData]);
     const selectedOrgId = useAuthStore((s) => s.selectedOrgId) ?? '';
@@ -48,7 +48,7 @@ export default function OrganizationMembersPage() {
         }
     }, [hydrated, orgs, selectedOrgId, setSelectedOrgId]);
 
-    const { data: membersData, loading: membersLoading, refetch } = useQuery<any>(GET_ORG_MEMBERS, {
+    const { data: membersData, loading: membersLoading, refetch } = useQuery(GET_ORG_MEMBERS, {
         variables: { orgId: selectedOrgId },
         skip: !selectedOrgId,
     });

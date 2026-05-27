@@ -1,20 +1,42 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  ApiKeyRateLimitStatusQuery,
+  ApiKeyRateLimitStatusQueryVariables,
+  CreateApiKeyMutation,
+  CreateApiKeyMutationVariables,
+  CreatePlaygroundTokenMutation,
+  CreatePlaygroundTokenMutationVariables,
+  DeleteApiKeyMutation,
+  DeleteApiKeyMutationVariables,
+  MyApiKeysQuery,
+  MyApiKeysQueryVariables,
+  MyOrganizationsQuery,
+  MyOrganizationsQueryVariables,
+  MyProjectsQuery,
+  MyProjectsQueryVariables,
+  RevokeApiKeyMutation,
+  RevokeApiKeyMutationVariables,
+  UpdateApiKeyMutation,
+  UpdateApiKeyMutationVariables,
+  UpdateProjectMutation,
+  UpdateProjectMutationVariables,
+} from '../generated/graphql';
 
 // ── API Key Operations ──────────────────────────────────────────────
 
-export const MY_ORGANIZATIONS = gql`
+export const MY_ORGANIZATIONS: TypedDocumentNode<MyOrganizationsQuery, MyOrganizationsQueryVariables> = gql`
   query MyOrganizations {
     myOrganizations { id name billingLimit createdAt }
   }
 `;
 
-export const MY_PROJECTS = gql`
+export const MY_PROJECTS: TypedDocumentNode<MyProjectsQuery, MyProjectsQueryVariables> = gql`
   query MyProjects($orgId: ID!) {
     myProjects(orgId: $orgId) { id orgId name description quotaLimit whiteListedIps createdAt }
   }
 `;
 
-export const MY_API_KEYS = gql`
+export const MY_API_KEYS: TypedDocumentNode<MyApiKeysQuery, MyApiKeysQueryVariables> = gql`
   query MyApiKeys($projectId: ID!) {
     myApiKeys(projectId: $projectId) {
       id projectId channel name keyPrefix isActive scopes allowedModels allowedProviders rateLimit tokenLimit dailyLimit lastUsedAt createdAt expiresAt
@@ -22,7 +44,7 @@ export const MY_API_KEYS = gql`
   }
 `;
 
-export const CREATE_API_KEY = gql`
+export const CREATE_API_KEY: TypedDocumentNode<CreateApiKeyMutation, CreateApiKeyMutationVariables> = gql`
   mutation CreateApiKey($projectId: ID!, $name: String!, $scopes: String, $rateLimit: Int, $tokenLimit: Int, $allowedModels: [String!], $allowedProviders: [String!]) {
     createApiKey(projectId: $projectId, name: $name, scopes: $scopes, rateLimit: $rateLimit, tokenLimit: $tokenLimit, allowedModels: $allowedModels, allowedProviders: $allowedProviders) {
       id projectId channel name key keyPrefix isActive scopes allowedModels allowedProviders rateLimit tokenLimit dailyLimit createdAt expiresAt
@@ -30,7 +52,7 @@ export const CREATE_API_KEY = gql`
   }
 `;
 
-export const CREATE_PLAYGROUND_TOKEN = gql`
+export const CREATE_PLAYGROUND_TOKEN: TypedDocumentNode<CreatePlaygroundTokenMutation, CreatePlaygroundTokenMutationVariables> = gql`
   mutation CreatePlaygroundToken($apiKeyId: ID!) {
     createPlaygroundToken(apiKeyId: $apiKeyId) {
       token
@@ -41,7 +63,7 @@ export const CREATE_PLAYGROUND_TOKEN = gql`
   }
 `;
 
-export const UPDATE_API_KEY = gql`
+export const UPDATE_API_KEY: TypedDocumentNode<UpdateApiKeyMutation, UpdateApiKeyMutationVariables> = gql`
   mutation UpdateApiKey($id: ID!, $name: String, $scopes: String, $rateLimit: Int, $tokenLimit: Int, $isActive: Boolean, $allowedModels: [String!], $allowedProviders: [String!]) {
     updateApiKey(id: $id, name: $name, scopes: $scopes, rateLimit: $rateLimit, tokenLimit: $tokenLimit, isActive: $isActive, allowedModels: $allowedModels, allowedProviders: $allowedProviders) {
       id projectId channel name keyPrefix isActive scopes allowedModels allowedProviders rateLimit tokenLimit dailyLimit createdAt expiresAt
@@ -49,19 +71,19 @@ export const UPDATE_API_KEY = gql`
   }
 `;
 
-export const REVOKE_API_KEY = gql`
+export const REVOKE_API_KEY: TypedDocumentNode<RevokeApiKeyMutation, RevokeApiKeyMutationVariables> = gql`
   mutation RevokeApiKey($projectId: ID!, $id: ID!) {
     revokeApiKey(projectId: $projectId, id: $id) { id isActive }
   }
 `;
 
-export const DELETE_API_KEY = gql`
+export const DELETE_API_KEY: TypedDocumentNode<DeleteApiKeyMutation, DeleteApiKeyMutationVariables> = gql`
   mutation DeleteApiKey($projectId: ID!, $id: ID!) {
     deleteApiKey(projectId: $projectId, id: $id)
   }
 `;
 
-export const UPDATE_PROJECT = gql`
+export const UPDATE_PROJECT: TypedDocumentNode<UpdateProjectMutation, UpdateProjectMutationVariables> = gql`
   mutation UpdateProject($id: ID!, $input: UpdateProjectInput!) {
     updateProject(id: $id, input: $input) {
       id orgId name description quotaLimit whiteListedIps createdAt
@@ -69,7 +91,7 @@ export const UPDATE_PROJECT = gql`
   }
 `;
 
-export const API_KEY_RATE_LIMIT_STATUS = gql`
+export const API_KEY_RATE_LIMIT_STATUS: TypedDocumentNode<ApiKeyRateLimitStatusQuery, ApiKeyRateLimitStatusQueryVariables> = gql`
   query ApiKeyRateLimitStatus($keyId: ID!) {
     apiKeyRateLimitStatus(keyId: $keyId) {
       keyId rpmCurrent rpmLimit rpmExceeded

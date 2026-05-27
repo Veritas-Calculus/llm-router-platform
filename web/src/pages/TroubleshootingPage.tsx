@@ -80,7 +80,7 @@ export default function TroubleshootingPage() {
   const [selectedLevel, setSelectedLevel] = useState(searchParams.get('level') || '');
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
-  const [fetchLogs, { data, loading, error, called }] = useLazyQuery<{ requestLogs: LogEntry[] }>(GET_REQUEST_LOGS, {
+  const [fetchLogs, { data, loading, error, called }] = useLazyQuery(GET_REQUEST_LOGS, {
     fetchPolicy: 'network-only',
   });
 

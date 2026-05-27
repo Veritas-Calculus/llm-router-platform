@@ -54,8 +54,8 @@ export function useHealth() {
   const [activeTab, setActiveTab] = useState<HealthTab>('providers');
   const [alertConfigs, setAlertConfigs] = useState<Map<string, AlertConfig>>(new Map());
 
-  const { data: healthData, loading: healthLoading, refetch: refetchHealth } = useQuery<any>(HEALTH_OVERVIEW_QUERY);
-  const { data: alertsData, loading: alertsLoading, refetch: refetchAlerts } = useQuery<any>(ALERTS_QUERY);
+  const { data: healthData, loading: healthLoading, refetch: refetchHealth } = useQuery(HEALTH_OVERVIEW_QUERY);
+  const { data: alertsData, loading: alertsLoading, refetch: refetchAlerts } = useQuery(ALERTS_QUERY);
 
   const loading = healthLoading || alertsLoading;
   const [refreshing, setRefreshing] = useState(false);
@@ -72,7 +72,7 @@ export function useHealth() {
     const newConfigs = new Map<string, AlertConfig>();
     for (const p of providers) {
       try {
-        const { data } = await client.query<any>({
+        const { data } = await client.query({
           query: ALERT_CONFIG_QUERY,
           variables: { targetType: 'provider', targetId: p.id },
         });

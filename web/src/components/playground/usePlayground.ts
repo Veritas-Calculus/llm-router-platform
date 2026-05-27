@@ -186,16 +186,16 @@ export function usePlayground(): PlaygroundState {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: orgData, loading: orgsLoading } = useQuery<{ myOrganizations: PlaygroundOrganization[] }>(MY_ORGANIZATIONS);
+  const { data: orgData, loading: orgsLoading } = useQuery(MY_ORGANIZATIONS);
   const orgs = useMemo(() => orgData?.myOrganizations ?? [], [orgData]);
 
-  const { data: projectData, loading: projectsLoading } = useQuery<{ myProjects: PlaygroundProject[] }>(MY_PROJECTS, {
+  const { data: projectData, loading: projectsLoading } = useQuery(MY_PROJECTS, {
     variables: { orgId: selectedOrgId },
     skip: !selectedOrgId,
   });
   const projects = useMemo(() => projectData?.myProjects ?? [], [projectData]);
 
-  const { data: apiKeyData, loading: keysLoading } = useQuery<{ myApiKeys: PlaygroundApiKey[] }>(MY_API_KEYS, {
+  const { data: apiKeyData, loading: keysLoading } = useQuery(MY_API_KEYS, {
     variables: { projectId: selectedProjectId },
     skip: !selectedProjectId,
   });
@@ -212,14 +212,7 @@ export function usePlayground(): PlaygroundState {
   const selectedApiKey = activeApiKeys.find(key => key.id === selectedApiKeyId);
   const apiKeysLoading = orgsLoading || projectsLoading || keysLoading;
   const apiKey = apiKeyMode === 'manual' ? manualApiKey : playgroundToken;
-  const [createPlaygroundToken] = useMutation<{
-    createPlaygroundToken: {
-      token: string;
-      expiresAt: string;
-      apiKeyId: string;
-      projectId: string;
-    };
-  }>(CREATE_PLAYGROUND_TOKEN);
+  const [createPlaygroundToken] = useMutation(CREATE_PLAYGROUND_TOKEN);
 
   const selectedModelRef = models.find(m => m.id === selectedModel);
   const modelSupportsVision = selectedModelRef ? isVisionModel(selectedModelRef) : false;

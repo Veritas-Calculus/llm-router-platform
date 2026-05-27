@@ -128,7 +128,7 @@ function DashboardPage() {
   const { t } = useTranslation();
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const pollMs = 30_000;
-  const queryResult = useQuery<any>(ADMIN_DASHBOARD_QUERY, { pollInterval: pollMs });
+  const queryResult = useQuery(ADMIN_DASHBOARD_QUERY, { pollInterval: pollMs });
   useVisibilityAwarePolling(queryResult, pollMs);
   const { data, loading, refetch } = queryResult;
 
@@ -194,8 +194,8 @@ function DashboardPage() {
           title={t('admin.dashboard.success_rate')}
           value={`${(d?.successRate || 0).toFixed(1)}%`}
           subtitle={`${d?.errorCount || 0} ${t('admin.dashboard.errors')}`}
-          icon={d?.successRate >= 95 ? CheckCircleIcon : ExclamationCircleIcon}
-          color={d?.successRate >= 95 ? 'green' : 'red'}
+          icon={(d?.successRate ?? 0) >= 95 ? CheckCircleIcon : ExclamationCircleIcon}
+          color={(d?.successRate ?? 0) >= 95 ? 'green' : 'red'}
         />
       </div>
 

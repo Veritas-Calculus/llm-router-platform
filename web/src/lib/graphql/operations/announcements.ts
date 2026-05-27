@@ -1,8 +1,20 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  ActiveAnnouncementsQuery,
+  ActiveAnnouncementsQueryVariables,
+  AnnouncementsQuery,
+  AnnouncementsQueryVariables,
+  CreateAnnouncementMutation,
+  CreateAnnouncementMutationVariables,
+  DeleteAnnouncementMutation,
+  DeleteAnnouncementMutationVariables,
+  UpdateAnnouncementMutation,
+  UpdateAnnouncementMutationVariables,
+} from '../generated/graphql';
 
 // ── Admin: Announcements ──────────────────────────────────────────
 
-export const ANNOUNCEMENTS_QUERY = gql`
+export const ANNOUNCEMENTS_QUERY: TypedDocumentNode<AnnouncementsQuery, AnnouncementsQueryVariables> = gql`
   query Announcements {
     announcements {
       id
@@ -19,7 +31,7 @@ export const ANNOUNCEMENTS_QUERY = gql`
   }
 `;
 
-export const CREATE_ANNOUNCEMENT = gql`
+export const CREATE_ANNOUNCEMENT: TypedDocumentNode<CreateAnnouncementMutation, CreateAnnouncementMutationVariables> = gql`
   mutation CreateAnnouncement($input: AnnouncementInput!) {
     createAnnouncement(input: $input) {
       id
@@ -35,7 +47,7 @@ export const CREATE_ANNOUNCEMENT = gql`
   }
 `;
 
-export const UPDATE_ANNOUNCEMENT = gql`
+export const UPDATE_ANNOUNCEMENT: TypedDocumentNode<UpdateAnnouncementMutation, UpdateAnnouncementMutationVariables> = gql`
   mutation UpdateAnnouncement($id: ID!, $input: AnnouncementInput!) {
     updateAnnouncement(id: $id, input: $input) {
       id
@@ -51,7 +63,7 @@ export const UPDATE_ANNOUNCEMENT = gql`
   }
 `;
 
-export const DELETE_ANNOUNCEMENT = gql`
+export const DELETE_ANNOUNCEMENT: TypedDocumentNode<DeleteAnnouncementMutation, DeleteAnnouncementMutationVariables> = gql`
   mutation DeleteAnnouncement($id: ID!) {
     deleteAnnouncement(id: $id)
   }
@@ -59,7 +71,7 @@ export const DELETE_ANNOUNCEMENT = gql`
 
 // ── User-facing: Active Announcements ─────────────────────────────
 
-export const ACTIVE_ANNOUNCEMENTS_QUERY = gql`
+export const ACTIVE_ANNOUNCEMENTS_QUERY: TypedDocumentNode<ActiveAnnouncementsQuery, ActiveAnnouncementsQueryVariables> = gql`
   query ActiveAnnouncements {
     activeAnnouncements {
       id

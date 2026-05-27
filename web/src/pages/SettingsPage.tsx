@@ -22,11 +22,11 @@ function SettingsPage() {
   // user dismissed it is this restartTour action.
   const restartOnboarding = useOnboardingStore((s) => s.restartTour);
   const navigate = useNavigate();
-  const [changePwd] = useMutation<any>(CHANGE_PASSWORD);
-  const [generateMfaSecret] = useMutation<any>(GENERATE_MFA_SECRET);
-  const [verifyAndEnableMfa] = useMutation<any>(VERIFY_AND_ENABLE_MFA);
-  const [disableMfaMut] = useMutation<any>(DISABLE_MFA);
-  const [updateProfile] = useMutation<any>(UPDATE_PROFILE);
+  const [changePwd] = useMutation(CHANGE_PASSWORD);
+  const [generateMfaSecret] = useMutation(GENERATE_MFA_SECRET);
+  const [verifyAndEnableMfa] = useMutation(VERIFY_AND_ENABLE_MFA);
+  const [disableMfaMut] = useMutation(DISABLE_MFA);
+  const [updateProfile] = useMutation(UPDATE_PROFILE);
 
   // MFA Setup State
   const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);

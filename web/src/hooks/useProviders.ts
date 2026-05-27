@@ -147,15 +147,15 @@ type CreateProviderData = {
 };
 
 export function useProviders() {
-  const { data: providersData, loading: providersLoading, refetch: refetchProviders } = useQuery<any>(PROVIDERS_QUERY, {
+  const { data: providersData, loading: providersLoading, refetch: refetchProviders } = useQuery(PROVIDERS_QUERY, {
     fetchPolicy: 'cache-and-network',
   });
-  const { data: proxiesData } = useQuery<any>(PROXIES_QUERY);
-  const { data: proxyPoolsData } = useQuery<any>(PROXY_POOLS_QUERY);
-  const { data: healthOverviewData, refetch: refetchHealthOverview } = useQuery<any>(HEALTH_OVERVIEW_QUERY, {
+  const { data: proxiesData } = useQuery(PROXIES_QUERY);
+  const { data: proxyPoolsData } = useQuery(PROXY_POOLS_QUERY);
+  const { data: healthOverviewData, refetch: refetchHealthOverview } = useQuery(HEALTH_OVERVIEW_QUERY, {
     fetchPolicy: 'cache-and-network',
   });
-  const { data: topologyData, refetch: refetchTopology } = useQuery<any>(PROXY_TOPOLOGY_QUERY, {
+  const { data: topologyData, refetch: refetchTopology } = useQuery(PROXY_TOPOLOGY_QUERY, {
     fetchPolicy: 'cache-and-network',
   });
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
@@ -201,7 +201,7 @@ export function useProviders() {
   );
 
   // API Keys query — skip if no provider selected
-  const { data: keysData, refetch: refetchKeys } = useQuery<any>(PROVIDER_API_KEYS_QUERY, {
+  const { data: keysData, refetch: refetchKeys } = useQuery(PROVIDER_API_KEYS_QUERY, {
     variables: { providerId: selectedProviderId || '' },
     skip: !selectedProviderId,
   });

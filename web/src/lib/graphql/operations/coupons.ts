@@ -1,8 +1,18 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  CouponsQuery,
+  CouponsQueryVariables,
+  CreateCouponMutation,
+  CreateCouponMutationVariables,
+  DeleteCouponMutation,
+  DeleteCouponMutationVariables,
+  UpdateCouponMutation,
+  UpdateCouponMutationVariables,
+} from '../generated/graphql';
 
 // ── Admin: Coupons ──────────────────────────────────────────
 
-export const COUPONS_QUERY = gql`
+export const COUPONS_QUERY: TypedDocumentNode<CouponsQuery, CouponsQueryVariables> = gql`
   query Coupons {
     coupons {
       id
@@ -21,7 +31,7 @@ export const COUPONS_QUERY = gql`
   }
 `;
 
-export const CREATE_COUPON = gql`
+export const CREATE_COUPON: TypedDocumentNode<CreateCouponMutation, CreateCouponMutationVariables> = gql`
   mutation CreateCoupon($input: CouponInput!) {
     createCoupon(input: $input) {
       id
@@ -39,7 +49,7 @@ export const CREATE_COUPON = gql`
   }
 `;
 
-export const UPDATE_COUPON = gql`
+export const UPDATE_COUPON: TypedDocumentNode<UpdateCouponMutation, UpdateCouponMutationVariables> = gql`
   mutation UpdateCoupon($id: ID!, $input: CouponInput!) {
     updateCoupon(id: $id, input: $input) {
       id
@@ -56,7 +66,7 @@ export const UPDATE_COUPON = gql`
   }
 `;
 
-export const DELETE_COUPON = gql`
+export const DELETE_COUPON: TypedDocumentNode<DeleteCouponMutation, DeleteCouponMutationVariables> = gql`
   mutation DeleteCoupon($id: ID!) {
     deleteCoupon(id: $id)
   }

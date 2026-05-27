@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
  
 import { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
@@ -13,10 +13,10 @@ interface RedeemCode {
   code: string;
   type: string;
   creditAmount: MoneyValue;
-  planId?: string;
-  usedBy?: string;
-  usedAt?: string;
-  expiresAt?: string;
+  planId: string | null;
+  usedBy: string | null;
+  usedAt: string | null;
+  expiresAt: string | null;
   isActive: boolean;
   createdAt: string;
 }
@@ -33,11 +33,11 @@ function RedeemCodesPage() {
     note: '',
   });
 
-  const { data, loading, refetch } = useQuery<any>(ADMIN_REDEEM_CODES_QUERY, {
+  const { data, loading, refetch } = useQuery(ADMIN_REDEEM_CODES_QUERY, {
     variables: { page, pageSize: 50 },
   });
-  const [generateCodes, { loading: generating }] = useMutation<any>(GENERATE_REDEEM_CODES);
-  const [revokeCode] = useMutation<any>(REVOKE_REDEEM_CODE);
+  const [generateCodes, { loading: generating }] = useMutation(GENERATE_REDEEM_CODES);
+  const [revokeCode] = useMutation(REVOKE_REDEEM_CODE);
 
   const codes: RedeemCode[] = data?.redeemCodes?.nodes || [];
 

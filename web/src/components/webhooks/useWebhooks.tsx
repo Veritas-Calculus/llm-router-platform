@@ -7,7 +7,6 @@ import {
   DELETE_WEBHOOK_ENDPOINT, TEST_WEBHOOK_ENDPOINT, GET_WEBHOOK_DELIVERIES,
 } from '@/lib/graphql/operations/webhooks';
 import { MY_ORGANIZATIONS, MY_PROJECTS } from '@/lib/graphql/operations';
-import type { Organization, Project } from '@/lib/types';
 import { useTranslation } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/authStore';
 import { useAuthHydrated } from '@/hooks/useAuthHydrated';
@@ -69,8 +68,8 @@ export function useWebhooks() {
   const setSelectedOrgId = useAuthStore((s) => s.setSelectedOrgId);
   const hydrated = useAuthHydrated();
 
-  const { data: orgData } = useQuery<any>(MY_ORGANIZATIONS);
-  const orgs: Organization[] = useMemo(() => orgData?.myOrganizations || [], [orgData]);
+  const { data: orgData } = useQuery(MY_ORGANIZATIONS);
+  const orgs = useMemo(() => orgData?.myOrganizations || [], [orgData]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -78,8 +77,8 @@ export function useWebhooks() {
   }, [hydrated, orgs, selectedOrgId, setSelectedOrgId]);
 
   // Project state
-  const { data: projData } = useQuery<any>(MY_PROJECTS, { variables: { orgId: selectedOrgId }, skip: !selectedOrgId });
-  const projects: Project[] = useMemo(() => projData?.myProjects || [], [projData]);
+  const { data: projData } = useQuery(MY_PROJECTS, { variables: { orgId: selectedOrgId }, skip: !selectedOrgId });
+  const projects = useMemo(() => projData?.myProjects || [], [projData]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
 
   useEffect(() => {
@@ -98,9 +97,13 @@ export function useWebhooks() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   // Queries
-  const { data, loading, refetch } = useQuery<any>(GET_WEBHOOKS, { variables: { projectId: selectedProjectId }, skip: !selectedProjectId });
+  const { data, loading, refetch } = useQuery(GET_WEBHOOKS, { variables: { projectId: selectedProjectId }, skip: !selectedProjectId });
   const deliveriesPollMs = 5000;
-  const deliveriesQuery = useQuery<any>(GET_WEBHOOK_DELIVERIES, { variables: { endpointId: selectedEndpointId, limit: 50 }, skip: !selectedEndpointId, pollInterval: deliveriesPollMs });
+  // selectedEndpointId is null until the user picks a webhook. We guard
+  // execution via `skip`, but Apollo 4.2's typed variables now insist on
+  // the ID being a string at the type level — fall back to '' which the
+  // skip flag prevents from ever being executed.
+  const deliveriesQuery = useQuery(GET_WEBHOOK_DELIVERIES, { variables: { endpointId: selectedEndpointId ?? '', limit: 50 }, skip: !selectedEndpointId, pollInterval: deliveriesPollMs });
   useVisibilityAwarePolling(deliveriesQuery, deliveriesPollMs);
   const { data: deliveriesData, loading: deliveriesLoading } = deliveriesQuery;
 

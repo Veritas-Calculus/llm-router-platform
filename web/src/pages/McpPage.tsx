@@ -20,17 +20,36 @@ import toast from 'react-hot-toast';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useTranslation } from '@/lib/i18n';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 function McpPage() {
   const { t } = useTranslation();
-  const { data, loading, refetch } = useQuery<any>(MCP_SERVERS_QUERY);
+  const { data, loading, refetch } = useQuery(MCP_SERVERS_QUERY);
   const servers: McpServer[] = useMemo(() =>
-    (data?.mcpServers || []).map((s: any) => ({
-      id: s.id, name: s.name, type: s.type, command: s.command, args: s.args,
-      env: s.env, url: s.url, is_active: s.isActive, status: s.status,
-      last_error: s.lastError,
-      tools: (s.tools || []).map((t: any) => ({ id: t.id, name: t.name, description: t.description, is_active: t.isActive })),
+    (data?.mcpServers || []).map((s) => ({
+      id: s.id,
+      name: s.name,
+      type: s.type as McpServer['type'],
+      command: s.command || undefined,
+      args: s.args || undefined,
+      // `env` isn't part of MCP_SERVERS_QUERY's selection set — leave it
+      // undefined here; the edit modal repopulates it from a per-server
+      // detail fetch when the user opens the form.
+      env: undefined,
+      url: s.url || undefined,
+      is_active: s.isActive,
+      status: s.status as McpServer['status'],
+      last_error: s.lastError || undefined,
+      last_checked_at: '',
+      created_at: '',
+      tools: (s.tools || []).map((t) => ({
+        id: t.id,
+        server_id: s.id,
+        name: t.name,
+        description: t.description || '',
+        is_active: t.isActive,
+        input_schema: {},
+      })),
     })),
   [data]);
   const [createMut] = useMutation(CREATE_MCP_SERVER);
@@ -84,8 +103,12 @@ function McpPage() {
     e.preventDefault();
     try {
       const input = {
-        name: formData.name, type: formData.type, command: formData.command,
-        args: formData.args, url: formData.url, isActive: formData.is_active,
+        name: formData.name ?? '',
+        type: formData.type ?? 'stdio',
+        command: formData.command,
+        args: formData.args,
+        url: formData.url,
+        isActive: formData.is_active,
       };
       if (selectedServer) {
         await updateMut({ variables: { id: selectedServer.id, input } });

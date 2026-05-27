@@ -105,7 +105,7 @@ export default function NotificationCenter({ pollInterval = 60000 }: Notificatio
   // visible toast on every page. Gate the query so it only runs for admins.
   const isAdmin = useAuthStore((s) => s.isAdmin);
 
-  const queryResult = useQuery<any>(ALERTS_QUERY, {
+  const queryResult = useQuery(ALERTS_QUERY, {
     variables: { status: filter === 'active' ? 'active' : undefined },
     pollInterval,
     skip: !isAdmin,

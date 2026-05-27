@@ -3,7 +3,6 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client/react';
 import { GET_DLP_CONFIG, UPDATE_DLP_CONFIG, TEST_DLP_REDACTION } from '@/lib/graphql/operations/dlp';
 import { MY_ORGANIZATIONS, MY_PROJECTS } from '@/lib/graphql/operations';
-import type { Organization, Project } from '@/lib/types';
 import { useAuthStore } from '@/stores/authStore';
 import { useAuthHydrated } from '@/hooks/useAuthHydrated';
 import toast from 'react-hot-toast';
@@ -21,8 +20,8 @@ export function useDlpSettings() {
   const setSelectedOrgId = useAuthStore((s) => s.setSelectedOrgId);
   const hydrated = useAuthHydrated();
 
-  const { data: orgData } = useQuery<any>(MY_ORGANIZATIONS);
-  const orgs: Organization[] = useMemo(() => orgData?.myOrganizations || [], [orgData]);
+  const { data: orgData } = useQuery(MY_ORGANIZATIONS);
+  const orgs = useMemo(() => orgData?.myOrganizations || [], [orgData]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -30,8 +29,8 @@ export function useDlpSettings() {
   }, [hydrated, orgs, selectedOrgId, setSelectedOrgId]);
 
   // Project state
-  const { data: projData } = useQuery<any>(MY_PROJECTS, { variables: { orgId: selectedOrgId }, skip: !selectedOrgId });
-  const projects: Project[] = useMemo(() => projData?.myProjects || [], [projData]);
+  const { data: projData } = useQuery(MY_PROJECTS, { variables: { orgId: selectedOrgId }, skip: !selectedOrgId });
+  const projects = useMemo(() => projData?.myProjects || [], [projData]);
   const [currentProjectId, setCurrentProjectId] = useState<string>('');
 
   useEffect(() => {
@@ -46,9 +45,9 @@ export function useDlpSettings() {
   const [customRegexInput, setCustomRegexInput] = useState('');
 
   // Queries
-  const { data, loading } = useQuery<any>(GET_DLP_CONFIG, { variables: { projectId: currentProjectId }, skip: !currentProjectId, fetchPolicy: 'network-only' });
-  const [updateDlp] = useMutation<any>(UPDATE_DLP_CONFIG, { refetchQueries: [{ query: GET_DLP_CONFIG, variables: { projectId: currentProjectId } }], awaitRefetchQueries: true });
-  const [testDlp, { loading: testing }] = useLazyQuery<any>(TEST_DLP_REDACTION, { fetchPolicy: 'network-only' });
+  const { data, loading } = useQuery(GET_DLP_CONFIG, { variables: { projectId: currentProjectId }, skip: !currentProjectId, fetchPolicy: 'network-only' });
+  const [updateDlp] = useMutation(UPDATE_DLP_CONFIG, { refetchQueries: [{ query: GET_DLP_CONFIG, variables: { projectId: currentProjectId } }], awaitRefetchQueries: true });
+  const [testDlp, { loading: testing }] = useLazyQuery(TEST_DLP_REDACTION, { fetchPolicy: 'network-only' });
 
   const config = data?.getDlpConfig || null;
   const activePresetId = detectActivePreset(config);

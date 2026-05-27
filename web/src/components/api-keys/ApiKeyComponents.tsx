@@ -28,6 +28,10 @@ const STATUS_BADGE_BASE: Record<string, { labelKey: string; className: string }>
 
 /* ── Utility ── */
 
+// Shape mirrors what MyApiKeysQuery (and the createApiKey mutation) return.
+// Apollo 4.2 narrows nullable timestamps to `string | null`, so we accept
+// either form here and normalise via the snake_case mapping below — keeps
+// the legacy ApiKey shape stable while letting codegen tighten upstream.
 interface RawApiKeyData {
   id: string;
   projectId: string;
@@ -43,31 +47,8 @@ interface RawApiKeyData {
   tokenLimit: number;
   dailyLimit: number;
   createdAt: string;
-  lastUsedAt: string;
-  expiresAt: string;
-}
-
-interface RateLimitStatusData {
-  apiKeyRateLimitStatus: {
-    status: string;
-    rpmCurrent: number;
-    rpmLimit: number;
-    tpmCurrent: number;
-    tpmLimit: number;
-    dailyCurrent: number;
-    dailyLimit: number;
-    statusReason: string;
-  };
-}
-
-interface SubscriptionQuotaData {
-  mySubscription: {
-    planName: string;
-    tokenLimit: number;
-    usedTokens: number;
-    quotaPercentage: number;
-    isQuotaExceeded: boolean;
-  };
+  lastUsedAt: string | null;
+  expiresAt: string | null;
 }
 
 export function mapApiKey(d: RawApiKeyData): ApiKey {
@@ -105,7 +86,7 @@ function RateLimitMiniBar({ current, limit, label }: { current: number; limit: n
 export function RateLimitStatusCell({ keyId, isActive }: { keyId: string; isActive: boolean }) {
   const { t } = useTranslation();
   const pollMs = 10000;
-  const queryResult = useQuery<RateLimitStatusData>(API_KEY_RATE_LIMIT_STATUS, {
+  const queryResult = useQuery(API_KEY_RATE_LIMIT_STATUS, {
     variables: { keyId },
     skip: !isActive,
     pollInterval: pollMs,
@@ -134,7 +115,7 @@ export function RateLimitStatusCell({ keyId, isActive }: { keyId: string; isActi
 /* ── Subscription Quota Banner ── */
 
 export function SubscriptionQuotaBanner() {
-  const { data } = useQuery<SubscriptionQuotaData>(SUBSCRIPTION_QUOTA_QUERY, { fetchPolicy: 'cache-and-network' });
+  const { data } = useQuery(SUBSCRIPTION_QUOTA_QUERY, { fetchPolicy: 'cache-and-network' });
   const sub = data?.mySubscription;
   if (!sub || sub.tokenLimit <= 0) return null;
 

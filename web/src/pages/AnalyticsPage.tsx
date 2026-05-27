@@ -74,7 +74,7 @@ type TabKey = (typeof tabs)[number]['key'];
 
 function UsageTab() {
   const { t } = useTranslation();
-  const { data, loading } = useQuery<any>(DASHBOARD_QUERY, { variables: { days: 30 } });
+  const { data, loading } = useQuery(DASHBOARD_QUERY, { variables: { days: 30 } });
 
   const chartData = useMemo(() =>
     (data?.usageChart || []).map((point: any) => ({ ...point, cost: moneyNumber(point.cost) })),
@@ -227,7 +227,7 @@ function UsageTab() {
 
 function RevenueTab() {
   const { t } = useTranslation();
-  const { data, loading } = useQuery<any>(ADMIN_REVENUE_CHART_QUERY, { variables: { days: 30 } });
+  const { data, loading } = useQuery(ADMIN_REVENUE_CHART_QUERY, { variables: { days: 30 } });
 
   const chartData = useMemo(() =>
     (data?.adminRevenueChart || []).map((point: any) => ({ ...point, revenue: moneyNumber(point.revenue) })),
@@ -291,8 +291,8 @@ function RevenueTab() {
 
 function UsersTab() {
   const { t } = useTranslation();
-  const { data: usageData, loading: l1 } = useQuery<any>(ADMIN_USAGE_BY_USER_QUERY, { variables: { days: 30 } });
-  const { data: growthData, loading: l2 } = useQuery<any>(ADMIN_USER_GROWTH_QUERY, { variables: { days: 30 } });
+  const { data: usageData, loading: l1 } = useQuery(ADMIN_USAGE_BY_USER_QUERY, { variables: { days: 30 } });
+  const { data: growthData, loading: l2 } = useQuery(ADMIN_USER_GROWTH_QUERY, { variables: { days: 30 } });
 
   const users = useMemo(() => usageData?.adminUsageByUser || [], [usageData]);
   const growth = useMemo(() => growthData?.adminUserGrowth || [], [growthData]);
