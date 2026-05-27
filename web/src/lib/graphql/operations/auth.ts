@@ -106,6 +106,27 @@ export const CAPTCHA_CONFIG = gql`
   }
 `;
 
+// PASSWORD_POLICY is consumed by the signup form so the inline hint and
+// the client-side validator always match the server-side enforcement
+// (M-09). Cache-first because the policy rarely changes at runtime.
+//
+// blockCommonPasswords (post-audit P0-2) was added so the client can warn
+// when a user types a password the server will reject as "too common"
+// (e.g. "Passw0rd1") instead of advertising fewer rules than the server
+// actually enforces.
+export const PASSWORD_POLICY = gql`
+  query PasswordPolicy {
+    passwordPolicy {
+      minLength
+      requireLetter
+      requireDigit
+      requireUpper
+      requireLower
+      blockCommonPasswords
+    }
+  }
+`;
+
 export const DISCOVER_SSO = gql`
   mutation DiscoverSso($email: String!) {
     discoverSso(email: $email) {

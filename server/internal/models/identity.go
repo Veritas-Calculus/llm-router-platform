@@ -27,6 +27,11 @@ type User struct {
 	TokensInvalidatedAt   time.Time            `json:"-"`                                                      // tokens issued before this time are rejected
 	EmailVerified         bool                 `gorm:"default:false" json:"email_verified"`
 	EmailVerifiedAt       *time.Time           `json:"email_verified_at,omitempty"`
+	// WelcomeCreditGrantedAt tracks idempotency of the registration-time
+	// $5 gift. NULL = not yet credited (still possible). A non-NULL value
+	// means we have credited this account once and verifyEmail must not
+	// credit it again.
+	WelcomeCreditGrantedAt *time.Time           `json:"welcome_credit_granted_at,omitempty"`
 	MfaEnabled            bool                 `gorm:"default:false" json:"mfa_enabled"`
 	MfaSecret             string               `gorm:"type:varchar(255)" json:"-"`
 	MfaBackupCodes        string               `gorm:"type:text" json:"-"` // JSON array of backup codes

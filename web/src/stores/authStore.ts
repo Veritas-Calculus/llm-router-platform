@@ -5,6 +5,12 @@ import { User } from '@/lib/types';
 const AUTH_STORAGE_KEY = 'auth-storage';
 
 interface AuthState {
+  // token is kept in memory for the runtime lifetime of the page but no
+  // longer persisted to localStorage (C-02). A successful Login/Register
+  // sets it in memory and the HttpOnly cookie carries it to subsequent
+  // requests; on a hard refresh we rely on the cookie + the /me bootstrap
+  // query to re-hydrate the user, and token returns to null until the
+  // next mutation that returns one.
   token: string | null;
   user: User | null;
   isAuthenticated: boolean;
@@ -13,6 +19,10 @@ interface AuthState {
   selectedOrgId: string | null;
   setAuth: (token: string, user: User) => void;
   setAccessToken: (token: string) => void;
+  /** Called on bootstrap when the cookie is still valid but the in-memory
+   *  state lost its token (page reload). Sets only the user portion and
+   *  marks the session authenticated; token stays null. */
+  setUserFromCookie: (user: User) => void;
   logout: () => void;
   updateUser: (user: User) => void;
   toggleAdminView: () => void;
@@ -40,6 +50,13 @@ export const useAuthStore = create<AuthState>()(
         set(() => ({
           token,
         })),
+      setUserFromCookie: (user) =>
+        set({
+          user,
+          isAuthenticated: true,
+          isAdmin: user.role === 'admin',
+          adminView: user.role === 'admin',
+        }),
       logout: () =>
         set({
           token: null,
@@ -58,22 +75,30 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: AUTH_STORAGE_KEY,
-      // Keep the login session browser-wide so a user can open multiple tabs
-      // without re-entering credentials. Logout still clears every tab through
-      // the storage event listener below.
+      // Persist only the parts of the auth state that DON'T grant access:
+      // user profile, role flag, UI preferences. The access token is
+      // intentionally excluded (C-02) — XSS reading localStorage no
+      // longer yields a usable bearer. The session itself is carried
+      // by the HttpOnly cookie + the /me bootstrap query.
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        token: state.token,
         user: state.user,
         isAuthenticated: state.isAuthenticated,
         isAdmin: state.isAdmin,
         adminView: state.adminView,
         selectedOrgId: state.selectedOrgId,
       }),
-      version: 2,
-      migrate: (persistedState) => {
+      version: 3,
+      migrate: (persistedState, _version) => {
         if (persistedState && typeof persistedState === 'object') {
-          delete (persistedState as { refreshToken?: unknown }).refreshToken;
+          const s = persistedState as Record<string, unknown>;
+          // v2 → v3: drop the legacy persisted access token. A user who
+          // last logged in on an older build still has a valid HttpOnly
+          // cookie on disk, so the bootstrap query rehydrates them
+          // transparently. If the cookie is gone, the next protected
+          // query fails and the errorLink redirects to /login.
+          delete s.token;
+          delete s.refreshToken;
         }
         return persistedState as AuthState;
       },

@@ -12,6 +12,7 @@ import (
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/billing"
 	semantic "llm-router-platform/internal/service/cache"
+	"llm-router-platform/internal/service/captcha"
 	configService "llm-router-platform/internal/service/config"
 	"llm-router-platform/internal/service/coupon"
 	"llm-router-platform/internal/service/document"
@@ -66,6 +67,7 @@ type Resolver struct {
 	WebhookSvc       webhook.Service
 	MonitoringSvc    *monitoring.Collector
 	TurnstileSvc     *turnstile.Service
+	CaptchaSvc       *captcha.Service
 	LoginLimiter     *user.LoginLimiter
 	AdminSvc         *admin.Service
 	Logger           *zap.Logger

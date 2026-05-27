@@ -44,6 +44,7 @@ import { useThemeStore } from '@/stores/themeStore';
 import { useTranslation } from '@/lib/i18n';
 import NotificationCenter from '@/components/NotificationCenter';
 import OrgSwitcher from '@/components/OrgSwitcher';
+import VerifyEmailBanner from '@/components/VerifyEmailBanner';
 
 /* ── Navigation definitions ── */
 
@@ -214,8 +215,24 @@ function Layout() {
     setIsSidebarOpen(false);
   }, [location.pathname]);
 
-  // Update document title based on current route
+  // Update document title based on current route.
+  //
+  // M-06: skip the title update when a non-admin user has navigated to an
+  // /admin/* path that the AdminRoute guard is about to redirect away from.
+  // Otherwise the title briefly flashes "Users - Router" before the
+  // redirect lands on /api-keys. We don't gate the lazy chunk fetch
+  // itself — AdminRoute already returns <Navigate> before its child
+  // (lazy AdminDashboardPage etc.) mounts, so the chunk never downloads —
+  // but the title effect runs at the same render pass as the redirect,
+  // so suppressing it here prevents the visible artifact.
   useEffect(() => {
+    const isAdminPath = location.pathname.startsWith('/admin');
+    if (isAdminPath && !isAdmin) {
+      // Don't reveal the admin page name to a non-admin who hit the URL
+      // directly. AdminRoute will redirect them on the next tick.
+      return;
+    }
+
     const allGroups = [...userNavGroups, ...adminNavGroups];
     let routeTitle = '';
 
@@ -234,7 +251,7 @@ function Layout() {
     } else {
       document.title = siteName;
     }
-  }, [location.pathname, siteName, t]);
+  }, [location.pathname, siteName, t, isAdmin]);
 
   // Redirect ONLY on the adminView toggle transition, not on every
   // location.pathname change. Previously this effect re-ran on every
@@ -449,6 +466,7 @@ function Layout() {
           </div>
         </header>
 
+        <VerifyEmailBanner />
         <motion.div
           key={location.pathname}
           initial={{ opacity: 0, y: 10 }}

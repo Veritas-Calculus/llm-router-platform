@@ -35,7 +35,17 @@ func OnboardAccount(ctx context.Context, db *gorm.DB, u *models.User, params Onb
 			orgName = u.Name + "'s Org"
 		}
 
-		org := models.Organization{Name: orgName, OwnerID: u.ID}
+		// Tenancy invariant (CLAUDE.md, migration 000021): the personal
+		// organization for a user MUST have organizations.id == users.id so
+		// the handler-level "use user_id as org_id" convention used by
+		// billing tables resolves to a real organizations row. Migration
+		// 000021 backfilled existing users; new users created via this
+		// path also need to honour the invariant.
+		org := models.Organization{
+			BaseModel: models.BaseModel{ID: u.ID},
+			Name:      orgName,
+			OwnerID:   u.ID,
+		}
 		if err := tx.Create(&org).Error; err != nil {
 			return fmt.Errorf("failed to create organization: %w", err)
 		}

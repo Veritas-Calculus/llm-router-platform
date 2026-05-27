@@ -6,12 +6,14 @@ package resolvers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"llm-router-platform/internal/api/handlers"
 	"llm-router-platform/internal/graphql/directives"
+	"llm-router-platform/internal/graphql/errs"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/user"
@@ -67,10 +69,17 @@ func (r *mutationResolver) Login(ctx context.Context, input model.LoginInput) (*
 		return nil, err
 	}
 	r.setRefreshTokenCookie(ctx, refresh)
+	r.setAccessTokenCookie(ctx, token)
 	return &model.AuthPayload{Token: token, User: userToGQL(u)}, nil
 }
 
 // Register is the resolver for the register field.
+//
+// SECURITY (C-01): the $5 welcome credit is NOT granted at registration
+// anymore. Credit is granted by VerifyEmail once the user proves they own
+// the email address. Captcha is enforced for every mode, and is verified
+// BEFORE we create the user record — a failed captcha must not leave a
+// half-onboarded row behind.
 func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInput) (*model.AuthPayload, error) {
 	// Registration mode enforcement
 	mode := r.Config().Registration.Mode
@@ -78,35 +87,52 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 		mode = "closed"
 	}
 
-	switch mode {
-	case "closed":
+	if mode == "closed" {
 		return nil, fmt.Errorf("registration is currently closed")
-	case "invite":
+	}
+
+	// Verify captcha first so failed captcha doesn't leave half-created rows.
+	// The captcha service handles dev/turnstile/hcaptcha/disabled selection.
+	if err := r.verifyCaptcha(ctx, input.CaptchaToken); err != nil {
+		return nil, err
+	}
+
+	if mode == "invite" {
 		if input.InviteCode == nil || *input.InviteCode == "" {
-			return nil, fmt.Errorf("invite code is required")
-		}
-		if err := r.verifyCaptcha(ctx, input.CaptchaToken); err != nil {
-			return nil, err
+			return nil, errs.Validation("inviteCode", "invite code is required")
 		}
 		if err := r.consumeInviteCode(ctx, *input.InviteCode); err != nil {
-			return nil, err
-		}
-	case "open":
-		if err := r.verifyCaptcha(ctx, input.CaptchaToken); err != nil {
 			return nil, err
 		}
 	}
 
 	u, err := r.UserSvc.Register(ctx, input.Email, input.Password, input.Name)
 	if err != nil {
+		// Translate user-service errors into typed validation errors so the
+		// frontend can highlight the offending field. Pre-existing typed
+		// errors (errs.Validation) propagate unchanged.
+		var ve *errs.ValidationError
+		if errors.As(err, &ve) {
+			return nil, err
+		}
+		if isPasswordPolicyError(err) {
+			return nil, errs.Validation("password", err.Error())
+		}
+		// "registration failed" is the user-service's deliberately vague
+		// response to duplicate-email collisions — kept generic to prevent
+		// user enumeration. We surface it as a generic email-field error
+		// so the form can still attach the message to the email input
+		// without leaking whether the email exists.
+		if err.Error() == "registration failed" {
+			return nil, errs.Validation("email", "registration failed")
+		}
 		return nil, err
 	}
 
-	// Onboard: create Org + Project + optional Welcome Credit
-	grantCredit := r.checkWelcomeCreditEligibility(ctx)
-
+	// Onboard: create Org + Project + membership. NO welcome credit yet —
+	// VerifyEmail grants it once email ownership is proven.
 	if err := user.OnboardAccount(ctx, r.AdminSvc.DB(), u, user.OnboardAccountParams{
-		GrantWelcomeCredit: grantCredit,
+		GrantWelcomeCredit: false,
 	}, r.Logger); err != nil {
 		r.Logger.Error("failed to onboard new user", zap.Error(err), zap.String("user_id", u.ID.String()))
 	}
@@ -114,17 +140,39 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 	ip, ua := clientInfo(ctx)
 	r.AuditService.Log(ctx, audit.ActionRegister, u.ID, u.ID, ip, ua, nil)
 
-	// Send email verification (non-blocking)
-	go func() {
-		rawToken, tokenErr := r.EmailVerifySvc.CreateVerificationToken(ctx, u.ID)
-		if tokenErr != nil {
-			r.Logger.Error("failed to create verification token", zap.Error(tokenErr), zap.String("user_id", u.ID.String()))
-			return
-		}
-		if sendErr := r.EmailService.SendEmailVerification(u.Email, u.Name, rawToken); sendErr != nil {
-			r.Logger.Error("failed to send verification email", zap.Error(sendErr), zap.String("user_id", u.ID.String()))
-		}
-	}()
+	// Create the verification token synchronously so we can report
+	// emailVerificationSent accurately. The send is non-blocking with a
+	// background context (the caller's ctx may be canceled when the
+	// response is written).
+	sendOK := true
+	rawToken, tokenErr := r.EmailVerifySvc.CreateVerificationToken(ctx, u.ID)
+	if tokenErr != nil {
+		r.Logger.Error("failed to create verification token",
+			zap.Error(tokenErr), zap.String("user_id", u.ID.String()))
+		sendOK = false
+	} else {
+		uID := u.ID
+		uEmail := u.Email
+		uName := u.Name
+		// Capture frontend URL for the dev-mode console log fallback below.
+		feURL := r.Config().Frontend.URL
+		go func() {
+			sendErr := r.EmailService.SendEmailVerification(uEmail, uName, rawToken)
+			if sendErr != nil {
+				r.Logger.Error("failed to send verification email",
+					zap.Error(sendErr), zap.String("user_id", uID.String()))
+				return
+			}
+			// If SMTP is disabled (no host configured), the email service
+			// silently returns nil. Surface the verification link in the
+			// server log so local docker-compose users can still verify.
+			if !r.Config().Email.Enabled {
+				r.Logger.Info("email verification link (SMTP disabled)",
+					zap.String("user_id", uID.String()),
+					zap.String("url", fmt.Sprintf("%s/verify-email?token=%s", feURL, rawToken)))
+			}
+		}()
+	}
 
 	token, err := r.generateJWT(u)
 	if err != nil {
@@ -135,7 +183,12 @@ func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInp
 		return nil, err
 	}
 	r.setRefreshTokenCookie(ctx, refresh)
-	return &model.AuthPayload{Token: token, User: userToGQL(u)}, nil
+	r.setAccessTokenCookie(ctx, token)
+	return &model.AuthPayload{
+		Token:                 token,
+		User:                  userToGQL(u),
+		EmailVerificationSent: &sendOK,
+	}, nil
 }
 
 // RefreshToken is the resolver for the refreshToken field.
@@ -172,6 +225,7 @@ func (r *mutationResolver) RefreshToken(ctx context.Context) (*model.AuthPayload
 	if err != nil {
 		return nil, err
 	}
+	r.setAccessTokenCookie(ctx, token)
 	return &model.AuthPayload{Token: token, User: userToGQL(u)}, nil
 }
 
@@ -238,6 +292,7 @@ func (r *mutationResolver) RotateRefreshToken(ctx context.Context, refreshToken 
 		return nil, err
 	}
 	r.setRefreshTokenCookie(ctx, refresh)
+	r.setAccessTokenCookie(ctx, token)
 	if usingCookie {
 		return &model.AuthPayload{Token: token, User: userToGQL(u)}, nil
 	}
@@ -292,6 +347,7 @@ func (r *mutationResolver) ExchangeOAuthCode(ctx context.Context) (*model.AuthPa
 		return nil, err
 	}
 	r.setRefreshTokenCookie(ctx, refresh)
+	r.setAccessTokenCookie(ctx, token)
 	return &model.AuthPayload{Token: token, User: userToGQL(u)}, nil
 }
 
@@ -304,6 +360,7 @@ func (r *mutationResolver) Logout(ctx context.Context) (bool, error) {
 	id, _ := uuid.Parse(uid)
 	_ = r.UserSvc.InvalidateTokens(ctx, id)
 	r.clearRefreshTokenCookie(ctx)
+	r.clearAccessTokenCookie(ctx)
 	ip, ua := clientInfo(ctx)
 	r.AuditService.Log(ctx, audit.ActionLogout, id, id, ip, ua, nil)
 	return true, nil
@@ -367,10 +424,41 @@ func (r *mutationResolver) UpdateProfile(ctx context.Context, input model.Update
 }
 
 // VerifyEmail is the resolver for the verifyEmail field.
+//
+// C-01: Once email ownership is proven, this also grants the $5 welcome
+// credit — but only once per account. Re-verification (idempotency) and
+// pre-existing users with a non-NULL welcome_credit_granted_at are no-ops
+// on the credit step.
 func (r *mutationResolver) VerifyEmail(ctx context.Context, token string) (bool, error) {
-	_, err := r.EmailVerifySvc.VerifyEmail(ctx, token)
+	userID, err := r.EmailVerifySvc.VerifyEmail(ctx, token)
 	if err != nil {
 		return false, err
+	}
+
+	// Award welcome credit if (a) we haven't credited this user before, and
+	// (b) the IP-based anti-abuse throttle in checkWelcomeCreditEligibility
+	// permits it. Both conditions must hold; both failure modes leave the
+	// user verified but uncredited.
+	u, getErr := r.UserSvc.GetByID(ctx, userID)
+	if getErr != nil {
+		r.Logger.Error("VerifyEmail: failed to load user", zap.Error(getErr), zap.String("user_id", userID.String()))
+		return true, nil
+	}
+
+	if u.WelcomeCreditGrantedAt != nil {
+		// Already credited; treat as no-op success.
+		return true, nil
+	}
+
+	if !r.checkWelcomeCreditEligibility(ctx) {
+		r.Logger.Warn("VerifyEmail: welcome credit denied by IP throttle",
+			zap.String("user_id", userID.String()))
+		return true, nil
+	}
+
+	if err := r.Balance.GrantWelcomeCredit(ctx, u); err != nil {
+		r.Logger.Error("VerifyEmail: failed to grant welcome credit", zap.Error(err), zap.String("user_id", userID.String()))
+		// Don't fail the verification — the user IS verified, just uncredited.
 	}
 	return true, nil
 }
@@ -464,6 +552,28 @@ func (r *queryResolver) Me(ctx context.Context) (*model.User, error) {
 		return nil, fmt.Errorf("user not found")
 	}
 	return userToGQL(u), nil
+}
+
+// PasswordPolicy returns the server-enforced password policy. The frontend
+// reads this on the signup form so its inline hint always matches what the
+// server actually validates (M-09: avoid the "Minimum 6 characters" lie
+// shipped while the server required 8). Public so unauthenticated pages
+// can read it.
+//
+// Keep this in sync with server/internal/service/user/user.go::ValidatePassword
+// and web/src/lib/auth/passwordPolicy.ts. Post-audit P0-2 added the
+// blockCommonPasswords flag so the client-side validator can pre-empt the
+// server's "password is too common" rejection instead of advertising fewer
+// rules than the server enforces.
+func (r *queryResolver) PasswordPolicy(_ context.Context) (*model.PasswordPolicy, error) {
+	return &model.PasswordPolicy{
+		MinLength:            8,
+		RequireLetter:        true,
+		RequireDigit:         true,
+		RequireUpper:         true,
+		RequireLower:         true,
+		BlockCommonPasswords: true,
+	}, nil
 }
 
 // RegistrationMode is the resolver for the registrationMode field.

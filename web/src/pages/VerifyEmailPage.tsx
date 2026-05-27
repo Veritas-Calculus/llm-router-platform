@@ -60,7 +60,7 @@ function VerifyEmailPage() {
               </div>
               <h2 className="text-xl font-semibold text-apple-gray-900">Email Verified!</h2>
               <p className="text-apple-gray-500 text-sm max-w-xs">
-                Your email has been successfully verified. You now have full access to all features.
+                Thanks — your email is verified and your $5 welcome credit has been added to your balance.
               </p>
               <Link
                 to="/dashboard"

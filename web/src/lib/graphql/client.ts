@@ -14,23 +14,38 @@ import * as Sentry from '@sentry/react';
 import { useAuthStore } from '@/stores/authStore';
 
 // ── HTTP Link ──────────────────────────────────────────────────────
+// credentials:'include' ensures the HttpOnly access cookie is sent on
+// every GraphQL request. C-02: this is the browser-side half of moving
+// access tokens off localStorage — together with the server-side
+// llm_router_access cookie it eliminates the XSS-as-session-takeover
+// blast radius.
 const httpLink = createHttpLink({
   uri: '/graphql',
-  credentials: 'same-origin',
+  credentials: 'include',
 });
 
 // ── Auth Link ──────────────────────────────────────────────────────
-// Forwards the access token and the currently selected org. Sending
-// selectedOrgId as a header (rather than threading it through every query's
-// variables) lets the backend default org-scoped reads to the user's active
-// org without each resolver having to plumb an explicit argument.
+// Sends the active org header so the backend can default org-scoped
+// reads to the user's current selection without each resolver
+// threading an explicit argument. The access token rides in the
+// llm_router_access HttpOnly cookie now (C-02); we deliberately do
+// NOT set an Authorization header from browser state. If non-browser
+// code reuses this client and stashes a bearer in the store, we
+// still forward it — that's the API-key-style fallback path.
 const authLink = setContext((_, { headers }) => {
   const { token, selectedOrgId } = useAuthStore.getState();
+  const extra: Record<string, string> = {};
+  if (selectedOrgId) extra['x-active-org'] = selectedOrgId;
+  // Browser sessions: cookie is authoritative, do not double-attach.
+  // Non-browser callers (e.g. tests, server-side rendering) may still
+  // populate token via setAuth to use the bearer path.
+  if (token && typeof window === 'undefined') {
+    extra.Authorization = `Bearer ${token}`;
+  }
   return {
     headers: {
       ...headers,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(selectedOrgId ? { 'x-active-org': selectedOrgId } : {}),
+      ...extra,
     },
   };
 });
@@ -152,10 +167,33 @@ const errorLink = onError(({ error, operation, forward }) => {
     for (const gqlError of error.errors) {
       const code = codeOf(gqlError);
       const msg = gqlError.message;
-      if (code === 'FORBIDDEN' || (!code && (msg.includes('forbidden') || msg.includes('admin access required')))) {
-        toast.error(msg);
+      const isForbidden =
+        code === 'FORBIDDEN' ||
+        (!code && (msg.includes('forbidden') || msg.includes('admin access required')));
+
+      if (isForbidden) {
+        // C-03: do NOT toast a forbidden error. The user already knows
+        // they're not an admin; surfacing the raw "admin access required"
+        // message leaks backend role names and produces noise on routes
+        // that opportunistically fetch admin-scoped data. Log it for
+        // observability instead — repeated FORBIDDEN on the same op is
+        // the signal we want to act on (probably a missing client-side
+        // role gate).
+        const operationName = operation.operationName || '<anonymous>';
+        if (typeof console !== 'undefined') {
+          console.warn(`[apollo] suppressed FORBIDDEN on ${operationName}: ${msg}`);
+        }
+        Sentry.captureMessage(`FORBIDDEN on ${operationName}`, {
+          level: 'warning',
+          extra: { operation: operationName, message: msg },
+        });
         return undefined;
       }
+      // VALIDATION errors are component-local (form fields handle them
+      // inline) so we don't toast either — toasting on submit-time
+      // validation hides which field is bad.
+      // INTERNAL errors and everything else fall through to the caller
+      // which can decide whether to toast.
     }
   } else {
     // Network / unknown error
@@ -202,6 +240,25 @@ export const apolloClient = new ApolloClient({
     typePolicies: {
       Query: {
         fields: queryFieldPolicies,
+      },
+      // H-06: User.balance is read on Dashboard, Subscription, Recharge —
+      // each via a different query (UserDashboard, MyBilling, MyBalance).
+      // With Apollo normalization the entity is already shared by id, but
+      // we declare the field policy explicitly so a partial fetch
+      // (e.g. me { id name } without balance) never wipes a previously
+      // resolved balance from the cache. The custom merge keeps the
+      // freshest non-undefined value, which matches the "monotonic"
+      // user-mental-model for financial fields.
+      User: {
+        keyFields: ['id'],
+        fields: {
+          balance: {
+            merge(existing, incoming) {
+              if (incoming === undefined || incoming === null) return existing;
+              return incoming;
+            },
+          },
+        },
       },
     },
   }),

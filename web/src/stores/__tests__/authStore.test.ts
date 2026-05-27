@@ -111,7 +111,11 @@ describe('authStore', () => {
         expect(state.token).toBe('test-token'); // Token unchanged
     });
 
-    it('should persist auth state in browser storage', () => {
+    it('persists user/session flags but NOT the access token', () => {
+        // C-02: the access token lives in an HttpOnly cookie, not
+        // localStorage. The persist middleware deliberately strips it
+        // so an XSS that reads auth-storage cannot recover a usable
+        // bearer.
         const mockUser = {
             id: 'user-1',
             email: 'test@example.com',
@@ -126,9 +130,13 @@ describe('authStore', () => {
 
         useAuthStore.getState().setAuth('shared-token', mockUser);
 
+        // Token is still set in-memory for the current page lifetime.
+        expect(useAuthStore.getState().token).toBe('shared-token');
+
         const persisted = JSON.parse(localStorage.getItem('auth-storage') ?? '{}');
-        expect(persisted.state.token).toBe('shared-token');
+        expect(persisted.state.token).toBeUndefined();
         expect(persisted.state.refreshToken).toBeUndefined();
         expect(persisted.state.isAuthenticated).toBe(true);
+        expect(persisted.state.user?.email).toBe('test@example.com');
     });
 });

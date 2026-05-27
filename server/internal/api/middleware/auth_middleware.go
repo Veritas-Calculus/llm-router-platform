@@ -21,6 +21,14 @@ import (
 	"llm-router-platform/pkg/jwtsign"
 )
 
+// AccessTokenCookieName is the name of the HttpOnly cookie carrying the
+// access JWT. C-02: keeping the access token out of localStorage means a
+// single XSS no longer translates into a session takeover.
+//
+// Kept in sync with server/internal/graphql/resolvers/helpers_auth.go
+// (accessTokenCookieName) — both names point at the same cookie.
+const AccessTokenCookieName = "llm_router_access"
+
 // AuthMiddleware handles JWT authentication.
 type AuthMiddleware struct {
 	jwtSecret   []byte
@@ -54,13 +62,13 @@ func NewAuthMiddleware(cfg *config.JWTConfig, userService *user.Service, logger 
 
 func (m *AuthMiddleware) JWT() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		rawToken, ok := extractAccessToken(c)
+		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
 			return
 		}
 
-		claims, err := m.parseTokenClaims(authHeader)
+		claims, err := m.parseRawToken(rawToken)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
@@ -97,41 +105,57 @@ func (m *AuthMiddleware) JWT() gin.HandlerFunc {
 	}
 }
 
-func (m *AuthMiddleware) parseTokenClaims(authHeader string) (jwt.MapClaims, error) {
-	parts := strings.SplitN(authHeader, " ", 2)
-	if len(parts) != 2 || parts[0] != "Bearer" {
-		return nil, fmt.Errorf("invalid authorization format")
+// extractAccessToken returns the raw JWT from the request. It prefers the
+// Authorization: Bearer header (so non-browser API clients keep working
+// unchanged) and falls back to the llm_router_access HttpOnly cookie
+// (browser SPA path after C-02).
+func extractAccessToken(c *gin.Context) (string, bool) {
+	if h := c.GetHeader("Authorization"); h != "" {
+		parts := strings.SplitN(h, " ", 2)
+		if len(parts) == 2 && parts[0] == "Bearer" && strings.TrimSpace(parts[1]) != "" {
+			return strings.TrimSpace(parts[1]), true
+		}
+		// Authorization header present but malformed — refuse rather than
+		// silently fall through to cookie. This matches the previous
+		// behaviour and avoids confusing the caller.
+		return "", false
 	}
+	if cookie, err := c.Cookie(AccessTokenCookieName); err == nil && strings.TrimSpace(cookie) != "" {
+		return strings.TrimSpace(cookie), true
+	}
+	return "", false
+}
 
+// parseRawToken validates a raw JWT (no "Bearer " prefix) and returns its
+// claims. Replaces the legacy parseTokenClaims helper which required the
+// Authorization header format.
+func (m *AuthMiddleware) parseRawToken(raw string) (jwt.MapClaims, error) {
 	// Prefer the configured signer (handles HS256 / RS256 / EdDSA + key
 	// rotation via kid). Fall back to direct HMAC parsing if no signer was
 	// configured — keeps the legacy path working when the build helper
 	// errored.
 	if m.signer != nil {
 		claims := jwt.MapClaims{}
-		token, err := m.signer.Parse(parts[1], &claims)
+		token, err := m.signer.Parse(raw, &claims)
 		if err != nil || !token.Valid {
 			return nil, fmt.Errorf("invalid token")
 		}
 		return claims, nil
 	}
 
-	token, err := jwt.Parse(parts[1], func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(raw, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, jwt.ErrSignatureInvalid
 		}
 		return m.jwtSecret, nil
 	})
-
 	if err != nil || !token.Valid {
 		return nil, fmt.Errorf("invalid token")
 	}
-
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return nil, fmt.Errorf("invalid claims")
 	}
-
 	return claims, nil
 }
 
@@ -163,13 +187,13 @@ func (m *AuthMiddleware) validateUserState(ctx context.Context, userID uuid.UUID
 
 func (m *AuthMiddleware) OptionalJWT() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		rawToken, ok := extractAccessToken(c)
+		if !ok {
 			c.Next()
 			return
 		}
 
-		claims, err := m.parseTokenClaims(authHeader)
+		claims, err := m.parseRawToken(rawToken)
 		if err != nil {
 			c.Next()
 			return

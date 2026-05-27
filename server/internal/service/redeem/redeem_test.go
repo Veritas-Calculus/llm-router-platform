@@ -39,6 +39,7 @@ func setupRedeemTestDB(t *testing.T) *gorm.DB {
 			tokens_invalidated_at DATETIME,
 			email_verified BOOLEAN,
 			email_verified_at DATETIME,
+			welcome_credit_granted_at DATETIME,
 			mfa_enabled BOOLEAN,
 			mfa_secret TEXT,
 			mfa_backup_codes TEXT

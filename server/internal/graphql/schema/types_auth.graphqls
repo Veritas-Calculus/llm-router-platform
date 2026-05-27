@@ -13,7 +13,11 @@ input RegisterInput {
   password: String!
   name: String!
   inviteCode: String
-  captchaToken: String
+  # captchaToken is required: registration is the highest-cost anti-abuse
+  # surface (auto-creates an org, ships a verification email, optionally
+  # credits the welcome balance). The captcha service exposes a dev backend
+  # that accepts a literal bypass token so local development still works.
+  captchaToken: String!
 }
 
 input ResetPasswordInput {
@@ -32,7 +36,30 @@ input UpdateProfileInput {
 }
 
 type AuthPayload {
-  token: String!
+  # token is also delivered as an HttpOnly cookie (llm_router_access). It
+  # remains in the GraphQL payload for one release for non-browser API
+  # clients that still expect a bearer string; browser-based UIs should
+  # rely on the cookie via credentials:include and ignore this field.
+  token: String! @deprecated(reason: "Use the HttpOnly llm_router_access cookie via /graphql with credentials:include. The token field will be removed in a future release.")
   refreshToken: String
   user: User!
+  # emailVerificationSent reports whether the verification email was
+  # accepted by the SMTP backend at registration time. False means the
+  # mail server was unreachable or unconfigured — the user can call
+  # resendVerificationEmail. Always null on non-register payloads.
+  emailVerificationSent: Boolean
+}
+
+type PasswordPolicy {
+  minLength: Int!
+  requireLetter: Boolean!
+  requireDigit: Boolean!
+  requireUpper: Boolean!
+  requireLower: Boolean!
+  # blockCommonPasswords is true when the server rejects passwords that
+  # match its bundled top-common list (e.g. "Passw0rd1"). The frontend uses
+  # this to render a "and not a commonly-used password" tail on the hint
+  # text instead of silently letting the user submit a value the server
+  # will reject. Post-audit follow-up P0-2.
+  blockCommonPasswords: Boolean!
 }

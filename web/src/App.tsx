@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import Layout from '@/components/Layout';
 import OnboardingTour from '@/components/OnboardingTour';
+import AuthBootstrap from '@/components/AuthBootstrap';
 
 /* ── Lazy-loaded pages ─────────────────────────────────────────────── */
 
@@ -122,6 +123,7 @@ function AuthenticatedRoute({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <Suspense fallback={<PageLoader />}>
+      <AuthBootstrap />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/oauth/callback" element={<OAuthCallbackPage />} />

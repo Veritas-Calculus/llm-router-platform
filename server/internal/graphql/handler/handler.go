@@ -20,6 +20,7 @@ import (
 
 	"llm-router-platform/internal/config"
 	"llm-router-platform/internal/graphql/directives"
+	"llm-router-platform/internal/graphql/errs"
 	"llm-router-platform/internal/graphql/generated"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/graphql/resolvers"
@@ -215,8 +216,21 @@ const (
 	codeAccountDisabled     = "ACCOUNT_DISABLED"
 	codeCaptchaRequired     = "CAPTCHA_REQUIRED"
 	codeValidation          = "VALIDATION"
+	codeBadUserInput        = "BAD_USER_INPUT"
 	codeInternal            = "INTERNAL"
 )
+
+// upstreamCodes are codes that gqlgen / gqlparser sets on errors raised
+// during the protocol-level phases (parsing, schema validation, variable
+// coercion). The presenter recognizes these and re-flags them as
+// BAD_USER_INPUT (the canonical client-input code from the GraphQL spec)
+// instead of masking the message as INTERNAL. The original message is
+// preserved verbatim so frontend forms can surface "captchaToken is
+// required" or "expected Int, got String" without server-side parsing.
+var upstreamCodes = map[string]bool{
+	"GRAPHQL_VALIDATION_FAILED": true,
+	"GRAPHQL_PARSE_FAILED":      true,
+}
 
 // classifyClientError returns a stable extension code for a known client-visible
 // error message, or "" if the message is internal/unrecognized. The mapping is
@@ -277,8 +291,42 @@ func classifyClientError(msg string) string {
 func setupErrorMasking(srv *handler.Server, logger *zap.Logger) {
 	srv.SetErrorPresenter(func(ctx context.Context, err error) *gqlerror.Error {
 		gqlErr := graphql.DefaultErrorPresenter(ctx, err)
+
+		// 1) Typed VALIDATION error from a resolver. The original error may
+		//    be wrapped (e.g. by DefaultErrorPresenter) so we unwrap the
+		//    full chain rather than checking only the top-level. The
+		//    user-facing message is the .Message on the typed error — never
+		//    the raw chained "%w" string — to avoid leaking internals.
+		if ve, ok := errs.AsValidation(err); ok {
+			graphqlErrorsTotal.WithLabelValues("client").Inc()
+			if gqlErr.Extensions == nil {
+				gqlErr.Extensions = map[string]interface{}{}
+			}
+			gqlErr.Message = ve.Message
+			gqlErr.Extensions["code"] = codeValidation
+			if ve.Field != "" {
+				gqlErr.Extensions["field"] = ve.Field
+			}
+			return gqlErr
+		}
+
+		// 2) Schema-level errors that gqlgen / gqlparser already classified
+		//    (missing required input field, type mismatch, parse error).
+		//    Re-flag as BAD_USER_INPUT — the canonical client-input code
+		//    from the GraphQL spec — and keep the descriptive message so
+		//    the frontend form can surface what's wrong.
+		if gqlErr.Extensions != nil {
+			if existing, _ := gqlErr.Extensions["code"].(string); upstreamCodes[existing] {
+				graphqlErrorsTotal.WithLabelValues("client").Inc()
+				gqlErr.Extensions["code"] = codeBadUserInput
+				return gqlErr
+			}
+		}
+
 		msg := gqlErr.Message
 
+		// 3) Legacy string-based classification (kept for resolver paths
+		//    that haven't been migrated to errs.Validation yet).
 		if code := classifyClientError(msg); code != "" {
 			graphqlErrorsTotal.WithLabelValues("client").Inc()
 			if gqlErr.Extensions == nil {
@@ -288,6 +336,7 @@ func setupErrorMasking(srv *handler.Server, logger *zap.Logger) {
 			return gqlErr
 		}
 
+		// 4) Anything else is treated as a server fault and masked.
 		graphqlErrorsTotal.WithLabelValues("internal").Inc()
 		requestID := ""
 		if gc, gcErr := directives.GinContextFromContext(ctx); gcErr == nil {
