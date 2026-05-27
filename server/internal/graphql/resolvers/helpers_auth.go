@@ -161,7 +161,11 @@ func refreshTokenFromCookie(ctx context.Context) (string, bool) {
 // in an opaque random ID would not raise the bar. Re-evaluate if a product
 // requirement appears that says user UUIDs must not be derivable.
 func (r *mutationResolver) refreshCookieSecure(ctx context.Context) bool {
-	switch r.Config().Server.CookieSecureMode {
+	mode := "auto"
+	if r.SettingsRegistry != nil {
+		mode = r.SettingsRegistry.CookieSecureMode(ctx)
+	}
+	switch mode {
 	case "always":
 		return true
 	case "never":

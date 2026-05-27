@@ -823,11 +823,16 @@ func (r *Router) SyncProviderModels(ctx context.Context, providerID uuid.UUID) (
 		existing[m.Name] = true
 	}
 
-	rules := r.syncRules
+	// Resolve sync rules per call: when the Registry source is wired,
+	// admin changes take effect on the next sync run (within the
+	// Registry's cache window). When unwired (tests), we fall back to
+	// the static rules set by SetCatalogSyncRules — see
+	// router.currentSyncRules.
+	rules := r.currentSyncRules(ctx)
 	if rules == nil {
-		// Defensive: NewRouter wires this, but tests construct Routers
-		// directly. Default to the conservative behaviour (require admin
-		// to activate, apply the built-in NSFW blocklist).
+		// Defensive: NewRouter wires the static rules, but tests construct
+		// Routers directly. Default to the conservative behaviour
+		// (require admin to activate, apply the built-in NSFW blocklist).
 		rules = newCatalogSyncRules(false, "")
 	}
 

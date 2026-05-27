@@ -28,7 +28,7 @@ type Config struct {
 	Log           LogConfig
 	Admin         AdminConfig
 	Security      SecurityConfig
-	Registration  RegistrationConfig
+	Registration  RegistrationConfig // Only carries InviteCode now; Mode lives in settings.Registry.
 	Observability ObservabilityConfig
 	Frontend      FrontendConfig
 	Stripe        StripeConfig
@@ -38,23 +38,7 @@ type Config struct {
 	Turnstile     TurnstileConfig
 	Captcha       CaptchaConfig
 	Cleanup       CleanupConfig
-	ProviderSync  ProviderSyncConfig
 	FeatureGates  *FeatureGates
-}
-
-// ProviderSyncConfig controls the auto-sync behaviour of the provider
-// model catalogue. See audit L-05 for context.
-//
-//   - AutoActivate: when true, newly-discovered models are inserted
-//     active by default (legacy behaviour). When false (the default), an
-//     admin must explicitly toggle a model active in the admin UI before
-//     it surfaces to users. NSFW-matching names always insert inactive.
-//   - BlocklistRegex: optional override for the default NSFW / dev-only
-//     name regex. Matches force the row to is_active=false and stamp a
-//     warning visible in the admin UI. Compiled with Go's RE2 engine.
-type ProviderSyncConfig struct {
-	AutoActivate   bool
-	BlocklistRegex string
 }
 
 // SecurityConfig holds API and Gateway security environment settings.
@@ -75,6 +59,11 @@ type OAuth2ProviderConfig struct {
 }
 
 // ServerConfig holds server-related configuration.
+//
+// CookieSecureMode used to live here; it has moved to the DB-backed
+// settings.Registry (security.cookieSecureMode) so admins can flip the
+// Set-Cookie `Secure` flag without redeploys. See
+// helpers_auth.refreshCookieSecure.
 type ServerConfig struct {
 	Port                        string
 	Mode                        string
@@ -83,17 +72,6 @@ type ServerConfig struct {
 	MetricsAllowUnauthenticated bool     // Expose /internal/metrics without auth for Prometheus scraping
 	ReadTimeoutSeconds          int      // HTTP server read timeout (default: 30)
 	WriteTimeoutSeconds         int      // HTTP server write timeout; must be large for LLM streaming (default: 600)
-	// CookieSecureMode controls the Set-Cookie `Secure` flag for the auth
-	// cookies (llm_router_access / llm_router_refresh). Valid values:
-	//   "auto"   — default. Secure=true in release mode OR when the request
-	//              came in over https (TLS or X-Forwarded-Proto=https).
-	//              Secure=false on plain http in dev/test (otherwise the
-	//              browser silently drops the cookie — audit L-02).
-	//   "always" — force Secure=true regardless of mode/protocol. Use behind
-	//              a TLS-terminating proxy where X-Forwarded-Proto might be
-	//              stripped.
-	//   "never"  — force Secure=false. Local dev only — never in production.
-	CookieSecureMode string
 }
 
 // DatabaseConfig holds database connection configuration.
@@ -224,21 +202,21 @@ type TurnstileConfig struct {
 	SiteKey   string // Public site key exposed to frontend
 }
 
-// CaptchaConfig holds the pluggable captcha backend configuration.
-//
-// Provider selects which backend the captcha service uses:
-//   - "dev"       : accept a literal DEV_CAPTCHA_BYPASS_TOKEN (local only)
-//   - "turnstile" : Cloudflare Turnstile (uses Turnstile{SecretKey,SiteKey})
-//   - "hcaptcha"  : hCaptcha (uses CAPTCHA_SECRET_KEY / CAPTCHA_SITE_KEY)
-//   - "disabled"  : never verify (NOT recommended outside private deployments)
+// CaptchaConfig holds the captcha backend's static credentials.
 //
 // SiteKey is what the frontend renders the widget with; SecretKey is the
 // server-side credential used to call the upstream siteverify API.
+// DevBypassToken is the literal accepted by the dev backend.
+//
+// The Provider *choice* (dev / hcaptcha / turnstile / disabled) lives in
+// the DB-backed SystemSettings table and is resolved at request time by
+// settings.Registry. Credentials stay in env because they're paired with
+// secrets (or are themselves secret) — the admin UI must never accept a
+// raw secret key edit.
 type CaptchaConfig struct {
-	Provider        string
-	SiteKey         string
-	SecretKey       string // #nosec G101 -- server-side captcha secret
-	DevBypassToken  string // #nosec G101 -- only honored when Provider == "dev"
+	SiteKey        string
+	SecretKey      string // #nosec G101 -- server-side captcha secret
+	DevBypassToken string // #nosec G101 -- only honored when provider is dev
 }
 
 // JWTConfig holds JWT authentication configuration.
@@ -283,10 +261,11 @@ type AdminConfig struct {
 	Name     string
 }
 
-// RegistrationConfig holds user registration settings.
+// RegistrationConfig holds user registration settings. Only carries
+// InviteCode now; the open/invite/closed Mode lives in the DB-backed
+// settings.Registry (security.registrationMode).
 type RegistrationConfig struct {
-	Mode       string // "open", "invite", "closed"
-	InviteCode string // Required when Mode == "invite"
+	InviteCode string
 }
 
 // CleanupConfig holds data retention settings for periodic cleanup jobs.
@@ -352,7 +331,6 @@ func Load() (*Config, error) {
 			MetricsAllowUnauthenticated: viper.GetBool("METRICS_ALLOW_UNAUTHENTICATED"),
 			ReadTimeoutSeconds:          viper.GetInt("SERVER_READ_TIMEOUT_SECONDS"),
 			WriteTimeoutSeconds:         viper.GetInt("SERVER_WRITE_TIMEOUT_SECONDS"),
-			CookieSecureMode:            strings.ToLower(strings.TrimSpace(viper.GetString("COOKIE_SECURE_MODE"))),
 		},
 		Database: DatabaseConfig{
 			Host:                   viper.GetString("DB_HOST"),
@@ -425,7 +403,7 @@ func Load() (*Config, error) {
 			Name:     viper.GetString("ADMIN_NAME"),
 		},
 		Registration: RegistrationConfig{
-			Mode:       viper.GetString("REGISTRATION_MODE"),
+			// Mode now lives in the DB-backed settings.Registry.
 			InviteCode: viper.GetString("INVITE_CODE"),
 		},
 		Observability: ObservabilityConfig{
@@ -487,10 +465,6 @@ func Load() (*Config, error) {
 			SiteKey:   viper.GetString("TURNSTILE_SITE_KEY"),
 		},
 		Captcha: loadCaptchaConfig(),
-		ProviderSync: ProviderSyncConfig{
-			AutoActivate:   viper.GetBool("PROVIDER_SYNC_AUTO_ACTIVATE"),
-			BlocklistRegex: viper.GetString("PROVIDER_SYNC_BLOCKLIST_REGEX"),
-		},
 		Cleanup: CleanupConfig{
 			HealthRetentionDays: viper.GetInt("CLEANUP_HEALTH_RETENTION_DAYS"),
 			AlertRetentionDays:  viper.GetInt("CLEANUP_ALERT_RETENTION_DAYS"),
@@ -506,39 +480,21 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// loadCaptchaConfig builds the captcha config from env. The provider names
-// are matched case-insensitively. If a provider is set but its secret/site
-// keys are empty, the captcha service falls back to dev mode (with a
-// startup-time warning) — this prevents a deployment from accidentally
-// disabling captcha by forgetting to set the keys.
-//
-// For backwards compatibility, if TURNSTILE_ENABLED=true and no
-// CAPTCHA_PROVIDER is set, we infer turnstile.
+// loadCaptchaConfig builds the captcha credential config from env. The
+// active provider name lives in the DB (see settings.Registry) so we
+// only read keys here. Turnstile env vars are accepted as a legacy
+// fallback for the site/secret key pair so operators who set up captcha
+// via the old TURNSTILE_* names don't have to re-configure.
 func loadCaptchaConfig() CaptchaConfig {
-	provider := strings.ToLower(strings.TrimSpace(viper.GetString("CAPTCHA_PROVIDER")))
 	siteKey := viper.GetString("CAPTCHA_SITE_KEY")
 	secretKey := viper.GetString("CAPTCHA_SECRET_KEY")
-
-	// Legacy fallback: if the operator has only configured Turnstile env
-	// vars (the original captcha integration), keep using Turnstile.
-	if provider == "" {
-		if viper.GetBool("TURNSTILE_ENABLED") {
-			provider = "turnstile"
-		} else {
-			provider = "dev"
-		}
+	if siteKey == "" {
+		siteKey = viper.GetString("TURNSTILE_SITE_KEY")
 	}
-	if provider == "turnstile" {
-		if siteKey == "" {
-			siteKey = viper.GetString("TURNSTILE_SITE_KEY")
-		}
-		if secretKey == "" {
-			secretKey = viper.GetString("TURNSTILE_SECRET_KEY")
-		}
+	if secretKey == "" {
+		secretKey = viper.GetString("TURNSTILE_SECRET_KEY")
 	}
-
 	return CaptchaConfig{
-		Provider:       provider,
 		SiteKey:        siteKey,
 		SecretKey:      secretKey,
 		DevBypassToken: viper.GetString("DEV_CAPTCHA_BYPASS_TOKEN"),
@@ -564,10 +520,8 @@ func (c *Config) Validate() error {
 		errs = append(errs, fmt.Sprintf("LOG_LEVEL %q is not valid (debug|info|warn|error|fatal)", c.Log.Level))
 	}
 
-	validModes := map[string]bool{"open": true, "invite": true, "closed": true}
-	if c.Registration.Mode != "" && !validModes[c.Registration.Mode] {
-		errs = append(errs, fmt.Sprintf("REGISTRATION_MODE %q is not valid (open|invite|closed)", c.Registration.Mode))
-	}
+	// REGISTRATION_MODE used to be validated here; the field now lives in
+	// the DB-backed settings.Registry, which validates on write.
 
 	if c.HealthCheck.Enabled && c.HealthCheck.Interval < 5*time.Second {
 		errs = append(errs, "HEALTH_CHECK_INTERVAL must be at least 5 seconds")

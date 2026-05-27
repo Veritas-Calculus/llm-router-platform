@@ -37,6 +37,7 @@ import (
 	"llm-router-platform/internal/service/redeem"
 	"llm-router-platform/internal/service/router"
 	"llm-router-platform/internal/service/safety"
+	"llm-router-platform/internal/service/settings"
 	"llm-router-platform/internal/service/task"
 	"llm-router-platform/internal/service/turnstile"
 	"llm-router-platform/internal/service/user"
@@ -92,6 +93,7 @@ type Services struct {
 	MonitoringSvc    *monitoring.Collector
 	TurnstileSvc     *turnstile.Service
 	CaptchaSvc       *captcha.Service
+	SettingsRegistry *settings.Registry
 	SemanticCache    *semantic.SemanticCacheService
 	RedisClient      *redis.Client // For rate limiting middleware
 	DB               *gorm.DB      // For operational health checks
@@ -211,6 +213,7 @@ func Setup(
 		MonitoringSvc:    services.MonitoringSvc,
 		TurnstileSvc:     services.TurnstileSvc,
 		CaptchaSvc:       services.CaptchaSvc,
+		SettingsRegistry: services.SettingsRegistry,
 		AdminSvc:         services.AdminSvc,
 		Logger:           services.Logger,
 		SemanticCache:    services.SemanticCache,

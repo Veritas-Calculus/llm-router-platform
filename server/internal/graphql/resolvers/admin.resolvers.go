@@ -79,12 +79,22 @@ func (r *mutationResolver) UpdateSystemSettings(ctx context.Context, input model
 	if err := r.SystemConfig.UpdateSettings(ctx, input.Category, input.Data); err != nil {
 		return nil, err
 	}
+	// Drop the cached settings snapshot so any subsequent read (captcha
+	// verify, register, cookie write, catalog sync) sees the new values
+	// without waiting for the 5-min TTL.
+	if r.SettingsRegistry != nil {
+		r.SettingsRegistry.Invalidate(ctx, input.Category)
+	}
 	// Return full settings after update
 	all, err := r.SystemConfig.GetAllSettingsDecrypted(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return buildSystemSettings(r.Config().Registration.Mode, all), nil
+	mode := "open"
+	if r.SettingsRegistry != nil {
+		mode = r.SettingsRegistry.RegistrationMode(ctx)
+	}
+	return buildSystemSettings(mode, all), nil
 }
 
 // SendTestEmail is the resolver for the sendTestEmail field.
@@ -586,11 +596,15 @@ func (r *queryResolver) loadAPIKeysForUser(ctx context.Context, uid uuid.UUID) (
 
 // SystemSettings is the resolver for the systemSettings field.
 func (r *queryResolver) SystemSettings(ctx context.Context) (*model.SystemSettings, error) {
+	mode := "open"
+	if r.SettingsRegistry != nil {
+		mode = r.SettingsRegistry.RegistrationMode(ctx)
+	}
 	all, err := r.SystemConfig.GetAllSettingsDecrypted(ctx)
 	if err != nil {
-		return &model.SystemSettings{RegistrationMode: r.Config().Registration.Mode}, nil
+		return &model.SystemSettings{RegistrationMode: mode}, nil
 	}
-	return buildSystemSettings(r.Config().Registration.Mode, all), nil
+	return buildSystemSettings(mode, all), nil
 }
 
 // InviteCodes is the resolver for the inviteCodes field.

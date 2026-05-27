@@ -102,6 +102,7 @@ export const CAPTCHA_CONFIG = gql`
     captchaConfig {
       enabled
       siteKey
+      provider
     }
   }
 `;

@@ -117,6 +117,7 @@ type RegistrationMode {
 type CaptchaConfig {
   enabled: Boolean!
   siteKey: String!
+  provider: String!     # "dev" | "hcaptcha" | "turnstile" | "disabled"
 }
 
 type SsoDiscoveryResult {

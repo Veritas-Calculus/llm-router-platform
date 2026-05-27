@@ -28,7 +28,9 @@ services:
         GIT_COMMIT: local
     environment:
       - DB_SSL_MODE=disable
-      - REGISTRATION_MODE=open
+      # REGISTRATION_MODE / COOKIE_SECURE_MODE / PROVIDER_SYNC_* / CAPTCHA_PROVIDER
+      # live in DB-backed settings.Registry now. First boot defaults to
+      # registration=open, captcha=dev. Tune via Admin → Settings.
       - CORS_ORIGINS=http://localhost:3000,http://localhost:80
       - GIN_MODE=debug
       - LOG_LEVEL=debug

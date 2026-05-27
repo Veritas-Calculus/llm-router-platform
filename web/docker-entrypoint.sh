@@ -22,7 +22,7 @@ TEMPLATE=/usr/share/nginx/html/runtime-config.template.js
 OUTPUT=/tmp/runtime-config.js
 
 if [ -f "$TEMPLATE" ]; then
-    envsubst '${VITE_SENTRY_DSN} ${VITE_SENTRY_ENVIRONMENT} ${VITE_CAPTCHA_PROVIDER} ${VITE_CAPTCHA_SITE_KEY} ${VITE_DEV_CAPTCHA_BYPASS_TOKEN}' \
+    envsubst '${VITE_SENTRY_DSN} ${VITE_SENTRY_ENVIRONMENT} ${VITE_CAPTCHA_SITE_KEY} ${VITE_DEV_CAPTCHA_BYPASS_TOKEN}' \
         < "$TEMPLATE" > "$OUTPUT"
     echo "[entrypoint] runtime-config.js generated at $OUTPUT"
 else

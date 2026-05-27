@@ -14,6 +14,7 @@ import {
   KeyIcon,
   CloudIcon,
   SignalIcon,
+  PuzzlePieceIcon,
 } from '@heroicons/react/24/outline';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { SYSTEM_SETTINGS_QUERY, UPDATE_SYSTEM_SETTINGS, SITE_CONFIG_QUERY } from '@/lib/graphql/operations/settings';
@@ -29,6 +30,7 @@ import {
   SsoSettingsTab,
   FeatureGatesSettingsTab,
   IntegrationsSettingsTab,
+  CaptchaSettingsTab,
 } from '@/components/admin-settings';
 
 /* ── Tab definitions ── */
@@ -37,6 +39,7 @@ const settingsTabs = [
   { key: 'site', icon: GlobeAltIcon, labelKey: 'admin_settings.tabs.site' },
   { key: 'security', icon: ShieldCheckIcon, labelKey: 'admin_settings.tabs.security' },
   { key: 'defaults', icon: UserGroupIcon, labelKey: 'admin_settings.tabs.defaults' },
+  { key: 'captcha', icon: PuzzlePieceIcon, labelKey: 'admin_settings.tabs.captcha' },
   { key: 'email', icon: EnvelopeIcon, labelKey: 'admin_settings.tabs.email' },
   { key: 'backup', icon: CloudArrowUpIcon, labelKey: 'admin_settings.tabs.backup' },
   { key: 'payment', icon: CreditCardIcon, labelKey: 'admin_settings.tabs.payment' },
@@ -53,7 +56,7 @@ function AdminSettingsPage() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabKey>('site');
   const [formData, setFormData] = useState<Record<TabKey, any>>({
-    site: {}, security: {}, defaults: {}, email: {}, backup: {}, payment: {}, sso: {}, integrations: {}, featuregates: {},
+    site: {}, security: {}, defaults: {}, captcha: {}, email: {}, backup: {}, payment: {}, sso: {}, integrations: {}, featuregates: {},
   });
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -65,7 +68,7 @@ function AdminSettingsPage() {
   useEffect(() => {
     if (data?.systemSettings) {
       const s = data.systemSettings;
-      const parsed: Record<TabKey, any> = { site: {}, security: {}, defaults: {}, email: {}, backup: {}, payment: {}, sso: {}, integrations: {}, featuregates: {} };
+      const parsed: Record<TabKey, any> = { site: {}, security: {}, defaults: {}, captcha: {}, email: {}, backup: {}, payment: {}, sso: {}, integrations: {}, featuregates: {} };
       for (const key of Object.keys(parsed) as TabKey[]) {
         try {
           // Map GraphQL 'oauth' field → frontend 'sso' tab
@@ -113,6 +116,7 @@ function AdminSettingsPage() {
       case 'site': return <SiteSettingsTab {...props} />;
       case 'security': return <SecuritySettingsTab {...props} />;
       case 'defaults': return <DefaultsSettingsTab {...props} />;
+      case 'captcha': return <CaptchaSettingsTab {...props} />;
       case 'email': return <EmailSettingsTab {...props} />;
       case 'backup': return <BackupSettingsTab {...props} />;
       case 'payment': return <PaymentSettingsTab {...props} />;

@@ -81,14 +81,20 @@ func (r *mutationResolver) Login(ctx context.Context, input model.LoginInput) (*
 // BEFORE we create the user record — a failed captcha must not leave a
 // half-onboarded row behind.
 func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInput) (*model.AuthPayload, error) {
-	// Registration mode enforcement
-	mode := r.Config().Registration.Mode
+	// Registration mode enforcement. Sourced from the DB-backed
+	// settings.Registry so admins can flip open ↔ invite ↔ closed at
+	// runtime without a redeploy. Falls back to "closed" (fail-safe) if
+	// the Registry is unwired (only happens in tests built directly).
+	mode := "closed"
+	if r.SettingsRegistry != nil {
+		mode = r.SettingsRegistry.RegistrationMode(ctx)
+	}
 	if mode == "" {
 		mode = "closed"
 	}
 
 	if mode == "closed" {
-		return nil, fmt.Errorf("registration is currently closed")
+		return nil, errs.Validation("", "registration is currently closed")
 	}
 
 	// Verify captcha first so failed captcha doesn't leave half-created rows.
@@ -579,7 +585,10 @@ func (r *queryResolver) PasswordPolicy(_ context.Context) (*model.PasswordPolicy
 // RegistrationMode is the resolver for the registrationMode field.
 // This is a public query (no @auth directive) so the login page can adapt.
 func (r *queryResolver) RegistrationMode(ctx context.Context) (*model.RegistrationMode, error) {
-	mode := r.Config().Registration.Mode
+	mode := "closed"
+	if r.SettingsRegistry != nil {
+		mode = r.SettingsRegistry.RegistrationMode(ctx)
+	}
 	if mode == "" {
 		mode = "closed"
 	}

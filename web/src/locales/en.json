@@ -1266,7 +1266,8 @@
             "backup": "Backup",
             "payment": "Payment",
             "sso": "Login & SSO",
-            "integrations": "Integrations"
+            "integrations": "Integrations",
+            "captcha": "Captcha"
         },
         "site": {
             "title": "Site Settings",
@@ -1281,6 +1282,7 @@
             "title": "Security Settings",
             "desc": "Registration controls, email verification, invite codes, 2FA, and SSO",
             "registration_mode": "Registration Mode",
+            "registration_mode_desc": "Controls who can sign up. Changes take effect within 5 minutes.",
             "mode_open": "Open",
             "mode_invite": "Invite Only",
             "mode_closed": "Closed",
@@ -1288,7 +1290,12 @@
             "invite_only": "Invite Registration",
             "coupon_enabled": "Coupon System",
             "two_factor": "Two-Factor Authentication (2FA)",
-            "sso": "Single Sign-On (SSO)"
+            "sso": "Single Sign-On (SSO)",
+            "cookie_secure_mode": "Cookie Secure Flag",
+            "cookie_secure_mode_desc": "Sets the Secure attribute on session cookies. Use 'auto' unless you sit behind a reverse proxy that strips X-Forwarded-Proto.",
+            "cookie_secure_mode_auto": "Auto (recommended)",
+            "cookie_secure_mode_always": "Always",
+            "cookie_secure_mode_never": "Never (dev only)"
         },
         "defaults": {
             "title": "Default User Settings",
@@ -1296,7 +1303,11 @@
             "balance": "Default Balance (USD)",
             "concurrency": "Default Concurrency",
             "plan": "Default Plan",
-            "rate_limit": "Default Rate Limit (req/min)"
+            "rate_limit": "Default Rate Limit (req/min)",
+            "provider_sync_auto_activate": "Auto-activate new provider models",
+            "provider_sync_auto_activate_desc": "When enabled, newly-discovered models from /v1/models are inserted as active. When disabled (default), an admin must enable each model manually. NSFW-matching names are always inserted inactive.",
+            "provider_sync_blocklist_regex": "Provider Sync Blocklist Regex",
+            "provider_sync_blocklist_regex_desc": "Overrides the built-in (?i)(uncensored|abliterated|jailbreak(ed)?|nsfw|aggressive) pattern. Leave empty to keep the default. Compiled with Go RE2."
         },
         "email": {
             "title": "Email Configuration",
@@ -1341,6 +1352,22 @@
             "stripe_webhook": "Webhook Secret",
             "wechat_enabled": "Enable WeChat Pay",
             "alipay_enabled": "Enable Alipay"
+        },
+        "captcha": {
+            "title": "Captcha Backend",
+            "desc": "Pick which captcha service guards registration and high-risk actions. Site key and secret key stay in env vars.",
+            "provider": "Provider",
+            "provider_dev": "Dev (literal bypass token)",
+            "provider_hcaptcha": "hCaptcha",
+            "provider_turnstile": "Cloudflare Turnstile",
+            "provider_disabled": "Disabled (accept everything)",
+            "credentials_title": "Credentials",
+            "credentials_desc": "Site key and secret key are paired with the env-only secret. Configure them via the CAPTCHA_SITE_KEY / CAPTCHA_SECRET_KEY environment variables on the server.",
+            "site_key_label": "Site key",
+            "secret_key_label": "Secret key",
+            "configured": "Configured",
+            "not_configured": "Not configured",
+            "warn_no_secret": "The selected provider needs a secret key in the env. Login will reject every captcha token until it's set."
         }
     },
     "errors": {

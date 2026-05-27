@@ -114,19 +114,17 @@ function LoginPage() {
 
   // Query registration mode (public, no auth required)
   const { data: regModeData } = useQuery<{ registrationMode: { mode: string; inviteCodeRequired: boolean } }>(REGISTRATION_MODE, { fetchPolicy: 'cache-first' });
-  const { data: captchaData } = useQuery<{ captchaConfig: { enabled: boolean; siteKey: string } }>(CAPTCHA_CONFIG, { fetchPolicy: 'cache-first' });
+  const { data: captchaData } = useQuery<{ captchaConfig: { enabled: boolean; siteKey: string; provider: string } }>(CAPTCHA_CONFIG, { fetchPolicy: 'cache-first' });
   const { data: siteData } = useQuery<{ siteConfig: { siteName: string; subtitle?: string | null; logoUrl?: string | null } }>(SITE_CONFIG_QUERY, { fetchPolicy: 'cache-first' });
   const { data: policyData } = useQuery<{ passwordPolicy: PasswordPolicyType }>(PASSWORD_POLICY, { fetchPolicy: 'cache-first' });
   const passwordPolicy: PasswordPolicyType = policyData?.passwordPolicy ?? DEFAULT_PASSWORD_POLICY;
-  const captchaConfig = captchaData?.captchaConfig ?? { enabled: false, siteKey: '' };
-  // The captcha provider drives which widget we render. In dev mode we
-  // render a passive stub that auto-fills the bypass token so tests and
-  // local docker-compose flows work without a Cloudflare/hCaptcha account.
-  //
-  // Both values are read at runtime (window.__RUNTIME_CONFIG__) so the
-  // production image can be promoted across environments without rebuild.
-  // See web/src/lib/runtime-config.ts and audit H-08.
-  const captchaProvider = getRuntimeConfig('CAPTCHA_PROVIDER') || 'dev';
+  const captchaConfig = captchaData?.captchaConfig ?? { enabled: false, siteKey: '', provider: 'dev' };
+  // The captcha provider drives which widget we render. It now comes from
+  // the captchaConfig API (DB-backed, see settings.Registry) so admins can
+  // hot-swap providers without redeploying the SPA. The dev bypass token
+  // stays in runtime-config because it's dev-only and paired with the
+  // env-only secret key.
+  const captchaProvider = captchaConfig.provider || 'dev';
   const devBypassToken = getRuntimeConfig('DEV_CAPTCHA_BYPASS_TOKEN') || 'dev-ok';
   const regMode = regModeData?.registrationMode?.mode ?? 'closed';
   const inviteRequired = regModeData?.registrationMode?.inviteCodeRequired ?? false;

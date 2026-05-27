@@ -11,6 +11,13 @@ export function FormField({ label, children }: { label: string; children: React.
   );
 }
 
+// HelpText renders a small caption under an input, used for runtime-effect
+// hints like "Changes take effect within 5 minutes". Keep copy short — long
+// blocks read better as inline tooltips on the field label.
+export function HelpText({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs text-apple-gray-500 leading-relaxed">{children}</p>;
+}
+
 export function TextInput({ value, onChange, placeholder, type = 'text' }: {
   value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
 }) {

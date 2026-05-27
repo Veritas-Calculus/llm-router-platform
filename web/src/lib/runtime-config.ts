@@ -16,9 +16,10 @@
 interface RuntimeConfig {
   SENTRY_DSN?: string;
   SENTRY_ENVIRONMENT?: string;
-  CAPTCHA_PROVIDER?: string;
   CAPTCHA_SITE_KEY?: string;
   DEV_CAPTCHA_BYPASS_TOKEN?: string;
+  // CAPTCHA_PROVIDER moved to the captchaConfig GraphQL query so the same
+  // image works across providers without rebuild.
 }
 
 declare global {
