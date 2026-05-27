@@ -155,10 +155,71 @@ func (h *ModelHandler) fetchModelsForProvider(ctx context.Context, p models.Prov
 		}
 	}
 
+	// Reconcile upstream list with our DB. Two reasons:
+	//   * Audit L-05: a model marked inactive by an admin (or by the
+	//     NSFW backfill) must not leak to /v1/models even when the
+	//     upstream provider still advertises it.
+	//   * Audit M-07: stamp our richer context_window / max_output_tokens
+	//     metadata onto the upstream payload so the playground slider
+	//     uses the right cap.
+	fetchedModels = h.reconcileWithDB(ctx, p, fetchedModels)
+
 	// Cache the full model info (with extra upstream metadata)
 	h.setCachedModels(p.Name, fetchedModels)
 	result.models = fetchedModels
 	return result
+}
+
+// reconcileWithDB filters out models whose DB row is inactive and merges
+// any DB-side enrichment (model_kind, context_window, max_output_tokens)
+// onto the upstream payload. Models present upstream but missing from the
+// DB are kept as-is — the sync mutation is the one place that creates DB
+// rows, and we don't want a side-effecting GET to spawn rows.
+func (h *ModelHandler) reconcileWithDB(ctx context.Context, p models.Provider, upstream []provider.ModelInfo) []provider.ModelInfo {
+	dbModels, err := h.router.GetModelsByProvider(ctx, p.ID)
+	if err != nil || len(dbModels) == 0 {
+		return upstream
+	}
+
+	byName := make(map[string]models.Model, len(dbModels))
+	for i := range dbModels {
+		byName[dbModels[i].Name] = dbModels[i]
+	}
+
+	out := make([]provider.ModelInfo, 0, len(upstream))
+	for _, mi := range upstream {
+		dbRow, ok := byName[mi.ID]
+		if ok && !dbRow.IsActive {
+			// Operator explicitly disabled this model (or it matched the
+			// NSFW backfill). Drop it from /v1/models entirely.
+			continue
+		}
+		if ok {
+			if mi.Extra == nil {
+				mi.Extra = map[string]json.RawMessage{}
+			}
+			if dbRow.ContextWindow > 0 {
+				if raw, err := json.Marshal(dbRow.ContextWindow); err == nil {
+					mi.Extra["context_window"] = raw
+					if _, exists := mi.Extra["max_context_length"]; !exists {
+						mi.Extra["max_context_length"] = raw
+					}
+				}
+			}
+			if dbRow.MaxOutputTokens != nil && *dbRow.MaxOutputTokens > 0 {
+				if raw, err := json.Marshal(*dbRow.MaxOutputTokens); err == nil {
+					mi.Extra["max_output_tokens"] = raw
+				}
+			}
+			if dbRow.ModelKind != "" && dbRow.ModelKind != models.ModelKindUnknown {
+				if raw, err := json.Marshal(strings.ToUpper(string(dbRow.ModelKind))); err == nil {
+					mi.Extra["model_kind"] = raw
+				}
+			}
+		}
+		out = append(out, mi)
+	}
+	return out
 }
 
 func (h *ModelHandler) fallbackModelsFromDB(ctx context.Context, p models.Provider, result *fetchModelsResult) {
@@ -192,6 +253,24 @@ func configuredModelsToProviderInfo(dbModels []models.Model) []provider.ModelInf
 		if m.MaxTokens > 0 {
 			if raw, err := json.Marshal(m.MaxTokens); err == nil {
 				extra["max_tokens"] = raw
+			}
+		}
+		// Audit M-07: surface context_window and max_output_tokens
+		// separately so the playground slider doesn't conflate them.
+		if m.ContextWindow > 0 {
+			if raw, err := json.Marshal(m.ContextWindow); err == nil {
+				extra["context_window"] = raw
+				extra["max_context_length"] = raw
+			}
+		}
+		if m.MaxOutputTokens != nil && *m.MaxOutputTokens > 0 {
+			if raw, err := json.Marshal(*m.MaxOutputTokens); err == nil {
+				extra["max_output_tokens"] = raw
+			}
+		}
+		if m.ModelKind != "" && m.ModelKind != models.ModelKindUnknown {
+			if raw, err := json.Marshal(strings.ToUpper(string(m.ModelKind))); err == nil {
+				extra["model_kind"] = raw
 			}
 		}
 		if displayName != name {
@@ -501,8 +580,34 @@ var visionModelPatterns = []string{
 // inferModelCapabilities enriches a model's response map with capability
 // metadata if the upstream provider didn't supply it. This covers providers
 // like LM Studio whose /v1/models only returns {id, object, created, owned_by}.
+//
+// Also stamps a `model_kind` field on every response so the Playground can
+// filter STT/TTS dropdowns without re-implementing the classifier
+// (audit M-02). The kind is derived from the upstream payload via
+// router.ClassifyModel so we have exactly one source of truth.
 func inferModelCapabilities(modelID string, m map[string]interface{}) {
-	// Skip if upstream already provided capabilities
+	// Always populate model_kind. We reconstruct a minimal ModelInfo
+	// from the response map so ClassifyModel can read both the id and
+	// any capability hints the upstream sent.
+	if _, ok := m["model_kind"]; !ok {
+		info := provider.ModelInfo{
+			ID:    modelID,
+			Extra: map[string]json.RawMessage{},
+		}
+		if raw, ok := m["capabilities"]; ok {
+			if b, err := json.Marshal(raw); err == nil {
+				info.Extra["capabilities"] = b
+			}
+		}
+		if raw, ok := m["type"]; ok {
+			if b, err := json.Marshal(raw); err == nil {
+				info.Extra["type"] = b
+			}
+		}
+		m["model_kind"] = strings.ToUpper(string(router.ClassifyModel(info)))
+	}
+
+	// Skip the rest if upstream already provided capabilities
 	if _, ok := m["capabilities"]; ok {
 		return
 	}

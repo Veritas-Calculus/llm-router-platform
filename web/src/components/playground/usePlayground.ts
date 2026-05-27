@@ -4,7 +4,17 @@ import { CREATE_PLAYGROUND_TOKEN, MY_API_KEYS, MY_ORGANIZATIONS, MY_PROJECTS } f
 import { useAuthStore } from '@/stores/authStore';
 import { useAuthHydrated } from '@/hooks/useAuthHydrated';
 import type { Message, ModelRef, UsageStats, ImageAttachment, ContentPart, StreamPhase } from './types';
-import { estimateTokens, estimateMessageTokens, getMessageText, isVisionModel, isTTSModel, runCompletion } from './utils';
+import {
+  estimateTokens,
+  estimateMessageTokens,
+  getMessageText,
+  isVisionModel,
+  isTTSModel,
+  isSTTModel,
+  isChatModel,
+  getMaxOutputTokensCap,
+  runCompletion,
+} from './utils';
 
 export const MANUAL_API_KEY_VALUE = '__manual__';
 
@@ -63,6 +73,22 @@ export interface PlaygroundState {
   tokenLoading: boolean;
   modelsLoading: boolean;
   models: ModelRef[]; selectedModel: string; setSelectedModel: (v: string) => void;
+  /**
+   * Models filtered for the main / compare-mode dropdowns. Chat + UNKNOWN
+   * only — STT/TTS/embedding/image models live in their own dropdowns
+   * (audit M-02). Falls back to the full list when no chat models are
+   * available so an operator with only a single embedding model loaded
+   * can still type something into the input field.
+   */
+  chatModels: ModelRef[];
+  sttModels: ModelRef[];
+  ttsModels: ModelRef[];
+  /**
+   * Upper bound for the Max Tokens slider. We bind to the upstream
+   * max_output_tokens (audit M-07), NOT to the context window. Falls
+   * back to 4096 when the upstream provider doesn't report a cap.
+   */
+  maxOutputTokensCap: number;
   compareModel: string; setCompareModel: (v: string) => void;
   compareMode: boolean;
   systemPrompt: string; setSystemPrompt: (v: string) => void;
@@ -197,6 +223,21 @@ export function usePlayground(): PlaygroundState {
 
   const selectedModelRef = models.find(m => m.id === selectedModel);
   const modelSupportsVision = selectedModelRef ? isVisionModel(selectedModelRef) : false;
+
+  // Filtered model lists for the playground dropdowns (audit M-02). We
+  // materialize these via useMemo so the dropdown options don't churn
+  // every render and the maxOutputTokensCap below stays referentially
+  // stable when the model id hasn't changed.
+  const chatModels = useMemo(() => {
+    const filtered = models.filter(isChatModel);
+    return filtered.length > 0 ? filtered : models; // graceful fallback
+  }, [models]);
+  const sttModels = useMemo(() => models.filter(isSTTModel), [models]);
+  const ttsModels = useMemo(() => models.filter(isTTSModel), [models]);
+  const maxOutputTokensCap = useMemo(
+    () => getMaxOutputTokensCap(selectedModelRef),
+    [selectedModelRef],
+  );
   const getStreamPhase = (list: Message[], active: boolean): StreamPhase => {
     if (!active) return 'idle';
     const last = list[list.length - 1];
@@ -304,9 +345,14 @@ export function usePlayground(): PlaygroundState {
         if (data.data) {
           const nextModels = data.data as ModelRef[];
           setModels(nextModels);
+          // Prefer a chat-classified model when picking a default so
+          // the main dropdown doesn't auto-select an embedding/STT row
+          // (audit M-02). Falls back to first item if no chat model is
+          // available — same fallback as the dropdown's chatModels.
+          const firstChat = nextModels.find(isChatModel) ?? nextModels[0];
           setSelectedModel(prev => {
             if (prev && nextModels.some(m => m.id === prev)) return prev;
-            return nextModels[0]?.id ?? '';
+            return firstChat?.id ?? '';
           });
           setCompareModel(prev => {
             if (prev && nextModels.some(m => m.id === prev)) return prev;
@@ -342,6 +388,14 @@ export function usePlayground(): PlaygroundState {
       setSelectedModel('');
     }
   }, [apiKey, fetchModels]);
+
+  // Clamp the Max Tokens slider to the selected model's actual output
+  // cap (audit M-07). When a user picks a model with a smaller cap, we
+  // pull their stored maxTokens down to fit. We never *raise* maxTokens
+  // automatically — that's user-driven via the slider.
+  useEffect(() => {
+    setMaxTokens(prev => Math.min(prev, maxOutputTokensCap));
+  }, [maxOutputTokensCap]);
 
   /* ── Image handling ── */
 
@@ -657,6 +711,10 @@ export function usePlayground(): PlaygroundState {
     tokenLoading,
     modelsLoading,
     models, selectedModel, setSelectedModel,
+    chatModels,
+    sttModels,
+    ttsModels,
+    maxOutputTokensCap,
     compareModel, setCompareModel,
     compareMode,
     systemPrompt, setSystemPrompt,

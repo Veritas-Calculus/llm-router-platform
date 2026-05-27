@@ -36,16 +36,68 @@ export function isVisionModel(m: ModelRef): boolean {
   return ['-vl-', '-vl/', '/vl-', '-vision', 'vision-', '4o', 'gemini-1.5', 'gemini-2', 'claude-3', 'claude-4', 'pixtral', 'llava', 'cogvlm', 'internvl', 'minicpm-v', 'glm-4v', 'glm-4.6v', 'glm-4.7v'].some(p => lower.includes(p));
 }
 
-/** Check if a model is an STT (speech-to-text / whisper) model. */
+/**
+ * Check if a model is an STT model. Prefers the backend-supplied
+ * model_kind (audit M-02) and falls back to a name-based heuristic so
+ * older /v1/models responses still get filtered correctly.
+ */
 export function isSTTModel(m: ModelRef): boolean {
+  if (m.model_kind === 'STT') return true;
+  if (m.model_kind && m.model_kind !== 'UNKNOWN') return false;
   const lower = m.id.toLowerCase();
   return ['whisper', 'stt', 'speech-to-text', 'transcri'].some(p => lower.includes(p));
 }
 
-/** Check if a model is a TTS (text-to-speech) model. */
+/** Check if a model is a TTS model. Same priority order as isSTTModel. */
 export function isTTSModel(m: ModelRef): boolean {
+  if (m.model_kind === 'TTS') return true;
+  if (m.model_kind && m.model_kind !== 'UNKNOWN') return false;
   const lower = m.id.toLowerCase();
-  return ['tts', 'text-to-speech', 'speech', 'cosyvoice', 'bark', 'parler'].some(p => lower.includes(p));
+  return ['tts', 'text-to-speech', 'cosyvoice', 'bark', 'parler', 'kokoro', 'elevenlabs'].some(p => lower.includes(p));
+}
+
+/**
+ * Check if a model is a chat / completion model — i.e. an LLM the
+ * Playground's main "Model" dropdown should let users pick. We treat
+ * UNKNOWN as chat to preserve usability when a freshly-imported provider
+ * hasn't been re-classified yet. Non-chat kinds (embedding, image,
+ * stt/tts, rerank) are explicitly excluded so the dropdown stops being a
+ * dumping ground for every /v1/models entry.
+ */
+export function isChatModel(m: ModelRef): boolean {
+  if (m.model_kind === 'CHAT' || m.model_kind === 'UNKNOWN' || !m.model_kind) {
+    // Trust the backend classifier when it says "chat" or "unknown".
+    return !isSTTModel(m) && !isTTSModel(m) && !isEmbeddingModel(m) && !isImageModel(m);
+  }
+  return false;
+}
+
+/** Check if a model is an embedding model. */
+export function isEmbeddingModel(m: ModelRef): boolean {
+  if (m.model_kind === 'EMBEDDING') return true;
+  if (m.model_kind && m.model_kind !== 'UNKNOWN') return false;
+  const lower = m.id.toLowerCase();
+  return ['embedding', 'embed-', 'bge-', 'nomic-embed'].some(p => lower.includes(p));
+}
+
+/** Check if a model is an image-generation model. */
+export function isImageModel(m: ModelRef): boolean {
+  if (m.model_kind === 'IMAGE') return true;
+  if (m.model_kind && m.model_kind !== 'UNKNOWN') return false;
+  const lower = m.id.toLowerCase();
+  return ['dall-e', 'stable-diffusion', 'sd-', 'flux-', 'midjourney'].some(p => lower.includes(p));
+}
+
+/**
+ * Conservative output-token cap for the Max Tokens slider (audit M-07).
+ * Prefers the upstream max_output_tokens, then falls back to a static
+ * 4096 — never to the context_window, which would let users set max_tokens
+ * to e.g. 262144 and immediately blow past the model's real output cap.
+ */
+export function getMaxOutputTokensCap(m: ModelRef | undefined): number {
+  const fromModel = m?.max_output_tokens;
+  if (typeof fromModel === 'number' && fromModel > 0) return fromModel;
+  return 4096;
 }
 
 /** Streaming completion runner — sends messages to the API and streams back responses. */
@@ -121,6 +173,31 @@ export async function runCompletion(
     totalTokens: promptTokens + completionTokens,
     ttfbMs: Math.round(ttfb),
     totalMs: Math.round(totalMs),
-    tokensPerSec: totalMs > 0 ? Math.round((completionTokens / (totalMs / 1000)) * 10) / 10 : 0,
+    // M-03: the rate is generation throughput AFTER first byte. Total -
+    // TTFB excludes connection setup so "0 tok/s with 1 token out" no
+    // longer happens. We persist a number here and let the renderer
+    // decide formatting / "too fast to measure" display.
+    tokensPerSec: computeTokensPerSec(completionTokens, ttfb, totalMs),
   };
+}
+
+// M-03: returns NaN when the generation window is too short to time
+// (<100ms post-TTFB). The renderer treats NaN as "—" rather than 0.
+export function computeTokensPerSec(completionTokens: number, ttfbMs: number, totalMs: number): number {
+  if (completionTokens <= 0) return 0;
+  const elapsed = totalMs - ttfbMs;
+  if (elapsed < 100) return Number.NaN;
+  return completionTokens / (elapsed / 1000);
+}
+
+// M-03: render a tok/s number with 2 significant figures when the raw
+// value is below 10 (so 0.35 stays "0.35", not "0"), and 0 sig figs above
+// 10 (so 124.6 becomes "125"). NaN renders as the em-dash "too fast to
+// measure" sentinel.
+export function formatTokensPerSec(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '—';
+  if (value < 10) {
+    return (Math.round(value * 10) / 10).toFixed(1);
+  }
+  return String(Math.round(value));
 }

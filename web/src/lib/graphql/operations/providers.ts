@@ -93,11 +93,13 @@ export const DELETE_PROVIDER_API_KEY = gql`
 export const MODELS_QUERY = gql`
   query Models($providerId: ID!) {
     models(providerId: $providerId) {
-      id providerId name displayName inputPricePer1k outputPricePer1k
+      id providerId name displayName modelKind
+      inputPricePer1k outputPricePer1k
       pricePerSecond pricePerImage pricePerMinute
       providerInputCostPer1k providerOutputCostPer1k
       providerCostPerSecond providerCostPerImage providerCostPerMinute
-      maxTokens isActive createdAt
+      contextWindow maxOutputTokens catalogWarnings
+      isActive createdAt
     }
   }
 `;
@@ -105,8 +107,9 @@ export const MODELS_QUERY = gql`
 export const CREATE_MODEL = gql`
   mutation CreateModel($providerId: ID!, $input: ModelInput!) {
     createModel(providerId: $providerId, input: $input) {
-      id name displayName inputPricePer1k outputPricePer1k
-      providerInputCostPer1k providerOutputCostPer1k maxTokens isActive
+      id name displayName modelKind inputPricePer1k outputPricePer1k
+      providerInputCostPer1k providerOutputCostPer1k
+      contextWindow maxOutputTokens isActive
     }
   }
 `;
@@ -114,8 +117,9 @@ export const CREATE_MODEL = gql`
 export const UPDATE_MODEL = gql`
   mutation UpdateModel($id: ID!, $input: ModelInput!) {
     updateModel(id: $id, input: $input) {
-      id name displayName inputPricePer1k outputPricePer1k
-      providerInputCostPer1k providerOutputCostPer1k maxTokens isActive
+      id name displayName modelKind inputPricePer1k outputPricePer1k
+      providerInputCostPer1k providerOutputCostPer1k
+      contextWindow maxOutputTokens isActive
     }
   }
 `;
@@ -135,7 +139,9 @@ export const TOGGLE_MODEL = gql`
 export const SYNC_PROVIDER_MODELS = gql`
   mutation SyncProviderModels($providerId: ID!) {
     syncProviderModels(providerId: $providerId) {
-      id providerId name displayName inputPricePer1k outputPricePer1k maxTokens isActive
+      id providerId name displayName modelKind
+      inputPricePer1k outputPricePer1k
+      contextWindow maxOutputTokens isActive
     }
   }
 `;

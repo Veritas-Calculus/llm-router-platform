@@ -28,8 +28,6 @@ import {
   StreamingPlaceholder,
   StreamingStatusBadge,
   isVisionModel,
-  isSTTModel,
-  isTTSModel,
   estimateTokens,
   getMessageText,
   getMessageImages,
@@ -51,7 +49,7 @@ export default function PlaygroundPage() {
         <div className="absolute inset-0 z-40 bg-apple-blue/10 flex items-center justify-center rounded-3xl pointer-events-none">
           <div className="bg-white px-8 py-6 rounded-2xl shadow-lg flex items-center gap-3">
             <PhotoIcon className="w-8 h-8 text-apple-blue" />
-            <span className="text-lg font-medium text-apple-gray-800">Drop image here</span>
+            <span className="text-lg font-medium text-apple-gray-800">{t('playground.drop_image_here')}</span>
           </div>
         </div>
       )}
@@ -73,7 +71,7 @@ export default function PlaygroundPage() {
         pg.showSettings ? "h-auto p-4" : "hidden lg:block lg:h-auto lg:p-4"
       )}>
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-base font-semibold text-apple-gray-900 dark:text-white">Settings</h2>
+          <h2 className="text-base font-semibold text-apple-gray-900 dark:text-white">{t('playground.settings_heading')}</h2>
           <Cog6ToothIcon className="w-4 h-4 text-apple-gray-400 dark:text-gray-500" />
         </div>
 
@@ -81,7 +79,7 @@ export default function PlaygroundPage() {
           {/* API Key */}
           <div>
             <label className="block text-xs font-medium text-apple-gray-700 mb-1.5">
-              <KeyIcon className="w-3.5 h-3.5 inline-block mr-1" /><span className="dark:text-gray-300">API Key</span>
+              <KeyIcon className="w-3.5 h-3.5 inline-block mr-1" /><span className="dark:text-gray-300">{t('playground.api_key')}</span>
             </label>
             {pg.orgs.length > 1 && (
               <select
@@ -114,11 +112,11 @@ export default function PlaygroundPage() {
               disabled={pg.apiKeysLoading || (!pg.selectedProjectId && pg.apiKeyMode !== 'manual')}
               className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 disabled:opacity-50"
             >
-              {pg.activeApiKeys.length === 0 && <option value="">{pg.apiKeysLoading ? 'Loading API keys...' : 'No active API keys'}</option>}
+              {pg.activeApiKeys.length === 0 && <option value="">{pg.apiKeysLoading ? t('playground.loading_api_keys') : t('playground.no_active_api_keys')}</option>}
               {pg.activeApiKeys.map(key => (
                 <option key={key.id} value={key.id}>{key.name} ({key.keyPrefix}...)</option>
               ))}
-              <option value={MANUAL_API_KEY_VALUE}>Paste a key manually...</option>
+              <option value={MANUAL_API_KEY_VALUE}>{t('playground.paste_key_manually')}</option>
             </select>
             {pg.apiKeyMode === 'manual' ? (
               <input
@@ -128,27 +126,27 @@ export default function PlaygroundPage() {
               />
             ) : pg.selectedApiKey ? (
               <div className="mt-1.5 text-[11px] text-apple-gray-500 dark:text-gray-400">
-                {pg.tokenLoading ? 'Preparing secure Playground token...' : `Using ${pg.selectedApiKey.keyPrefix}...`}
+                {pg.tokenLoading ? t('playground.preparing_token') : t('playground.using_key', { prefix: pg.selectedApiKey.keyPrefix })}
               </div>
             ) : (
-              <p className="mt-1.5 text-[11px] text-apple-gray-500 dark:text-gray-400">Create or select an active key to load models.</p>
+              <p className="mt-1.5 text-[11px] text-apple-gray-500 dark:text-gray-400">{t('playground.create_or_select_key')}</p>
             )}
           </div>
 
           {/* Model A */}
           <div>
             <label className="block text-xs font-medium text-apple-gray-700 mb-1.5">
-              {pg.compareMode ? 'Model A' : 'Model'}
+              {pg.compareMode ? t('playground.model_a') : t('playground.model')}
             </label>
             {pg.modelsLoading || pg.tokenLoading ? (
               <select disabled
                 className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 disabled:opacity-50">
-                <option value="">Loading models...</option>
+                <option value="">{t('playground.loading_models')}</option>
               </select>
-            ) : pg.models.length > 0 ? (
+            ) : pg.chatModels.length > 0 ? (
               <select value={pg.selectedModel} onChange={(e) => pg.setSelectedModel(e.target.value)}
                 className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100">
-                {pg.models.map(m => (
+                {pg.chatModels.map(m => (
                   <option key={m.id} value={m.id}>
                     {isVisionModel(m) ? '[VLM] ' : ''}{m.id}
                   </option>
@@ -159,7 +157,7 @@ export default function PlaygroundPage() {
                 type="text"
                 value={pg.selectedModel}
                 onChange={(e) => pg.setSelectedModel(e.target.value)}
-                placeholder="Type model ID, e.g. gpt-4o"
+                placeholder={t('playground.type_model_id')}
                 className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100"
               />
             )}
@@ -171,7 +169,7 @@ export default function PlaygroundPage() {
             {pg.selectedModelRef && isVisionModel(pg.selectedModelRef) && (
               <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-green-600">
                 <EyeIcon className="w-3.5 h-3.5" />
-                <span>Vision model — image upload enabled</span>
+                <span>{t('playground.vision_enabled')}</span>
               </div>
             )}
           </div>
@@ -186,23 +184,23 @@ export default function PlaygroundPage() {
                   : "bg-apple-gray-50 text-apple-gray-600 border border-apple-gray-200 hover:bg-apple-gray-100"
               )}>
               <ArrowsRightLeftIcon className="w-4 h-4" />
-              {pg.compareMode ? 'Compare ON' : 'Compare Models'}
+              {pg.compareMode ? t('playground.compare_on') : t('playground.compare_models')}
             </button>
           </div>
 
           {/* Model B */}
           {pg.compareMode && (
             <div>
-              <label className="block text-xs font-medium text-apple-gray-700 mb-1.5">Model B</label>
+              <label className="block text-xs font-medium text-apple-gray-700 mb-1.5">{t('playground.model_b')}</label>
               {pg.modelsLoading || pg.tokenLoading ? (
                 <select disabled
                   className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 disabled:opacity-50">
-                  <option value="">Loading models...</option>
+                  <option value="">{t('playground.loading_models')}</option>
                 </select>
-              ) : pg.models.length > 1 ? (
+              ) : pg.chatModels.length > 1 ? (
                 <select value={pg.compareModel} onChange={(e) => pg.setCompareModel(e.target.value)}
                   className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100">
-                  {pg.models.filter(m => m.id !== pg.selectedModel).map(m => (
+                  {pg.chatModels.filter(m => m.id !== pg.selectedModel).map(m => (
                     <option key={m.id} value={m.id}>
                       {isVisionModel(m) ? '[VLM] ' : ''}{m.id}
                     </option>
@@ -213,7 +211,7 @@ export default function PlaygroundPage() {
                   type="text"
                   value={pg.compareModel}
                   onChange={(e) => pg.setCompareModel(e.target.value)}
-                  placeholder="Type another model ID"
+                  placeholder={t('playground.type_another_model')}
                   className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100"
                 />
               )}
@@ -222,7 +220,7 @@ export default function PlaygroundPage() {
 
           {/* System Prompt */}
           <div>
-            <label className="block text-xs font-medium text-apple-gray-700 mb-1.5">System Prompt</label>
+            <label className="block text-xs font-medium text-apple-gray-700 mb-1.5">{t('playground.system_prompt')}</label>
             <textarea rows={3} value={pg.systemPrompt} onChange={(e) => pg.setSystemPrompt(e.target.value)}
               className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 resize-none" />
           </div>
@@ -230,20 +228,20 @@ export default function PlaygroundPage() {
           {/* Temperature */}
           <div>
             <div className="flex justify-between items-center mb-1.5">
-              <label className="text-xs font-medium text-apple-gray-700">Temperature</label>
+              <label className="text-xs font-medium text-apple-gray-700">{t('playground.temperature')}</label>
               <span className="text-xs text-apple-gray-500">{pg.temperature}</span>
             </div>
             <input type="range" min="0" max="2" step="0.1" value={pg.temperature}
               onChange={(e) => pg.setTemperature(parseFloat(e.target.value))} className="w-full accent-apple-blue" />
           </div>
 
-          {/* Max Tokens */}
+          {/* Max Tokens (audit M-07: cap = model.max_output_tokens, NOT context window) */}
           <div>
             <div className="flex justify-between items-center mb-1.5">
-              <label className="text-xs font-medium text-apple-gray-700">Max Tokens</label>
-              <span className="text-xs text-apple-gray-500">{pg.maxTokens}</span>
+              <label className="text-xs font-medium text-apple-gray-700">{t('playground.max_tokens')}</label>
+              <span className="text-xs text-apple-gray-500">{pg.maxTokens} / {pg.maxOutputTokensCap}</span>
             </div>
-            <input type="range" min="100" max="16000" step="100" value={pg.maxTokens}
+            <input type="range" min="100" max={pg.maxOutputTokensCap} step="100" value={pg.maxTokens}
               onChange={(e) => pg.setMaxTokens(parseInt(e.target.value))} className="w-full accent-apple-blue" />
           </div>
 
@@ -251,31 +249,31 @@ export default function PlaygroundPage() {
           <div className="flex items-center gap-2 px-3 py-2 bg-apple-gray-50 dark:bg-white/5 rounded-xl border border-apple-gray-100 dark:border-white/10">
             <DocumentDuplicateIcon className="w-3.5 h-3.5 text-apple-gray-400 dark:text-gray-500" />
             <span className="text-[11px] text-apple-gray-500 dark:text-gray-400 font-mono">
-              ~{pg.inputTokenEstimate} tokens in context
+              {t('playground.tokens_in_context', { count: pg.inputTokenEstimate })}
             </span>
           </div>
 
-          {/* STT / TTS Models */}
+          {/* STT / TTS Models (audit M-02: only show kind-matched models) */}
           {pg.models.length > 0 && (
             <div>
               <label className="block text-xs font-medium text-apple-gray-700 dark:text-gray-300 mb-1.5">
-                <MicrophoneIcon className="w-3.5 h-3.5 inline-block mr-1" />STT Model
+                <MicrophoneIcon className="w-3.5 h-3.5 inline-block mr-1" />{t('playground.stt_model')}
               </label>
               <select value={pg.sttModel} onChange={(e) => pg.setSttModel(e.target.value)}
                 className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100">
-                <option value="">Browser built-in (default)</option>
-                {pg.models.map(m => (
-                  <option key={m.id} value={m.id}>{isSTTModel(m) ? '[STT] ' : ''}{m.id}</option>
+                <option value="">{t('playground.browser_default')}</option>
+                {pg.sttModels.map(m => (
+                  <option key={m.id} value={m.id}>{m.id}</option>
                 ))}
               </select>
               <label className="block text-xs font-medium text-apple-gray-700 dark:text-gray-300 mb-1.5 mt-3">
-                <SpeakerWaveIcon className="w-3.5 h-3.5 inline-block mr-1" />TTS Model
+                <SpeakerWaveIcon className="w-3.5 h-3.5 inline-block mr-1" />{t('playground.tts_model')}
               </label>
               <select value={pg.ttsModel} onChange={(e) => pg.setTtsModel(e.target.value)}
                 className="w-full px-3 py-2 bg-apple-gray-50 dark:bg-white/5 border border-apple-gray-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100">
                 <option value="">{t('common.not_configured')}</option>
-                {pg.models.map(m => (
-                  <option key={m.id} value={m.id}>{isTTSModel(m) ? '[TTS] ' : ''}{m.id}</option>
+                {pg.ttsModels.map(m => (
+                  <option key={m.id} value={m.id}>{m.id}</option>
                 ))}
               </select>
             </div>
@@ -294,10 +292,10 @@ export default function PlaygroundPage() {
           <div className="flex-1 text-center font-medium text-apple-gray-900 text-sm">
             {pg.compareMode
               ? `${pg.selectedModel} vs ${pg.compareModel}`
-              : pg.selectedModel ? `Talking to ${pg.selectedModel}` : 'Playground'}
+              : pg.selectedModel ? t('playground.talking_to', { model: pg.selectedModel }) : t('playground.title')}
             {pg.modelSupportsVision && !pg.compareMode && (
               <span className="ml-2 inline-flex items-center gap-1 text-[10px] text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full font-medium">
-                <EyeIcon className="w-3 h-3" /> Vision
+                <EyeIcon className="w-3 h-3" /> {t('playground.vision_badge')}
               </span>
             )}
             {!pg.compareMode && pg.isStreaming && (
@@ -312,7 +310,7 @@ export default function PlaygroundPage() {
           </div>
           <button onClick={pg.handleClear} disabled={pg.messages.length === 0 || pg.isStreaming}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-apple-gray-600 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors disabled:opacity-50">
-            <TrashIcon className="w-4 h-4" /> Clear
+            <TrashIcon className="w-4 h-4" /> {t('playground.clear')}
           </button>
         </div>
 
@@ -349,18 +347,18 @@ export default function PlaygroundPage() {
                 {pg.messages.length === 0 && (
                   <div className="h-full flex flex-col items-center justify-center text-apple-gray-400">
                     <PlayIcon className="w-12 h-12 mb-4 opacity-50" />
-                    <p>Send a message to start playing around.</p>
+                    <p>{t('playground.start_message')}</p>
                     {pg.modelSupportsVision && (
                       <p className="mt-2 text-sm text-green-500 flex items-center gap-1.5">
                         <PhotoIcon className="w-4 h-4" />
-                        Paste, drop, or click the attach button to add images
+                        {t('playground.paste_or_drop_images')}
                       </p>
                     )}
                     {pg.models.length > 1 && (
                       <button onClick={pg.toggleCompareMode}
                         className="mt-3 flex items-center gap-1.5 text-sm text-apple-blue hover:underline">
                         <ArrowsRightLeftIcon className="w-4 h-4" />
-                        Try Compare Mode
+                        {t('playground.try_compare')}
                       </button>
                     )}
                   </div>
@@ -400,14 +398,14 @@ export default function PlaygroundPage() {
                             onClick={() => pg.playTTS(text, i)}
                             disabled={pg.loadingTTSIdx === i}
                             className="mt-2 flex items-center gap-1.5 text-[11px] text-apple-gray-400 dark:text-gray-500 hover:text-apple-blue dark:hover:text-blue-400 transition-colors not-prose"
-                            title={pg.playingTTSIdx === i ? 'Stop playback' : 'Read aloud'}
+                            title={pg.playingTTSIdx === i ? t('playground.stop_playback') : t('playground.read_aloud')}
                           >
                             {pg.loadingTTSIdx === i ? (
-                              <><span className="w-3.5 h-3.5 border-2 border-apple-gray-300 border-t-transparent rounded-full animate-spin" /> Loading...</>
+                              <><span className="w-3.5 h-3.5 border-2 border-apple-gray-300 border-t-transparent rounded-full animate-spin" /> {t('common.loading')}</>
                             ) : pg.playingTTSIdx === i ? (
-                              <><StopIcon className="w-3.5 h-3.5" /> Stop</>
+                              <><StopIcon className="w-3.5 h-3.5" /> {t('playground.stop')}</>
                             ) : (
-                              <><SpeakerWaveIcon className="w-3.5 h-3.5" /> Read aloud</>
+                              <><SpeakerWaveIcon className="w-3.5 h-3.5" /> {t('playground.read_aloud')}</>
                             )}
                           </button>
                         )}
@@ -440,7 +438,7 @@ export default function PlaygroundPage() {
               value={pg.input}
               onChange={(e) => pg.setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); pg.handleSend(); } }}
-              placeholder={pg.isRecording ? 'Recording... click mic to stop' : pg.isTranscribing ? 'Transcribing audio...' : pg.modelSupportsVision ? 'Type a message or paste/drop an image...' : 'Type a message...'}
+              placeholder={pg.isRecording ? t('playground.recording_hint') : pg.isTranscribing ? t('playground.transcribing') : pg.modelSupportsVision ? t('playground.type_or_drop_image') : t('playground.type_message')}
               className="w-full py-3.5 pl-[4.5rem] pr-24 bg-white dark:bg-[#1C1C1E] border border-apple-gray-200 dark:border-white/10 rounded-2xl focus:ring-2 focus:ring-apple-blue focus:border-transparent text-sm dark:text-gray-100 resize-none shadow-sm"
               style={{ minHeight: '52px' }}
             />
@@ -448,7 +446,7 @@ export default function PlaygroundPage() {
             <button
               onClick={() => pg.fileInputRef.current?.click()}
               disabled={!pg.modelSupportsVision}
-              title={pg.modelSupportsVision ? 'Attach image' : 'Select a vision-capable model to enable image uploads'}
+              title={pg.modelSupportsVision ? t('playground.attach_image') : t('playground.attach_image_disabled')}
               className={clsx(
                 "absolute left-3 bottom-3 p-1.5 rounded-lg transition-colors",
                 pg.modelSupportsVision
@@ -462,7 +460,7 @@ export default function PlaygroundPage() {
             <button
               onClick={pg.isRecording ? pg.stopRecording : pg.startRecording}
               disabled={pg.isTranscribing}
-              title={pg.isRecording ? 'Stop recording' : pg.isTranscribing ? 'Transcribing...' : 'Voice input (Speech-to-Text)'}
+              title={pg.isRecording ? t('playground.stop_recording') : pg.isTranscribing ? t('playground.transcribing') : t('playground.voice_input')}
               className={clsx(
                 "absolute left-10 bottom-3 p-1.5 rounded-lg transition-colors",
                 pg.isRecording
@@ -497,8 +495,8 @@ export default function PlaygroundPage() {
           </div>
           <div className="text-center mt-1.5">
             <span className="text-[10px] text-apple-gray-400">
-              Enter to send · Shift+Enter for new line
-              {pg.modelSupportsVision && ' · Ctrl+V to paste image · Drag & drop images'}
+              {t('playground.input_hint')}
+              {pg.modelSupportsVision && ` ${t('playground.input_hint_vision')}`}
             </span>
           </div>
         </div>

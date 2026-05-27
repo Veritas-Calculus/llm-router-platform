@@ -823,7 +823,27 @@ func (r *Router) SyncProviderModels(ctx context.Context, providerID uuid.UUID) (
 		existing[m.Name] = true
 	}
 
-	// Upsert discovered models
+	rules := r.syncRules
+	if rules == nil {
+		// Defensive: NewRouter wires this, but tests construct Routers
+		// directly. Default to the conservative behaviour (require admin
+		// to activate, apply the built-in NSFW blocklist).
+		rules = newCatalogSyncRules(false, "")
+	}
+
+	// Upsert discovered models.
+	//
+	// Three audit findings drive the logic here:
+	//   * M-02 / M-08: classify each model so the UI can group by kind
+	//     and filter STT/TTS dropdowns. We pick the *most specific* kind
+	//     so a model id containing "embedding" wins over "chat".
+	//   * M-07: store context_window separately from the legacy max_tokens
+	//     column. We populate both for one release so old code paths keep
+	//     working — see the deprecation note on models.Model.MaxTokens.
+	//   * L-05: respect the operator-tunable activation policy + NSFW
+	//     regex. A model whose name matches the blocklist is ALWAYS
+	//     inserted inactive and stamped with a warning, regardless of
+	//     PROVIDER_SYNC_AUTO_ACTIVATE.
 	for _, upstream := range upstreamModels {
 		modelName := upstream.ID
 		if modelName == "" {
@@ -832,15 +852,42 @@ func (r *Router) SyncProviderModels(ctx context.Context, providerID uuid.UUID) (
 		if modelName == "" || existing[modelName] {
 			continue
 		}
+
+		kind := classifyModel(upstream)
+		contextWindow, maxOutput := extractContextAndOutput(upstream)
+		isActive, warning := rules.shouldActivate(modelName)
+
+		// Keep the legacy max_tokens column populated with the same
+		// value we'd report as the context window, so any in-flight
+		// caller still reading max_tokens sees a sensible number.
+		legacyMaxTokens := contextWindow
+		if legacyMaxTokens == 0 {
+			legacyMaxTokens = 4096
+		}
+
 		m := models.Model{
-			ProviderID:  providerID,
-			Name:        modelName,
-			DisplayName: modelName,
-			IsActive:    true,
-			MaxTokens:   4096,
+			ProviderID:      providerID,
+			Name:            modelName,
+			DisplayName:     modelName,
+			ModelKind:       kind,
+			ContextWindow:   contextWindow,
+			MaxOutputTokens: maxOutput,
+			MaxTokens:       legacyMaxTokens,
+			IsActive:        isActive,
+			CatalogWarnings: warning,
 		}
 		if err := r.modelRepo.Create(ctx, &m); err != nil {
 			return nil, fmt.Errorf("create model %q: %w", modelName, err)
+		}
+		// GORM's Create skips bool zero values when a column DEFAULT is
+		// declared, so `IsActive: false` would fall back to the DB
+		// default of true. When the policy says "inactive", patch the
+		// row explicitly so the audit L-05 invariant holds.
+		if !isActive {
+			m.IsActive = false
+			if err := r.modelRepo.Update(ctx, &m); err != nil {
+				return nil, fmt.Errorf("deactivate model %q: %w", modelName, err)
+			}
 		}
 		existing[modelName] = true
 	}
