@@ -85,8 +85,8 @@ type UsageLog struct {
 	ItemCount      int             `json:"item_count,omitempty"`           // Number of items (images, frames)
 	BytesProcessed int64           `json:"bytes_processed,omitempty"`      // File size in bytes
 	Cost           decimal.Decimal `gorm:"type:numeric(20,8)" json:"cost"` // Backward-compatible customer charge
-	CustomerCharge decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"customer_charge"`
-	ProviderCost   decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"provider_cost"`
+	CustomerCharge decimal.Decimal `gorm:"type:numeric(20,8);default:0;index:idx_usage_logs_customer_charge" json:"customer_charge"`
+	ProviderCost   decimal.Decimal `gorm:"type:numeric(20,8);default:0;index:idx_usage_logs_provider_cost" json:"provider_cost"`
 	Latency        int64           `gorm:"column:latency" json:"latency_ms"`
 	StatusCode     int             `json:"status_code"`
 	ErrorMessage   string          `json:"error_message,omitempty"`

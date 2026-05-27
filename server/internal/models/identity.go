@@ -142,9 +142,16 @@ type Project struct {
 }
 
 // DlpConfig stores the Data Loss Prevention settings for a project.
+//
+// Schema-drift note: SQL migration 000006 created `idx_dlp_configs_project_id`
+// as a NON-unique btree. Application-level uniqueness (one DLP config per
+// project) is enforced by the service layer and by the FK constraint on
+// projects.dlp_config (1:0..1 via the `DlpConfig *DlpConfig` pointer on
+// Project). We deliberately do NOT use `uniqueIndex` here so GORM AutoMigrate
+// matches the SQL migrations and `make check-schema` passes.
 type DlpConfig struct {
 	BaseModel
-	ProjectID       uuid.UUID `gorm:"type:uuid;not null;uniqueIndex" json:"project_id"`
+	ProjectID       uuid.UUID `gorm:"type:uuid;not null;index:idx_dlp_configs_project_id" json:"project_id"`
 	IsEnabled       bool      `gorm:"not null;default:false" json:"is_enabled"`
 	Strategy        string    `gorm:"type:varchar(32);not null;default:'REDACT'" json:"strategy"`
 	MaskEmails      bool      `gorm:"not null;default:true" json:"mask_emails"`

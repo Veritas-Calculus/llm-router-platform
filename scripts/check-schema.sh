@@ -20,6 +20,78 @@ NET_NAME="schema-check-net-$$"
 SQL_CONTAINER="schema-sql-$$"
 GORM_CONTAINER="schema-gorm-$$"
 
+# ---------------------------------------------------------------------------
+# Schema-drift skip list
+# ---------------------------------------------------------------------------
+# Each entry below is an object name that legitimately exists on ONLY one side
+# of the SQL-vs-GORM comparison and cannot be aligned without rewriting either
+# the migrations or the GORM model in a worse way. We strip these from BOTH
+# pg_dump outputs before diffing.
+#
+# Adding a name here is a deliberate choice: future, unintentional drift will
+# still surface because the entry must be added by hand. Do NOT replace this
+# with a regex blanket — that would silently hide real schema regressions.
+#
+# Each entry includes a short reason. When you add a new one, write the
+# reason next to it.
+
+EXEMPT_OBJECT_NAMES=(
+    # --- Indexes on legacy columns no longer modelled in GORM ---
+    # `budgets`, `subscriptions`, `orders`, `async_tasks`, `conversation_memories`
+    # all still have a `user_id` column (initial migrations 0001-0003) but the
+    # GORM struct now keys off `org_id` / `project_id`. The user_id columns
+    # are kept for historical data; the indexes remain useful for any direct
+    # SQL queries against legacy rows. GORM never sees these columns so it
+    # cannot generate the index.
+    "idx_async_tasks_user_id"
+    "idx_conversation_memories_user_id"
+    "idx_orders_user_id"
+    "idx_budgets_user_id"
+    "idx_subscriptions_user_id"
+
+    # --- Indexes on BaseModel-embedded CreatedAt that we keep selectively ---
+    # `usage_logs.created_at` is heavily queried for hot-path billing rollups.
+    # GORM's BaseModel embeds CreatedAt without an `index` tag (deliberately,
+    # so most tables don't get a redundant created_at index). Adding the tag
+    # globally would index CreatedAt on every table — too costly. Keep the
+    # SQL-only index for usage_logs alone.
+    "idx_usage_logs_created_at"
+
+    # --- Composite indexes with DESC ordering ---
+    # GORM cannot express column ordering inside composite index tags
+    # (`gorm:"index:foo,priority:1"` controls order WITHIN a composite, not
+    # ASC/DESC of individual columns). The DESC ordering matters for our
+    # "most recent N usage logs per project" hot path (migration 000016).
+    "idx_usage_logs_project_channel_created_at"
+    "idx_usage_logs_project_created_at"
+
+    # --- Partial indexes (WHERE clause) ---
+    # GORM has no syntax for `CREATE INDEX ... WHERE ...`. These are
+    # query-specific partials that GORM AutoMigrate cannot replicate.
+    "idx_models_provider_kind"           # WHERE deleted_at IS NULL — soft-delete-aware composite
+    "idx_webhook_deliveries_pending_due" # WHERE status='pending' — dispatcher hot scan
+    "idx_transactions_idempotency_key"   # UNIQUE WHERE idempotency_key IS NOT NULL — partial unique
+
+    # --- Materialized view + its indexes ---
+    # `usage_logs_daily_rollup` is a materialized view defined in migration
+    # 000020 for fast dashboard rollups. GORM has no concept of materialized
+    # views — AutoMigrate will never produce one. The MV's own indexes
+    # (including its PK index) follow the same rationale.
+    "usage_logs_daily_rollup"
+    "idx_usage_logs_daily_rollup_pk"
+    "idx_usage_logs_daily_rollup_project_channel_day"
+    "idx_usage_logs_daily_rollup_project_day"
+)
+
+# Build a single `grep -E -v` pattern that matches any line referencing one
+# of the exempt object names. We anchor on word boundaries so a substring
+# match doesn't accidentally hide an unrelated object.
+EXEMPT_PATTERN=""
+for name in "${EXEMPT_OBJECT_NAMES[@]}"; do
+    if [[ -n "$EXEMPT_PATTERN" ]]; then EXEMPT_PATTERN+="|"; fi
+    EXEMPT_PATTERN+="\\b${name}\\b"
+done
+
 MIGRATION_DIR="$(cd "$(dirname "$0")/../server/migrations" && pwd)"
 SERVER_DIR="$(cd "$(dirname "$0")/../server" && pwd)"
 # The AutoMigrate program must live inside the server module tree to import
@@ -32,7 +104,9 @@ cleanup() {
     echo "🧹 Cleaning up..."
     docker rm -f "$SQL_CONTAINER" "$GORM_CONTAINER" 2>/dev/null || true
     docker network rm "$NET_NAME" 2>/dev/null || true
-    rm -f /tmp/schema_sql.dump /tmp/schema_gorm.dump
+    rm -f /tmp/schema_sql.dump /tmp/schema_gorm.dump \
+          /tmp/schema_sql.dump.raw /tmp/schema_gorm.dump.raw \
+          /tmp/schema_diff.txt
     rm -rf "$AUTOMIGRATE_DIR"
 }
 trap cleanup EXIT
@@ -140,20 +214,38 @@ DB_HOST="$GORM_HOST" DB_PORT="$GORM_PORT" \
 echo ""
 echo "📊 Comparing schemas..."
 
-# Dump both schemas (excluding migration tracking tables)
+# Dump both schemas. We exclude:
+#   - schema_migrations: the migration tracking table itself (irrelevant to drift)
+#   - usage_logs_daily_rollup: a materialized view (see EXEMPT_OBJECT_NAMES);
+#     pg_dump's --exclude-table also drops materialized views, which suppresses
+#     the entire CREATE MATERIALIZED VIEW block from the SQL dump.
 docker exec "$SQL_CONTAINER" pg_dump -U "$PG_USER" -d "$PG_DB" --schema-only \
     --exclude-table='schema_migrations' \
+    --exclude-table='usage_logs_daily_rollup' \
     --no-owner --no-privileges --no-comments \
-    | grep -v '^--' | grep -v '^$' | sort > /tmp/schema_sql.dump
+    | grep -v '^--' | grep -v '^$' | sort > /tmp/schema_sql.dump.raw
 
 docker exec "$GORM_CONTAINER" pg_dump -U "$PG_USER" -d "$PG_DB" --schema-only \
     --exclude-table='schema_migrations' \
+    --exclude-table='usage_logs_daily_rollup' \
     --no-owner --no-privileges --no-comments \
-    | grep -v '^--' | grep -v '^$' | sort > /tmp/schema_gorm.dump
+    | grep -v '^--' | grep -v '^$' | sort > /tmp/schema_gorm.dump.raw
+
+# Apply the explicit exempt-object skip list (see EXEMPT_OBJECT_NAMES near the
+# top of this file). Any line referencing an exempt name is stripped from
+# BOTH dumps so the diff focuses on real drift.
+if [[ -n "$EXEMPT_PATTERN" ]]; then
+    grep -E -v "$EXEMPT_PATTERN" /tmp/schema_sql.dump.raw > /tmp/schema_sql.dump
+    grep -E -v "$EXEMPT_PATTERN" /tmp/schema_gorm.dump.raw > /tmp/schema_gorm.dump
+else
+    cp /tmp/schema_sql.dump.raw  /tmp/schema_sql.dump
+    cp /tmp/schema_gorm.dump.raw /tmp/schema_gorm.dump
+fi
 
 if diff -u /tmp/schema_sql.dump /tmp/schema_gorm.dump > /tmp/schema_diff.txt 2>&1; then
     echo ""
     echo "✅ Schemas match! SQL migrations and GORM AutoMigrate produce identical schemas."
+    echo "   (Exempt objects skipped: ${#EXEMPT_OBJECT_NAMES[@]}; see EXEMPT_OBJECT_NAMES at the top of this script.)"
     exit 0
 else
     echo ""
@@ -166,5 +258,8 @@ else
     echo "Lines starting with '+' exist only in GORM AutoMigrate."
     echo ""
     echo "ACTION: Add SQL migration to match the GORM model changes, or update GORM models."
+    echo "        If the diff is a legitimately-unbridgeable object (materialized view,"
+    echo "        partial index, composite-with-DESC), add it to EXEMPT_OBJECT_NAMES"
+    echo "        near the top of this script with a one-line explanation."
     exit 1
 fi
