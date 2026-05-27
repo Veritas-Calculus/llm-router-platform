@@ -14,24 +14,74 @@ import (
 
 // ─── Security Header Tests ──────────────────────────────────────────────
 
-func TestSecurityHeadersApplied(t *testing.T) {
+// SecurityHeaders is now intentionally a *minimal* defense-in-depth set —
+// nginx owns CSP / HSTS / X-Frame-Options / Referrer-Policy / X-XSS-Protection
+// / Permissions-Policy at the edge (see web/snippets/security-headers.conf).
+// These tests pin the Go middleware's surface to exactly that minimum so
+// future drift surfaces in CI rather than as duplicated response headers in
+// production.
+
+func TestSecurityHeadersOnAPIPath(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	_ = logger
 
 	router := gin.New()
 	router.Use(SecurityHeaders())
-	router.GET("/test", func(c *gin.Context) {
+	router.GET("/v1/test", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/test", nil)
+	req, _ := http.NewRequest("GET", "/v1/test", nil)
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+	// Always-on defense-in-depth.
 	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
-	assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
-	assert.Contains(t, w.Header().Get("Permissions-Policy"), "camera=()")
+	// Cache-Control on non-health API responses.
+	assert.Contains(t, w.Header().Get("Cache-Control"), "no-store")
+	assert.Equal(t, "no-cache", w.Header().Get("Pragma"))
+	assert.Equal(t, "0", w.Header().Get("Expires"))
+
+	// Headers that are nginx's sole responsibility — these MUST NOT be set
+	// by the Go middleware anymore; setting them here was the cause of
+	// audit findings H-01 / L-07 (duplicate / conflicting headers).
+	assert.Empty(t, w.Header().Get("Content-Security-Policy"))
+	assert.Empty(t, w.Header().Get("Strict-Transport-Security"))
+	assert.Empty(t, w.Header().Get("X-Frame-Options"))
+	assert.Empty(t, w.Header().Get("Referrer-Policy"))
+	assert.Empty(t, w.Header().Get("X-XSS-Protection"))
+	assert.Empty(t, w.Header().Get("Permissions-Policy"))
+}
+
+func TestSecurityHeadersSkipsCacheControlOnHealth(t *testing.T) {
+	router := gin.New()
+	router.Use(SecurityHeaders())
+	router.GET("/healthz", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+	router.GET("/readyz", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+	router.GET("/health", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	for _, path := range []string{"/healthz", "/readyz", "/health"} {
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", path, nil)
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code, "path %s", path)
+		// nosniff always.
+		assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"), "path %s", path)
+		// Cache-Control / Pragma / Expires must be empty on health probes —
+		// nginx owns those headers for liveness/readiness paths so LB
+		// caching policy is decided in exactly one place.
+		assert.Empty(t, w.Header().Get("Cache-Control"), "path %s", path)
+		assert.Empty(t, w.Header().Get("Pragma"), "path %s", path)
+		assert.Empty(t, w.Header().Get("Expires"), "path %s", path)
+	}
 }
 
 // ─── Body Size Limit Tests ──────────────────────────────────────────────

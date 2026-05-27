@@ -99,37 +99,33 @@ var (
 
 // ─── Security Response Headers ──────────────────────────────────────────
 
-// SecurityHeaders adds security-related HTTP headers to all API responses.
-// These complement the nginx headers for direct API access scenarios.
+// SecurityHeaders adds the minimal set of HTTP headers that the Go backend
+// is authoritative for. Everything else (CSP, HSTS, X-Frame-Options,
+// Referrer-Policy, X-XSS-Protection, Permissions-Policy) is set at the
+// edge by nginx — see web/snippets/security-headers.conf — to avoid the
+// dual-source header drift that caused H-01/L-07.
+//
+// We deliberately keep two headers here as defense-in-depth for the rare
+// case where this binary is reached directly (e.g. operator port-forward,
+// internal docker network, or k8s probe bypassing the ingress):
+//
+//   - X-Content-Type-Options: nosniff — cheap, never harmful.
+//   - Cache-Control: no-store on non-health API responses, so that even
+//     direct backend hits don't accidentally cache auth/billing payloads.
+//
+// Health endpoints are intentionally excluded so LBs can cache liveness
+// probes; nginx is the single source of cache-control for /healthz et al.
 func SecurityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Prevent MIME type sniffing
+		// Prevent MIME type sniffing — overlaps with nginx but is harmless
+		// and protects direct backend access.
 		c.Header("X-Content-Type-Options", "nosniff")
 
-		// Prevent clickjacking
-		c.Header("X-Frame-Options", "DENY")
-
-		// Disable XSS auditor (modern browsers don't need it, can cause issues)
-		c.Header("X-XSS-Protection", "0")
-
-		// Control referrer information
-		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-
-		// Restrict resources to same-origin
-		// CSP: self for all sources, no unsafe-inline if possible (but web app might need it), 
-		// frame-ancestors 'none' to prevent any framing (clickjacking defense).
-		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';")
-
-		// Disable browser features not needed by API
-		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
-
-		// R8: HSTS — enforce HTTPS for direct API access (complements nginx HSTS)
-		// 1 year max-age, include subdomains and preload.
-		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
-
-		// Cache control for API responses (no caching sensitive data)
-		// We explicitly exclude health checks to allow load balancer caching if needed.
-		if c.Request.URL.Path != "/health" && c.Request.URL.Path != "/readyz" && c.Request.URL.Path != "/healthz" {
+		// Cache control for API responses (no caching of sensitive data).
+		// Health/readiness endpoints are excluded so LBs can cache them;
+		// nginx remains the single source of truth for those paths.
+		path := c.Request.URL.Path
+		if path != "/health" && path != "/readyz" && path != "/healthz" {
 			c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private, proxy-revalidate")
 			c.Header("Pragma", "no-cache")
 			c.Header("Expires", "0")
