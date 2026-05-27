@@ -684,14 +684,3 @@ func rsaKeyFromJWK(nB64, eB64 string) (*rsa.PublicKey, error) {
 	}, nil
 }
 
-func (h *SSOHandler) generateJWT(u *models.User) (string, error) {
-	claims := jwt.MapClaims{
-		"sub":   u.ID.String(),
-		"email": u.Email,
-		"role":  u.Role,
-		"exp":   time.Now().Add(h.cfg.JWT.ExpiresIn).Unix(),
-		"iat":   time.Now().Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(h.cfg.JWT.Secret))
-}

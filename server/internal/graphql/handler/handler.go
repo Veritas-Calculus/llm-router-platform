@@ -210,7 +210,7 @@ const (
 	codeUnauthenticated     = "UNAUTHENTICATED"
 	codeForbidden           = "FORBIDDEN"
 	codeRateLimited         = "RATE_LIMITED"
-	codeInvalidCredentials  = "INVALID_CREDENTIALS"
+	codeInvalidCredentials  = "INVALID_CREDENTIALS" // #nosec G101 -- GraphQL error code, not a credential
 	codeNotFound            = "NOT_FOUND"
 	codeInsufficientBalance = "INSUFFICIENT_BALANCE"
 	codeAccountDisabled     = "ACCOUNT_DISABLED"

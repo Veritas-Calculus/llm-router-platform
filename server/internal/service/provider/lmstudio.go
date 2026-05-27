@@ -504,9 +504,7 @@ func (c *LMStudioClient) StreamChat(ctx context.Context, req *ChatRequest) (<-ch
 
 func lmStudioNativeBaseURL(baseURL string) string {
 	root := strings.TrimSuffix(baseURL, "/")
-	if strings.HasSuffix(root, "/v1") {
-		root = strings.TrimSuffix(root, "/v1")
-	}
+	root = strings.TrimSuffix(root, "/v1")
 	return root + "/api/v1"
 }
 

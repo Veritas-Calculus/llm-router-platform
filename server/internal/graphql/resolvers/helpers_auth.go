@@ -21,13 +21,13 @@ import (
 )
 
 const (
-	refreshTokenCookieName = "llm_router_refresh"
+	refreshTokenCookieName = "llm_router_refresh" // #nosec G101 -- cookie name, not a credential
 	// accessTokenCookieName carries the access JWT alongside (or instead of)
 	// the Authorization header. C-02: moving access tokens off localStorage
 	// reduces the XSS blast radius from "long-lived session takeover" to
 	// "single-request CSRF" — and the latter is mitigated by SameSite=Lax +
 	// the GraphQL handler accepting only POST.
-	accessTokenCookieName = "llm_router_access"
+	accessTokenCookieName = "llm_router_access" // #nosec G101 -- cookie name, not a credential
 )
 
 // clientInfo extracts client IP and User-Agent from the Gin context.

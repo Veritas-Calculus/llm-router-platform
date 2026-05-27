@@ -250,7 +250,7 @@ func TestIncrUsageCacheSkipsPrerecordAndTracksDashboardFields(t *testing.T) {
 	require.NoError(t, err)
 	defer mr.Close()
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	svc := NewService(repository.NewUsageLogRepository(db), nil, rdb, zaptest.NewLogger(t))
 	key := usageSummaryCacheKey(orgID, time.Now())
