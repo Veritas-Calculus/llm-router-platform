@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
+import { CombinedGraphQLErrors } from '@apollo/client/errors';
 import {
   GET_WEBHOOKS, CREATE_WEBHOOK_ENDPOINT, UPDATE_WEBHOOK_ENDPOINT,
   DELETE_WEBHOOK_ENDPOINT, TEST_WEBHOOK_ENDPOINT, GET_WEBHOOK_DELIVERIES,
@@ -18,6 +19,45 @@ export interface WebhookFormData {
   description: string;
   events: string[];
   isActive: boolean;
+}
+
+// H-05: shape of the field-keyed inline-error map surfaced by the
+// webhook hook to the page. Mirrors the LoginPage convention so the
+// dialog can render <p role="alert"> next to each input. Server keys
+// the field via extensions.field — we forward those keys verbatim.
+type FieldErrors = Partial<Record<'url' | 'events' | 'description' | 'projectId' | 'id', string>>;
+
+// Pull every VALIDATION-coded GraphQL error out of an Apollo
+// onError payload and project it into a {field: message} map. Errors
+// without an extensions.field land under '_form' (not currently
+// rendered, but kept so we never silently drop a server message).
+function collectValidationErrors(error: unknown): { fieldErrors: FieldErrors; otherMessages: string[] } {
+  const fieldErrors: FieldErrors = {};
+  const otherMessages: string[] = [];
+  if (!CombinedGraphQLErrors.is(error)) {
+    if (error instanceof Error) otherMessages.push(error.message);
+    return { fieldErrors, otherMessages };
+  }
+  for (const gqlError of error.errors) {
+    const code = (gqlError.extensions?.code as string) || '';
+    const field = (gqlError.extensions?.field as string) || '';
+    if (code === 'VALIDATION' && field) {
+      // Only map fields the form actually knows how to display; unknown
+      // keys still get surfaced via otherMessages as a last resort.
+      if (field === 'url' || field === 'events' || field === 'description' || field === 'projectId' || field === 'id') {
+        fieldErrors[field as keyof FieldErrors] = gqlError.message;
+        continue;
+      }
+    }
+    if (code !== 'VALIDATION') {
+      otherMessages.push(gqlError.message);
+    } else {
+      // VALIDATION without a usable field — bubble to the user via toast
+      // so they aren't left guessing.
+      otherMessages.push(gqlError.message);
+    }
+  }
+  return { fieldErrors, otherMessages };
 }
 
 export function useWebhooks() {
@@ -52,6 +92,10 @@ export function useWebhooks() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingWebhook, setEditingWebhook] = useState<any>(null);
   const [selectedEndpointId, setSelectedEndpointId] = useState<string | null>(null);
+  // H-05: field-keyed inline errors. Populated by the create/update
+  // mutation onError handlers and cleared whenever the user edits the
+  // matching field (see clearFieldError below) or closes the dialog.
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   // Queries
   const { data, loading, refetch } = useQuery<any>(GET_WEBHOOKS, { variables: { projectId: selectedProjectId }, skip: !selectedProjectId });
@@ -60,9 +104,28 @@ export function useWebhooks() {
   useVisibilityAwarePolling(deliveriesQuery, deliveriesPollMs);
   const { data: deliveriesData, loading: deliveriesLoading } = deliveriesQuery;
 
+  // handleMutationError is the shared onError sink for the
+  // create/update mutations. It pulls VALIDATION errors with a known
+  // field into the inline state and toasts anything left over so the
+  // user always gets some feedback. The Apollo errorLink already
+  // suppresses VALIDATION toasts globally, so we own the surfacing
+  // here.
+  const handleMutationError = useCallback((error: unknown) => {
+    const { fieldErrors: next, otherMessages } = collectValidationErrors(error);
+    if (Object.keys(next).length > 0) {
+      setFieldErrors(next);
+    }
+    // Only toast if we couldn't pin the error to a field — pinned
+    // errors render inline next to the offending input.
+    if (Object.keys(next).length === 0 && otherMessages.length > 0) {
+      toast.error(otherMessages.join('\n'));
+    }
+  }, []);
+
   // Mutations
   const [createWebhook] = useMutation(CREATE_WEBHOOK_ENDPOINT, {
     onCompleted: (data: any) => {
+      setFieldErrors({});
       toast.success(t('webhooks.created_success'));
       if (data.createWebhookEndpoint.secret) {
         toast((_t) => (
@@ -75,12 +138,12 @@ export function useWebhooks() {
       }
       refetch(); setIsModalOpen(false);
     },
-    onError: (error: any) => toast.error(error.message),
+    onError: handleMutationError,
   });
 
   const [updateWebhook] = useMutation(UPDATE_WEBHOOK_ENDPOINT, {
-    onCompleted: () => { toast.success(t('webhooks.updated_success')); refetch(); setIsModalOpen(false); setEditingWebhook(null); },
-    onError: (error: any) => toast.error(error.message),
+    onCompleted: () => { setFieldErrors({}); toast.success(t('webhooks.updated_success')); refetch(); setIsModalOpen(false); setEditingWebhook(null); },
+    onError: handleMutationError,
   });
 
   const [deleteWebhook] = useMutation(DELETE_WEBHOOK_ENDPOINT, {
@@ -97,6 +160,10 @@ export function useWebhooks() {
   const [formData, setFormData] = useState<WebhookFormData>({ url: '', description: '', events: ['ping', 'payment.succeeded'], isActive: true });
 
   const handleOpenModal = useCallback((webhook: any = null) => {
+    // H-05: opening the modal must always reset any stale field errors
+    // — otherwise a previous failed submit (e.g. private URL) would
+    // show a red message under a freshly-cleared input.
+    setFieldErrors({});
     if (webhook) {
       setEditingWebhook(webhook);
       setFormData({ url: webhook.url, description: webhook.description || '', events: webhook.events || [], isActive: webhook.isActive });
@@ -107,9 +174,25 @@ export function useWebhooks() {
     setIsModalOpen(true);
   }, []);
 
+  // clearFieldError lets input change handlers wipe just the inline
+  // error tied to that input as the user starts typing — mirrors the
+  // LoginPage UX where the red message vanishes once the user begins
+  // editing.
+  const clearFieldError = useCallback((field: keyof FieldErrors) => {
+    setFieldErrors((prev) => {
+      if (!(field in prev)) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }, []);
+
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProjectId) return;
+    // Always reset before a new round-trip — server failures will
+    // repopulate this from onError.
+    setFieldErrors({});
     if (editingWebhook) {
       updateWebhook({ variables: { id: editingWebhook.id, input: { url: formData.url, description: formData.description, events: formData.events, isActive: formData.isActive } } });
     } else {
@@ -144,5 +227,8 @@ export function useWebhooks() {
     formData, setFormData,
     handleOpenModal, handleSubmit, handleDelete, handleTest,
     parseJson,
+    // H-05: inline error surface.
+    fieldErrors,
+    clearFieldError,
   };
 }

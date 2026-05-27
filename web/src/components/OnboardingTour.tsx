@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useOnboardingStore } from '@/stores/useOnboardingStore';
@@ -13,22 +13,73 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 
+// M-01: Belt-and-braces auto-open guard.
+//
+// `hasCompletedTour` in the persisted store is the primary signal — once
+// the user clicks X or Skip, it flips to true and the auto-open useEffect
+// never fires again. But the audit caught a second failure mode: if the
+// auto-open useEffect re-runs while the persist hydration is mid-flight,
+// or if the store was wiped, the modal would re-trigger on every route
+// change.
+//
+// This module-scoped ref records whether the auto-open useEffect has
+// already fired *in this browser tab*. It is intentionally NOT persisted
+// — a fresh reload should restart the gate from scratch, deferring to
+// `hasCompletedTour` as before. The combination gives us:
+//   1. Across reloads: hasCompletedTour blocks reopening.
+//   2. Within a session: this ref blocks reopening even if some other
+//      code path flips hasCompletedTour back to false transiently.
+let autoOpenAttemptedInSession = false;
+
 export default function OnboardingTour() {
   const { user } = useAuthStore();
   const { hasCompletedTour, isOpen, currentStep, nextStep, prevStep, completeTour, startTour, closeTour } = useOnboardingStore();
   const navigate = useNavigate();
+  // Local mirror of the module flag so we don't have to read it inside
+  // the effect's dependency closure. The ref preserves the value across
+  // renders without retriggering the effect.
+  const attemptedRef = useRef(autoOpenAttemptedInSession);
 
-  // Auto-start for new users (e.g. within first 24 hours of account creation, or just if not completed)
+  // Auto-start for new users — only ever fires once per session, and
+  // only when the long-lived `hasCompletedTour` says we haven't been
+  // dismissed yet. After this useEffect fires (whether or not we opened
+  // the modal), the session flag latches and any subsequent navigations
+  // do nothing here.
   useEffect(() => {
-    if (user && !hasCompletedTour && !isOpen) {
-      // Small delay to allow main UI to settle
-      const timer = setTimeout(() => {
-        startTour();
-      }, 1500);
-      return () => clearTimeout(timer);
+    if (!user) return;
+    if (attemptedRef.current) return;
+    if (hasCompletedTour) {
+      // Already dismissed; lock it in for this session too so the next
+      // route change can't sneak in a re-trigger.
+      attemptedRef.current = true;
+      autoOpenAttemptedInSession = true;
+      return;
     }
+    if (isOpen) return;
+
+    // Small delay to allow the main shell to mount and settle before
+    // we paint over it.
+    const timer = setTimeout(() => {
+      // Double-check the persistent flag right before opening — the
+      // user may have dismissed the tour in another tab between
+      // useEffect arming the timer and the timer firing.
+      if (!useOnboardingStore.getState().hasCompletedTour) {
+        startTour();
+      }
+      attemptedRef.current = true;
+      autoOpenAttemptedInSession = true;
+    }, 1500);
+    return () => clearTimeout(timer);
   }, [user, hasCompletedTour, isOpen, startTour]);
 
+  // Unmount completely when closed — this is the load-bearing piece of
+  // the M-01 fix on the DOM side. The previous implementation wrapped
+  // the entire return in <AnimatePresence> and only relied on the
+  // backdrop+motion.div animation states. The audit caught that the
+  // fixed-position z-100 backdrop intercepted pointer events even when
+  // `isOpen` was false in some race conditions. Returning null up here
+  // guarantees there is no overlay element on the page when the modal
+  // is closed.
   if (!isOpen) return null;
 
   const isAdmin = user?.role === 'admin';
@@ -106,6 +157,15 @@ export default function OnboardingTour() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        // Backdrop layer. Clicking the backdrop dismisses the tour the
+        // same way the X does — persistently — which matches user
+        // expectation for a non-blocking welcome modal. e.target ===
+        // e.currentTarget is the standard "only fire when click landed
+        // on the backdrop, not on a child" guard; without it, clicking
+        // anywhere inside the modal box would also dismiss.
+        onClick={(e) => {
+          if (e.target === e.currentTarget) closeTour();
+        }}
         className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       >
         <motion.div

@@ -8,12 +8,21 @@ package resolvers
 import (
 	"context"
 	"fmt"
+
 	"llm-router-platform/internal/graphql/directives"
+	"llm-router-platform/internal/graphql/errs"
 	"llm-router-platform/internal/graphql/model"
 	gdbModels "llm-router-platform/internal/models"
 
 	"github.com/google/uuid"
 )
+
+// webhookMaxDescription bounds the description field so the dialog
+// can't shovel an unbounded string into the row. The audit didn't
+// flag a specific overflow, but enforcing a sensible cap here is
+// cheap and lets the frontend show an inline message rather than
+// relying on Postgres truncating server-side.
+const webhookMaxDescription = 500
 
 var (
 	webhookManagerRoles = []string{"OWNER", "ADMIN"}
@@ -21,17 +30,36 @@ var (
 )
 
 // CreateWebhookEndpoint is the resolver for the createWebhookEndpoint field.
+//
+// H-05: input validation happens BEFORE the service call so failures
+// can be surfaced as typed errs.Validation errors with extensions.field.
+// The webhook service also validates internally, but its fmt.Errorf
+// wrappers get masked to a generic "internal error [...]" by the
+// GraphQL error presenter (see handler.go), which left the dialog
+// silent for users supplying a private/loopback URL.
 func (r *mutationResolver) CreateWebhookEndpoint(ctx context.Context, input model.CreateWebhookEndpointInput) (*model.WebhookEndpoint, error) {
 	projectID, err := uuid.Parse(input.ProjectID)
 	if err != nil {
-		return nil, err
+		return nil, errs.Validation("projectId", "Project ID is not valid")
 	}
 	if err := r.requireWebhookProjectRole(ctx, projectID, webhookManagerRoles...); err != nil {
 		return nil, err
 	}
+
+	// Validate the URL up-front. Mirrors the dial-time SSRF guard but
+	// returns a structured error the form can pin to the URL field.
+	if err := validateWebhookURLOrFail(input.URL); err != nil {
+		return nil, err
+	}
+	if len(input.Events) == 0 {
+		return nil, errs.Validation("events", "Select at least one event to subscribe to")
+	}
 	var desc string
 	if input.Description != nil {
 		desc = *input.Description
+	}
+	if len(desc) > webhookMaxDescription {
+		return nil, errs.Validation("description", "Description is too long")
 	}
 	isActive := true
 	if input.IsActive != nil {
@@ -45,10 +73,15 @@ func (r *mutationResolver) CreateWebhookEndpoint(ctx context.Context, input mode
 }
 
 // UpdateWebhookEndpoint is the resolver for the updateWebhookEndpoint field.
+//
+// H-05: as with CreateWebhookEndpoint, we validate user-supplied inputs
+// up-front into typed errs.Validation errors so the dialog can show
+// inline messages instead of getting silently dropped by the
+// internal-error mask.
 func (r *mutationResolver) UpdateWebhookEndpoint(ctx context.Context, id string, input model.UpdateWebhookEndpointInput) (*model.WebhookEndpoint, error) {
 	endpointID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, err
+		return nil, errs.Validation("id", "Webhook ID is not valid")
 	}
 	var urlStr, desc string
 	var events []string
@@ -69,15 +102,28 @@ func (r *mutationResolver) UpdateWebhookEndpoint(ctx context.Context, id string,
 	desc = current.Description
 
 	if input.URL != nil {
+		// Only re-validate when the user is actually changing the URL.
+		// Untouched fields shouldn't be re-checked against the live DNS.
+		if *input.URL != current.URL {
+			if err := validateWebhookURLOrFail(*input.URL); err != nil {
+				return nil, err
+			}
+		}
 		urlStr = *input.URL
 	}
 	if input.Events != nil {
+		if len(input.Events) == 0 {
+			return nil, errs.Validation("events", "Select at least one event to subscribe to")
+		}
 		events = input.Events
 	}
 	if input.IsActive != nil {
 		isActive = *input.IsActive
 	}
 	if input.Description != nil {
+		if len(*input.Description) > webhookMaxDescription {
+			return nil, errs.Validation("description", "Description is too long")
+		}
 		desc = *input.Description
 	}
 
