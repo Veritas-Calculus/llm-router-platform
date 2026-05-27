@@ -10,6 +10,7 @@
     "codegen": "graphql-codegen --config codegen.ts",
     "codegen:watch": "graphql-codegen --config codegen.ts --watch",
     "build": "npm run validate:gql && npm run validate:i18n && npm run codegen && tsc && vite build",
+    "type-check": "npm run codegen && tsc --noEmit",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "test": "vitest",
