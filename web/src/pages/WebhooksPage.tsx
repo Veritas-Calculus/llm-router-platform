@@ -19,6 +19,8 @@ export default function WebhooksPage() {
     formData, setFormData,
     handleOpenModal, handleSubmit, handleDelete, handleTest,
     parseJson,
+    fieldErrors,
+    clearFieldError,
   } = useWebhooks();
   const closeModal = useCallback(() => setIsModalOpen(false), [setIsModalOpen]);
   const dialogRef = useDialogA11y<HTMLDivElement>(isModalOpen, closeModal);
@@ -219,17 +221,38 @@ export default function WebhooksPage() {
               <form onSubmit={handleSubmit} className="p-6 space-y-5">
                 <div>
                   <label htmlFor="url" className="block text-sm font-medium" style={{ color: 'var(--theme-text-secondary)' }}>{t('webhooks.payload_url')}</label>
-                  <input type="url" id="url" required value={formData.url} onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                  <input
+                    type="url"
+                    id="url"
+                    required
+                    value={formData.url}
+                    onChange={(e) => { setFormData({ ...formData, url: e.target.value }); clearFieldError('url'); }}
+                    aria-invalid={!!fieldErrors.url}
+                    aria-describedby={fieldErrors.url ? 'url-error' : undefined}
                     className="mt-2 block w-full rounded-xl px-4 py-2.5 text-sm focus:ring-apple-blue focus:border-apple-blue"
                     style={{ backgroundColor: 'var(--theme-bg-input)', border: '1px solid var(--theme-border)', color: 'var(--theme-text)' }}
-                    placeholder={t('webhooks.url_placeholder')} />
+                    placeholder={t('webhooks.url_placeholder')}
+                  />
+                  {fieldErrors.url && (
+                    <p id="url-error" role="alert" className="text-xs mt-1.5 text-red-600">{fieldErrors.url}</p>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="description" className="block text-sm font-medium" style={{ color: 'var(--theme-text-secondary)' }}>{t('webhooks.description_optional')}</label>
-                  <input type="text" id="description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  <input
+                    type="text"
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => { setFormData({ ...formData, description: e.target.value }); clearFieldError('description'); }}
+                    aria-invalid={!!fieldErrors.description}
+                    aria-describedby={fieldErrors.description ? 'description-error' : undefined}
                     className="mt-2 block w-full rounded-xl px-4 py-2.5 text-sm focus:ring-apple-blue focus:border-apple-blue"
                     style={{ backgroundColor: 'var(--theme-bg-input)', border: '1px solid var(--theme-border)', color: 'var(--theme-text)' }}
-                    placeholder={t('webhooks.description_placeholder')} />
+                    placeholder={t('webhooks.description_placeholder')}
+                  />
+                  {fieldErrors.description && (
+                    <p id="description-error" role="alert" className="text-xs mt-1.5 text-red-600">{fieldErrors.description}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-2" style={{ color: 'var(--theme-text-secondary)' }}>{t('webhooks.events_to_send')}</label>
@@ -237,12 +260,15 @@ export default function WebhooksPage() {
                     {[{ event: 'ping', descKey: 'webhooks.ping_desc' }, { event: 'payment.succeeded', descKey: 'webhooks.payment_desc' }].map(({ event, descKey }) => (
                       <label key={event} className="flex items-center gap-3 p-3 rounded-lg cursor-pointer hover:opacity-80 transition-colors" style={{ backgroundColor: 'var(--theme-bg-input)', border: '1px solid var(--theme-border)' }}>
                         <input type="checkbox" className="rounded border-gray-300 text-apple-blue focus:ring-apple-blue cursor-pointer h-4 w-4 bg-transparent" checked={formData.events.includes(event)}
-                          onChange={(e) => { const newEvents = e.target.checked ? [...formData.events, event] : formData.events.filter(ev => ev !== event); setFormData({ ...formData, events: newEvents }); }} />
+                          onChange={(e) => { const newEvents = e.target.checked ? [...formData.events, event] : formData.events.filter(ev => ev !== event); setFormData({ ...formData, events: newEvents }); clearFieldError('events'); }} />
                         <span className="text-sm font-medium" style={{ color: 'var(--theme-text)' }}>{event}</span>
                         <span className="text-xs ml-auto" style={{ color: 'var(--theme-text-muted)' }}>{t(descKey)}</span>
                       </label>
                     ))}
                   </div>
+                  {fieldErrors.events && (
+                    <p id="events-error" role="alert" className="text-xs mt-1.5 text-red-600">{fieldErrors.events}</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 pt-2">
                   <div className="flex h-6 items-center">
