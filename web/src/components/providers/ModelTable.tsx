@@ -1,12 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@apollo/client/react';
-import {
-  PlusIcon,
-  TrashIcon,
-  ArrowPathIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-} from '@heroicons/react/24/outline';
+import { PlusIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import {
   MODELS_QUERY,
   CREATE_MODEL,
@@ -16,7 +10,11 @@ import {
 } from '@/lib/graphql/operations/providers';
 import ConfirmModal from '@/components/ConfirmModal';
 import { useTranslation } from '@/lib/i18n';
-import { moneyNumber, type MoneyValue } from '@/lib/format';
+import type { MoneyValue } from '@/lib/format';
+import ModelKindGroup, {
+  type ModelGroupItem,
+  type ModelKind,
+} from '@/components/providers/ModelKindGroup';
 import toast from 'react-hot-toast';
 
 interface ModelTableProps {
@@ -28,6 +26,7 @@ interface ModelItem {
   id: string;
   name: string;
   displayName: string;
+  modelKind: ModelKind | null;
   inputPricePer1k: MoneyValue;
   outputPricePer1k: MoneyValue;
   pricePerSecond?: MoneyValue | null;
@@ -38,9 +37,16 @@ interface ModelItem {
   providerCostPerSecond?: MoneyValue | null;
   providerCostPerImage?: MoneyValue | null;
   providerCostPerMinute?: MoneyValue | null;
+  contextWindow?: number | null;
+  maxOutputTokens?: number | null;
+  catalogWarnings?: string | null;
   maxTokens: number;
   isActive: boolean;
 }
+
+// Stable grouping order in the admin UI. We always render groups in this
+// order even when some are empty (they get skipped at render-time).
+const GROUP_ORDER: ModelKind[] = ['CHAT', 'EMBEDDING', 'IMAGE', 'STT', 'TTS', 'RERANK', 'UNKNOWN'];
 
 const initialModelForm = {
   name: '',
@@ -57,8 +63,6 @@ const initialModelForm = {
   providerCostPerMinute: 0,
   maxTokens: 4096,
 };
-
-const fmtRate = (value?: MoneyValue | null) => `$${moneyNumber(value).toFixed(4)}`;
 
 export default function ModelTable({ providerId, providerName }: ModelTableProps) {
   const { t } = useTranslation();
@@ -97,7 +101,40 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
     },
   });
 
-  const models: ModelItem[] = data?.models ?? [];
+  // Memoize models so the grouping useMemo below doesn't re-execute on
+  // every render just because `??` returns a fresh array literal.
+  const models = useMemo<ModelItem[]>(() => data?.models ?? [], [data?.models]);
+
+  // Group models by kind for the M-08 grouped admin table. Unknown rows
+  // (e.g. rows created before migration 000024 ran) end up in their own
+  // group so they're still visible.
+  const grouped = useMemo(() => {
+    const buckets: Record<ModelKind, ModelGroupItem[]> = {
+      CHAT: [], EMBEDDING: [], IMAGE: [], STT: [], TTS: [], RERANK: [], UNKNOWN: [],
+    };
+    for (const m of models) {
+      const kind = (m.modelKind ?? 'UNKNOWN') as ModelKind;
+      const target = buckets[kind] ?? buckets.UNKNOWN;
+      target.push({
+        id: m.id,
+        name: m.name,
+        displayName: m.displayName,
+        modelKind: kind,
+        inputPricePer1k: m.inputPricePer1k,
+        outputPricePer1k: m.outputPricePer1k,
+        providerInputCostPer1k: m.providerInputCostPer1k,
+        providerOutputCostPer1k: m.providerOutputCostPer1k,
+        pricePerImage: m.pricePerImage,
+        providerCostPerImage: m.providerCostPerImage,
+        contextWindow: m.contextWindow,
+        maxOutputTokens: m.maxOutputTokens,
+        maxTokens: m.maxTokens,
+        catalogWarnings: m.catalogWarnings,
+        isActive: m.isActive,
+      });
+    }
+    return buckets;
+  }, [models]);
 
   const handleAddModel = async () => {
     if (!newModel.name.trim()) return;
@@ -162,75 +199,16 @@ export default function ModelTable({ providerId, providerName }: ModelTableProps
           </button>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-apple-gray-200">
-            <thead>
-	              <tr>
-	                <th className="table-header">{t('providers.model_name')}</th>
-	                <th className="table-header">{t('providers.customer_price')}</th>
-	                <th className="table-header">{t('providers.provider_cost')}</th>
-	                <th className="table-header">{t('providers.max_tokens')}</th>
-                <th className="table-header">{t('common.status')}</th>
-                <th className="table-header text-right">{t('common.actions')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-apple-gray-100">
-              {models.map((m) => (
-                <tr key={m.id} className="hover:bg-apple-gray-50">
-                  <td className="table-cell">
-                    <span className="font-medium text-apple-gray-900 block">{m.displayName || m.name}</span>
-                    {m.displayName && m.displayName !== m.name && (
-                      <code className="text-xs bg-apple-gray-100 px-1 py-0.5 rounded mt-1 inline-block">
-                        {m.name}
-                      </code>
-                    )}
-	                  </td>
-	                  <td className="table-cell text-sm">
-	                    <span className="text-apple-gray-700">{fmtRate(m.inputPricePer1k)}</span>
-	                    <span className="text-apple-gray-400 text-xs"> in</span>
-	                    <span className="text-apple-gray-300 mx-1">/</span>
-	                    <span className="text-apple-gray-700">{fmtRate(m.outputPricePer1k)}</span>
-	                    <span className="text-apple-gray-400 text-xs"> out</span>
-	                  </td>
-	                  <td className="table-cell text-sm">
-	                    <span className="text-apple-gray-700">{fmtRate(m.providerInputCostPer1k)}</span>
-	                    <span className="text-apple-gray-400 text-xs"> in</span>
-	                    <span className="text-apple-gray-300 mx-1">/</span>
-	                    <span className="text-apple-gray-700">{fmtRate(m.providerOutputCostPer1k)}</span>
-	                    <span className="text-apple-gray-400 text-xs"> out</span>
-	                  </td>
-                  <td className="table-cell text-sm text-apple-gray-500">
-                    {m.maxTokens.toLocaleString()}
-                  </td>
-                  <td className="table-cell">
-                    <button
-                      onClick={() => toggleModel({ variables: { id: m.id } })}
-                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${m.isActive
-                        ? 'bg-green-100 text-apple-green hover:bg-green-200'
-                        : 'bg-gray-100 text-apple-gray-500 hover:bg-gray-200'
-                        }`}
-                    >
-                      {m.isActive ? (
-                        <><CheckCircleIcon className="w-3.5 h-3.5" /> Active</>
-                      ) : (
-                        <><XCircleIcon className="w-3.5 h-3.5" /> Inactive</>
-                      )}
-                    </button>
-                  </td>
-                  <td className="table-cell text-right">
-                    <button
-                      onClick={() => setConfirmModal({ isOpen: true, modelId: m.id })}
-                      className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-apple-gray-400 hover:text-apple-red hover:bg-red-50 transition-colors text-sm"
-                      title={t('common.delete')}
-                    >
-                      <TrashIcon className="w-4 h-4" />
-                      {t('common.delete')}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div>
+          {GROUP_ORDER.map((kind) => (
+            <ModelKindGroup
+              key={kind}
+              kind={kind}
+              items={grouped[kind]}
+              onToggle={(id) => toggleModel({ variables: { id } })}
+              onDelete={(id) => setConfirmModal({ isOpen: true, modelId: id })}
+            />
+          ))}
           <div className="text-xs text-apple-gray-400 mt-3 text-right">
             {models.length} {t('providers.models_count')}
           </div>

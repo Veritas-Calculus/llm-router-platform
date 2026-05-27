@@ -95,6 +95,7 @@ type Router struct {
 	cacheSF          singleflight.Group // Dedup concurrent model-provider cache refreshes
 	circuitBreaker   *CircuitBreaker    // Provider-level circuit breaker (3-state)
 	retryCfg         RetryConfig        // Exponential backoff config
+	syncRules        *catalogSyncRules  // Provider auto-sync rules (NSFW blocklist + activation policy)
 	logger           *zap.Logger
 }
 
@@ -121,8 +122,17 @@ func NewRouter(
 		failedKeys:      make(map[uuid.UUID]*FailedKeyInfo),
 		circuitBreaker:  NewCircuitBreaker(DefaultCircuitBreakerConfig(), logger),
 		retryCfg:        DefaultRetryConfig(),
+		syncRules:       newCatalogSyncRules(false, ""),
 		logger:          logger,
 	}
+}
+
+// SetCatalogSyncRules wires the operator-tunable provider auto-sync
+// policy. Defaults are "do not auto-activate" (audit L-05) and the
+// built-in NSFW/dev-only name regex. Call this from main.go right after
+// NewRouter when config has been loaded.
+func (r *Router) SetCatalogSyncRules(autoActivate bool, blocklistRegex string) {
+	r.syncRules = newCatalogSyncRules(autoActivate, blocklistRegex)
 }
 
 // ─── Provider Circuit Breaking (delegated to CircuitBreaker) ───────────────

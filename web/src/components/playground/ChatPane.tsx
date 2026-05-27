@@ -11,7 +11,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Message, StreamPhase, UsageStats } from './types';
 import { StreamingPlaceholder, StreamingStatusBadge } from './StreamingStatus';
-import { getMessageText, getMessageImages } from './utils';
+import { getMessageText, getMessageImages, formatTokensPerSec } from './utils';
 
 /* ── Stats display ──────────────────────────────────────────────── */
 
@@ -24,7 +24,7 @@ export function StatsBar({ stats, model }: { stats: UsageStats | null; model: st
         <ClockIcon className="w-3 h-3" />
         TTFB {stats.ttfbMs}ms · Total {stats.totalMs}ms
       </span>
-      <span>{stats.tokensPerSec} tok/s</span>
+      <span>{formatTokensPerSec(stats.tokensPerSec)} tok/s</span>
       <span>
         Tokens: {stats.promptTokens} in / {stats.completionTokens} out = {stats.totalTokens}
       </span>

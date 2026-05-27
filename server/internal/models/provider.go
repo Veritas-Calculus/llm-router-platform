@@ -40,12 +40,37 @@ func (p *Provider) GetModelPatterns() []string {
 	return patterns
 }
 
+// ModelKind classifies a model row by its capability. A single row has
+// exactly one kind — multi-capability models (e.g. chat + embedding) are
+// classified by the most specific kind (embedding wins over chat).
+type ModelKind string
+
+// ModelKind values. These are the only strings persisted to the
+// `models.model_kind` column; see migration 000024 for the CHECK constraint.
+const (
+	ModelKindChat      ModelKind = "chat"
+	ModelKindEmbedding ModelKind = "embedding"
+	ModelKindImage     ModelKind = "image"
+	ModelKindSTT       ModelKind = "stt"
+	ModelKindTTS       ModelKind = "tts"
+	ModelKindRerank    ModelKind = "rerank"
+	ModelKindUnknown   ModelKind = "unknown"
+)
+
 // Model represents an LLM model.
+//
+// Note on context vs output tokens (audit M-07): `ContextWindow` is the
+// total prompt+completion window the model accepts (e.g. 262144 for
+// Qwen3.6-35B-A3B). `MaxOutputTokens` is the per-request output cap, which
+// is almost always smaller than the context window. The legacy `MaxTokens`
+// column is retained for one release as a backcompat shim; new code should
+// read `ContextWindow` and `MaxOutputTokens` directly.
 type Model struct {
 	BaseModel
 	ProviderID              uuid.UUID       `gorm:"type:uuid;not null;index" json:"provider_id"`
 	Name                    string          `gorm:"not null" json:"name"`
 	DisplayName             string          `json:"display_name"`
+	ModelKind               ModelKind       `gorm:"type:text;default:'unknown';index" json:"model_kind"`
 	InputPricePer1K         decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"input_price_per_1k"`
 	OutputPricePer1K        decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"output_price_per_1k"`
 	PricePerSecond          decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"price_per_second,omitempty"` // TTS per-second pricing
@@ -56,7 +81,10 @@ type Model struct {
 	ProviderCostPerSecond   decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"provider_cost_per_second,omitempty"`
 	ProviderCostPerImage    decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"provider_cost_per_image,omitempty"`
 	ProviderCostPerMinute   decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"provider_cost_per_minute,omitempty"`
-	MaxTokens               int             `gorm:"default:4096" json:"max_tokens"`
+	MaxTokens               int             `gorm:"default:4096" json:"max_tokens"` // Deprecated: kept for backcompat; use ContextWindow.
+	ContextWindow           int             `gorm:"default:0" json:"context_window"`
+	MaxOutputTokens         *int            `gorm:"default:null" json:"max_output_tokens,omitempty"`
+	CatalogWarnings         string          `gorm:"type:text;default:''" json:"catalog_warnings,omitempty"`
 	IsActive                bool            `gorm:"default:true" json:"is_active"`
 	Provider                Provider        `gorm:"foreignKey:ProviderID" json:"-"`
 }

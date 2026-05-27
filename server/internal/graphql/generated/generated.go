@@ -210,9 +210,10 @@ type ComplexityRoot struct {
 	}
 
 	AuthPayload struct {
-		RefreshToken func(childComplexity int) int
-		Token        func(childComplexity int) int
-		User         func(childComplexity int) int
+		EmailVerificationSent func(childComplexity int) int
+		RefreshToken          func(childComplexity int) int
+		Token                 func(childComplexity int) int
+		User                  func(childComplexity int) int
 	}
 
 	BackupRecord struct {
@@ -561,12 +562,16 @@ type ComplexityRoot struct {
 	}
 
 	Model struct {
+		CatalogWarnings         func(childComplexity int) int
+		ContextWindow           func(childComplexity int) int
 		CreatedAt               func(childComplexity int) int
 		DisplayName             func(childComplexity int) int
 		ID                      func(childComplexity int) int
 		InputPricePer1k         func(childComplexity int) int
 		IsActive                func(childComplexity int) int
+		MaxOutputTokens         func(childComplexity int) int
 		MaxTokens               func(childComplexity int) int
+		ModelKind               func(childComplexity int) int
 		Name                    func(childComplexity int) int
 		OutputPricePer1k        func(childComplexity int) int
 		PricePerImage           func(childComplexity int) int
@@ -742,6 +747,15 @@ type ComplexityRoot struct {
 		Role      func(childComplexity int) int
 		User      func(childComplexity int) int
 		UserID    func(childComplexity int) int
+	}
+
+	PasswordPolicy struct {
+		BlockCommonPasswords func(childComplexity int) int
+		MinLength            func(childComplexity int) int
+		RequireDigit         func(childComplexity int) int
+		RequireLetter        func(childComplexity int) int
+		RequireLower         func(childComplexity int) int
+		RequireUpper         func(childComplexity int) int
 	}
 
 	Plan struct {
@@ -1007,6 +1021,7 @@ type ComplexityRoot struct {
 		MyUsageSummary          func(childComplexity int, orgID *string, projectID *string, channel *string) int
 		NotificationChannels    func(childComplexity int) int
 		OrganizationMembers     func(childComplexity int, orgID string) int
+		PasswordPolicy          func(childComplexity int) int
 		Plans                   func(childComplexity int) int
 		PromptTemplate          func(childComplexity int, id string) int
 		PromptTemplates         func(childComplexity int) int
@@ -1546,6 +1561,7 @@ type QueryResolver interface {
 	Document(ctx context.Context, id string) (*model.Document, error)
 	RegistrationMode(ctx context.Context) (*model.RegistrationMode, error)
 	CaptchaConfig(ctx context.Context) (*model.CaptchaConfig, error)
+	PasswordPolicy(ctx context.Context) (*model.PasswordPolicy, error)
 	SiteConfig(ctx context.Context) (*model.SiteConfig, error)
 	SemanticCaches(ctx context.Context, limit *int, offset *int) ([]*model.SemanticCache, error)
 	CacheStats(ctx context.Context) (*model.CacheStats, error)
@@ -2354,6 +2370,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.AuditLogConnection.Total(childComplexity), true
 
+	case "AuthPayload.emailVerificationSent":
+		if e.ComplexityRoot.AuthPayload.EmailVerificationSent == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuthPayload.EmailVerificationSent(childComplexity), true
 	case "AuthPayload.refreshToken":
 		if e.ComplexityRoot.AuthPayload.RefreshToken == nil {
 			break
@@ -3865,6 +3887,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.MfaSecretInfo.Secret(childComplexity), true
 
+	case "Model.catalogWarnings":
+		if e.ComplexityRoot.Model.CatalogWarnings == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Model.CatalogWarnings(childComplexity), true
+	case "Model.contextWindow":
+		if e.ComplexityRoot.Model.ContextWindow == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Model.ContextWindow(childComplexity), true
 	case "Model.createdAt":
 		if e.ComplexityRoot.Model.CreatedAt == nil {
 			break
@@ -3895,12 +3929,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Model.IsActive(childComplexity), true
+	case "Model.maxOutputTokens":
+		if e.ComplexityRoot.Model.MaxOutputTokens == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Model.MaxOutputTokens(childComplexity), true
 	case "Model.maxTokens":
 		if e.ComplexityRoot.Model.MaxTokens == nil {
 			break
 		}
 
 		return e.ComplexityRoot.Model.MaxTokens(childComplexity), true
+	case "Model.modelKind":
+		if e.ComplexityRoot.Model.ModelKind == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Model.ModelKind(childComplexity), true
 	case "Model.name":
 		if e.ComplexityRoot.Model.Name == nil {
 			break
@@ -5370,6 +5416,43 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.OrganizationMember.UserID(childComplexity), true
 
+	case "PasswordPolicy.blockCommonPasswords":
+		if e.ComplexityRoot.PasswordPolicy.BlockCommonPasswords == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PasswordPolicy.BlockCommonPasswords(childComplexity), true
+	case "PasswordPolicy.minLength":
+		if e.ComplexityRoot.PasswordPolicy.MinLength == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PasswordPolicy.MinLength(childComplexity), true
+	case "PasswordPolicy.requireDigit":
+		if e.ComplexityRoot.PasswordPolicy.RequireDigit == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PasswordPolicy.RequireDigit(childComplexity), true
+	case "PasswordPolicy.requireLetter":
+		if e.ComplexityRoot.PasswordPolicy.RequireLetter == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PasswordPolicy.RequireLetter(childComplexity), true
+	case "PasswordPolicy.requireLower":
+		if e.ComplexityRoot.PasswordPolicy.RequireLower == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PasswordPolicy.RequireLower(childComplexity), true
+	case "PasswordPolicy.requireUpper":
+		if e.ComplexityRoot.PasswordPolicy.RequireUpper == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PasswordPolicy.RequireUpper(childComplexity), true
+
 	case "Plan.description":
 		if e.ComplexityRoot.Plan.Description == nil {
 			break
@@ -6731,6 +6814,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.OrganizationMembers(childComplexity, args["orgId"].(string)), true
+	case "Query.passwordPolicy":
+		if e.ComplexityRoot.Query.PasswordPolicy == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.PasswordPolicy(childComplexity), true
 	case "Query.plans":
 		if e.ComplexityRoot.Query.Plans == nil {
 			break
@@ -8533,6 +8622,7 @@ type Query {
   # ── Public (unauthenticated) ──
   registrationMode: RegistrationMode!
   captchaConfig: CaptchaConfig!
+  passwordPolicy: PasswordPolicy!
   siteConfig: SiteConfig!
 }
 
@@ -8775,7 +8865,11 @@ input RegisterInput {
   password: String!
   name: String!
   inviteCode: String
-  captchaToken: String
+  # captchaToken is required: registration is the highest-cost anti-abuse
+  # surface (auto-creates an org, ships a verification email, optionally
+  # credits the welcome balance). The captcha service exposes a dev backend
+  # that accepts a literal bypass token so local development still works.
+  captchaToken: String!
 }
 
 input ResetPasswordInput {
@@ -8794,9 +8888,32 @@ input UpdateProfileInput {
 }
 
 type AuthPayload {
-  token: String!
+  # token is also delivered as an HttpOnly cookie (llm_router_access). It
+  # remains in the GraphQL payload for one release for non-browser API
+  # clients that still expect a bearer string; browser-based UIs should
+  # rely on the cookie via credentials:include and ignore this field.
+  token: String! @deprecated(reason: "Use the HttpOnly llm_router_access cookie via /graphql with credentials:include. The token field will be removed in a future release.")
   refreshToken: String
   user: User!
+  # emailVerificationSent reports whether the verification email was
+  # accepted by the SMTP backend at registration time. False means the
+  # mail server was unreachable or unconfigured — the user can call
+  # resendVerificationEmail. Always null on non-register payloads.
+  emailVerificationSent: Boolean
+}
+
+type PasswordPolicy {
+  minLength: Int!
+  requireLetter: Boolean!
+  requireDigit: Boolean!
+  requireUpper: Boolean!
+  requireLower: Boolean!
+  # blockCommonPasswords is true when the server rejects passwords that
+  # match its bundled top-common list (e.g. "Passw0rd1"). The frontend uses
+  # this to render a "and not a commonly-used password" tail on the hint
+  # text instead of silently letting the user submit a value the server
+  # will reject. Post-audit follow-up P0-2.
+  blockCommonPasswords: Boolean!
 }
 `, BuiltIn: false},
 	{Name: "../schema/types_billing.graphqls", Input: `# ──────────────────────────────────────────────────
@@ -9600,11 +9717,31 @@ input McpEnvInput {
 # Model types
 # ──────────────────────────────────────────────────
 
+"""
+ModelKind classifies a catalog row by its capability. Exactly one kind per
+row. Multi-capability models (e.g. chat + embedding) are classified by the
+most specific kind: embedding wins over chat, audio wins over both.
+"""
+enum ModelKind {
+  CHAT
+  EMBEDDING
+  IMAGE
+  STT
+  TTS
+  RERANK
+  UNKNOWN
+}
+
 type Model {
   id: ID!
   providerId: ID!
   name: String!
   displayName: String!
+  """
+  Capability classification for the model. Drives the admin grouping and
+  the Playground's STT/TTS dropdown filters (audit M-02, M-08).
+  """
+  modelKind: ModelKind!
   inputPricePer1k: Money!
   outputPricePer1k: Money!
   pricePerSecond: Money
@@ -9615,7 +9752,29 @@ type Model {
   providerCostPerSecond: Money
   providerCostPerImage: Money
   providerCostPerMinute: Money
-  maxTokens: Int!
+  """
+  Total prompt+completion window the model accepts. Sourced from the
+  upstream provider's /v1/models response (audit M-07).
+  """
+  contextWindow: Int!
+  """
+  Per-request output cap. NULL when the upstream provider doesn't report
+  one — clients should fall back to a sensible default (e.g. 4096) rather
+  than treat NULL as "no cap".
+  """
+  maxOutputTokens: Int
+  """
+  Deprecated: legacy single-column representation of the context window.
+  Use contextWindow + maxOutputTokens. Kept for one release so existing
+  callers don't break during the migration.
+  """
+  maxTokens: Int! @deprecated(reason: "Use contextWindow and maxOutputTokens instead.")
+  """
+  Comma-or-space-separated warnings stamped by auto-sync. Currently the
+  only emitted value is "nsfw-or-dev-name"; admins can use it to surface a
+  warning badge in the catalog UI (audit L-05).
+  """
+  catalogWarnings: String!
   isActive: Boolean!
   createdAt: DateTime!
 }
@@ -9623,6 +9782,7 @@ type Model {
 input ModelInput {
   name: String!
   displayName: String
+  modelKind: ModelKind
   inputPricePer1k: Money
   outputPricePer1k: Money
   pricePerSecond: Money
@@ -9633,6 +9793,8 @@ input ModelInput {
   providerCostPerSecond: Money
   providerCostPerImage: Money
   providerCostPerMinute: Money
+  contextWindow: Int
+  maxOutputTokens: Int
   maxTokens: Int
   isActive: Boolean
 }
@@ -10683,6 +10845,8 @@ func (ec *executionContext) childFields_AuthPayload(ctx context.Context, field g
 		return ec.fieldContext_AuthPayload_refreshToken(ctx, field)
 	case "user":
 		return ec.fieldContext_AuthPayload_user(ctx, field)
+	case "emailVerificationSent":
+		return ec.fieldContext_AuthPayload_emailVerificationSent(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type AuthPayload", field.Name)
 }
@@ -11387,6 +11551,8 @@ func (ec *executionContext) childFields_Model(ctx context.Context, field graphql
 		return ec.fieldContext_Model_name(ctx, field)
 	case "displayName":
 		return ec.fieldContext_Model_displayName(ctx, field)
+	case "modelKind":
+		return ec.fieldContext_Model_modelKind(ctx, field)
 	case "inputPricePer1k":
 		return ec.fieldContext_Model_inputPricePer1k(ctx, field)
 	case "outputPricePer1k":
@@ -11407,8 +11573,14 @@ func (ec *executionContext) childFields_Model(ctx context.Context, field graphql
 		return ec.fieldContext_Model_providerCostPerImage(ctx, field)
 	case "providerCostPerMinute":
 		return ec.fieldContext_Model_providerCostPerMinute(ctx, field)
+	case "contextWindow":
+		return ec.fieldContext_Model_contextWindow(ctx, field)
+	case "maxOutputTokens":
+		return ec.fieldContext_Model_maxOutputTokens(ctx, field)
 	case "maxTokens":
 		return ec.fieldContext_Model_maxTokens(ctx, field)
+	case "catalogWarnings":
+		return ec.fieldContext_Model_catalogWarnings(ctx, field)
 	case "isActive":
 		return ec.fieldContext_Model_isActive(ctx, field)
 	case "createdAt":
@@ -11505,6 +11677,24 @@ func (ec *executionContext) childFields_OrganizationMember(ctx context.Context, 
 		return ec.fieldContext_OrganizationMember_createdAt(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type OrganizationMember", field.Name)
+}
+
+func (ec *executionContext) childFields_PasswordPolicy(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "minLength":
+		return ec.fieldContext_PasswordPolicy_minLength(ctx, field)
+	case "requireLetter":
+		return ec.fieldContext_PasswordPolicy_requireLetter(ctx, field)
+	case "requireDigit":
+		return ec.fieldContext_PasswordPolicy_requireDigit(ctx, field)
+	case "requireUpper":
+		return ec.fieldContext_PasswordPolicy_requireUpper(ctx, field)
+	case "requireLower":
+		return ec.fieldContext_PasswordPolicy_requireLower(ctx, field)
+	case "blockCommonPasswords":
+		return ec.fieldContext_PasswordPolicy_blockCommonPasswords(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type PasswordPolicy", field.Name)
 }
 
 func (ec *executionContext) childFields_Plan(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -18581,6 +18771,29 @@ func (ec *executionContext) fieldContext_AuthPayload_user(_ context.Context, fie
 	return fc, nil
 }
 
+func (ec *executionContext) _AuthPayload_emailVerificationSent(ctx context.Context, field graphql.CollectedField, obj *model.AuthPayload) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AuthPayload_emailVerificationSent(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.EmailVerificationSent, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *bool) graphql.Marshaler {
+			return ec.marshalOBoolean2ᚖbool(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_AuthPayload_emailVerificationSent(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AuthPayload", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _BackupRecord_id(ctx context.Context, field graphql.CollectedField, obj *model.BackupRecord) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -24370,6 +24583,29 @@ func (ec *executionContext) fieldContext_Model_displayName(_ context.Context, fi
 	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _Model_modelKind(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Model_modelKind(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ModelKind, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.ModelKind) graphql.Marshaler {
+			return ec.marshalNModelKind2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐModelKind(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Model_modelKind(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type ModelKind does not have child fields"))
+}
+
 func (ec *executionContext) _Model_inputPricePer1k(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -24600,6 +24836,52 @@ func (ec *executionContext) fieldContext_Model_providerCostPerMinute(_ context.C
 	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Money does not have child fields"))
 }
 
+func (ec *executionContext) _Model_contextWindow(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Model_contextWindow(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ContextWindow, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Model_contextWindow(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _Model_maxOutputTokens(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Model_maxOutputTokens(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.MaxOutputTokens, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *int) graphql.Marshaler {
+			return ec.marshalOInt2ᚖint(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Model_maxOutputTokens(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
 func (ec *executionContext) _Model_maxTokens(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -24621,6 +24903,29 @@ func (ec *executionContext) _Model_maxTokens(ctx context.Context, field graphql.
 }
 func (ec *executionContext) fieldContext_Model_maxTokens(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _Model_catalogWarnings(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Model_catalogWarnings(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CatalogWarnings, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Model_catalogWarnings(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Model", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _Model_isActive(ctx context.Context, field graphql.CollectedField, obj *model.Model) (ret graphql.Marshaler) {
@@ -32538,6 +32843,144 @@ func (ec *executionContext) fieldContext_OrganizationMember_createdAt(_ context.
 	return graphql.NewScalarFieldContext("OrganizationMember", field, false, false, errors.New("field of type DateTime does not have child fields"))
 }
 
+func (ec *executionContext) _PasswordPolicy_minLength(ctx context.Context, field graphql.CollectedField, obj *model.PasswordPolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PasswordPolicy_minLength(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.MinLength, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PasswordPolicy_minLength(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PasswordPolicy", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _PasswordPolicy_requireLetter(ctx context.Context, field graphql.CollectedField, obj *model.PasswordPolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PasswordPolicy_requireLetter(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RequireLetter, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PasswordPolicy_requireLetter(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PasswordPolicy", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _PasswordPolicy_requireDigit(ctx context.Context, field graphql.CollectedField, obj *model.PasswordPolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PasswordPolicy_requireDigit(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RequireDigit, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PasswordPolicy_requireDigit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PasswordPolicy", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _PasswordPolicy_requireUpper(ctx context.Context, field graphql.CollectedField, obj *model.PasswordPolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PasswordPolicy_requireUpper(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RequireUpper, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PasswordPolicy_requireUpper(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PasswordPolicy", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _PasswordPolicy_requireLower(ctx context.Context, field graphql.CollectedField, obj *model.PasswordPolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PasswordPolicy_requireLower(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RequireLower, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PasswordPolicy_requireLower(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PasswordPolicy", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _PasswordPolicy_blockCommonPasswords(ctx context.Context, field graphql.CollectedField, obj *model.PasswordPolicy) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PasswordPolicy_blockCommonPasswords(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.BlockCommonPasswords, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PasswordPolicy_blockCommonPasswords(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PasswordPolicy", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _Plan_id(ctx context.Context, field graphql.CollectedField, obj *model.Plan) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -40167,6 +40610,38 @@ func (ec *executionContext) fieldContext_Query_captchaConfig(_ context.Context, 
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return ec.childFields_CaptchaConfig(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_passwordPolicy(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_passwordPolicy(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().PasswordPolicy(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.PasswordPolicy) graphql.Marshaler {
+			return ec.marshalNPasswordPolicy2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐPasswordPolicy(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_passwordPolicy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_PasswordPolicy(ctx, field)
 		},
 	}
 	return fc, nil
@@ -48011,7 +48486,7 @@ func (ec *executionContext) unmarshalInputModelInput(ctx context.Context, obj an
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"name", "displayName", "inputPricePer1k", "outputPricePer1k", "pricePerSecond", "pricePerImage", "pricePerMinute", "providerInputCostPer1k", "providerOutputCostPer1k", "providerCostPerSecond", "providerCostPerImage", "providerCostPerMinute", "maxTokens", "isActive"}
+	fieldsInOrder := [...]string{"name", "displayName", "modelKind", "inputPricePer1k", "outputPricePer1k", "pricePerSecond", "pricePerImage", "pricePerMinute", "providerInputCostPer1k", "providerOutputCostPer1k", "providerCostPerSecond", "providerCostPerImage", "providerCostPerMinute", "contextWindow", "maxOutputTokens", "maxTokens", "isActive"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -48032,6 +48507,13 @@ func (ec *executionContext) unmarshalInputModelInput(ctx context.Context, obj an
 				return it, err
 			}
 			it.DisplayName = data
+		case "modelKind":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("modelKind"))
+			data, err := ec.unmarshalOModelKind2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐModelKind(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ModelKind = data
 		case "inputPricePer1k":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("inputPricePer1k"))
 			data, err := ec.unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx, v)
@@ -48102,6 +48584,20 @@ func (ec *executionContext) unmarshalInputModelInput(ctx context.Context, obj an
 				return it, err
 			}
 			it.ProviderCostPerMinute = data
+		case "contextWindow":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("contextWindow"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.ContextWindow = data
+		case "maxOutputTokens":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("maxOutputTokens"))
+			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.MaxOutputTokens = data
 		case "maxTokens":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("maxTokens"))
 			data, err := ec.unmarshalOInt2ᚖint(ctx, v)
@@ -48733,7 +49229,7 @@ func (ec *executionContext) unmarshalInputRegisterInput(ctx context.Context, obj
 			it.InviteCode = data
 		case "captchaToken":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("captchaToken"))
-			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
+			data, err := ec.unmarshalNString2string(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -50468,6 +50964,8 @@ func (ec *executionContext) _AuthPayload(ctx context.Context, sel ast.SelectionS
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "emailVerificationSent":
+			out.Values[i] = ec._AuthPayload_emailVerificationSent(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -52782,6 +53280,11 @@ func (ec *executionContext) _Model(ctx context.Context, sel ast.SelectionSet, ob
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "modelKind":
+			out.Values[i] = ec._Model_modelKind(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "inputPricePer1k":
 			out.Values[i] = ec._Model_inputPricePer1k(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -52814,8 +53317,20 @@ func (ec *executionContext) _Model(ctx context.Context, sel ast.SelectionSet, ob
 			out.Values[i] = ec._Model_providerCostPerImage(ctx, field, obj)
 		case "providerCostPerMinute":
 			out.Values[i] = ec._Model_providerCostPerMinute(ctx, field, obj)
+		case "contextWindow":
+			out.Values[i] = ec._Model_contextWindow(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "maxOutputTokens":
+			out.Values[i] = ec._Model_maxOutputTokens(ctx, field, obj)
 		case "maxTokens":
 			out.Values[i] = ec._Model_maxTokens(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "catalogWarnings":
+			out.Values[i] = ec._Model_catalogWarnings(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -53997,6 +54512,70 @@ func (ec *executionContext) _OrganizationMember(ctx context.Context, sel ast.Sel
 			}
 		case "createdAt":
 			out.Values[i] = ec._OrganizationMember_createdAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var passwordPolicyImplementors = []string{"PasswordPolicy"}
+
+func (ec *executionContext) _PasswordPolicy(ctx context.Context, sel ast.SelectionSet, obj *model.PasswordPolicy) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, passwordPolicyImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PasswordPolicy")
+		case "minLength":
+			out.Values[i] = ec._PasswordPolicy_minLength(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "requireLetter":
+			out.Values[i] = ec._PasswordPolicy_requireLetter(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "requireDigit":
+			out.Values[i] = ec._PasswordPolicy_requireDigit(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "requireUpper":
+			out.Values[i] = ec._PasswordPolicy_requireUpper(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "requireLower":
+			out.Values[i] = ec._PasswordPolicy_requireLower(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "blockCommonPasswords":
+			out.Values[i] = ec._PasswordPolicy_blockCommonPasswords(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -57018,6 +57597,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_captchaConfig(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "passwordPolicy":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_passwordPolicy(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -60942,6 +61543,16 @@ func (ec *executionContext) unmarshalNModelInput2llmᚑrouterᚑplatformᚋinter
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) unmarshalNModelKind2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐModelKind(ctx context.Context, v any) (model.ModelKind, error) {
+	var res model.ModelKind
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNModelKind2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐModelKind(ctx context.Context, sel ast.SelectionSet, v model.ModelKind) graphql.Marshaler {
+	return v
+}
+
 func (ec *executionContext) marshalNModelStats2ᚕᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐModelStatsᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.ModelStats) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
@@ -61093,6 +61704,20 @@ func (ec *executionContext) marshalNOrganizationMember2ᚖllmᚑrouterᚑplatfor
 		return graphql.Null
 	}
 	return ec._OrganizationMember(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPasswordPolicy2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐPasswordPolicy(ctx context.Context, sel ast.SelectionSet, v model.PasswordPolicy) graphql.Marshaler {
+	return ec._PasswordPolicy(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPasswordPolicy2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐPasswordPolicy(ctx context.Context, sel ast.SelectionSet, v *model.PasswordPolicy) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PasswordPolicy(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNPlan2llmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐPlan(ctx context.Context, sel ast.SelectionSet, v model.Plan) graphql.Marshaler {
@@ -62703,6 +63328,22 @@ func (ec *executionContext) marshalOMcpTool2ᚕᚖllmᚑrouterᚑplatformᚋinte
 	}
 
 	return ret
+}
+
+func (ec *executionContext) unmarshalOModelKind2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐModelKind(ctx context.Context, v any) (*model.ModelKind, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(model.ModelKind)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOModelKind2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐModelKind(ctx context.Context, sel ast.SelectionSet, v *model.ModelKind) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
 }
 
 func (ec *executionContext) unmarshalOMoney2ᚖllmᚑrouterᚑplatformᚋinternalᚋgraphqlᚋmodelᚐMoney(ctx context.Context, v any) (*model.Money, error) {

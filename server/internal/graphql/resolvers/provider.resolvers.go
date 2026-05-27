@@ -320,12 +320,35 @@ func (r *mutationResolver) CreateModel(ctx context.Context, providerID string, i
 	if err != nil {
 		return nil, fmt.Errorf("invalid provider id")
 	}
+	kind := gqlKindToDomain(input.ModelKind)
+	if kind == "" {
+		// Admin didn't specify; default to chat to preserve pre-audit
+		// behaviour for hand-created rows.
+		kind = models.ModelKindChat
+	}
+
+	// Determine context window. New API: prefer contextWindow input. Fall
+	// back to the legacy max_tokens input so existing callers still work.
+	contextWindow := 0
+	if input.ContextWindow != nil {
+		contextWindow = *input.ContextWindow
+	} else if input.MaxTokens != nil {
+		contextWindow = *input.MaxTokens
+	}
+	legacyMaxTokens := valInt(input.MaxTokens, contextWindow)
+	if legacyMaxTokens == 0 {
+		legacyMaxTokens = 4096
+	}
+
 	m := models.Model{
-		ProviderID:  pid,
-		Name:        input.Name,
-		DisplayName: derefStrDefault(input.DisplayName, input.Name),
-		IsActive:    derefBool(input.IsActive, true),
-		MaxTokens:   valInt(input.MaxTokens, 4096),
+		ProviderID:      pid,
+		Name:            input.Name,
+		DisplayName:     derefStrDefault(input.DisplayName, input.Name),
+		ModelKind:       kind,
+		IsActive:        derefBool(input.IsActive, true),
+		MaxTokens:       legacyMaxTokens,
+		ContextWindow:   contextWindow,
+		MaxOutputTokens: input.MaxOutputTokens,
 	}
 	if err := applyModelMoneyInputs(&m, input); err != nil {
 		return nil, err
@@ -350,8 +373,22 @@ func (r *mutationResolver) UpdateModel(ctx context.Context, id string, input mod
 	if input.DisplayName != nil {
 		m.DisplayName = *input.DisplayName
 	}
+	if input.ModelKind != nil {
+		m.ModelKind = gqlKindToDomain(input.ModelKind)
+	}
 	if input.MaxTokens != nil {
 		m.MaxTokens = *input.MaxTokens
+	}
+	if input.ContextWindow != nil {
+		m.ContextWindow = *input.ContextWindow
+	} else if input.MaxTokens != nil {
+		// Legacy callers: keep context_window in sync when only max_tokens
+		// is sent, so the playground slider lines up with what the admin
+		// just typed.
+		m.ContextWindow = *input.MaxTokens
+	}
+	if input.MaxOutputTokens != nil {
+		m.MaxOutputTokens = input.MaxOutputTokens
 	}
 	if input.IsActive != nil {
 		m.IsActive = *input.IsActive

@@ -114,11 +114,30 @@ func modelToGQL(m *models.Model) *model.Model {
 	providerCostPerImage := model.NewMoney(m.ProviderCostPerImage)
 	providerCostPerMinute := model.NewMoney(m.ProviderCostPerMinute)
 
+	// Context window vs max_tokens (audit M-07): if context_window has
+	// been populated by a recent sync, prefer that. Otherwise fall back
+	// to the legacy max_tokens column so old rows keep working until the
+	// next syncProviderModels call refreshes them.
+	contextWindow := m.ContextWindow
+	if contextWindow == 0 {
+		contextWindow = m.MaxTokens
+	}
+
+	// Pass MaxOutputTokens through as a pointer so clients can
+	// distinguish "no cap reported" (null) from "cap is 0" (which would
+	// be nonsensical, hence treated as null too).
+	var maxOutputTokens *int
+	if m.MaxOutputTokens != nil && *m.MaxOutputTokens > 0 {
+		v := *m.MaxOutputTokens
+		maxOutputTokens = &v
+	}
+
 	return &model.Model{
 		ID:                      m.ID.String(),
 		ProviderID:              m.ProviderID.String(),
 		Name:                    m.Name,
 		DisplayName:             m.DisplayName,
+		ModelKind:               domainKindToGQL(m.ModelKind),
 		InputPricePer1k:         model.NewMoney(m.InputPricePer1K),
 		OutputPricePer1k:        model.NewMoney(m.OutputPricePer1K),
 		PricePerSecond:          &pricePerSecond,
@@ -129,9 +148,62 @@ func modelToGQL(m *models.Model) *model.Model {
 		ProviderCostPerSecond:   &providerCostPerSecond,
 		ProviderCostPerImage:    &providerCostPerImage,
 		ProviderCostPerMinute:   &providerCostPerMinute,
+		ContextWindow:           contextWindow,
+		MaxOutputTokens:         maxOutputTokens,
 		MaxTokens:               m.MaxTokens,
+		CatalogWarnings:         m.CatalogWarnings,
 		IsActive:                m.IsActive,
 		CreatedAt:               m.CreatedAt,
+	}
+}
+
+// domainKindToGQL converts the lowercase domain ModelKind (persisted to
+// the DB) to the uppercase GraphQL enum value.
+func domainKindToGQL(k models.ModelKind) model.ModelKind {
+	switch k {
+	case models.ModelKindChat:
+		return model.ModelKindChat
+	case models.ModelKindEmbedding:
+		return model.ModelKindEmbedding
+	case models.ModelKindImage:
+		return model.ModelKindImage
+	case models.ModelKindSTT:
+		return model.ModelKindStt
+	case models.ModelKindTTS:
+		return model.ModelKindTts
+	case models.ModelKindRerank:
+		return model.ModelKindRerank
+	case models.ModelKindUnknown:
+		return model.ModelKindUnknown
+	default:
+		return model.ModelKindUnknown
+	}
+}
+
+// gqlKindToDomain converts a GraphQL ModelKind back to the lowercase
+// domain string persisted to the DB. Used by the CreateModel /
+// UpdateModel mutations when an admin manually sets the kind.
+func gqlKindToDomain(k *model.ModelKind) models.ModelKind {
+	if k == nil {
+		return ""
+	}
+	switch *k {
+	case model.ModelKindChat:
+		return models.ModelKindChat
+	case model.ModelKindEmbedding:
+		return models.ModelKindEmbedding
+	case model.ModelKindImage:
+		return models.ModelKindImage
+	case model.ModelKindStt:
+		return models.ModelKindSTT
+	case model.ModelKindTts:
+		return models.ModelKindTTS
+	case model.ModelKindRerank:
+		return models.ModelKindRerank
+	case model.ModelKindUnknown:
+		return models.ModelKindUnknown
+	default:
+		return models.ModelKindUnknown
 	}
 }
 

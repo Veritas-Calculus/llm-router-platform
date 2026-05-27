@@ -2,11 +2,31 @@
 # Model types
 # ──────────────────────────────────────────────────
 
+"""
+ModelKind classifies a catalog row by its capability. Exactly one kind per
+row. Multi-capability models (e.g. chat + embedding) are classified by the
+most specific kind: embedding wins over chat, audio wins over both.
+"""
+enum ModelKind {
+  CHAT
+  EMBEDDING
+  IMAGE
+  STT
+  TTS
+  RERANK
+  UNKNOWN
+}
+
 type Model {
   id: ID!
   providerId: ID!
   name: String!
   displayName: String!
+  """
+  Capability classification for the model. Drives the admin grouping and
+  the Playground's STT/TTS dropdown filters (audit M-02, M-08).
+  """
+  modelKind: ModelKind!
   inputPricePer1k: Money!
   outputPricePer1k: Money!
   pricePerSecond: Money
@@ -17,7 +37,29 @@ type Model {
   providerCostPerSecond: Money
   providerCostPerImage: Money
   providerCostPerMinute: Money
-  maxTokens: Int!
+  """
+  Total prompt+completion window the model accepts. Sourced from the
+  upstream provider's /v1/models response (audit M-07).
+  """
+  contextWindow: Int!
+  """
+  Per-request output cap. NULL when the upstream provider doesn't report
+  one — clients should fall back to a sensible default (e.g. 4096) rather
+  than treat NULL as "no cap".
+  """
+  maxOutputTokens: Int
+  """
+  Deprecated: legacy single-column representation of the context window.
+  Use contextWindow + maxOutputTokens. Kept for one release so existing
+  callers don't break during the migration.
+  """
+  maxTokens: Int! @deprecated(reason: "Use contextWindow and maxOutputTokens instead.")
+  """
+  Comma-or-space-separated warnings stamped by auto-sync. Currently the
+  only emitted value is "nsfw-or-dev-name"; admins can use it to surface a
+  warning badge in the catalog UI (audit L-05).
+  """
+  catalogWarnings: String!
   isActive: Boolean!
   createdAt: DateTime!
 }
@@ -25,6 +67,7 @@ type Model {
 input ModelInput {
   name: String!
   displayName: String
+  modelKind: ModelKind
   inputPricePer1k: Money
   outputPricePer1k: Money
   pricePerSecond: Money
@@ -35,6 +78,8 @@ input ModelInput {
   providerCostPerSecond: Money
   providerCostPerImage: Money
   providerCostPerMinute: Money
+  contextWindow: Int
+  maxOutputTokens: Int
   maxTokens: Int
   isActive: Boolean
 }

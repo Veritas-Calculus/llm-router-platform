@@ -204,9 +204,10 @@ type AuditLogConnection struct {
 }
 
 type AuthPayload struct {
-	Token        string  `json:"token"`
-	RefreshToken *string `json:"refreshToken,omitempty"`
-	User         *User   `json:"user"`
+	Token                 string  `json:"token"`
+	RefreshToken          *string `json:"refreshToken,omitempty"`
+	User                  *User   `json:"user"`
+	EmailVerificationSent *bool   `json:"emailVerificationSent,omitempty"`
 }
 
 type BackupRecord struct {
@@ -696,10 +697,13 @@ type MfaSecretInfo struct {
 }
 
 type Model struct {
-	ID                      string    `json:"id"`
-	ProviderID              string    `json:"providerId"`
-	Name                    string    `json:"name"`
-	DisplayName             string    `json:"displayName"`
+	ID          string `json:"id"`
+	ProviderID  string `json:"providerId"`
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+	// Capability classification for the model. Drives the admin grouping and
+	// the Playground's STT/TTS dropdown filters (audit M-02, M-08).
+	ModelKind               ModelKind `json:"modelKind"`
 	InputPricePer1k         Money     `json:"inputPricePer1k"`
 	OutputPricePer1k        Money     `json:"outputPricePer1k"`
 	PricePerSecond          *Money    `json:"pricePerSecond,omitempty"`
@@ -710,26 +714,43 @@ type Model struct {
 	ProviderCostPerSecond   *Money    `json:"providerCostPerSecond,omitempty"`
 	ProviderCostPerImage    *Money    `json:"providerCostPerImage,omitempty"`
 	ProviderCostPerMinute   *Money    `json:"providerCostPerMinute,omitempty"`
-	MaxTokens               int       `json:"maxTokens"`
-	IsActive                bool      `json:"isActive"`
-	CreatedAt               time.Time `json:"createdAt"`
+	// Total prompt+completion window the model accepts. Sourced from the
+	// upstream provider's /v1/models response (audit M-07).
+	ContextWindow int `json:"contextWindow"`
+	// Per-request output cap. NULL when the upstream provider doesn't report
+	// one — clients should fall back to a sensible default (e.g. 4096) rather
+	// than treat NULL as "no cap".
+	MaxOutputTokens *int `json:"maxOutputTokens,omitempty"`
+	// Deprecated: legacy single-column representation of the context window.
+	// Use contextWindow + maxOutputTokens. Kept for one release so existing
+	// callers don't break during the migration.
+	MaxTokens int `json:"maxTokens"`
+	// Comma-or-space-separated warnings stamped by auto-sync. Currently the
+	// only emitted value is "nsfw-or-dev-name"; admins can use it to surface a
+	// warning badge in the catalog UI (audit L-05).
+	CatalogWarnings string    `json:"catalogWarnings"`
+	IsActive        bool      `json:"isActive"`
+	CreatedAt       time.Time `json:"createdAt"`
 }
 
 type ModelInput struct {
-	Name                    string  `json:"name"`
-	DisplayName             *string `json:"displayName,omitempty"`
-	InputPricePer1k         *Money  `json:"inputPricePer1k,omitempty"`
-	OutputPricePer1k        *Money  `json:"outputPricePer1k,omitempty"`
-	PricePerSecond          *Money  `json:"pricePerSecond,omitempty"`
-	PricePerImage           *Money  `json:"pricePerImage,omitempty"`
-	PricePerMinute          *Money  `json:"pricePerMinute,omitempty"`
-	ProviderInputCostPer1k  *Money  `json:"providerInputCostPer1k,omitempty"`
-	ProviderOutputCostPer1k *Money  `json:"providerOutputCostPer1k,omitempty"`
-	ProviderCostPerSecond   *Money  `json:"providerCostPerSecond,omitempty"`
-	ProviderCostPerImage    *Money  `json:"providerCostPerImage,omitempty"`
-	ProviderCostPerMinute   *Money  `json:"providerCostPerMinute,omitempty"`
-	MaxTokens               *int    `json:"maxTokens,omitempty"`
-	IsActive                *bool   `json:"isActive,omitempty"`
+	Name                    string     `json:"name"`
+	DisplayName             *string    `json:"displayName,omitempty"`
+	ModelKind               *ModelKind `json:"modelKind,omitempty"`
+	InputPricePer1k         *Money     `json:"inputPricePer1k,omitempty"`
+	OutputPricePer1k        *Money     `json:"outputPricePer1k,omitempty"`
+	PricePerSecond          *Money     `json:"pricePerSecond,omitempty"`
+	PricePerImage           *Money     `json:"pricePerImage,omitempty"`
+	PricePerMinute          *Money     `json:"pricePerMinute,omitempty"`
+	ProviderInputCostPer1k  *Money     `json:"providerInputCostPer1k,omitempty"`
+	ProviderOutputCostPer1k *Money     `json:"providerOutputCostPer1k,omitempty"`
+	ProviderCostPerSecond   *Money     `json:"providerCostPerSecond,omitempty"`
+	ProviderCostPerImage    *Money     `json:"providerCostPerImage,omitempty"`
+	ProviderCostPerMinute   *Money     `json:"providerCostPerMinute,omitempty"`
+	ContextWindow           *int       `json:"contextWindow,omitempty"`
+	MaxOutputTokens         *int       `json:"maxOutputTokens,omitempty"`
+	MaxTokens               *int       `json:"maxTokens,omitempty"`
+	IsActive                *bool      `json:"isActive,omitempty"`
 }
 
 type ModelStats struct {
@@ -785,6 +806,15 @@ type OrganizationMember struct {
 	Role      string        `json:"role"`
 	User      *UserListItem `json:"user"`
 	CreatedAt time.Time     `json:"createdAt"`
+}
+
+type PasswordPolicy struct {
+	MinLength            int  `json:"minLength"`
+	RequireLetter        bool `json:"requireLetter"`
+	RequireDigit         bool `json:"requireDigit"`
+	RequireUpper         bool `json:"requireUpper"`
+	RequireLower         bool `json:"requireLower"`
+	BlockCommonPasswords bool `json:"blockCommonPasswords"`
 }
 
 type Plan struct {
@@ -1120,7 +1150,7 @@ type RegisterInput struct {
 	Password     string  `json:"password"`
 	Name         string  `json:"name"`
 	InviteCode   *string `json:"inviteCode,omitempty"`
-	CaptchaToken *string `json:"captchaToken,omitempty"`
+	CaptchaToken string  `json:"captchaToken"`
 }
 
 type RegistrationMode struct {
@@ -1525,6 +1555,74 @@ func (e *DlpStrategy) UnmarshalJSON(b []byte) error {
 }
 
 func (e DlpStrategy) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+// ModelKind classifies a catalog row by its capability. Exactly one kind per
+// row. Multi-capability models (e.g. chat + embedding) are classified by the
+// most specific kind: embedding wins over chat, audio wins over both.
+type ModelKind string
+
+const (
+	ModelKindChat      ModelKind = "CHAT"
+	ModelKindEmbedding ModelKind = "EMBEDDING"
+	ModelKindImage     ModelKind = "IMAGE"
+	ModelKindStt       ModelKind = "STT"
+	ModelKindTts       ModelKind = "TTS"
+	ModelKindRerank    ModelKind = "RERANK"
+	ModelKindUnknown   ModelKind = "UNKNOWN"
+)
+
+var AllModelKind = []ModelKind{
+	ModelKindChat,
+	ModelKindEmbedding,
+	ModelKindImage,
+	ModelKindStt,
+	ModelKindTts,
+	ModelKindRerank,
+	ModelKindUnknown,
+}
+
+func (e ModelKind) IsValid() bool {
+	switch e {
+	case ModelKindChat, ModelKindEmbedding, ModelKindImage, ModelKindStt, ModelKindTts, ModelKindRerank, ModelKindUnknown:
+		return true
+	}
+	return false
+}
+
+func (e ModelKind) String() string {
+	return string(e)
+}
+
+func (e *ModelKind) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ModelKind(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ModelKind", str)
+	}
+	return nil
+}
+
+func (e ModelKind) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ModelKind) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ModelKind) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil
