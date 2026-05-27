@@ -89,6 +89,10 @@ func (r *mutationResolver) setRefreshTokenCookie(ctx context.Context, refresh st
 		ttl = 7 * 24 * time.Hour
 	}
 	gc.SetSameSite(http.SameSiteLaxMode)
+	// Secure flag is decided at request time by refreshCookieSecure
+	// (COOKIE_SECURE_MODE + TLS detection from audit L-02). CodeQL's
+	// go/cookie-secure-not-set can't follow the runtime decision and
+	// emits a false positive on these lines.
 	gc.SetCookie(refreshTokenCookieName, refresh, int(ttl.Seconds()), "/", "", r.refreshCookieSecure(ctx), true)
 }
 
@@ -98,6 +102,7 @@ func (r *mutationResolver) clearRefreshTokenCookie(ctx context.Context) {
 		return
 	}
 	gc.SetSameSite(http.SameSiteLaxMode)
+	// See note in setRefreshTokenCookie: secure flag is runtime-decided.
 	gc.SetCookie(refreshTokenCookieName, "", -1, "/", "", r.refreshCookieSecure(ctx), true)
 }
 
@@ -119,6 +124,7 @@ func (r *mutationResolver) setAccessTokenCookie(ctx context.Context, accessToken
 		ttl = time.Hour
 	}
 	gc.SetSameSite(http.SameSiteLaxMode)
+	// See note in setRefreshTokenCookie: secure flag is runtime-decided.
 	gc.SetCookie(accessTokenCookieName, accessToken, int(ttl.Seconds()), "/", "", r.refreshCookieSecure(ctx), true)
 }
 
@@ -128,6 +134,7 @@ func (r *mutationResolver) clearAccessTokenCookie(ctx context.Context) {
 		return
 	}
 	gc.SetSameSite(http.SameSiteLaxMode)
+	// See note in setRefreshTokenCookie: secure flag is runtime-decided.
 	gc.SetCookie(accessTokenCookieName, "", -1, "/", "", r.refreshCookieSecure(ctx), true)
 }
 
