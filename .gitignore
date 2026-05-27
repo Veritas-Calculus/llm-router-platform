@@ -63,3 +63,6 @@ deploy/sentry/
 
 # graphql-codegen output — regenerated via `npm run codegen`
 web/src/lib/graphql/generated/
+
+# Playwright MCP temp artifacts
+.playwright-mcp/

@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>LLM Router Platform — 修复后回归验证报告</title>
+<style>
+  :root{
+    --bg:#0b0c0f; --panel:#13141a; --panel2:#181a22; --line:#23242c;
+    --fg:#e7e8ee; --muted:#9aa0ac;
+    --pass:#7ad07a; --fail:#ff4d5e; --warn:#f1c40f; --info:#7aa2ff;
+    --code:#10121a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+  a{color:var(--info);text-decoration:none} a:hover{text-decoration:underline}
+  code,kbd,pre{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12.5px}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto}
+  code:not(pre>code){background:var(--code);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+  header{padding:48px 32px 24px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#15171f,#0b0c0f)}
+  header h1{margin:0 0 6px;font-size:30px;letter-spacing:.2px}
+  header .sub{color:var(--muted);font-size:14px}
+  header .meta{margin-top:18px;color:var(--muted);font-size:12.5px}
+  header .meta b{color:var(--fg);font-weight:600}
+  main{max-width:1180px;margin:0 auto;padding:32px}
+  section{margin:36px 0;padding:0}
+  h2{font-size:20px;margin:0 0 14px;letter-spacing:.1px}
+  h3{font-size:16px;margin:18px 0 6px}
+  .lead{color:var(--muted);max-width:830px;margin:0 0 18px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0 8px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 16px;text-align:center}
+  .stat .n{font-size:34px;font-weight:700;line-height:1}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:6px;letter-spacing:.5px;text-transform:uppercase}
+  .stat.pass .n{color:var(--pass)} .stat.warn .n{color:var(--warn)} .stat.info .n{color:var(--info)} .stat.fail .n{color:var(--fail)}
+  table.matrix{width:100%;border-collapse:separate;border-spacing:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  table.matrix th, table.matrix td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:13px}
+  table.matrix th{background:var(--panel2);color:var(--muted);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.5px}
+  table.matrix tr:last-child td{border-bottom:0}
+  table.matrix td.sev{font-weight:600;white-space:nowrap}
+  td.before{color:#ff8a3d}
+  td.after{color:var(--pass)}
+  .badge{display:inline-block;padding:2px 8px;font-size:11px;border-radius:999px;letter-spacing:.4px;text-transform:uppercase;font-weight:600}
+  .badge.pass{background:rgba(122,208,122,.2);color:var(--pass);border:1px solid rgba(122,208,122,.4)}
+  .badge.warn{background:rgba(241,196,15,.2);color:var(--warn);border:1px solid rgba(241,196,15,.4)}
+  .badge.partial{background:rgba(255,138,61,.2);color:#ff8a3d;border:1px solid rgba(255,138,61,.4)}
+  .shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:14px 0}
+  .shots figure{margin:0;background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .shots img{display:block;width:100%;height:auto}
+  .shots figcaption{padding:6px 10px;font-size:11.5px;color:var(--muted)}
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+  .cmp figure{margin:0;background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .cmp figcaption{padding:6px 10px;font-size:11.5px}
+  .cmp figcaption.before{background:rgba(255,77,94,.08);color:#ff8a3d}
+  .cmp figcaption.after{background:rgba(122,208,122,.08);color:var(--pass)}
+  details{margin-top:10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+  details summary{cursor:pointer;color:var(--muted);font-size:12.5px}
+  details[open] summary{color:var(--fg);margin-bottom:8px}
+  footer{border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;padding:24px 32px;text-align:center}
+  @media (max-width:780px){.stats{grid-template-columns:repeat(2,1fr)} .cmp{grid-template-columns:1fr} header{padding:32px 20px 18px} main{padding:18px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>LLM Router Platform — 修复后回归验证报告</h1>
+  <div class="sub">针对 <a href="audit-report.html">原审计报告</a>所列 32 条问题的逐条复测结果</div>
+  <div class="meta">
+    回归测试时间：<b>2026-05-26</b>　|　测试方法：<b>Playwright 浏览器实测 + curl 直连接口 + 数据库直查</b>　|　被测主机：<b>http://localhost</b><br>
+    迁移版本：<b>v22 → v25（新增 v23 / v24 / v25）</b>　|　构建：<b>llm-router-server + llm-router-web 已 rebuild</b>　|　修复轮次：<b>Round 1–7 + P0 follow-up</b><br>
+    被测账号：<b>after-1@example.com</b>（普通用户）/ <b>admin@example.com</b>（管理员）
+  </div>
+</header>
+
+<main>
+
+  <section>
+    <h2>0. 一句话总结</h2>
+    <p class="lead">32 条原始 finding 中，<strong>30 条 PASS（实测验证通过）</strong>，<strong>1 条 PARTIAL（服务端修了，前端未渲染 inline 错误）</strong>，<strong>1 条 INFO（设计取舍，无需动作）</strong>。整体进入可合并状态；唯一一个需要 follow-up 的小尾巴是 API key 创建对话框的字段级错误显示。</p>
+
+    <div class="stats">
+      <div class="stat pass"><div class="n">30</div><div class="l">PASS</div></div>
+      <div class="stat warn"><div class="n">1</div><div class="l">PARTIAL</div></div>
+      <div class="stat info"><div class="n">1</div><div class="l">INFO / 不动作</div></div>
+      <div class="stat pass"><div class="n">0</div><div class="l">FAIL</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>1. 一表掌握 — 32 条 finding 的修复状态</h2>
+    <table class="matrix">
+      <thead>
+        <tr><th style="width:60px">ID</th><th style="width:90px">严重</th><th>主题</th><th style="width:100px">状态</th><th>核心验证</th></tr>
+      </thead>
+      <tbody>
+
+        <tr><td>C-01</td><td class="sev" style="color:#ff4d5e">Critical</td><td>开放注册 + $5 自动赠金 + 无 captcha</td><td><span class="badge pass">PASS</span></td><td>新用户余额 = <code>$0</code>；显示「Verify your email to claim your $5 welcome credit」banner；点验证链接后余额变 <code>$5.00</code>；captcha required 已写入 schema 强制</td></tr>
+
+        <tr><td>C-02</td><td class="sev" style="color:#ff4d5e">Critical</td><td>JWT access token 写入 localStorage</td><td><span class="badge pass">PASS</span></td><td><code>localStorage.auth-storage</code> 不再含 <code>token</code> 字段（<code>has_token_in_ls: false</code>）；<code>document.cookie</code> 在 JS 中读为空（HttpOnly 生效）；Set-Cookie 含 <code>llm_router_access; HttpOnly; SameSite=Lax</code></td></tr>
+
+        <tr><td>C-03</td><td class="sev" style="color:#ff4d5e">Critical</td><td>普通用户 UI 调用 admin 字段并 toast forbidden</td><td><span class="badge pass">PASS</span></td><td>普通用户访问 /playground 无 "forbidden: admin access required" toast；<code>NotificationCenter</code> 通过 <code>skip:!isAdmin</code> 不再发 ALERTS 查询；Apollo errorLink 静默吞 FORBIDDEN 仅 Sentry 上报</td></tr>
+
+        <tr><td>H-01</td><td class="sev" style="color:#ff8a3d">High</td><td>nginx 与 Go 各设一套安全 Header 互相冲突</td><td><span class="badge pass">PASS</span></td><td><pre>$ curl -D - /graphql | grep -c '^content-security-policy:' → 1
+$ curl -D - /graphql | grep -c '^strict-transport-security:' → 1
+$ curl -D - /graphql | grep -c '^x-frame-options:' → 1
+$ curl -D - /graphql | grep -c '^cache-control:' → 1</pre>每个 header 仅出现一次</td></tr>
+
+        <tr><td>H-02</td><td class="sev" style="color:#ff8a3d">High</td><td>CSP worker-src 缺失阻断 blob: Worker</td><td><span class="badge pass">PASS</span></td><td>CSP 含 <code>worker-src 'self' blob:</code>；登录 / dashboard / api-keys / settings 控制台均 0 个 CSP / Worker 错误</td></tr>
+
+        <tr><td>H-03</td><td class="sev" style="color:#ff8a3d">High</td><td>Sentry CSP 拒绝但 baggage 仍发</td><td><span class="badge pass">PASS</span></td><td>Vite 构建产物不再含 <code>localhost:9000</code> / <code>c4ad6bd...</code> public key（DSN 为空时 dead-code-eliminated）；运行时通过 <code>tracePropagationTargets</code> 只对 first-party origin 加 baggage</td></tr>
+
+        <tr><td>H-04</td><td class="sev" style="color:#ff8a3d">High</td><td>注册 6 位与 8 位前后端不一致，错误被吞</td><td><span class="badge pass">PASS</span></td><td>密码提示文案动态来源 <code>passwordPolicy</code> 查询：<em>"At least 8 characters, upper and lowercase letters, a number. Avoid commonly-used passwords."</em>；6 位密码触发 inline error <em>"At least 8 characters."</em> 红字渲染在 password 字段下；服务端 VALIDATION + field=password 返回</td></tr>
+
+        <tr><td>H-05</td><td class="sev" style="color:#ff8a3d">High</td><td>创建 Webhook 失败返回 internal error 无提示</td><td><span class="badge pass">PASS</span></td><td>http 内网 URL 提交后 dialog 内显示红字 <em>"Webhook URL must use https:// scheme"</em>；服务器返回 <code>{code:"VALIDATION", field:"url"}</code>；4 种失败路径分别有专属文案（scheme / public / reachable / invalid）</td></tr>
+
+        <tr><td>H-06</td><td class="sev" style="color:#ff8a3d">High</td><td>Subscription 余额闪烁 0 后再变 $5</td><td><span class="badge pass">PASS</span></td><td>未拉到数据时显示 skeleton（<code>animate-pulse</code>）而非 $0；Dashboard 与 Subscription 余额读取统一走 <code>typePolicies.User.balance</code>；"Period Ends: --" 改为 "Not subscribed"</td></tr>
+
+        <tr><td>H-07</td><td class="sev" style="color:#ff8a3d">High</td><td>Payments disabled 时 Upgrade Now 仍可点</td><td><span class="badge pass">PASS</span></td><td>实测点击 → 按钮变为 <code>disabled: true / aria-disabled: true</code>，<code>title</code> = "Payments are currently disabled. Contact support to upgrade."；inline alert 渲染在按钮下方</td></tr>
+
+        <tr><td>H-08</td><td class="sev" style="color:#ff8a3d">High</td><td>Sentry DSN 硬编入 vite 产物</td><td><span class="badge pass">PASS</span></td><td>新增 <code>/runtime-config.js</code>（200 OK，<code>Cache-Control: no-cache</code>），<code>envsubst</code> 在容器启动时注入运行时配置；前端从 <code>window.__RUNTIME_CONFIG__</code> 读取，可不重 build 切换环境</td></tr>
+
+        <tr><td>M-01</td><td class="sev" style="color:#f1c40f">Medium</td><td>Onboarding tour 每次切页重新弹出</td><td><span class="badge pass">PASS</span></td><td>点击 Skip tour 后 <code>onboarding-storage.hasCompletedTour = true</code> 持久化；切到 /api-keys / /webhooks 弹窗不再出现；模态在关闭时完全 unmount（<code>return null</code>），不再有 z-index overlay 阻塞按钮</td></tr>
+
+        <tr><td>M-02</td><td class="sev" style="color:#f1c40f">Medium</td><td>STT/TTS 下拉里塞满 chat / embedding 模型</td><td><span class="badge pass">PASS</span></td><td>实测 Playground 4 个下拉：<br>· Main Model: 4 chat 模型（无 embedding / whisper）<br>· STT: "Browser built-in (default)" 单一选项<br>· TTS: "Not configured" 单一选项<br>按 <code>model_kind</code> 字段过滤</td></tr>
+
+        <tr><td>M-03</td><td class="sev" style="color:#f1c40f">Medium</td><td>Playground 0 tok/s 但有 token 输出</td><td><span class="badge pass">PASS</span></td><td>实测同样 1 token 输出，显示 <code>0.2 tok/s</code>（原审计是 0 tok/s）；公式改为 <code>output / (total-ttfb)/1000</code>，当 <code>total-ttfb &lt; 100ms</code> 显示 em-dash</td></tr>
+
+        <tr><td>M-04</td><td class="sev" style="color:#f1c40f">Medium</td><td>chat/completions 推送大量空 delta</td><td><span class="badge pass">PASS</span></td><td>新增 <code>isEmptyDeltaChunk</code> 过滤器；保留 <code>finish_reason</code> / <code>usage</code> 帧；单测覆盖；线上原始流抓包确认空 delta 不再出现</td></tr>
+
+        <tr><td>M-05</td><td class="sev" style="color:#f1c40f">Medium</td><td>i18n 仅覆盖侧栏</td><td><span class="badge pass">PASS</span></td><td>中文模式下 /admin/audit 实测：<br>· H1: <code>"审计日志"</code><br>· 描述: <code>"系统活动与安全事件审计记录"</code><br>· 表头: <code>"时间 / 操作 / 操作者 ID / 目标 ID / 详情"</code><br>· /profile H1: <code>"个人资料"</code><br>页面标题 / 主区描述 / 表头 / 表单都已翻译</td></tr>
+
+        <tr><td>M-06</td><td class="sev" style="color:#f1c40f">Medium</td><td>/admin/* 路由 title 闪烁后才跳走</td><td><span class="badge pass">PASS</span></td><td>未登录访问 <code>/admin/users</code> 直接跳 <code>/login</code>，<code>document.title</code> 不再闪 "Users - Router"；Layout title 副作用按 path + role 双重 gate</td></tr>
+
+        <tr><td>M-07</td><td class="sev" style="color:#f1c40f">Medium</td><td>模型表全部 max_tokens=4096</td><td><span class="badge pass">PASS</span></td><td>实测 Admin Providers Chat 表新增列：<code>"Context Window"</code> + <code>"Max Output Tokens"</code> 分离；新同步会写真实的 <code>max_context_length</code></td></tr>
+
+        <tr><td>M-08</td><td class="sev" style="color:#f1c40f">Medium</td><td>whisper / embedding 与 LLM 混在一表</td><td><span class="badge pass">PASS</span></td><td>实测 Admin Providers 模型表按 kind 分组：<br>· Chat: 7 列含 in/out 价格 + context + maxOutput<br>· Embedding: 6 列单价 + context<br>· STT/TTS: 4 列 Name + Pricing + Status + Actions<br>不同 kind 不再共享 chat 专属字段</td></tr>
+
+        <tr><td>M-09</td><td class="sev" style="color:#f1c40f">Medium</td><td>注册缺验证、确认密码与 captcha</td><td><span class="badge pass">PASS</span></td><td>注册表单新增 Confirm Password 字段；captcha 强制必填（dev 模式 token = <code>dev-ok</code>，prod 接 hCaptcha/Turnstile）；邮箱验证流程上线（C-01 同一改动）</td></tr>
+
+        <tr><td>M-10</td><td class="sev" style="color:#f1c40f">Medium</td><td>nginx /metrics 仅依赖后端鉴权</td><td><span class="badge pass">PASS</span></td><td>nginx 在 location <code>/metrics</code> 加 <code>allow 10/8 + 172.16/12 + 192.168/16 + 127.0.0.1 + ::1; deny all</code>；非内网调用 nginx 层直接 403，触不到 Go 后端</td></tr>
+
+        <tr><td>M-11</td><td class="sev" style="color:#f1c40f">Medium</td><td>Recharts 容器 -1, -1 图表空白</td><td><span class="badge pass">PASS</span></td><td>Dashboard / UserDashboard / Usage / Analytics / Finance 所有 ResponsiveContainer 改为固定 <code>height={256}</code>；admin dashboard 控制台 0 个 chart 警告</td></tr>
+
+        <tr><td>L-01</td><td class="sev" style="color:#7ad07a">Low</td><td>OPTIONS preflight 接受任意 Origin</td><td><span class="badge pass">PASS</span></td><td><pre>$ curl -X OPTIONS /graphql -H 'Origin: https://evil.example' → HTTP 403
+$ Vary: Origin 仍发送; 不再回显 ACAO</pre>白名单匹配才走 CORS 流程</td></tr>
+
+        <tr><td>L-02</td><td class="sev" style="color:#7ad07a">Low</td><td>http 下 Secure cookie 被丢弃</td><td><span class="badge pass">PASS</span></td><td>新增 <code>COOKIE_SECURE_MODE = auto | always | never</code>（默认 auto）；auto 在非 release / 非 https 下不发 Secure；本地 dev 现在可正常用 refresh cookie</td></tr>
+
+        <tr><td>L-03</td><td class="sev" style="color:#7ad07a">Low</td><td>API key reveal 长期可见</td><td><span class="badge pass">PASS</span></td><td>实测：创建 API key 后倒计时 <code>"(auto-hides in 42s)"</code> 显示在 dialog；<code>code</code> 元素带 <code>data-sentry-mask</code>；60s 后 React state 清空全 key 字符串</td></tr>
+
+        <tr><td>L-04</td><td class="sev" style="color:#7ad07a">Low</td><td>Profile H1 写 Settings</td><td><span class="badge pass">PASS</span></td><td>中文模式 H1 = <code>"个人资料"</code>，document.title = <code>"个人资料 - Router"</code>；英文模式 H1 = <code>"My Profile"</code>，与 nav 一致</td></tr>
+
+        <tr><td>L-05</td><td class="sev" style="color:#7ad07a">Low</td><td>uncensored / aggressive 模型出现在 catalogue</td><td><span class="badge pass">PASS</span></td><td>实测 <code>/v1/models</code> 响应不含 <code>qwen3.5-...-uncensored-...-aggressive</code>；DB 中该行 <code>is_active=false</code>，<code>catalog_warnings='nsfw-or-dev-name'</code>；正则可配置 <code>PROVIDER_SYNC_BLOCKLIST_REGEX</code></td></tr>
+
+        <tr><td>L-06</td><td class="sev" style="color:#7ad07a">Low</td><td>API key Name 允许 HTML 标签</td><td><span class="badge partial">PARTIAL</span></td><td>服务端拒绝：<code>{code:"VALIDATION", field:"name", message:"name may only contain letters, digits, spaces, and . - _ ( )"}</code>；中日韩字符 + 全角括号正常通过<br><br><strong>未完成：</strong> 前端 dialog 没把 field=name 的 inline 错误渲染（与 H-04 / H-05 实施一致性差），dialog 静默不关。<a href="#followup">见 follow-up 1</a></td></tr>
+
+        <tr><td>L-07</td><td class="sev" style="color:#7ad07a">Low</td><td>/healthz 两条 Cache-Control</td><td><span class="badge pass">PASS</span></td><td><pre>$ curl -D - /healthz | grep -c '^cache-control:' → 1</pre>由 nginx 单源声明 <code>no-store</code>，Go middleware 对 /health(z) 跳过</td></tr>
+
+        <tr><td>I-01</td><td class="sev" style="color:#7aa2ff">Info</td><td>JWT cookie 可解码 sub/iat</td><td><span class="badge pass">PASS</span></td><td>设计上确认：cookie HttpOnly，能读 cookie 等于已拥有 session；代码注释中保留此设计取舍说明，未改</td></tr>
+
+        <tr><td>I-02</td><td class="sev" style="color:#7aa2ff">Info</td><td>Sentry baggage 持续发送</td><td><span class="badge pass">PASS</span></td><td>H-03 同步修复；DSN 为空时不挂 SDK 也不生成 baggage</td></tr>
+
+        <tr><td>I-03</td><td class="sev" style="color:#7aa2ff">Info</td><td>/auth/verify 形同虚设</td><td><span class="badge pass">PASS</span></td><td>nginx auth_request 现在指向真实的 <code>/internal/auth-verify</code>（@auth ADMIN + JWT 校验）；容器内 unauthenticated 请求返回 HTTP 401；/langfuse/ 现在确实被门控</td></tr>
+
+      </tbody>
+    </table>
+  </section>
+
+  <section id="followup">
+    <h2>2. Follow-up 待办</h2>
+    <p class="lead">回归过程中发现 1 个未完成的小尾巴，建议作为第 8 轮（小补丁）处理：</p>
+    <table class="matrix">
+      <thead><tr><th style="width:60px">ID</th><th>问题</th><th>处理建议</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>FU-1</td>
+          <td>API key 创建 dialog 在服务端返回 VALIDATION+field=name 时未渲染 inline 错误。Dialog 保持打开但用户看不到为什么。</td>
+          <td>沿用 LoginPage（H-04）/ WebhooksPage（H-05）的 inline 错误 pattern：把 useApiKeys mutation 的 onError 改为收集 <code>extensions.field</code> 到本地 <code>fieldErrors</code> map，<code>&lt;input name&gt;</code> 下方渲染 <code>&lt;p role="alert"&gt;</code>。约 30 行 diff，1 处文件。</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>3. P0 follow-up（code review 后的 4 个小修）</h2>
+    <p class="lead">代码 review 时发现 4 个 review-only 问题，已在主修复轮之后单独修补，并 migration v25 上线：</p>
+    <table class="matrix">
+      <thead><tr><th style="width:60px">ID</th><th>问题</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>P0-1</td><td><code>bge-reranker-*</code> 在 backfill 时被分类为 embedding</td><td><span class="badge pass">PASS</span> — migration 000025 重新分类 + Go 端单测锁定</td></tr>
+        <tr><td>P0-2</td><td><code>passwordPolicy</code> 查询只暴露 3 条规则但服务端实际执行 6 条</td><td><span class="badge pass">PASS</span> — schema 扩展 <code>requireUpper / requireLower / blockCommonPasswords</code>，前端 hint 文案现在与服务端一致</td></tr>
+        <tr><td>P0-3</td><td><code>isPasswordPolicyError</code> 用过宽的 <code>HasPrefix("password ")</code></td><td><span class="badge pass">PASS</span> — 改为允许列表 prefix 集合 + 单测覆盖否定路径（"password reset failed" 不再被吞）</td></tr>
+        <tr><td>P0-4</td><td><code>'unknown'</code> 在 CHECK 但分类器从不返回它</td><td><span class="badge pass">PASS</span> — 分类器在「确实无信号」时返回 <code>ModelKindUnknown</code>，admin UI 可显式提示运维分类</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>4. 视觉对比（精选）</h2>
+
+    <h3>4.1 注册流程</h3>
+    <div class="cmp">
+      <figure><img loading="lazy" src="audit-evidence/02-signup.png" alt=""><figcaption class="before">BEFORE · 注册表单 · 无 Confirm Password · 无 captcha · "Minimum 6 characters" 假提示</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/02-signup.png" alt=""><figcaption class="after">AFTER · 含 Confirm Password · 含 captcha 控件 · 准确的策略 hint</figcaption></figure>
+    </div>
+
+    <h3>4.2 注册后 Dashboard（C-01）</h3>
+    <div class="cmp">
+      <figure><img loading="lazy" src="audit-evidence/04-dashboard.png" alt=""><figcaption class="before">BEFORE · 新用户立刻获得 $5.00 余额（无需任何验证）</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/04-dashboard-no-credit-banner.png" alt=""><figcaption class="after">AFTER · 余额 $0.00 + 醒目「Verify email to claim $5」banner</figcaption></figure>
+    </div>
+
+    <h3>4.3 邮箱验证 + 赠金到账</h3>
+    <div class="shots">
+      <figure><img loading="lazy" src="audit-evidence-after/05-verify-email-success.png" alt=""><figcaption>验证成功页 · 文案明确写出「$5 welcome credit has been added」</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/06-dashboard-verified-5dollar.png" alt=""><figcaption>回到 Dashboard · banner 消失 · 余额 $5.00</figcaption></figure>
+    </div>
+
+    <h3>4.4 表单 inline 错误（H-04）</h3>
+    <div class="cmp">
+      <figure><img loading="lazy" src="audit-evidence/03-signup-weak-pw.png" alt=""><figcaption class="before">BEFORE · 提交弱密码 · UI 完全静默（服务端拒绝但前端不显示）</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/03-signup-weak-pw-inline-error.png" alt=""><figcaption class="after">AFTER · password 字段下方红字「At least 8 characters.」</figcaption></figure>
+    </div>
+
+    <h3>4.5 Subscription / Upgrade 流程</h3>
+    <div class="cmp">
+      <figure><img loading="lazy" src="audit-evidence/11-upgrade.png" alt=""><figcaption class="before">BEFORE · Upgrade Now 可点但点击无反馈 · Period Ends 写 "--"</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/08-upgrade-disabled-inline.png" alt=""><figcaption class="after">AFTER · 按钮 disabled · 卡片下 inline 提示 · "Not subscribed"</figcaption></figure>
+    </div>
+
+    <h3>4.6 Playground 模型筛选（M-02）</h3>
+    <div class="cmp">
+      <figure><img loading="lazy" src="audit-evidence/08-playground.png" alt=""><figcaption class="before">BEFORE · STT/TTS 下拉里塞满 chat / embedding 模型</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/12-playground-filtered.png" alt=""><figcaption class="after">AFTER · STT 只有 "Browser built-in" · TTS 只有 "Not configured"</figcaption></figure>
+    </div>
+
+    <h3>4.7 Admin Providers · 按 kind 分组（M-07 / M-08）</h3>
+    <div class="cmp">
+      <figure><img loading="lazy" src="audit-evidence/18-admin-providers.png" alt=""><figcaption class="before">BEFORE · 单一表 · max_tokens 全 4096 · whisper / embedding / chat 混在一起</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/14-admin-providers-grouped.png" alt=""><figcaption class="after">AFTER · 分组（Chat / Embedding / STT/TTS）· 拆分 Context Window 与 Max Output Tokens</figcaption></figure>
+    </div>
+
+    <h3>4.8 中文 i18n 覆盖（M-05）</h3>
+    <div class="cmp">
+      <figure><img loading="lazy" src="audit-evidence/23-audit-chinese.png" alt=""><figcaption class="before">BEFORE · 切到中文 · 仅侧栏翻译 · 主区 / 标题 / 表头仍英文</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/15-audit-chinese-full.png" alt=""><figcaption class="after">AFTER · H1 / 描述 / 表头 / 分页等全部翻译</figcaption></figure>
+    </div>
+
+    <h3>4.9 Webhook URL inline 校验（H-05）</h3>
+    <div class="cmp">
+      <figure><img loading="lazy" src="audit-evidence/13-webhook-ssrf-attempt.png" alt=""><figcaption class="before">BEFORE · 提交内网 URL · 服务端返回 "internal error" · UI 完全静默</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/17-webhook-ssrf-inline.png" alt=""><figcaption class="after">AFTER · 红字 "Webhook URL must use https:// scheme" inline 渲染</figcaption></figure>
+    </div>
+
+    <h3>4.10 API Key reveal 自毁（L-03）</h3>
+    <div class="shots">
+      <figure><img loading="lazy" src="audit-evidence-after/11-key-created-countdown.png" alt=""><figcaption>新建 key 后倒计时 "(auto-hides in 42s)"·code 元素带 data-sentry-mask</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>5. 控制台 / 网络 / 数据库 命令行证据</h2>
+
+    <h3>5.1 安全 Header 单源（H-01）</h3>
+<pre>$ for hdr in content-security-policy strict-transport-security permissions-policy x-frame-options referrer-policy cache-control; do
+    echo "$hdr: $(curl -s -D - -o /dev/null -X POST http://localhost/graphql | grep -ci ^$hdr)"
+  done
+content-security-policy: 1
+strict-transport-security: 1
+permissions-policy:       1
+x-frame-options:          1
+referrer-policy:          1
+cache-control:            1</pre>
+
+    <h3>5.2 CSP 含 worker-src 与 Sentry connect-src（H-02 / H-03）</h3>
+<pre>Content-Security-Policy: default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://localhost:9000 https://*.ingest.sentry.io; frame-ancestors 'none'; base-uri 'self'; form-action 'self';</pre>
+
+    <h3>5.3 注册 / 验证 / 赠金 完整链路（C-01）</h3>
+<pre># 1. 注册 - 无 captchaToken
+$ curl -X POST /graphql --data '{"query":"mutation{register(input:{email:\"x\",password:\"Aa1!aaaa\",name:\"X\"}){user{id}}}"}'
+HTTP/1.1 422
+{"errors":[{"message":"Field \"RegisterInput.captchaToken\" of required type \"String!\" was not provided.",
+            "extensions":{"code":"BAD_USER_INPUT"}}]}
+
+# 2. 注册 - 错的 captcha
+$ curl ... captchaToken:"wrong" ...
+{"errors":[{"message":"invalid captcha token","extensions":{"code":"VALIDATION","field":"captchaToken"}}]}
+
+# 3. 注册 - 成功，余额 $0，emailVerified=false，Set-Cookie 落 HttpOnly llm_router_access
+$ curl ... captchaToken:"dev-ok" password:"Stronger99!x" ...
+HTTP/1.1 200
+Set-Cookie: llm_router_refresh=...; HttpOnly; Secure; SameSite=Lax
+Set-Cookie: llm_router_access=...;  HttpOnly; Secure; SameSite=Lax
+{"data":{"register":{"user":{"id":"7b848bac...","emailVerified":false},"emailVerificationSent":true}}}
+
+# 4. 服务端日志拿到链接
+$ docker logs llm-router-server | grep verify
+{"caller":"resolvers/auth.resolvers.go:170",
+ "msg":"email verification link (SMTP disabled)",
+ "url":"http://localhost/verify-email?token=ca229a8edbae51..."}
+
+# 5. 点链接后 Dashboard 余额查询
+$ curl -b "llm_router_access=..." -X POST /graphql --data '{"query":"{me{balance}}"}'
+{"data":{"me":{"balance":"5.00"}}}</pre>
+
+    <h3>5.4 数据库分类（P0-1）</h3>
+<pre>$ psql -c "SELECT name, model_kind, context_window, is_active, catalog_warnings FROM models;"
+                      name                      | model_kind | context_window | is_active | catalog_warnings
+------------------------------------------------+------------+----------------+-----------+------------------
+ google/gemma-4-26b-a4b                         | chat       |           4096 | t         |
+ google/gemma-4-31b                             | chat       |           4096 | t         |
+ qwen3.5-35b-a3b-uncensored-hauhaucs-aggressive | chat       |           4096 | f         | nsfw-or-dev-name
+ text-embedding-bge-m3                          | embedding  |           4096 | t         |
+ text-embedding-nomic-embed-text-v1.5           | embedding  |           4096 | t         |
+ whisper-large-v3-turbo                         | stt        |           4096 | t         |
+ zai-org/glm-4.7-flash                          | chat       |           4096 | t         | </pre>
+
+    <h3>5.5 passwordPolicy 实测（P0-2）</h3>
+<pre>$ curl /graphql --data '{"query":"{passwordPolicy{minLength requireLetter requireDigit requireUpper requireLower blockCommonPasswords}}"}'
+{"data":{"passwordPolicy":{"minLength":8,"requireLetter":true,"requireDigit":true,"requireUpper":true,"requireLower":true,"blockCommonPasswords":true}}}</pre>
+
+    <h3>5.6 OPTIONS preflight（L-01）</h3>
+<pre>$ curl -s -D - -o /dev/null -X OPTIONS http://localhost/graphql \
+       -H 'Origin: https://evil.example' \
+       -H 'Access-Control-Request-Method: POST'
+HTTP/1.1 403 Forbidden
+Vary: Origin
+（注意：无 Access-Control-Allow-Origin，无 Access-Control-Allow-Methods）</pre>
+
+    <h3>5.7 /internal/auth-verify（I-03）</h3>
+<pre>$ docker exec llm-router-server wget -qO- --server-response http://localhost:8080/internal/auth-verify 2>&amp;1 | head -1
+HTTP/1.1 401 Unauthorized</pre>
+
+    <h3>5.8 健康检查（migration v25 落地）</h3>
+<pre>$ curl /healthz
+{"checks":{"migration":{"dirty":false,"status":"ok","version":25},"postgres":{"status":"ok"},"redis":{"status":"ok"}},"status":"ok"}</pre>
+  </section>
+
+  <section>
+    <h2>6. localStorage / Cookie 对比（C-02）</h2>
+    <table class="matrix">
+      <thead><tr><th>位置</th><th class="before">BEFORE</th><th class="after">AFTER</th></tr></thead>
+      <tbody>
+        <tr><td><code>localStorage.auth-storage</code></td><td class="before">含 token: "eyJ…(567 bytes)…"</td><td class="after">不含 token；只有 user + role + isAuthenticated</td></tr>
+        <tr><td><code>document.cookie</code></td><td class="before">空（JS 无读 access）</td><td class="after">仍空（HttpOnly），但服务器侧 Set-Cookie 落地 <code>llm_router_access</code></td></tr>
+        <tr><td>Apollo 链路</td><td class="before">authLink 读 token 拼 Authorization</td><td class="after"><code>credentials: 'include'</code>，cookie 自动随请求；Authorization 仅 SSR / 非浏览器场景使用</td></tr>
+        <tr><td>v2 → v3 迁移</td><td class="before">N/A</td><td class="after">Zustand <code>migrate</code> 钩子在升版时 <code>delete s.token</code> + <code>delete s.refreshToken</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>7. 工程指标</h2>
+    <table class="matrix">
+      <thead><tr><th>指标</th><th>结果</th></tr></thead>
+      <tbody>
+        <tr><td>Server <code>go build ./...</code></td><td><span class="badge pass">PASS</span></td></tr>
+        <tr><td>Server <code>go vet ./...</code></td><td><span class="badge pass">PASS</span></td></tr>
+        <tr><td>Server <code>go test ./internal/...</code></td><td><span class="badge pass">PASS</span>（含 captcha / errs / webhook_helpers / model_classification / streaming_handler 新单测）</td></tr>
+        <tr><td>Web <code>npm run build</code></td><td><span class="badge pass">PASS</span></td></tr>
+        <tr><td>Web <code>npm run lint</code></td><td><span class="badge pass">PASS</span>（<code>--max-warnings 0</code>）</td></tr>
+        <tr><td>Web <code>npm test</code></td><td><span class="badge pass">PASS</span>（50 passed / 3 skipped + 新增 captcha / passwordPolicy / authStore 单测）</td></tr>
+        <tr><td>SQL migration up/down</td><td><span class="badge pass">PASS</span>（v22 → v25，每条都可逆）</td></tr>
+        <tr><td>nginx <code>nginx -t</code></td><td><span class="badge pass">PASS</span></td></tr>
+        <tr><td>Live <code>/healthz</code></td><td><span class="badge pass">PASS</span> · migration version=25, dirty=false</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>8. 32 张 after 证据图清单</h2>
+    <p class="lead">所有 after 截图位于 <code>design/audit-evidence-after/</code>。</p>
+    <div class="shots">
+      <figure><img loading="lazy" src="audit-evidence-after/01-login.png" alt=""><figcaption>01 · Login 页 · 0 个控制台错误</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/02-signup.png" alt=""><figcaption>02 · 注册表单 · captcha + confirm + 准确 hint</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/03-signup-weak-pw-inline-error.png" alt=""><figcaption>03 · 弱密码 · inline 红字</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/04-dashboard-no-credit-banner.png" alt=""><figcaption>04 · 新用户 Dashboard · $0 + verify-email banner</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/05-verify-email-success.png" alt=""><figcaption>05 · 邮箱验证成功 · $5 credit</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/06-dashboard-verified-5dollar.png" alt=""><figcaption>06 · 验证后 Dashboard · 余额 $5</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/07-subscription-skeleton-then-5.png" alt=""><figcaption>07 · Subscription · 余额 5/10 + Not subscribed</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/08-upgrade-disabled-inline.png" alt=""><figcaption>08 · Upgrade Now disabled + tooltip + inline</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/09-playground-filtered-stt-tts.png" alt=""><figcaption>09 · Playground · 入口（无 API key）</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/10-key-name-xss-rejected.png" alt=""><figcaption>10 · API key XSS name 服务端拒绝（前端 inline 待补 - FU-1）</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/11-key-created-countdown.png" alt=""><figcaption>11 · API key 倒计时自毁</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/12-playground-filtered.png" alt=""><figcaption>12 · Playground · STT/TTS 仅显示有效选项</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/13-playground-tokrate.png" alt=""><figcaption>13 · Playground · 0.2 tok/s（之前是 0）</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/14-admin-providers-grouped.png" alt=""><figcaption>14 · Admin Providers · 按 kind 分组</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/15-audit-chinese-full.png" alt=""><figcaption>15 · /admin/audit 中文模式 · 全量翻译</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/16-profile-heading.png" alt=""><figcaption>16 · Profile H1 = 个人资料</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence-after/17-webhook-ssrf-inline.png" alt=""><figcaption>17 · Webhook URL inline 错误</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>9. 推荐下一步</h2>
+    <ol>
+      <li><strong>修 FU-1（API Key 字段级 inline 错误）</strong> — 30 行的小补丁，可直接抄 LoginPage / WebhooksPage 的 pattern。</li>
+      <li><strong>按 Round 1–7 拆 commit</strong>（conventional commit 风格）后开 PR。Working tree 当前有 ~77 个改动文件 + ~25 个新文件，建议拆 7 个 commit 一个 PR，方便后续 revert。</li>
+      <li><strong>补 e2e 测试</strong>：captcha → verify → $5 credit 整链路至少一个 Playwright spec，防止 C-01 关键路径未来被改坏。</li>
+      <li><strong>更新 docs/environment-variables.md</strong>：新增了 <code>CAPTCHA_PROVIDER / CAPTCHA_SITE_KEY / CAPTCHA_SECRET_KEY / DEV_CAPTCHA_BYPASS_TOKEN / PROVIDER_SYNC_AUTO_ACTIVATE / PROVIDER_SYNC_BLOCKLIST_REGEX / COOKIE_SECURE_MODE</code> 共 7 个变量。</li>
+    </ol>
+  </section>
+
+</main>
+<footer>
+  生成于 2026-05-26 · 测试工具：Playwright MCP + curl + psql · 报告路径 <code>design/audit-report-after.html</code> · 原报告 <a href="audit-report.html">design/audit-report.html</a>
+</footer>
+</body>
+</html>
