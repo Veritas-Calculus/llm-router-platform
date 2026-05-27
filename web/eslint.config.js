@@ -110,6 +110,6 @@ export default [
     // public/ is served as-is by nginx (runtime-config.js / template);
     // those files run in the browser but are intentionally not part of
     // the TypeScript build, so ESLint with no DOM globals chokes on them.
-    ignores: ["dist/", "node_modules/", "*.config.*", "src/lib/graphql/generated/", "public/"],
+    ignores: ["dist/", "node_modules/", "*.config.*", "src/lib/graphql/generated/", "public/", "e2e/", "playwright-report/", "test-results/"],
   },
 ];
