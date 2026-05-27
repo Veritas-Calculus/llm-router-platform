@@ -37,7 +37,7 @@ type ProxyPool struct {
 	BaseModel
 	Name        string  `gorm:"uniqueIndex;not null" json:"name"`
 	Description string  `json:"description"`
-	IsActive    bool    `gorm:"default:true" json:"is_active"`
+	IsActive    bool    `gorm:"default:true;index:idx_proxy_pools_is_active" json:"is_active"`
 	Strategy    string  `gorm:"default:weighted" json:"strategy"`
 	Proxies     []Proxy `gorm:"foreignKey:PoolID" json:"proxies,omitempty"`
 }
