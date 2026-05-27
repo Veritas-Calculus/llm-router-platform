@@ -170,7 +170,7 @@ function DashboardPage() {
             onClick={() => refetch()} 
             disabled={loading}
             className="p-2 rounded-xl bg-white border border-apple-gray-200 shadow-sm text-apple-gray-600 hover:text-apple-gray-900 hover:bg-apple-gray-50 transition-colors disabled:opacity-50"
-            title="Refresh Dashboard"
+            title={t('common.refresh')}
           >
             <ArrowPathIcon className={`w-5 h-5 ${loading ? 'animate-spin text-apple-blue' : ''}`} />
           </button>
@@ -231,7 +231,7 @@ function DashboardPage() {
                 <p className="text-sm font-medium">{t('admin.dashboard.no_data')}</p>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%" minHeight={256}>
+              <ResponsiveContainer width="100%" height={256} minHeight={256}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--theme-border-light)" />
                   <XAxis dataKey="date" stroke="var(--theme-text-muted)" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
@@ -253,7 +253,7 @@ function DashboardPage() {
                 <p className="text-sm font-medium">{t('admin.dashboard.no_data')}</p>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%" minHeight={256}>
+              <ResponsiveContainer width="100%" height={256} minHeight={256}>
                 <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--theme-border-light)" />
                   <XAxis dataKey="date" stroke="var(--theme-text-muted)" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />

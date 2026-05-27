@@ -48,7 +48,7 @@ describe('ApiKeysPage', () => {
     it('should render create key button', async () => {
         render(<ApiKeysPage />);
         await waitFor(() => {
-            expect(screen.getByText('Create API Key')).toBeInTheDocument();
+            expect(screen.getByText('Add API Key')).toBeInTheDocument();
         });
     });
 

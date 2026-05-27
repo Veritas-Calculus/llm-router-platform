@@ -128,7 +128,7 @@ function UsageTab() {
                 <p className="text-sm">{t('admin.dashboard.no_data')}</p>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minHeight={256}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                   <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
@@ -150,7 +150,7 @@ function UsageTab() {
                 <p className="text-sm">{t('admin.dashboard.no_data')}</p>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minHeight={256}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                   <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
@@ -269,7 +269,7 @@ function RevenueTab() {
               <p className="text-sm">{t('admin.analytics.no_revenue_data')}</p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minHeight={288}>
               <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                 <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
@@ -318,7 +318,7 @@ function UsersTab() {
               <p className="text-sm">{t('admin.analytics.no_growth_data')}</p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minHeight={256}>
               <ComposedChart data={growth}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                 <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />

@@ -230,7 +230,7 @@ function FinancePage() {
                 <p className="text-sm">{t('admin.finance.no_finance_data')}</p>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minHeight={320}>
                 <LineChart data={daily}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                   <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} />
@@ -254,7 +254,7 @@ function FinancePage() {
                 <p className="text-sm">{t('admin.finance.no_finance_data')}</p>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minHeight={320}>
                 <BarChart data={payments}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                   <XAxis dataKey="name" stroke="#8E8E93" fontSize={12} />

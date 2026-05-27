@@ -12,10 +12,12 @@ import {
 import { useQuery, useMutation } from '@apollo/client/react';
 import { USERS_QUERY, TOGGLE_USER, UPDATE_USER_ROLE } from '@/lib/graphql/operations';
 import type { UserListItem } from '@/lib/types';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 function UsersPage() {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const { data, loading, refetch } = useQuery<any>(USERS_QUERY);
     const [toggleUserMut] = useMutation(TOGGLE_USER);
@@ -82,8 +84,8 @@ function UsersPage() {
         <div>
             <div className="flex items-center justify-between mb-8">
                 <div>
-                    <h1 className="text-2xl font-semibold text-apple-gray-900">User Management</h1>
-                    <p className="text-apple-gray-500 mt-1">{total} registered users</p>
+                    <h1 className="text-2xl font-semibold text-apple-gray-900">{t('users.title')}</h1>
+                    <p className="text-apple-gray-500 mt-1">{t('users.registered_count', { total })}</p>
                 </div>
 
                 <form onSubmit={handleSearch} className="relative">
@@ -92,7 +94,7 @@ function UsersPage() {
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search by name or email..."
+                        placeholder={t('users.search_placeholder')}
                         className="input pl-9 w-72"
                     />
                 </form>
@@ -102,25 +104,25 @@ function UsersPage() {
                 <table className="w-full">
                     <thead>
                         <tr className="border-b border-apple-gray-200">
-                            <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">User</th>
-                            <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">Role</th>
-                            <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">Status</th>
-                            <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">API Keys</th>
-                            <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">Registered</th>
-                            <th className="text-right py-3 px-4 text-sm font-medium text-apple-gray-500">Actions</th>
+                            <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('users.col_user')}</th>
+                            <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('users.role')}</th>
+                            <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('common.status')}</th>
+                            <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('users.api_key_count')}</th>
+                            <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('users.col_registered')}</th>
+                            <th className="text-right py-3 px-4 text-sm font-medium text-apple-gray-500">{t('common.actions')}</th>
                         </tr>
                     </thead>
                     <tbody>
                         {loading ? (
                             <tr>
                                 <td colSpan={6} className="py-12 text-center text-apple-gray-400">
-                                    Loading users...
+                                    {t('users.loading')}
                                 </td>
                             </tr>
                         ) : users.length === 0 ? (
                             <tr>
                                 <td colSpan={6} className="py-12 text-center text-apple-gray-400">
-                                    No users found
+                                    {t('users.no_users')}
                                 </td>
                             </tr>
                         ) : (
@@ -155,9 +157,9 @@ function UsersPage() {
                                     <td className="py-3 px-4">
                                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${user.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                                             {user.is_active ? (
-                                                <><CheckCircleIcon className="w-3 h-3" /> Active</>
+                                                <><CheckCircleIcon className="w-3 h-3" /> {t('common.active')}</>
                                             ) : (
-                                                <><NoSymbolIcon className="w-3 h-3" /> Disabled</>
+                                                <><NoSymbolIcon className="w-3 h-3" /> {t('common.disabled')}</>
                                             )}
                                         </span>
                                     </td>
@@ -174,7 +176,7 @@ function UsersPage() {
                                                 className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-apple-gray-500 hover:text-apple-gray-700 hover:bg-apple-gray-100 transition-colors text-sm"
                                             >
                                                 <EllipsisVerticalIcon className="w-4 h-4" />
-                                                Actions
+                                                {t('common.actions')}
                                             </button>
                                             <AnimatePresence>
                                                 {openMenuId === user.id && (
@@ -189,20 +191,20 @@ function UsersPage() {
                                                             onClick={() => { navigate(`/users/${user.id}`); setOpenMenuId(null); }}
                                                             className="w-full text-left px-3 py-2 text-sm text-apple-gray-700 hover:bg-apple-gray-50 transition-colors"
                                                         >
-                                                            Details
+                                                            {t('common.details')}
                                                         </button>
                                                         <button
                                                             onClick={() => { handleRoleChange(user.id, user.name, user.role); setOpenMenuId(null); }}
                                                             className="w-full text-left px-3 py-2 text-sm text-apple-gray-700 hover:bg-apple-gray-50 transition-colors"
                                                         >
-                                                            {user.role === 'admin' ? 'Demote' : 'Promote'}
+                                                            {user.role === 'admin' ? t('users.demote') : t('users.promote')}
                                                         </button>
                                                         <div className="border-t border-apple-gray-100 my-0.5" />
                                                         <button
                                                             onClick={() => { handleToggle(user.id, user.name); setOpenMenuId(null); }}
                                                             className={`w-full text-left px-3 py-2 text-sm transition-colors ${user.is_active ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'}`}
                                                         >
-                                                            {user.is_active ? 'Disable' : 'Enable'}
+                                                            {user.is_active ? t('users.disable') : t('users.enable')}
                                                         </button>
                                                     </motion.div>
                                                 )}
