@@ -8,6 +8,14 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      Runtime configuration: written by the web container's entrypoint via
+      envsubst from /usr/share/nginx/html/runtime-config.template.js. Loaded
+      BEFORE the SPA bundle so window.__RUNTIME_CONFIG__ is always defined
+      by the time main.tsx reads it. See web/Dockerfile entrypoint and
+      audit H-08.
+    -->
+    <script src="/runtime-config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -147,28 +147,54 @@ func NewCORSMiddleware(origins []string, mode string) *CORSMiddleware {
 }
 
 // Handle adds CORS headers.
+//
+// Audit L-01: only emit the methods/headers preflight response when the
+// caller's Origin is in the whitelist (or "*" is configured). Previously
+// we returned the full Methods/Headers/Max-Age set even when the request
+// Origin was unknown — harmless in practice (browsers still reject without
+// ACAO) but it pre-stages a bypass if CORS_ORIGINS is ever flipped to "*".
+// Now we keep the response minimal for non-whitelisted Origins: a 204 (for
+// OPTIONS) with no CORS metadata at all. Same-origin requests have no
+// Origin header and get passed through to the next handler unchanged.
 func (m *CORSMiddleware) Handle() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
-		allowed := false
+		isOptions := c.Request.Method == http.MethodOptions
 
-		for _, o := range m.allowOrigins {
-			if o == "*" || o == origin {
-				allowed = true
-				break
+		// Empty Origin means same-origin (or a non-browser caller) — let
+		// the request through without echoing CORS metadata.
+		if origin == "" {
+			if isOptions {
+				c.AbortWithStatus(http.StatusNoContent)
+				return
 			}
+			c.Next()
+			return
 		}
 
-		if allowed {
-			if m.allowOrigins[0] == "*" {
-				c.Header("Access-Control-Allow-Origin", "*")
-			} else {
-				c.Header("Access-Control-Allow-Origin", origin)
-				c.Header("Access-Control-Allow-Credentials", "true")
-				// Vary: Origin prevents CDN/proxy cache poisoning when reflecting
-				// the request Origin header into Access-Control-Allow-Origin.
-				c.Header("Vary", "Origin")
+		allowed, isWildcard := m.matchOrigin(origin)
+		if !allowed {
+			// Unknown Origin. Don't emit any ACAO / Allow-Methods /
+			// Allow-Headers; this denies the cross-origin call cleanly.
+			// Vary: Origin is still useful so caches don't conflate
+			// whitelisted vs non-whitelisted callers.
+			c.Header("Vary", "Origin")
+			if isOptions {
+				c.AbortWithStatus(http.StatusForbidden)
+				return
 			}
+			c.Next()
+			return
+		}
+
+		if isWildcard {
+			c.Header("Access-Control-Allow-Origin", "*")
+		} else {
+			c.Header("Access-Control-Allow-Origin", origin)
+			c.Header("Access-Control-Allow-Credentials", "true")
+			// Vary: Origin prevents CDN/proxy cache poisoning when reflecting
+			// the request Origin header into Access-Control-Allow-Origin.
+			c.Header("Vary", "Origin")
 		}
 
 		// Only allow methods actually used: GraphQL (POST) and LLM API (GET, POST)
@@ -177,13 +203,28 @@ func (m *CORSMiddleware) Handle() gin.HandlerFunc {
 		c.Header("Access-Control-Expose-Headers", "X-Request-Id, X-Trace-Id, X-Langfuse-Trace-Id")
 		c.Header("Access-Control-Max-Age", "86400")
 
-		if c.Request.Method == "OPTIONS" {
+		if isOptions {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
 
 		c.Next()
 	}
+}
+
+// matchOrigin returns (allowed, isWildcard). When isWildcard is true the
+// caller should respond with `Access-Control-Allow-Origin: *` (no creds);
+// otherwise reflect the exact origin and set Allow-Credentials.
+func (m *CORSMiddleware) matchOrigin(origin string) (bool, bool) {
+	for _, o := range m.allowOrigins {
+		if o == "*" {
+			return true, true
+		}
+		if o == origin {
+			return true, false
+		}
+	}
+	return false, false
 }
 
 // RecoveryMiddleware handles panic recovery.

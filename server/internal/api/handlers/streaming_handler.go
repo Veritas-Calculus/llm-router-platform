@@ -84,6 +84,24 @@ func (h *ChatHandler) handleStreamingChat(c *gin.Context, chunks <-chan provider
 				completionTokens = chunk.Usage.CompletionTokens
 			}
 
+			// M-04: skip empty deltas. Some upstreams (LM Studio in its
+			// reasoning phase) emit hundreds of `{"delta":{}}` frames before
+			// the first real token. Each empty frame costs ~30 bytes on the
+			// wire and forces SDKs to round-trip through their event
+			// callbacks. We drop frames where ALL of role / content /
+			// tool_calls are empty AND no finish_reason is set, AND there's
+			// no usage block to forward. If the upstream signals end-of-stream
+			// via finish_reason="stop" we always forward (otherwise SDKs
+			// would deadlock waiting for terminal). See audit M-04.
+			//
+			// Billing is unaffected: the pre-recorded usage row already
+			// exists and the post-stream finalizer updates it from
+			// promptTokens/completionTokens, which we accumulate above
+			// before the empty-frame filter runs.
+			if isEmptyDeltaChunk(&chunk) {
+				return true
+			}
+
 			data, err := json.Marshal(chunk)
 			if err != nil {
 				return false
@@ -163,6 +181,36 @@ func (h *ChatHandler) finalizeStream(ctx context.Context, req *provider.ChatRequ
 		// Cache store runs after HTTP response is sent, with a small bounded timeout.
 		go h.storeInCache(ctx, promptHash, promptEmbedding, fullText, selectedProvider.Name, req.Model, promptTokens, completionTokens) // #nosec G118 -- fire-and-forget cache write after response
 	}
+}
+
+// isEmptyDeltaChunk reports whether a StreamChunk has no useful payload to
+// forward to the client. M-04: dropping these reduces wire chatter from
+// LM Studio's reasoning phase by ~150 frames/request. The check is
+// deliberately conservative — we forward anything with a finish_reason
+// or a usage block so SDK terminal handling never deadlocks.
+func isEmptyDeltaChunk(chunk *provider.StreamChunk) bool {
+	if chunk == nil {
+		return true
+	}
+	// Always forward when usage or terminal metadata is attached.
+	if chunk.Usage != nil {
+		return false
+	}
+	if len(chunk.Choices) == 0 {
+		// Some upstreams send heartbeat chunks with no choices at all.
+		// These carry zero signal — drop.
+		return true
+	}
+	for _, choice := range chunk.Choices {
+		if choice.FinishReason != "" {
+			return false
+		}
+		d := choice.Delta
+		if d.Role != "" || d.Content != "" || len(d.ToolCalls) > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func writeOpenAIStreamError(w io.Writer, err error) {
