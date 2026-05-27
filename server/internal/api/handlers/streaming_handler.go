@@ -134,7 +134,7 @@ func (h *ChatHandler) finalizeStream(ctx context.Context, req *provider.ChatRequ
 		middleware.LocalTokenFallbackTotal.WithLabelValues(selectedProvider.Name, req.Model).Inc()
 		h.logger.Warn("streaming response billed using locally estimated tokens",
 			zap.String("provider", selectedProvider.Name),
-			zap.String("model", req.Model),
+			zap.String("model", sanitize.LogValue(req.Model)),
 			zap.Int("prompt_tokens", promptTokens),
 			zap.Int("completion_tokens", completionTokens),
 		)
