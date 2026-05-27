@@ -42,7 +42,8 @@ EXEMPT_OBJECT_NAMES=(
     # GORM struct now keys off `org_id` / `project_id`. The user_id columns
     # are kept for historical data; the indexes remain useful for any direct
     # SQL queries against legacy rows. GORM never sees these columns so it
-    # cannot generate the index.
+    # cannot generate the index. The columns themselves are stripped from
+    # the SQL dump via EXEMPT_TABLE_COLUMNS below.
     "idx_async_tasks_user_id"
     "idx_conversation_memories_user_id"
     "idx_orders_user_id"
@@ -81,6 +82,100 @@ EXEMPT_OBJECT_NAMES=(
     "idx_usage_logs_daily_rollup_pk"
     "idx_usage_logs_daily_rollup_project_channel_day"
     "idx_usage_logs_daily_rollup_project_day"
+
+    # --- SQL-only FK constraints with load-bearing ON DELETE semantics ---
+    # GORM AutoMigrate does not emit FKs with ON DELETE actions for these
+    # relationships (no `constraint:OnDelete:...` tag on the GORM side), so
+    # the constraints are SQL-only by design. They enforce the tenancy
+    # invariants documented in CLAUDE.md ("billing tables always point
+    # org_id at a real organizations.id, enforced by FKs after migration
+    # 000021") and the audit/billing FK integrity added in migration 000019.
+    "fk_budgets_org"
+    "fk_orders_org"
+    "fk_transactions_org"
+    "fk_usage_logs_api_key"
+    "fk_usage_logs_model"
+    "fk_usage_logs_project"
+    "fk_usage_logs_provider"
+    "fk_usage_logs_proxy"
+    "fk_usage_logs_user"
+    "email_verification_tokens_user_id_fkey"
+
+    # --- FK names where SQL retains a richer ON DELETE clause than GORM ---
+    # After migration 000029 the constraint names match on both sides; only
+    # the ON DELETE behaviour differs (SQL is intentionally stricter — the
+    # cascade is load-bearing for owner/membership/project lifecycles).
+    # Skip-listing by NAME strips both the SQL and the GORM dump line so the
+    # cascade asymmetry does not surface as drift. Real future drift on a
+    # DIFFERENT column reference still surfaces because each name is unique.
+    "fk_organizations_members"
+    "fk_organizations_owner"
+    "fk_organizations_projects"
+    "fk_projects_api_keys"
+    "fk_subscriptions_organization"
+    "fk_users_memberships"
+
+    # --- CHECK constraints (GORM cannot emit) ---
+    # GORM has no native syntax for table-level CHECK constraints — these
+    # were added via raw SQL migrations and have no AutoMigrate equivalent.
+    # Each one is a meaningful integrity guard, not redundant.
+    "chk_users_balance_nonnegative"        # balance >= 0 — prevents over-deduction
+    "models_model_kind_check"              # model_kind ∈ {chat,embedding,image,...}
+    "provider_api_keys_proxy_binding_check" # exactly one of proxy_id / proxy_pool_id
+
+    # --- audit_logs.created_at has a stronger SQL declaration ---
+    # SQL: `created_at timestamp with time zone DEFAULT now() NOT NULL` for
+    # tamper-evidence and replay-safety of the security audit trail. GORM
+    # emits a bare timestamp because the AuditLog Go struct omits the
+    # `default` / `not null` tags. The SQL stance is intentionally stronger;
+    # the column-level scrub for both forms lives in EXEMPT_TABLE_COLUMNS
+    # below (this block has no constraint name to skip-list).
+
+    # --- semantic_caches PK constraint name ---
+    # Migration 000004 named the PK `idx_semantic_caches_pkey` (idx_ prefix
+    # is unusual but historical). GORM AutoMigrate (re)creates the table
+    # with the conventional name `semantic_caches_pkey`. Both constraints
+    # do the same thing; rename is a no-op behaviour-wise and risks
+    # breaking ops tooling that hardcodes the legacy name, so leave SQL
+    # alone and skip-list both names.
+    "idx_semantic_caches_pkey"
+    "semantic_caches_pkey"
+)
+
+# ---------------------------------------------------------------------------
+# Per-table column-line exemptions
+# ---------------------------------------------------------------------------
+# Some legacy columns exist only in the SQL side because the GORM struct has
+# evolved past them (see the `idx_*_user_id` block above). Skipping a column
+# name globally would also hide legitimate matches in other tables, so the
+# scrubbing here is scoped to (table, regex) pairs. The pre-sort awk pass
+# below tracks the current CREATE TABLE context via the pg_dump
+# `-- Name: <table>; Type: TABLE; ...` header lines.
+#
+# Format: each entry is "table_name::line_pattern" — the pattern must match
+# the COMPLETE column-definition line (sans trailing comma, since awk uses
+# the matched prefix). Add a one-line reason next to each entry.
+
+EXEMPT_TABLE_COLUMNS=(
+    # Legacy per-user billing columns that pre-date the tenancy formalization
+    # in migration 000021. Application code reads org_id only; these columns
+    # remain to support direct-SQL queries on historical rows.
+    "budgets::user_id uuid"
+    "orders::user_id uuid"
+    "subscriptions::user_id uuid"
+
+    # Legacy per-user task ownership; the async task service now keys off
+    # project_id / org_id but the column is preserved for forensics.
+    "async_tasks::user_id uuid NOT NULL"
+    "conversation_memories::user_id uuid NOT NULL"
+
+    # audit_logs.created_at: the SQL migration adds `DEFAULT now() NOT NULL`
+    # for tamper-evidence (every audit row must have a server-clock timestamp);
+    # the Go struct intentionally omits the `default` tag so GORM emits a
+    # bare timestamp. Strip both forms so the per-column line difference
+    # does not surface as drift while the SQL stance remains stricter.
+    "audit_logs::created_at timestamp with time zone DEFAULT now\\(\\) NOT NULL"
+    "audit_logs::created_at timestamp with time zone"
 )
 
 # Build a single `grep -E -v` pattern that matches any line referencing one
@@ -91,6 +186,59 @@ for name in "${EXEMPT_OBJECT_NAMES[@]}"; do
     if [[ -n "$EXEMPT_PATTERN" ]]; then EXEMPT_PATTERN+="|"; fi
     EXEMPT_PATTERN+="\\b${name}\\b"
 done
+
+# scrub_table_columns reads a pg_dump on stdin and strips exempt column lines
+# whose owning CREATE TABLE matches a pair in EXEMPT_TABLE_COLUMNS. Output
+# preserves all other content untouched.
+scrub_table_columns() {
+    local file="$1"
+    if [[ ${#EXEMPT_TABLE_COLUMNS[@]} -eq 0 ]]; then
+        cat "$file"
+        return
+    fi
+    # Encode the array as "table|pattern" lines so awk can read it from a file.
+    local rules_file
+    rules_file="$(mktemp)"
+    for rule in "${EXEMPT_TABLE_COLUMNS[@]}"; do
+        printf '%s\n' "${rule/::/|}" >> "$rules_file"
+    done
+    awk -v rules="$rules_file" '
+        BEGIN {
+            while ((getline line < rules) > 0) {
+                idx = index(line, "|")
+                if (idx == 0) continue
+                tbl = substr(line, 1, idx - 1)
+                pat = substr(line, idx + 1)
+                rule_table[++n] = tbl
+                rule_pat[n]     = pat
+            }
+            close(rules)
+        }
+        # pg_dump emits a header like `-- Name: <obj>; Type: TABLE; ...` before
+        # each CREATE TABLE. Update the current-table context so subsequent
+        # column-definition lines can be matched against per-table rules.
+        /^-- Name: [^;]+; Type: TABLE;/ {
+            sub(/^-- Name: /, "")
+            sub(/; Type: TABLE;.*/, "")
+            current_table = $0
+            print "-- Name: " current_table "; Type: TABLE; Schema: public; Owner: -"
+            next
+        }
+        {
+            for (i = 1; i <= n; i++) {
+                if (current_table == rule_table[i]) {
+                    # Match anywhere in the line; the column-definition lines
+                    # always start with 4 spaces and end with optional comma.
+                    if ($0 ~ "^    " rule_pat[i] "(,|$)") {
+                        next
+                    }
+                }
+            }
+            print
+        }
+    ' "$file"
+    rm -f "$rules_file"
+}
 
 MIGRATION_DIR="$(cd "$(dirname "$0")/../server/migrations" && pwd)"
 SERVER_DIR="$(cd "$(dirname "$0")/../server" && pwd)"
@@ -106,6 +254,8 @@ cleanup() {
     docker network rm "$NET_NAME" 2>/dev/null || true
     rm -f /tmp/schema_sql.dump /tmp/schema_gorm.dump \
           /tmp/schema_sql.dump.raw /tmp/schema_gorm.dump.raw \
+          /tmp/schema_sql.dump.unsorted /tmp/schema_gorm.dump.unsorted \
+          /tmp/schema_sql.dump.scrubbed /tmp/schema_gorm.dump.scrubbed \
           /tmp/schema_diff.txt
     rm -rf "$AUTOMIGRATE_DIR"
 }
@@ -219,17 +369,73 @@ echo "📊 Comparing schemas..."
 #   - usage_logs_daily_rollup: a materialized view (see EXEMPT_OBJECT_NAMES);
 #     pg_dump's --exclude-table also drops materialized views, which suppresses
 #     the entire CREATE MATERIALIZED VIEW block from the SQL dump.
+# Pre-sort dumps retain the `-- Name: ...; Type: TABLE; ...` headers so the
+# per-table scrubber (scrub_table_columns) can track which CREATE TABLE
+# context each line belongs to.
 docker exec "$SQL_CONTAINER" pg_dump -U "$PG_USER" -d "$PG_DB" --schema-only \
     --exclude-table='schema_migrations' \
     --exclude-table='usage_logs_daily_rollup' \
     --no-owner --no-privileges --no-comments \
-    | grep -v '^--' | grep -v '^$' | sort > /tmp/schema_sql.dump.raw
+    > /tmp/schema_sql.dump.unsorted
 
 docker exec "$GORM_CONTAINER" pg_dump -U "$PG_USER" -d "$PG_DB" --schema-only \
     --exclude-table='schema_migrations' \
     --exclude-table='usage_logs_daily_rollup' \
     --no-owner --no-privileges --no-comments \
-    | grep -v '^--' | grep -v '^$' | sort > /tmp/schema_gorm.dump.raw
+    > /tmp/schema_gorm.dump.unsorted
+
+# Per-table column scrubbing (legacy user_id columns; see EXEMPT_TABLE_COLUMNS).
+scrub_table_columns /tmp/schema_sql.dump.unsorted  > /tmp/schema_sql.dump.scrubbed
+scrub_table_columns /tmp/schema_gorm.dump.unsorted > /tmp/schema_gorm.dump.scrubbed
+
+# Drop comments, blank lines, and pg_dump's `\restrict` / `\unrestrict`
+# cosmetic markers (the hash changes every run and carries no schema
+# meaning). Strip trailing commas from CREATE TABLE column-definition lines
+# (the last column in a CREATE TABLE has no trailing comma; every other
+# column does, so a column that is "last" in SQL but "middle" in GORM —
+# purely a function of struct field declaration order — would otherwise
+# appear as drift). Then sort for line-by-line comparison.
+#
+# Special handling: pg_dump emits constraint additions as a 2-line block:
+#     ALTER TABLE ONLY public.<table>
+#         ADD CONSTRAINT <name> ...;
+# The constraint name only appears on the second line, so EXEMPT_OBJECT_NAMES
+# wouldn't strip the `ALTER TABLE ONLY public.<table>` prefix line — the
+# orphaned prefix would then show up as drift when one side has more
+# exempt FKs than the other. Pre-join the 2-line block onto a single line
+# before any other processing so the skip-list matches both halves at once.
+strip_and_sort() {
+    awk '
+        # If the previous line was an `ALTER TABLE [ONLY] public.X` orphan,
+        # glue the current `    ADD CONSTRAINT ...` line onto it.
+        # pg_dump uses `ALTER TABLE ONLY ...` for FK and PK constraints and
+        # `ALTER TABLE ... NOT VALID` for CHECK constraints — both prefixes
+        # are bare on a line by themselves and need to be re-joined.
+        prev != "" && /^    ADD CONSTRAINT / {
+            printf "%s %s\n", prev, $0
+            prev = ""
+            next
+        }
+        prev != "" {
+            print prev
+            prev = ""
+        }
+        /^ALTER TABLE (ONLY )?public\.[^ ]+$/ {
+            prev = $0
+            next
+        }
+        { print }
+        END { if (prev != "") print prev }
+    ' "$1" \
+        | grep -v '^--' \
+        | grep -v '^$' \
+        | grep -v '^\\restrict ' \
+        | grep -v '^\\unrestrict ' \
+        | sed -E 's/,$//' \
+        | sort
+}
+strip_and_sort /tmp/schema_sql.dump.scrubbed  > /tmp/schema_sql.dump.raw
+strip_and_sort /tmp/schema_gorm.dump.scrubbed > /tmp/schema_gorm.dump.raw
 
 # Apply the explicit exempt-object skip list (see EXEMPT_OBJECT_NAMES near the
 # top of this file). Any line referencing an exempt name is stripped from
