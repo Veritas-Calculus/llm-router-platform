@@ -17,9 +17,11 @@
 - [Alerts](#alerts)
 - [Payments](#payments)
 - [CAPTCHA](#captcha)
+- [Cookie Security](#cookie-security)
 - [OAuth2 / SSO](#oauth2--sso)
 - [Observability](#observability)
 - [Data Retention](#data-retention)
+- [Hot-swappable Settings (DB-backed)](#hot-swappable-settings-db-backed)
 - [Feature Gates](#feature-gates)
 
 ---
@@ -107,8 +109,10 @@
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `REGISTRATION_MODE` | `open` | 注册模式: `open` / `invite` / `closed` |
-| `INVITE_CODE` | _(空)_ | 当 mode=`invite` 时必填 |
+| `INVITE_CODE` | _(空)_ | 当 mode=`invite` 时必填的全局邀请码 |
+
+> 注册模式 (`open` / `invite` / `closed`) 已从 env 搬到数据库后台。详见 [Hot-swappable Settings](#hot-swappable-settings-db-backed)。<br>
+> 之前通过 `REGISTRATION_MODE` env 配置；首次启动后请到 **Admin → 系统设置 → Security → Registration mode** 调整。
 
 ## Rate Limiting
 
@@ -185,11 +189,28 @@
 
 ## CAPTCHA
 
+CAPTCHA 服务支持 4 种 provider — `dev` / `hcaptcha` / `turnstile` / `disabled`。**provider 的切换在管理后台完成**，见 [Hot-swappable Settings](#hot-swappable-settings-db-backed) — 这里只放 secret / dev-only 凭据。
+
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `TURNSTILE_ENABLED` | `false` | 启用 Cloudflare Turnstile |
-| `TURNSTILE_SITE_KEY` | — | 前端 Site Key |
-| `TURNSTILE_SECRET_KEY` | — | 后端 Secret Key |
+| `CAPTCHA_SITE_KEY` | _(空)_ | hCaptcha / Turnstile 的前端 Site Key (公开) |
+| `CAPTCHA_SECRET_KEY` | _(空)_ | hCaptcha / Turnstile 的后端 Secret Key (机密) |
+| `DEV_CAPTCHA_BYPASS_TOKEN` | `dev-ok` | dev 模式下接受的绕过 token；**生产务必将 provider 切到 hcaptcha/turnstile** |
+
+**前端 build args (与上面成对):**
+
+| 构建变量 | 默认值 | 说明 |
+|------|--------|------|
+| `VITE_CAPTCHA_SITE_KEY` | _(同 `CAPTCHA_SITE_KEY`)_ | 前端 widget 初始化使用 |
+| `VITE_DEV_CAPTCHA_BYPASS_TOKEN` | _(同 `DEV_CAPTCHA_BYPASS_TOKEN`)_ | dev stub 控件显示 |
+
+**Fail-closed 行为：** 当管理后台将 provider 切到 `hcaptcha` / `turnstile` 但 env 没配 `CAPTCHA_SECRET_KEY`，**所有 captcha 验证一律拒绝** (不会静默退回 dev 模式)。
+
+**Legacy 别名：** 旧版 `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` 仍被识别，作为上面两个变量的 fallback；老部署无需重命名。`TURNSTILE_ENABLED` 已废弃 (provider 通过 DB 切换)。
+
+## Cookie Security
+
+Cookie Secure 标志的判定逻辑搬到管理后台，但 cookie 本身的密钥仍来自 JWT 配置。详见 [Hot-swappable Settings](#hot-swappable-settings-db-backed)。
 
 ## OAuth2 / SSO
 
@@ -234,6 +255,40 @@
 | `CLEANUP_HEALTH_RETENTION_DAYS` | `30` | 健康检查记录保留天数 |
 | `CLEANUP_ALERT_RETENTION_DAYS` | `90` | 已解决告警保留天数 |
 | `CLEANUP_AUDIT_RETENTION_DAYS` | `90` | 审计日志保留天数 |
+
+## Hot-swappable Settings (DB-backed)
+
+以下 5 项配置**不再通过 env 配置**。它们存储在数据库的 `system_settings` 表，管理员从 **Admin → 系统设置** 页面修改即可，无需重启容器、无需重新部署。
+
+| 设置 | 类别 (UI Tab) | 取值 | 代码默认 | 说明 |
+|------|--------------|------|---------|------|
+| Registration mode | Security | `open` / `invite` / `closed` | `open` | 注册策略；`closed` 完全禁用注册，`invite` 需要 `INVITE_CODE` |
+| Cookie Secure mode | Security | `auto` / `always` / `never` | `auto` | Set-Cookie 的 Secure 标志；`auto` 根据 `X-Forwarded-Proto` 或 `request.TLS` 判断 |
+| Captcha provider | Captcha | `dev` / `hcaptcha` / `turnstile` / `disabled` | `dev` | 选定的 provider；凭据仍走 env (见 [CAPTCHA](#captcha)) |
+| Provider sync auto-activate | Defaults | `true` / `false` | `false` | 新同步的模型是否默认 `is_active=true`；`false` 时需 admin 手工启用 |
+| Provider sync blocklist regex | Defaults | Go RE2 字符串 | `(?i)(uncensored\|abliterated\|jailbreak\|nsfw\|aggressive)` | 命中正则的模型名一律标记 `is_active=false` 入库 |
+
+**生效时间：** Admin UI 保存后立即 `Registry.Invalidate(category)` 触发缓存失效；下一次读取走 DB。即使 Invalidate 漏掉，进程内有 5 分钟 TTL 兜底。
+
+**对应 GraphQL：**
+```graphql
+query AdminSettings {
+  systemSettings {
+    registrationMode      # 顶层快捷字段
+    security              # JSON: { registrationMode, cookieSecureMode }
+    defaults              # JSON: { providerSyncAutoActivate, providerSyncBlocklistRegex }
+    captcha               # JSON: { provider }
+  }
+}
+
+mutation UpdateSecurity($data: String!) {
+  updateSystemSettings(input: { category: "security", data: $data }) {
+    security
+  }
+}
+```
+
+**从旧版升级：** 之前如果通过 env 配过 `REGISTRATION_MODE` / `COOKIE_SECURE_MODE` / `PROVIDER_SYNC_AUTO_ACTIVATE` / `PROVIDER_SYNC_BLOCKLIST_REGEX` / `CAPTCHA_PROVIDER`，**首次启动后这些 env 值不再被读取**。请在管理后台手工把对应设置改成期望值。
 
 ## Feature Gates
 
