@@ -18,7 +18,7 @@ type User struct {
 	RequirePasswordChange bool                 `gorm:"default:false" json:"require_password_change"`
 	OAuthProvider         string               `gorm:"type:varchar(32)" json:"oauth_provider,omitempty"`  // github, google, etc.
 	OAuthID               string               `gorm:"type:varchar(255);index" json:"oauth_id,omitempty"` // Provider's unique user ID
-	Memberships           []OrganizationMember `gorm:"foreignKey:UserID" json:"-"`
+	Memberships           []OrganizationMember `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
 	LastLoginAt           time.Time            `json:"last_login_at"`
 	MonthlyTokenLimit     int64                `gorm:"default:0" json:"monthly_token_limit"`                   // 0 = unlimited
 	MonthlyBudgetUSD      decimal.Decimal      `gorm:"type:numeric(20,8);default:0" json:"monthly_budget_usd"` // 0 = unlimited
@@ -31,10 +31,10 @@ type User struct {
 	// $5 gift. NULL = not yet credited (still possible). A non-NULL value
 	// means we have credited this account once and verifyEmail must not
 	// credit it again.
-	WelcomeCreditGrantedAt *time.Time           `json:"welcome_credit_granted_at,omitempty"`
-	MfaEnabled            bool                 `gorm:"default:false" json:"mfa_enabled"`
-	MfaSecret             string               `gorm:"type:varchar(255)" json:"-"`
-	MfaBackupCodes        string               `gorm:"type:text" json:"-"` // JSON array of backup codes
+	WelcomeCreditGrantedAt *time.Time `json:"welcome_credit_granted_at,omitempty"`
+	MfaEnabled             bool       `gorm:"default:false" json:"mfa_enabled"`
+	MfaSecret              string     `gorm:"type:varchar(255)" json:"-"`
+	MfaBackupCodes         string     `gorm:"type:text" json:"-"` // JSON array of backup codes
 }
 
 // MfaSecretInfo holds the generated TOTP secret, QR code, and backup codes
@@ -87,7 +87,10 @@ type APIKey struct {
 	DailyLimit       int       `gorm:"default:10000" json:"daily_limit"`
 	ExpiresAt        time.Time `json:"expires_at"`
 	LastUsedAt       time.Time `json:"last_used_at"`
-	Project          Project   `gorm:"foreignKey:ProjectID" json:"-"`
+	// CASCADE: API keys belong to a project and have no meaning if the
+	// project is deleted. Matches migration 000029
+	// (fk_api_keys_project → fk_projects_api_keys, ON DELETE CASCADE).
+	Project Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 // AuditLog records security-relevant events for incident investigation.
@@ -105,14 +108,22 @@ type AuditLog struct {
 }
 
 // Organization represents a billing and management grouping of users and projects.
+//
+// Cascade semantics (matching the SQL migrations and CLAUDE.md tenancy
+// invariants):
+//   - Owner: CASCADE — deleting the user also tears down their personal org.
+//     Per migration 000021, every user has a personal org keyed by user.id.
+//   - Members: CASCADE — membership rows follow the org lifecycle.
+//   - Projects: CASCADE — projects belong to exactly one org and have no
+//     meaning without it.
 type Organization struct {
 	BaseModel
 	Name         string               `gorm:"type:varchar(255);not null" json:"name"`
 	BillingLimit decimal.Decimal      `gorm:"type:numeric(20,8);default:0" json:"billing_limit"`
 	OwnerID      uuid.UUID            `gorm:"type:uuid;not null;index" json:"owner_id"`
-	Owner        User                 `gorm:"foreignKey:OwnerID" json:"-"`
-	Members      []OrganizationMember `gorm:"foreignKey:OrgID" json:"-"`
-	Projects     []Project            `gorm:"foreignKey:OrgID" json:"-"`
+	Owner        User                 `gorm:"foreignKey:OwnerID;constraint:OnDelete:CASCADE" json:"-"`
+	Members      []OrganizationMember `gorm:"foreignKey:OrgID;constraint:OnDelete:CASCADE" json:"-"`
+	Projects     []Project            `gorm:"foreignKey:OrgID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 // OrganizationMember maps users to organizations with a designated role (OWNER, ADMIN, MEMBER, READONLY).
@@ -123,8 +134,8 @@ type OrganizationMember struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	Organization Organization `gorm:"foreignKey:OrgID" json:"-"`
-	User         User         `gorm:"foreignKey:UserID" json:"-"`
+	Organization Organization `gorm:"foreignKey:OrgID;constraint:OnDelete:CASCADE" json:"-"`
+	User         User         `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 // Project represents a workspace within an Organization that holds API keys and limits.
@@ -135,10 +146,13 @@ type Project struct {
 	Description    string          `gorm:"type:text" json:"description"`
 	QuotaLimit     decimal.Decimal `gorm:"type:numeric(20,8);default:0" json:"quota_limit"`
 	WhiteListedIps string          `gorm:"type:text" json:"white_listed_ips"` // Comma-separated CIDRs/IPs
-	APIKeys        []APIKey        `gorm:"foreignKey:ProjectID" json:"-"`
+	APIKeys        []APIKey        `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE" json:"-"`
 	DlpConfig      *DlpConfig      `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE;" json:"-"`
 
-	Organization Organization `gorm:"foreignKey:OrgID" json:"-"`
+	// Project belongs to exactly one Organization; CASCADE so deleting an org
+	// tears down its projects (matches migration 000029 rename of
+	// projects_org_id_fkey → fk_organizations_projects with CASCADE).
+	Organization Organization `gorm:"foreignKey:OrgID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 // DlpConfig stores the Data Loss Prevention settings for a project.

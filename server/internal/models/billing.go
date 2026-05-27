@@ -32,7 +32,11 @@ type Subscription struct {
 	StripeCustomerID     *string   `gorm:"index" json:"stripe_customer_id,omitempty"`
 	StripeSubscriptionID *string   `gorm:"uniqueIndex:idx_subscriptions_stripe_subscription_id,where:stripe_subscription_id IS NOT NULL" json:"stripe_subscription_id,omitempty"`
 
-	Organization Organization `gorm:"foreignKey:OrgID" json:"-"`
+	// fk_subscriptions_organization is declared with ON DELETE RESTRICT so
+	// deleting an organization with an active subscription fails loudly
+	// instead of orphaning billing rows. Matches migration 000029 (rename
+	// from fk_subscriptions_org) and the RESTRICT clause from 000021.
+	Organization Organization `gorm:"foreignKey:OrgID;constraint:OnDelete:RESTRICT" json:"-"`
 	Plan         Plan         `gorm:"foreignKey:PlanID" json:"plan"`
 }
 
@@ -47,6 +51,12 @@ type Order struct {
 	Status        string          `gorm:"default:'pending'" json:"status"` // pending, paid, failed, expired
 	PaymentMethod string          `json:"payment_method"`                  // stripe, alipay, wechat
 	ExternalID    string          `gorm:"index" json:"external_id"`        // ID from payment provider (e.g. Stripe Session ID)
+
+	// fk_orders_org: RESTRICT — orders belong to a tenant org (migration
+	// 000021) and deleting the org with active orders must fail loudly.
+	// The relation is declared here (BelongsTo) with an explicit constraint
+	// name so AutoMigrate emits the same FK as the SQL migration.
+	Organization Organization `gorm:"foreignKey:OrgID;constraint:fk_orders_org,OnDelete:RESTRICT" json:"-"`
 }
 
 // Transaction represents any balance movement (recharge, usage deduction, refund).
@@ -65,6 +75,11 @@ type Transaction struct {
 	// (Stripe event ID, WeChat transaction_id, Alipay trade_no) so retries
 	// from the upstream cannot double-credit.
 	IdempotencyKey *string `gorm:"column:idempotency_key" json:"idempotency_key,omitempty"`
+
+	// fk_transactions_org: RESTRICT — transactions are the canonical balance
+	// movement log (migration 000021) and deleting their owning org while
+	// rows exist must fail loudly.
+	Organization Organization `gorm:"foreignKey:OrgID;constraint:fk_transactions_org,OnDelete:RESTRICT" json:"-"`
 }
 
 // UsageLog represents a single API usage record.
@@ -96,6 +111,25 @@ type UsageLog struct {
 	MCPErrorCount int `gorm:"default:0" json:"mcp_error_count"`
 
 	IsSuccess bool `gorm:"-" json:"is_success"`
+
+	// FK semantics (matching migration 000019):
+	//   user_id     RESTRICT  — billing rows MUST stay tied to a user.
+	//   project_id  RESTRICT  — same; usage rolls up by project.
+	//   api_key_id  RESTRICT  — APIKeyRepository soft-deletes, so the row
+	//                          stays addressable; refuse hard-delete.
+	//   provider_id SET NULL  — providers can legitimately be removed; the
+	//   model_id    SET NULL    historical usage row remains for billing.
+	//   proxy_id    SET NULL
+	// The explicit constraint NAMES mirror the SQL migration so AutoMigrate
+	// and `migrate up` produce identical FK names. Relation fields are
+	// pointers to keep struct literals (e.g. usage logger hot path) free
+	// of accidental Preload allocations.
+	User     *User     `gorm:"foreignKey:UserID;constraint:fk_usage_logs_user,OnDelete:RESTRICT" json:"-"`
+	Project  *Project  `gorm:"foreignKey:ProjectID;constraint:fk_usage_logs_project,OnDelete:RESTRICT" json:"-"`
+	APIKey   *APIKey   `gorm:"foreignKey:APIKeyID;constraint:fk_usage_logs_api_key,OnDelete:RESTRICT" json:"-"`
+	Provider *Provider `gorm:"foreignKey:ProviderID;constraint:fk_usage_logs_provider,OnDelete:SET NULL" json:"-"`
+	Model    *Model    `gorm:"foreignKey:ModelID;constraint:fk_usage_logs_model,OnDelete:SET NULL" json:"-"`
+	Proxy    *Proxy    `gorm:"foreignKey:ProxyID;constraint:fk_usage_logs_proxy,OnDelete:SET NULL" json:"-"`
 }
 
 // Budget represents monthly spending limits for an organization or project.
@@ -110,4 +144,8 @@ type Budget struct {
 	IsActive         bool            `gorm:"default:true" json:"is_active"`
 	WebhookURL       string          `json:"webhook_url,omitempty"`
 	Email            string          `json:"email,omitempty"`
+
+	// fk_budgets_org: RESTRICT — a budget without its owning org is a
+	// nonsense state; refuse to delete the org while a budget references it.
+	Organization Organization `gorm:"foreignKey:OrgID;constraint:fk_budgets_org,OnDelete:RESTRICT" json:"-"`
 }

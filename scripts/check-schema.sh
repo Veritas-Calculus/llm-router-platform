@@ -83,38 +83,6 @@ EXEMPT_OBJECT_NAMES=(
     "idx_usage_logs_daily_rollup_project_channel_day"
     "idx_usage_logs_daily_rollup_project_day"
 
-    # --- SQL-only FK constraints with load-bearing ON DELETE semantics ---
-    # GORM AutoMigrate does not emit FKs with ON DELETE actions for these
-    # relationships (no `constraint:OnDelete:...` tag on the GORM side), so
-    # the constraints are SQL-only by design. They enforce the tenancy
-    # invariants documented in CLAUDE.md ("billing tables always point
-    # org_id at a real organizations.id, enforced by FKs after migration
-    # 000021") and the audit/billing FK integrity added in migration 000019.
-    "fk_budgets_org"
-    "fk_orders_org"
-    "fk_transactions_org"
-    "fk_usage_logs_api_key"
-    "fk_usage_logs_model"
-    "fk_usage_logs_project"
-    "fk_usage_logs_provider"
-    "fk_usage_logs_proxy"
-    "fk_usage_logs_user"
-    "email_verification_tokens_user_id_fkey"
-
-    # --- FK names where SQL retains a richer ON DELETE clause than GORM ---
-    # After migration 000029 the constraint names match on both sides; only
-    # the ON DELETE behaviour differs (SQL is intentionally stricter — the
-    # cascade is load-bearing for owner/membership/project lifecycles).
-    # Skip-listing by NAME strips both the SQL and the GORM dump line so the
-    # cascade asymmetry does not surface as drift. Real future drift on a
-    # DIFFERENT column reference still surfaces because each name is unique.
-    "fk_organizations_members"
-    "fk_organizations_owner"
-    "fk_organizations_projects"
-    "fk_projects_api_keys"
-    "fk_subscriptions_organization"
-    "fk_users_memberships"
-
     # --- CHECK constraints (GORM cannot emit) ---
     # GORM has no native syntax for table-level CHECK constraints — these
     # were added via raw SQL migrations and have no AutoMigrate equivalent.
