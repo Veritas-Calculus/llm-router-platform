@@ -5,10 +5,12 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useMutation, useQuery } from '@apollo/client/react';
-import { CAPTCHA_CONFIG, DISCOVER_SSO, LOGIN, REGISTER, REGISTRATION_MODE, SITE_CONFIG_QUERY } from '@/lib/graphql/operations';
+import { CAPTCHA_CONFIG, DISCOVER_SSO, LOGIN, PASSWORD_POLICY, REGISTER, REGISTRATION_MODE, SITE_CONFIG_QUERY } from '@/lib/graphql/operations';
 import { useAuthStore } from '@/stores/authStore';
 import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile';
 import { useTranslation } from '@/lib/i18n';
+import { DEFAULT_PASSWORD_POLICY, type PasswordPolicy as PasswordPolicyType, describePolicy, validatePassword } from '@/lib/auth/passwordPolicy';
+import { getRuntimeConfig } from '@/lib/runtime-config';
 
 type LoginLocationState = {
   from?: {
@@ -36,21 +38,43 @@ type AuthErrorCode =
   | 'INTERNAL'
   | undefined;
 
+// A flattened, structured view of a GraphQL error suitable for branching in
+// the form. We keep the raw extensions in case a caller needs more, but the
+// top-level fields are what the LoginPage actually switches on.
+interface NormalizedGqlError {
+  message: string;
+  code: AuthErrorCode;
+  /** extensions.field set by the server VALIDATION classifier; e.g. "password". */
+  field?: string;
+  extensions?: Record<string, unknown>;
+}
+
 class AuthError extends Error {
   readonly code: AuthErrorCode;
-  constructor(message: string, code?: AuthErrorCode) {
+  /** All errors returned by the failing mutation, normalized for inline display. */
+  readonly errors: NormalizedGqlError[];
+
+  constructor(message: string, code?: AuthErrorCode, errors?: NormalizedGqlError[]) {
     super(message);
     this.code = code;
+    this.errors = errors ?? [];
   }
 }
 
-// apolloErrorToAuthError preserves extensions.code through the Error throw so
-// the catch site can branch on the stable code instead of message text.
+// apolloErrorToAuthError preserves extensions.code + extensions.field through
+// the Error throw so the catch site can both branch on the stable code AND
+// reach inline per-field validation messages without re-parsing the wire data.
 function apolloErrorToAuthError(err: { message: string; errors?: ReadonlyArray<{ message: string; extensions?: Record<string, unknown> }> }): AuthError {
-  const first = err.errors?.[0];
-  const rawCode = first?.extensions?.code;
-  const code = typeof rawCode === 'string' ? (rawCode as AuthErrorCode) : undefined;
-  return new AuthError(first?.message ?? err.message, code);
+  const normalized: NormalizedGqlError[] = (err.errors ?? []).map((e) => {
+    const ext = e.extensions ?? {};
+    const rawCode = ext.code;
+    const code = typeof rawCode === 'string' ? (rawCode as AuthErrorCode) : undefined;
+    const rawField = ext.field;
+    const field = typeof rawField === 'string' ? rawField : undefined;
+    return { message: e.message, code, field, extensions: ext };
+  });
+  const first = normalized[0];
+  return new AuthError(first?.message ?? err.message, first?.code, normalized);
 }
 
 function LoginPage() {
@@ -69,11 +93,22 @@ function LoginPage() {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
+    confirmPassword: '',
     name: '',
     inviteCode: '',
   });
 
-  // Turnstile CAPTCHA state
+  // Field-keyed inline errors, populated by the VALIDATION handler in
+  // handleSubmit. Keys mirror server extensions.field values: "email" /
+  // "password" / "confirmPassword" / "name" / "inviteCode" / "captchaToken".
+  // We reset the whole map on every submission attempt so a successful
+  // resubmit doesn't leave stale red text around. H-04.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  // Captcha state. captchaToken is whatever the active backend produced —
+  // the literal dev bypass for ProviderDev, the widget-issued token for
+  // turnstile / hcaptcha, or null when the backend is disabled. The signup
+  // form refuses to submit until this is set.
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const turnstileRef = useRef<TurnstileInstance | null>(null);
 
@@ -81,7 +116,18 @@ function LoginPage() {
   const { data: regModeData } = useQuery<{ registrationMode: { mode: string; inviteCodeRequired: boolean } }>(REGISTRATION_MODE, { fetchPolicy: 'cache-first' });
   const { data: captchaData } = useQuery<{ captchaConfig: { enabled: boolean; siteKey: string } }>(CAPTCHA_CONFIG, { fetchPolicy: 'cache-first' });
   const { data: siteData } = useQuery<{ siteConfig: { siteName: string; subtitle?: string | null; logoUrl?: string | null } }>(SITE_CONFIG_QUERY, { fetchPolicy: 'cache-first' });
+  const { data: policyData } = useQuery<{ passwordPolicy: PasswordPolicyType }>(PASSWORD_POLICY, { fetchPolicy: 'cache-first' });
+  const passwordPolicy: PasswordPolicyType = policyData?.passwordPolicy ?? DEFAULT_PASSWORD_POLICY;
   const captchaConfig = captchaData?.captchaConfig ?? { enabled: false, siteKey: '' };
+  // The captcha provider drives which widget we render. In dev mode we
+  // render a passive stub that auto-fills the bypass token so tests and
+  // local docker-compose flows work without a Cloudflare/hCaptcha account.
+  //
+  // Both values are read at runtime (window.__RUNTIME_CONFIG__) so the
+  // production image can be promoted across environments without rebuild.
+  // See web/src/lib/runtime-config.ts and audit H-08.
+  const captchaProvider = getRuntimeConfig('CAPTCHA_PROVIDER') || 'dev';
+  const devBypassToken = getRuntimeConfig('DEV_CAPTCHA_BYPASS_TOKEN') || 'dev-ok';
   const regMode = regModeData?.registrationMode?.mode ?? 'closed';
   const inviteRequired = regModeData?.registrationMode?.inviteCodeRequired ?? false;
   const registrationOpen = regMode === 'open' || regMode === 'invite';
@@ -105,6 +151,16 @@ function LoginPage() {
       navigate(getPostAuthRedirect(authUser), { replace: true });
     }
   }, [authUser, getPostAuthRedirect, isAuthenticated, navigate]);
+
+  // When the dev backend is active, prefill the bypass token so the
+  // signup form doesn't block on a captcha widget that doesn't exist.
+  // The server still verifies it — the dev backend just accepts the
+  // configured literal.
+  useEffect(() => {
+    if (captchaProvider === 'dev' || captchaProvider === 'disabled') {
+      setCaptchaToken(devBypassToken);
+    }
+  }, [captchaProvider, devBypassToken]);
 
   // Fetch available OAuth2 providers
   const [oauthProviders, setOauthProviders] = useState<Array<{ id: string; name: string }>>([]);
@@ -137,10 +193,32 @@ function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // CAPTCHA validation
+    // H-04: reset stale inline errors on every submit. Without this a user
+    // who fixes the password but not the email still sees the green-checked
+    // password field show "must contain a digit" until they touch it.
+    setFieldErrors({});
+
+    // CAPTCHA validation — inline next to the widget, not a toast.
     if (captchaConfig.enabled && !captchaToken) {
-      toast.error(t('auth.captcha_required'));
+      setFieldErrors({ captchaToken: t('auth.captcha_required') });
       return;
+    }
+
+    // Registration-time client checks. Server is still the authority but
+    // catching these before the round-trip gives the user inline feedback.
+    if (!isLogin) {
+      const localFieldErrs: Record<string, string> = {};
+      const pwResult = validatePassword(formData.password, passwordPolicy);
+      if (!pwResult.meetsAllRules) {
+        localFieldErrs.password = pwResult.message || describePolicy(passwordPolicy);
+      }
+      if (formData.password !== formData.confirmPassword) {
+        localFieldErrs.confirmPassword = t('auth.passwords_do_not_match');
+      }
+      if (Object.keys(localFieldErrs).length > 0) {
+        setFieldErrors(localFieldErrs);
+        return;
+      }
     }
 
     setLoading(true);
@@ -163,7 +241,7 @@ function LoginPage() {
           email: formData.email,
           password: formData.password,
           name: formData.name,
-          captchaToken,
+          captchaToken: captchaToken ?? '',
         };
         if (inviteRequired && formData.inviteCode) {
           registerInput.inviteCode = formData.inviteCode;
@@ -176,14 +254,46 @@ function LoginPage() {
         if (!resp?.token) throw new AuthError(t('auth.registration_failed'));
         authenticatedUser = resp.user;
         setAuth(resp.token, resp.user);
-        toast.success(t('auth.account_created'));
+        // C-01: the user is logged in but not yet verified. The dashboard
+        // shows an inline banner with a resend button; we surface the
+        // success here as a slightly longer toast to set expectations.
+        toast.success(t('auth.account_created_check_email'), { duration: 6000 });
       }
       navigate(getPostAuthRedirect(authenticatedUser), { replace: true });
     } catch (err: unknown) {
       const code = err instanceof AuthError ? err.code : undefined;
       const msg = err instanceof Error ? err.message : '';
+      const allErrors = err instanceof AuthError ? err.errors : [];
 
-      if (isLogin) {
+      // H-04: collect every VALIDATION error (the server may flag multiple
+      // fields in one round-trip) into the field-keyed map. Fields without
+      // extensions.field fall back to a generic toast so the user isn't
+      // left guessing. Non-VALIDATION errors fall through to the existing
+      // toast logic below.
+      const validationErrors = allErrors.filter((e) => e.code === 'VALIDATION');
+      if (validationErrors.length > 0) {
+        const nextFieldErrs: Record<string, string> = {};
+        const unmapped: string[] = [];
+        for (const v of validationErrors) {
+          if (v.field) {
+            nextFieldErrs[v.field] = v.message;
+          } else {
+            unmapped.push(v.message);
+          }
+        }
+        if (Object.keys(nextFieldErrs).length > 0) {
+          setFieldErrors(nextFieldErrs);
+        }
+        // Surface anything we couldn't pin to a field — keeps the toast
+        // useful even when the server returns a top-level validation.
+        if (unmapped.length > 0) {
+          toast.error(unmapped.join('\n'));
+        } else if (Object.keys(nextFieldErrs).length === 0) {
+          // Defensive: VALIDATION without field and without message — show
+          // generic guidance rather than nothing at all.
+          toast.error(t('auth.validation_fix_below'));
+        }
+      } else if (isLogin) {
         // Branch on the stable server-issued code first; fall back to message
         // text only when the server hasn't been retrofitted with extensions.code.
         if (code === 'INVALID_CREDENTIALS') {
@@ -201,11 +311,7 @@ function LoginPage() {
           toast.error(msg || t('auth.invalid_credentials'));
         }
       } else {
-        if (code === 'VALIDATION') {
-          toast.error(msg);
-        } else {
-          toast.error(msg || t('auth.registration_failed'));
-        }
+        toast.error(msg || t('auth.registration_failed'));
       }
       // Reset turnstile widget on failure so user can retry
       turnstileRef.current?.reset();
@@ -234,10 +340,21 @@ function LoginPage() {
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [e.target.name]: e.target.value,
+      [name]: value,
     }));
+    // H-04: clear the inline error for the field the user is actively
+    // editing. Without this, after a failed submit the error remains
+    // visible while the user types a fix, which feels broken.
+    if (fieldErrors[name]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+    }
   };
 
   return (
@@ -369,7 +486,12 @@ function LoginPage() {
                   className="input"
                   placeholder={t('auth.enter_name')}
                   required={!isLogin}
+                  aria-invalid={!!fieldErrors.name}
+                  aria-describedby={fieldErrors.name ? 'name-error' : undefined}
                 />
+                {fieldErrors.name && (
+                  <p id="name-error" role="alert" className="text-xs mt-1.5 text-red-600">{fieldErrors.name}</p>
+                )}
               </div>
             )}
 
@@ -386,7 +508,12 @@ function LoginPage() {
                 className="input"
                 placeholder={t('auth.enter_email')}
                 required
+                aria-invalid={!!fieldErrors.email}
+                aria-describedby={fieldErrors.email ? 'email-error' : undefined}
               />
+              {fieldErrors.email && (
+                <p id="email-error" role="alert" className="text-xs mt-1.5 text-red-600">{fieldErrors.email}</p>
+              )}
             </div>
 
             {!isSsoMode && (
@@ -404,22 +531,35 @@ function LoginPage() {
                 className="input"
                 placeholder={t('auth.enter_password')}
                 required
-                minLength={6}
+                minLength={passwordPolicy.minLength}
+                aria-invalid={!!fieldErrors.password}
+                aria-describedby={fieldErrors.password ? 'password-error' : 'password-hint'}
               />
-              
-              {!isLogin && (
-                <p className={`text-xs mt-1.5 transition-colors ${
-                  formData.password.length > 0 
-                  ? formData.password.length >= 6 
-                    ? 'text-green-600' 
-                    : 'text-amber-600' 
-                  : 'text-apple-gray-500'
-                }`}>
-                  {formData.password.length > 0 && formData.password.length < 6 
-                    ? 'Password must be at least 6 characters.' 
-                    : 'Minimum 6 characters.'}
-                </p>
-              )}
+
+              {/* Inline hint / live validation. Order of precedence:
+                  1. Server-issued VALIDATION error (red, role=alert) wins
+                     because it carries the authoritative rejection reason.
+                  2. Live client validation during typing (amber) gives a
+                     hint before submit.
+                  3. Empty field → policy description (gray) — driven by the
+                     PASSWORD_POLICY query so the copy never falls out of
+                     sync with the server. H-04. */}
+              {fieldErrors.password ? (
+                <p id="password-error" role="alert" className="text-xs mt-1.5 text-red-600">{fieldErrors.password}</p>
+              ) : !isLogin ? (
+                (() => {
+                  const result = validatePassword(formData.password, passwordPolicy);
+                  if (formData.password.length === 0) {
+                    return (
+                      <p id="password-hint" className="text-xs mt-1.5 text-apple-gray-500">{describePolicy(passwordPolicy)}</p>
+                    );
+                  }
+                  if (result.meetsAllRules) {
+                    return <p id="password-hint" className="text-xs mt-1.5 text-green-600">{t('auth.password_looks_good')}</p>;
+                  }
+                  return <p id="password-hint" className="text-xs mt-1.5 text-amber-600">{result.message}</p>;
+                })()
+              ) : null}
 
               {isLogin && (
                 <div className="flex justify-end mt-1.5">
@@ -432,6 +572,40 @@ function LoginPage() {
                   </div>
                 )}
               </div>
+
+              {/* Confirm password — registration only. Client-side match check;
+                  the server itself doesn't see this value (we don't send it). */}
+              {!isLogin && (
+                <div>
+                  <label htmlFor="confirmPassword" className="label">
+                    {t('auth.confirm_password')}
+                  </label>
+                  <input
+                    type="password"
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    value={formData.confirmPassword}
+                    onChange={handleInputChange}
+                    className="input"
+                    placeholder={t('auth.confirm_password_placeholder')}
+                    required
+                    autoComplete="new-password"
+                    minLength={passwordPolicy.minLength}
+                    aria-invalid={!!fieldErrors.confirmPassword || (formData.confirmPassword.length > 0 && formData.confirmPassword !== formData.password)}
+                    aria-describedby={fieldErrors.confirmPassword ? 'confirm-password-error' : undefined}
+                  />
+                  {/* Server VALIDATION wins over the live mismatch hint —
+                      e.g. a 422 with field=confirmPassword should not be
+                      hidden by a stale "Passwords do not match." */}
+                  {fieldErrors.confirmPassword ? (
+                    <p id="confirm-password-error" role="alert" className="text-xs mt-1.5 text-red-600">{fieldErrors.confirmPassword}</p>
+                  ) : (
+                    formData.confirmPassword.length > 0 && formData.confirmPassword !== formData.password && (
+                      <p className="text-xs mt-1.5 text-amber-600">{t('auth.passwords_do_not_match')}</p>
+                    )
+                  )}
+                </div>
+              )}
               </>
             )}
 
@@ -450,13 +624,21 @@ function LoginPage() {
                   className="input"
                   placeholder={t('auth.enter_invite_code')}
                   required
+                  aria-invalid={!!fieldErrors.inviteCode}
+                  aria-describedby={fieldErrors.inviteCode ? 'invite-code-error' : undefined}
                 />
+                {fieldErrors.inviteCode && (
+                  <p id="invite-code-error" role="alert" className="text-xs mt-1.5 text-red-600">{fieldErrors.inviteCode}</p>
+                )}
               </div>
             )}
 
-            {/* Cloudflare Turnstile CAPTCHA */}
-            {captchaConfig.enabled && captchaConfig.siteKey && !isSsoMode && (
-              <div className="flex justify-center">
+            {/* Captcha widget. The provider picked at build time decides what
+                we render: turnstile / hcaptcha get the real widget; dev gets
+                a passive stub showing the bypass token; disabled renders
+                nothing. The server is the source of truth either way. */}
+            {!isSsoMode && captchaConfig.enabled && captchaProvider === 'turnstile' && captchaConfig.siteKey && (
+              <div className="flex flex-col items-center gap-1.5">
                 <Turnstile
                   ref={turnstileRef}
                   siteKey={captchaConfig.siteKey}
@@ -465,6 +647,19 @@ function LoginPage() {
                   onError={() => setCaptchaToken(null)}
                   options={{ theme: 'light', size: 'normal' }}
                 />
+                {fieldErrors.captchaToken && (
+                  <p role="alert" className="text-xs text-red-600">{fieldErrors.captchaToken}</p>
+                )}
+              </div>
+            )}
+            {!isSsoMode && captchaConfig.enabled && captchaProvider === 'dev' && (
+              <div>
+                <div className="rounded-xl border border-apple-gray-200 bg-apple-gray-50 px-3 py-2 text-xs text-apple-gray-500">
+                  Captcha (dev mode — token = <code>{devBypassToken}</code>)
+                </div>
+                {fieldErrors.captchaToken && (
+                  <p role="alert" className="text-xs mt-1.5 text-red-600">{fieldErrors.captchaToken}</p>
+                )}
               </div>
             )}
 

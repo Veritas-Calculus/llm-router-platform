@@ -27,8 +27,23 @@ type gqlSSOStatePayload struct {
 	IDPID    string `json:"idp_id"`
 }
 
-// CaptchaConfig is the resolver for the captchaConfig field.
-func (r *queryResolver) CaptchaConfig(ctx context.Context) (*model.CaptchaConfig, error) {
+// CaptchaConfig is the resolver for the captchaConfig field. Returns the
+// active backend's public settings so the SPA can render the matching
+// widget (Turnstile / hCaptcha / dev stub).
+//
+// We deliberately do not expose the provider name through this field —
+// the frontend reads `import.meta.env.VITE_CAPTCHA_PROVIDER` to pick the
+// React component, and the server side is the source of truth for the
+// site key + the Enabled flag.
+func (r *queryResolver) CaptchaConfig(_ context.Context) (*model.CaptchaConfig, error) {
+	if r.CaptchaSvc != nil {
+		return &model.CaptchaConfig{
+			Enabled: r.CaptchaSvc.Enabled(),
+			SiteKey: r.CaptchaSvc.SiteKey(),
+		}, nil
+	}
+	// Legacy fallback: pre-captcha-service deployments still report via
+	// the Turnstile config.
 	cfg := r.Config().Turnstile
 	return &model.CaptchaConfig{
 		Enabled: cfg.Enabled,

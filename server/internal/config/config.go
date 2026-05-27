@@ -36,8 +36,25 @@ type Config struct {
 	Alipay        AlipayConfig
 	OAuth2        OAuth2Config
 	Turnstile     TurnstileConfig
+	Captcha       CaptchaConfig
 	Cleanup       CleanupConfig
+	ProviderSync  ProviderSyncConfig
 	FeatureGates  *FeatureGates
+}
+
+// ProviderSyncConfig controls the auto-sync behaviour of the provider
+// model catalogue. See audit L-05 for context.
+//
+//   - AutoActivate: when true, newly-discovered models are inserted
+//     active by default (legacy behaviour). When false (the default), an
+//     admin must explicitly toggle a model active in the admin UI before
+//     it surfaces to users. NSFW-matching names always insert inactive.
+//   - BlocklistRegex: optional override for the default NSFW / dev-only
+//     name regex. Matches force the row to is_active=false and stamp a
+//     warning visible in the admin UI. Compiled with Go's RE2 engine.
+type ProviderSyncConfig struct {
+	AutoActivate   bool
+	BlocklistRegex string
 }
 
 // SecurityConfig holds API and Gateway security environment settings.
@@ -66,6 +83,17 @@ type ServerConfig struct {
 	MetricsAllowUnauthenticated bool     // Expose /internal/metrics without auth for Prometheus scraping
 	ReadTimeoutSeconds          int      // HTTP server read timeout (default: 30)
 	WriteTimeoutSeconds         int      // HTTP server write timeout; must be large for LLM streaming (default: 600)
+	// CookieSecureMode controls the Set-Cookie `Secure` flag for the auth
+	// cookies (llm_router_access / llm_router_refresh). Valid values:
+	//   "auto"   — default. Secure=true in release mode OR when the request
+	//              came in over https (TLS or X-Forwarded-Proto=https).
+	//              Secure=false on plain http in dev/test (otherwise the
+	//              browser silently drops the cookie — audit L-02).
+	//   "always" — force Secure=true regardless of mode/protocol. Use behind
+	//              a TLS-terminating proxy where X-Forwarded-Proto might be
+	//              stripped.
+	//   "never"  — force Secure=false. Local dev only — never in production.
+	CookieSecureMode string
 }
 
 // DatabaseConfig holds database connection configuration.
@@ -196,6 +224,23 @@ type TurnstileConfig struct {
 	SiteKey   string // Public site key exposed to frontend
 }
 
+// CaptchaConfig holds the pluggable captcha backend configuration.
+//
+// Provider selects which backend the captcha service uses:
+//   - "dev"       : accept a literal DEV_CAPTCHA_BYPASS_TOKEN (local only)
+//   - "turnstile" : Cloudflare Turnstile (uses Turnstile{SecretKey,SiteKey})
+//   - "hcaptcha"  : hCaptcha (uses CAPTCHA_SECRET_KEY / CAPTCHA_SITE_KEY)
+//   - "disabled"  : never verify (NOT recommended outside private deployments)
+//
+// SiteKey is what the frontend renders the widget with; SecretKey is the
+// server-side credential used to call the upstream siteverify API.
+type CaptchaConfig struct {
+	Provider        string
+	SiteKey         string
+	SecretKey       string // #nosec G101 -- server-side captcha secret
+	DevBypassToken  string // #nosec G101 -- only honored when Provider == "dev"
+}
+
 // JWTConfig holds JWT authentication configuration.
 //
 // HS256 path (default, legacy): Algorithm="" or "HS256" + Secret set.
@@ -307,6 +352,7 @@ func Load() (*Config, error) {
 			MetricsAllowUnauthenticated: viper.GetBool("METRICS_ALLOW_UNAUTHENTICATED"),
 			ReadTimeoutSeconds:          viper.GetInt("SERVER_READ_TIMEOUT_SECONDS"),
 			WriteTimeoutSeconds:         viper.GetInt("SERVER_WRITE_TIMEOUT_SECONDS"),
+			CookieSecureMode:            strings.ToLower(strings.TrimSpace(viper.GetString("COOKIE_SECURE_MODE"))),
 		},
 		Database: DatabaseConfig{
 			Host:                   viper.GetString("DB_HOST"),
@@ -440,6 +486,11 @@ func Load() (*Config, error) {
 			SecretKey: viper.GetString("TURNSTILE_SECRET_KEY"),
 			SiteKey:   viper.GetString("TURNSTILE_SITE_KEY"),
 		},
+		Captcha: loadCaptchaConfig(),
+		ProviderSync: ProviderSyncConfig{
+			AutoActivate:   viper.GetBool("PROVIDER_SYNC_AUTO_ACTIVATE"),
+			BlocklistRegex: viper.GetString("PROVIDER_SYNC_BLOCKLIST_REGEX"),
+		},
 		Cleanup: CleanupConfig{
 			HealthRetentionDays: viper.GetInt("CLEANUP_HEALTH_RETENTION_DAYS"),
 			AlertRetentionDays:  viper.GetInt("CLEANUP_ALERT_RETENTION_DAYS"),
@@ -453,6 +504,45 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// loadCaptchaConfig builds the captcha config from env. The provider names
+// are matched case-insensitively. If a provider is set but its secret/site
+// keys are empty, the captcha service falls back to dev mode (with a
+// startup-time warning) — this prevents a deployment from accidentally
+// disabling captcha by forgetting to set the keys.
+//
+// For backwards compatibility, if TURNSTILE_ENABLED=true and no
+// CAPTCHA_PROVIDER is set, we infer turnstile.
+func loadCaptchaConfig() CaptchaConfig {
+	provider := strings.ToLower(strings.TrimSpace(viper.GetString("CAPTCHA_PROVIDER")))
+	siteKey := viper.GetString("CAPTCHA_SITE_KEY")
+	secretKey := viper.GetString("CAPTCHA_SECRET_KEY")
+
+	// Legacy fallback: if the operator has only configured Turnstile env
+	// vars (the original captcha integration), keep using Turnstile.
+	if provider == "" {
+		if viper.GetBool("TURNSTILE_ENABLED") {
+			provider = "turnstile"
+		} else {
+			provider = "dev"
+		}
+	}
+	if provider == "turnstile" {
+		if siteKey == "" {
+			siteKey = viper.GetString("TURNSTILE_SITE_KEY")
+		}
+		if secretKey == "" {
+			secretKey = viper.GetString("TURNSTILE_SECRET_KEY")
+		}
+	}
+
+	return CaptchaConfig{
+		Provider:       provider,
+		SiteKey:        siteKey,
+		SecretKey:      secretKey,
+		DevBypassToken: viper.GetString("DEV_CAPTCHA_BYPASS_TOKEN"),
+	}
 }
 
 // Validate checks the configuration for common misconfigurations.
@@ -637,6 +727,15 @@ func setDefaults() {
 	viper.SetDefault("OTEL_ENDPOINT", "")
 	viper.SetDefault("OTEL_SERVICE_NAME", "llm-router-platform")
 	viper.SetDefault("TURNSTILE_ENABLED", false)
+	viper.SetDefault("CAPTCHA_PROVIDER", "dev")               // dev | turnstile | hcaptcha | disabled
+	viper.SetDefault("DEV_CAPTCHA_BYPASS_TOKEN", "dev-ok")    // honored only when CAPTCHA_PROVIDER=dev
+	// PROVIDER_SYNC_AUTO_ACTIVATE: when false (default), provider catalogue
+	// auto-sync inserts new models as is_active=false. Admins must toggle
+	// each new model active in the UI before users see it. Set to true to
+	// restore legacy behaviour for migrations of existing deployments.
+	// See audit L-05.
+	viper.SetDefault("PROVIDER_SYNC_AUTO_ACTIVATE", false)
+	viper.SetDefault("PROVIDER_SYNC_BLOCKLIST_REGEX", "") // empty = use built-in NSFW / dev-only regex
 	viper.SetDefault("CACHE_HIT_COST_RATIO", 0.1) // Cache hits billed at 10% of model price
 	viper.SetDefault("LOKI_URL", "")              // Empty disables Loki querying
 	viper.SetDefault("LOKI_QUERY_SELECTOR", `{container="llm-router-server"}`)

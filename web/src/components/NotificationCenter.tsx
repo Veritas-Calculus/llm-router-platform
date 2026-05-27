@@ -15,6 +15,7 @@ import {
 import { useQuery, useMutation } from '@apollo/client/react';
 import { ALERTS_QUERY, ACKNOWLEDGE_ALERT, RESOLVE_ALERT } from '@/lib/graphql/operations';
 import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
+import { useAuthStore } from '@/stores/authStore';
 import type { Alert } from '@/lib/types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -99,10 +100,15 @@ export default function NotificationCenter({ pollInterval = 60000 }: Notificatio
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<'active' | 'all'>('active');
   const panelRef = useRef<HTMLDivElement>(null);
+  // C-03: the alerts query is @auth(role: ADMIN) on the server. Non-admin
+  // users sending it produces a deserved 403, which used to surface as a
+  // visible toast on every page. Gate the query so it only runs for admins.
+  const isAdmin = useAuthStore((s) => s.isAdmin);
 
   const queryResult = useQuery<any>(ALERTS_QUERY, {
     variables: { status: filter === 'active' ? 'active' : undefined },
     pollInterval,
+    skip: !isAdmin,
   });
   useVisibilityAwarePolling(queryResult, pollInterval);
   const { data, loading, refetch } = queryResult;
@@ -163,6 +169,13 @@ export default function NotificationCenter({ pollInterval = 60000 }: Notificatio
   };
 
   const BellComp = activeCount > 0 ? BellAlertIcon : BellIcon;
+
+  // C-03: the bell is meaningful only for admins (alerts is an admin-only
+  // resolver). Hiding the icon also avoids any flicker of "loading" state
+  // for non-admin viewers.
+  if (!isAdmin) {
+    return null;
+  }
 
   return (
     <div ref={panelRef} className="relative">

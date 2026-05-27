@@ -22,6 +22,7 @@ import (
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/billing"
 	semantic "llm-router-platform/internal/service/cache"
+	"llm-router-platform/internal/service/captcha"
 	configService "llm-router-platform/internal/service/config"
 	couponSvc "llm-router-platform/internal/service/coupon"
 	documentSvc "llm-router-platform/internal/service/document"
@@ -90,6 +91,7 @@ type Services struct {
 	Webhook          webhook.Service
 	MonitoringSvc    *monitoring.Collector
 	TurnstileSvc     *turnstile.Service
+	CaptchaSvc       *captcha.Service
 	SemanticCache    *semantic.SemanticCacheService
 	RedisClient      *redis.Client // For rate limiting middleware
 	DB               *gorm.DB      // For operational health checks
@@ -160,6 +162,19 @@ func Setup(
 		logger.Info("unauthenticated metrics endpoint enabled at /internal/metrics")
 	}
 
+	// Internal JWT verification endpoint for nginx auth_request subrequests
+	// (the /langfuse/ gate in web/nginx.conf, plus any future internal
+	// resource proxy). Returns 200 if the caller is an authenticated admin
+	// and 401/403 otherwise — body is intentionally empty. The endpoint
+	// itself is never reachable from the public edge because nginx marks
+	// the auth_request location `internal;`. Audit I-03.
+	//
+	// Body, query, and request body are dropped (auth_request forwards a
+	// HEAD-like request anyway). We only inspect the bearer token / cookie.
+	engine.GET("/internal/auth-verify", authMiddleware.JWT(), middleware.AdminOnly(), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
 	// Swagger API Docs
 	if cfg.FeatureGates.SwaggerDocs {
 		engine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -195,6 +210,7 @@ func Setup(
 		WebhookSvc:       services.Webhook,
 		MonitoringSvc:    services.MonitoringSvc,
 		TurnstileSvc:     services.TurnstileSvc,
+		CaptchaSvc:       services.CaptchaSvc,
 		AdminSvc:         services.AdminSvc,
 		Logger:           services.Logger,
 		SemanticCache:    services.SemanticCache,

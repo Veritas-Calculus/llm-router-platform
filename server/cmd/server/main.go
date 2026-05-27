@@ -37,6 +37,7 @@ import (
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/internal/service/billing"
 	semantic "llm-router-platform/internal/service/cache"
+	"llm-router-platform/internal/service/captcha"
 	configService "llm-router-platform/internal/service/config"
 	"llm-router-platform/internal/service/coupon"
 	"llm-router-platform/internal/service/document"
@@ -533,6 +534,10 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	if redisClient != nil {
 		routerService.SetRedisClient(redisClient)
 	}
+	// Apply operator-tunable provider auto-sync policy (audit L-05).
+	// Defaults: AutoActivate=false (new models land inactive), and the
+	// built-in NSFW/dev-only name regex.
+	routerService.SetCatalogSyncRules(cfg.ProviderSync.AutoActivate, cfg.ProviderSync.BlocklistRegex)
 	billingService := billing.NewService(repos.UsageLog, repos.Model, redisClient, logger)
 	budgetService := billing.NewBudgetService(repos.UsageLog, repos.Budget, logger)
 	subscriptionService := billing.NewSubscriptionService(repos.Plan, repos.Subscription, repos.UsageLog, gormDB, logger)
@@ -584,6 +589,12 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	loginLimiter := user.NewLoginLimiter(redisClient, logger)
 	cacheSvc := semantic.NewSemanticCacheService(gormDB, logger, 0.05)
 	turnstileSvc := turnstile.New(logger, cfg.Turnstile.Enabled, cfg.Turnstile.SecretKey)
+	captchaSvc := captcha.New(logger, captcha.Config{
+		Provider:  captcha.Provider(cfg.Captcha.Provider),
+		SiteKey:   cfg.Captcha.SiteKey,
+		SecretKey: cfg.Captcha.SecretKey,
+		DevBypass: cfg.Captcha.DevBypassToken,
+	})
 	monitoringSvc := monitoring.NewCollector(
 		gormDB, redisClient,
 		monitoring.BuildInfo{Version: routes.Version, GitCommit: routes.GitCommit, BuildTime: routes.BuildTime},
@@ -621,6 +632,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		Webhook:          webhookService,
 		MonitoringSvc:    monitoringSvc,
 		TurnstileSvc:     turnstileSvc,
+		CaptchaSvc:       captchaSvc,
 		SemanticCache:    cacheSvc,
 		MCP:              mcpService,
 		RedisClient:      redisClient,

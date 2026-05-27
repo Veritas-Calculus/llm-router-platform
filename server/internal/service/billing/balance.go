@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/repository"
@@ -211,6 +212,72 @@ func isDuplicateIdempotencyKey(err error) bool {
 		strings.Contains(msg, "23505") ||
 		strings.Contains(msg, "unique constraint failed")
 }
+
+// WelcomeCreditAmount is the amount granted on email verification (C-01).
+// Kept here so the resolver, frontend, and tests all reference the same
+// constant. If you change this, also update the marketing copy on the
+// frontend (LoginPage / VerifyEmailPage) so the user-visible promise of
+// "$5 welcome credit" stays accurate.
+var WelcomeCreditAmount = decimal.NewFromInt(5).Round(models.MoneyScale)
+
+// GrantWelcomeCredit credits the post-verification $5 welcome bonus exactly
+// once per user. The DB transaction takes a row lock on the user, checks
+// welcome_credit_granted_at IS NULL, sets it to now(), bumps the balance,
+// and writes the matching transactions row — all atomically so a concurrent
+// re-verify cannot double-credit.
+func (s *BalanceService) GrantWelcomeCredit(ctx context.Context, u *models.User) error {
+	if u == nil {
+		return fmt.Errorf("nil user")
+	}
+	amount := WelcomeCreditAmount
+
+	txCtx, cancel := context.WithTimeout(ctx, lockTimeout)
+	defer cancel()
+
+	return s.db.WithContext(txCtx).Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&user, "id = ?", u.ID).Error; err != nil {
+			return fmt.Errorf("load user: %w", err)
+		}
+		if user.WelcomeCreditGrantedAt != nil {
+			// Race-lost: another call beat us to it. Treat as success
+			// so the resolver returns a clean no-op.
+			return nil
+		}
+
+		newBalance := models.MoneyAdd(user.Balance, amount)
+		now := s.now()
+		updates := map[string]interface{}{
+			"balance":                   newBalance,
+			"welcome_credit_granted_at": now,
+		}
+		if err := tx.Model(&models.User{}).Where("id = ?", u.ID).Updates(updates).Error; err != nil {
+			return fmt.Errorf("update user: %w", err)
+		}
+
+		transaction := &models.Transaction{
+			OrgID:       u.ID,
+			UserID:      u.ID,
+			Type:        "recharge",
+			Amount:      amount,
+			Balance:     newBalance,
+			Description: "Welcome credit",
+			Currency:    "USD",
+		}
+		if err := tx.Create(transaction).Error; err != nil {
+			return fmt.Errorf("write transaction: %w", err)
+		}
+
+		s.logger.Info("welcome credit granted",
+			zap.String("user_id", u.ID.String()),
+			zap.String("amount", amount.StringFixed(models.MoneyScale)),
+		)
+		return nil
+	})
+}
+
+// now is split out so tests can substitute a fixed clock if needed.
+func (s *BalanceService) now() time.Time { return time.Now() }
 
 // GetBalanceMoney returns the user's balance without converting it through float64.
 func (s *BalanceService) GetBalanceMoney(ctx context.Context, userID uuid.UUID) (decimal.Decimal, error) {
