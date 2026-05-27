@@ -33,7 +33,8 @@ data:
   JWT_EXPIRES_IN: {{ .Values.config.jwtExpiresIn | quote }}
   JWT_REFRESH_EXPIRES_IN: {{ .Values.config.jwtRefreshExpiresIn | quote }}
   # ── Registration ──
-  REGISTRATION_MODE: {{ .Values.config.registrationMode | quote }}
+  # REGISTRATION_MODE moved to DB-backed system_settings (security.registrationMode).
+  # The chart still allows operators to pass an InviteCode (signed up via /v1/invite).
   INVITE_CODE: {{ .Values.config.inviteCode | quote }}
   # ── Rate Limiting ──
   RATE_LIMIT_ENABLED: {{ .Values.config.rateLimitEnabled | quote }}

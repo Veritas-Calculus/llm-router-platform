@@ -212,16 +212,17 @@ type SystemSettings {
   defaultTokenLimit: Int
   defaultBudgetUsd: Money
   site: String          # JSON — site config (name, subtitle, logo, favicon)
-  security: String      # JSON — security settings (registration, 2fa, sso)
-  defaults: String      # JSON — default user settings (balance, concurrency, plan)
+  security: String      # JSON — security settings (registration, cookieSecureMode, 2fa, sso)
+  defaults: String      # JSON — default user settings (balance, concurrency, plan, providerSync*)
   email: String         # JSON — email/SMTP configuration
   backup: String        # JSON — backup & recovery settings
   payment: String       # JSON — payment channel settings
   oauth: String         # JSON — OAuth2 social login settings (GitHub, Google)
+  captcha: String       # JSON — captcha policy { provider: "dev"|"hcaptcha"|"turnstile"|"disabled" }
 }
 
 input SystemSettingsInput {
-  category: String!     # "site"|"security"|"defaults"|"email"|"backup"|"payment"|"oauth"
+  category: String!     # "site"|"security"|"defaults"|"email"|"backup"|"payment"|"oauth"|"captcha"
   data: String!         # JSON payload for the category
 }
 

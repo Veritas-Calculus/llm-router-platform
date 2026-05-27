@@ -15,6 +15,7 @@ export const SYSTEM_SETTINGS_QUERY = gql`
       backup
       payment
       oauth
+      captcha
     }
     inviteCodes { id code createdBy maxUses useCount expiresAt isActive createdAt }
   }
@@ -31,6 +32,7 @@ export const UPDATE_SYSTEM_SETTINGS = gql`
       backup
       payment
       oauth
+      captcha
     }
   }
 `;

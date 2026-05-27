@@ -99,36 +99,17 @@ services:
       - VAULT_TOKEN=${VAULT_TOKEN:-}
       - VAULT_TRANSIT_KEY=${VAULT_TRANSIT_KEY:-llm-router}
       - CORS_ORIGINS=${CORS_ORIGINS:-}
-      # ── Cookie security ──
-      # L-02: controls the Set-Cookie `Secure` flag for auth cookies.
-      # "auto" (default) sets Secure when GIN_MODE=release OR the request
-      # arrived over TLS / X-Forwarded-Proto=https. Set to "always" behind
-      # a TLS-terminating proxy that strips X-Forwarded-Proto; "never" is
-      # dev-only.
-      - COOKIE_SECURE_MODE=${COOKIE_SECURE_MODE:-auto}
+      # ── Runtime policy that used to live here is now in the DB ──
+      # COOKIE_SECURE_MODE, REGISTRATION_MODE, PROVIDER_SYNC_AUTO_ACTIVATE,
+      # PROVIDER_SYNC_BLOCKLIST_REGEX, and CAPTCHA_PROVIDER are read from
+      # the system_configs table via settings.Registry. First boot uses
+      # the built-in defaults from server/internal/service/settings; tune
+      # the values in the Admin → Settings UI (Security / Defaults /
+      # Captcha tabs). Changes take effect within 5 minutes (cache TTL)
+      # and immediately on save.
       - RATE_LIMIT_ENABLED=true
       - RATE_LIMIT_REQUESTS_PER_MINUTE=${RATE_LIMIT_RPM:-60}
-      # C-01: open by default — the anti-abuse story is captcha (required)
-      # + email verification (required for the welcome credit, granted by
-      # VerifyEmail, not Register). Operators who want stricter gating can
-      # set REGISTRATION_MODE=invite (requires inviteCode) or =closed
-      # (registration fully disabled). When deploying with public sign-ups
-      # MUST also set CAPTCHA_PROVIDER to a real backend (turnstile /
-      # hcaptcha) — the default dev backend exists only for local
-      # development.
-      - REGISTRATION_MODE=${REGISTRATION_MODE:-open}
-      # ── Provider catalogue auto-sync policy (audit L-05) ──
-      # When false (default), newly-discovered models from /v1/models are
-      # inserted as is_active=false. Admin must explicitly enable each one
-      # in the UI before users see it. Set to true to restore legacy
-      # behaviour (every new model active). NSFW-matching names are ALWAYS
-      # inserted inactive regardless of this flag.
-      - PROVIDER_SYNC_AUTO_ACTIVATE=${PROVIDER_SYNC_AUTO_ACTIVATE:-false}
-      # Override the built-in (?i)(uncensored|abliterated|jailbreaked?|nsfw|aggressive)
-      # regex. Empty = use built-in. Compiled as Go RE2.
-      - PROVIDER_SYNC_BLOCKLIST_REGEX=${PROVIDER_SYNC_BLOCKLIST_REGEX:-}
-      # ── Captcha (pluggable: dev | turnstile | hcaptcha | disabled) ──
-      - CAPTCHA_PROVIDER=${CAPTCHA_PROVIDER:-dev}
+      # ── Captcha credentials (provider choice lives in DB) ──
       - CAPTCHA_SITE_KEY=${CAPTCHA_SITE_KEY:-}
       - CAPTCHA_SECRET_KEY=${CAPTCHA_SECRET_KEY:-}
       - DEV_CAPTCHA_BYPASS_TOKEN=${DEV_CAPTCHA_BYPASS_TOKEN:-dev-ok}
@@ -185,10 +166,10 @@ services:
       args:
         VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
         VITE_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
-        # Frontend mirrors of the server-side captcha config so the build
-        # can pick the right widget. CAPTCHA_PROVIDER on the server side
-        # decides what is actually accepted; this is purely UI.
-        VITE_CAPTCHA_PROVIDER: ${CAPTCHA_PROVIDER:-dev}
+        # Captcha provider used to ship as a build arg; the SPA now reads
+        # it at runtime from the captchaConfig GraphQL query so the same
+        # image works across providers without rebuild. SITE_KEY stays at
+        # build time because it's paired with the env-only SECRET_KEY.
         VITE_CAPTCHA_SITE_KEY: ${CAPTCHA_SITE_KEY:-}
         VITE_DEV_CAPTCHA_BYPASS_TOKEN: ${DEV_CAPTCHA_BYPASS_TOKEN:-dev-ok}
     container_name: llm-router-web

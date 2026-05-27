@@ -298,8 +298,9 @@ type CacheStats struct {
 }
 
 type CaptchaConfig struct {
-	Enabled bool   `json:"enabled"`
-	SiteKey string `json:"siteKey"`
+	Enabled  bool   `json:"enabled"`
+	SiteKey  string `json:"siteKey"`
+	Provider string `json:"provider"`
 }
 
 type ChangePasswordInput struct {
@@ -1263,6 +1264,7 @@ type SystemSettings struct {
 	Backup            *string `json:"backup,omitempty"`
 	Payment           *string `json:"payment,omitempty"`
 	Oauth             *string `json:"oauth,omitempty"`
+	Captcha           *string `json:"captcha,omitempty"`
 }
 
 type SystemSettingsInput struct {

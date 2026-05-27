@@ -277,8 +277,9 @@ type ComplexityRoot struct {
 	}
 
 	CaptchaConfig struct {
-		Enabled func(childComplexity int) int
-		SiteKey func(childComplexity int) int
+		Enabled  func(childComplexity int) int
+		Provider func(childComplexity int) int
+		SiteKey  func(childComplexity int) int
 	}
 
 	CheckoutSession struct {
@@ -1196,6 +1197,7 @@ type ComplexityRoot struct {
 
 	SystemSettings struct {
 		Backup            func(childComplexity int) int
+		Captcha           func(childComplexity int) int
 		DefaultBudgetUsd  func(childComplexity int) int
 		DefaultTokenLimit func(childComplexity int) int
 		Defaults          func(childComplexity int) int
@@ -2642,6 +2644,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.CaptchaConfig.Enabled(childComplexity), true
+	case "CaptchaConfig.provider":
+		if e.ComplexityRoot.CaptchaConfig.Provider == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CaptchaConfig.Provider(childComplexity), true
 	case "CaptchaConfig.siteKey":
 		if e.ComplexityRoot.CaptchaConfig.SiteKey == nil {
 			break
@@ -7648,6 +7656,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.SystemSettings.Backup(childComplexity), true
+	case "SystemSettings.captcha":
+		if e.ComplexityRoot.SystemSettings.Captcha == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SystemSettings.Captcha(childComplexity), true
 	case "SystemSettings.defaultBudgetUsd":
 		if e.ComplexityRoot.SystemSettings.DefaultBudgetUsd == nil {
 			break
@@ -8634,6 +8648,7 @@ type RegistrationMode {
 type CaptchaConfig {
   enabled: Boolean!
   siteKey: String!
+  provider: String!     # "dev" | "hcaptcha" | "turnstile" | "disabled"
 }
 
 type SsoDiscoveryResult {
@@ -9290,16 +9305,17 @@ type SystemSettings {
   defaultTokenLimit: Int
   defaultBudgetUsd: Money
   site: String          # JSON — site config (name, subtitle, logo, favicon)
-  security: String      # JSON — security settings (registration, 2fa, sso)
-  defaults: String      # JSON — default user settings (balance, concurrency, plan)
+  security: String      # JSON — security settings (registration, cookieSecureMode, 2fa, sso)
+  defaults: String      # JSON — default user settings (balance, concurrency, plan, providerSync*)
   email: String         # JSON — email/SMTP configuration
   backup: String        # JSON — backup & recovery settings
   payment: String       # JSON — payment channel settings
   oauth: String         # JSON — OAuth2 social login settings (GitHub, Google)
+  captcha: String       # JSON — captcha policy { provider: "dev"|"hcaptcha"|"turnstile"|"disabled" }
 }
 
 input SystemSettingsInput {
-  category: String!     # "site"|"security"|"defaults"|"email"|"backup"|"payment"|"oauth"
+  category: String!     # "site"|"security"|"defaults"|"email"|"backup"|"payment"|"oauth"|"captcha"
   data: String!         # JSON payload for the category
 }
 
@@ -10977,6 +10993,8 @@ func (ec *executionContext) childFields_CaptchaConfig(ctx context.Context, field
 		return ec.fieldContext_CaptchaConfig_enabled(ctx, field)
 	case "siteKey":
 		return ec.fieldContext_CaptchaConfig_siteKey(ctx, field)
+	case "provider":
+		return ec.fieldContext_CaptchaConfig_provider(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type CaptchaConfig", field.Name)
 }
@@ -12415,6 +12433,8 @@ func (ec *executionContext) childFields_SystemSettings(ctx context.Context, fiel
 		return ec.fieldContext_SystemSettings_payment(ctx, field)
 	case "oauth":
 		return ec.fieldContext_SystemSettings_oauth(ctx, field)
+	case "captcha":
+		return ec.fieldContext_SystemSettings_captcha(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type SystemSettings", field.Name)
 }
@@ -19770,6 +19790,29 @@ func (ec *executionContext) _CaptchaConfig_siteKey(ctx context.Context, field gr
 	)
 }
 func (ec *executionContext) fieldContext_CaptchaConfig_siteKey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CaptchaConfig", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _CaptchaConfig_provider(ctx context.Context, field graphql.CollectedField, obj *model.CaptchaConfig) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CaptchaConfig_provider(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Provider, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CaptchaConfig_provider(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("CaptchaConfig", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
@@ -43582,6 +43625,29 @@ func (ec *executionContext) fieldContext_SystemSettings_oauth(_ context.Context,
 	return graphql.NewScalarFieldContext("SystemSettings", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _SystemSettings_captcha(ctx context.Context, field graphql.CollectedField, obj *model.SystemSettings) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SystemSettings_captcha(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Captcha, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_SystemSettings_captcha(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SystemSettings", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _SystemStatus_service(ctx context.Context, field graphql.CollectedField, obj *model.SystemStatus) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -51419,6 +51485,11 @@ func (ec *executionContext) _CaptchaConfig(ctx context.Context, sel ast.Selectio
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "provider":
+			out.Values[i] = ec._CaptchaConfig_provider(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -58901,6 +58972,8 @@ func (ec *executionContext) _SystemSettings(ctx context.Context, sel ast.Selecti
 			out.Values[i] = ec._SystemSettings_payment(ctx, field, obj)
 		case "oauth":
 			out.Values[i] = ec._SystemSettings_oauth(ctx, field, obj)
+		case "captcha":
+			out.Values[i] = ec._SystemSettings_captcha(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}

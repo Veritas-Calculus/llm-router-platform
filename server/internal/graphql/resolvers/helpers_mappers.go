@@ -413,6 +413,9 @@ func buildSystemSettings(registrationMode string, all map[string]string) *model.
 	if v, ok := all["oauth"]; ok {
 		s.Oauth = &v
 	}
+	if v, ok := all["captcha"]; ok {
+		s.Captcha = &v
+	}
 	return s
 }
 

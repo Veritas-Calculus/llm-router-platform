@@ -51,6 +51,7 @@ import (
 	"llm-router-platform/internal/service/proxy"
 	"llm-router-platform/internal/service/redeem"
 	"llm-router-platform/internal/service/router"
+	"llm-router-platform/internal/service/settings"
 	"llm-router-platform/internal/service/task"
 	"llm-router-platform/internal/service/turnstile"
 	"llm-router-platform/internal/service/user"
@@ -534,10 +535,12 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	if redisClient != nil {
 		routerService.SetRedisClient(redisClient)
 	}
-	// Apply operator-tunable provider auto-sync policy (audit L-05).
-	// Defaults: AutoActivate=false (new models land inactive), and the
-	// built-in NSFW/dev-only name regex.
-	routerService.SetCatalogSyncRules(cfg.ProviderSync.AutoActivate, cfg.ProviderSync.BlocklistRegex)
+	// Operator-tunable provider auto-sync policy (audit L-05) used to be
+	// wired here from env vars. It now comes from the DB-backed
+	// settings.Registry instead so an admin can toggle AutoActivate /
+	// override the blocklist regex from the Settings UI. The Registry is
+	// wired below (after we have cfgService); we attach it to the router
+	// via SetSyncRulesSource at that point.
 	billingService := billing.NewService(repos.UsageLog, repos.Model, redisClient, logger)
 	budgetService := billing.NewBudgetService(repos.UsageLog, repos.Budget, logger)
 	subscriptionService := billing.NewSubscriptionService(repos.Plan, repos.Subscription, repos.UsageLog, gormDB, logger)
@@ -589,12 +592,17 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 	loginLimiter := user.NewLoginLimiter(redisClient, logger)
 	cacheSvc := semantic.NewSemanticCacheService(gormDB, logger, 0.05)
 	turnstileSvc := turnstile.New(logger, cfg.Turnstile.Enabled, cfg.Turnstile.SecretKey)
+	// Settings Registry: DB-backed read layer for runtime-policy fields
+	// (registrationMode, cookieSecureMode, captchaProvider, providerSync*).
+	// Wired into captcha + router + auth resolvers; the
+	// updateSystemSettings mutation calls Invalidate() on write.
+	settingsRegistry := settings.New(cfgService, settings.BuiltinDefaults(), logger)
+	routerService.SetSyncRulesSource(settingsRegistry)
 	captchaSvc := captcha.New(logger, captcha.Config{
-		Provider:  captcha.Provider(cfg.Captcha.Provider),
 		SiteKey:   cfg.Captcha.SiteKey,
 		SecretKey: cfg.Captcha.SecretKey,
 		DevBypass: cfg.Captcha.DevBypassToken,
-	})
+	}, settingsRegistry)
 	monitoringSvc := monitoring.NewCollector(
 		gormDB, redisClient,
 		monitoring.BuildInfo{Version: routes.Version, GitCommit: routes.GitCommit, BuildTime: routes.BuildTime},
@@ -633,6 +641,7 @@ func initServices(repos *Repositories, cfg *config.Config, logger *zap.Logger, r
 		MonitoringSvc:    monitoringSvc,
 		TurnstileSvc:     turnstileSvc,
 		CaptchaSvc:       captchaSvc,
+		SettingsRegistry: settingsRegistry,
 		SemanticCache:    cacheSvc,
 		MCP:              mcpService,
 		RedisClient:      redisClient,

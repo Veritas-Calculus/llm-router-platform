@@ -111,7 +111,8 @@ config:
   jwtRefreshExpiresIn: 168h
 
   # Registration
-  registrationMode: open   # open | invite | closed
+  # registrationMode moved to DB (system_settings table). Set it via the
+  # Admin → Settings → Security UI after first boot. Default = "open".
   inviteCode: ""
 
   # Rate Limiting

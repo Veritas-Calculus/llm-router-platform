@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -96,7 +97,21 @@ type Router struct {
 	circuitBreaker   *CircuitBreaker    // Provider-level circuit breaker (3-state)
 	retryCfg         RetryConfig        // Exponential backoff config
 	syncRules        *catalogSyncRules  // Provider auto-sync rules (NSFW blocklist + activation policy)
+	syncRulesSource  SyncRulesSource    // Optional dynamic source (DB-backed); nil = use syncRules
 	logger           *zap.Logger
+}
+
+// SyncRulesSource lets the router resolve provider-sync policy at call
+// time instead of at construction time. The DB-backed settings.Registry
+// implements this; callers that don't need dynamic policy (tests) can
+// leave it nil and the Router falls back to syncRules.
+type SyncRulesSource interface {
+	ProviderSyncAutoActivate(ctx context.Context) bool
+	ProviderSyncBlocklistRegex(ctx context.Context) string
+	// ProviderSyncBlocklistRe may return nil if the operator-supplied
+	// regex is empty or malformed — the caller falls back to the
+	// built-in default in that case.
+	ProviderSyncBlocklistRe(ctx context.Context) *regexp.Regexp
 }
 
 // NewRouter creates a new router instance.
@@ -128,11 +143,42 @@ func NewRouter(
 }
 
 // SetCatalogSyncRules wires the operator-tunable provider auto-sync
-// policy. Defaults are "do not auto-activate" (audit L-05) and the
-// built-in NSFW/dev-only name regex. Call this from main.go right after
-// NewRouter when config has been loaded.
+// policy from a static source. Defaults are "do not auto-activate" (audit
+// L-05) and the built-in NSFW/dev-only name regex. Tests use this to
+// pre-set rules without bringing up the settings.Registry; production
+// goes through SetSyncRulesSource instead so admin edits take effect at
+// the next sync run.
 func (r *Router) SetCatalogSyncRules(autoActivate bool, blocklistRegex string) {
 	r.syncRules = newCatalogSyncRules(autoActivate, blocklistRegex)
+}
+
+// SetSyncRulesSource wires a DB-backed source (typically
+// settings.Registry) for the provider auto-sync policy. When non-nil,
+// every SyncProviderModels call resolves AutoActivate + BlocklistRegex
+// freshly from the source so admin changes propagate within the
+// Registry's cache window (5 min). When nil, the Router falls back to
+// the value set by SetCatalogSyncRules.
+func (r *Router) SetSyncRulesSource(s SyncRulesSource) {
+	r.syncRulesSource = s
+}
+
+// currentSyncRules returns the active provider-sync rules. Prefers the
+// dynamic source if wired; otherwise falls back to the static rules set
+// by SetCatalogSyncRules (or the conservative defaults from NewRouter).
+func (r *Router) currentSyncRules(ctx context.Context) *catalogSyncRules {
+	if r.syncRulesSource == nil {
+		return r.syncRules
+	}
+	re := r.syncRulesSource.ProviderSyncBlocklistRe(ctx)
+	if re == nil {
+		// Operator hasn't overridden — use our built-in default. We
+		// re-compile here because catalogSyncRules wants a non-nil regex.
+		re = regexp.MustCompile(defaultBlocklistRegex)
+	}
+	return &catalogSyncRules{
+		AutoActivate: r.syncRulesSource.ProviderSyncAutoActivate(ctx),
+		Blocklist:    re,
+	}
 }
 
 // ─── Provider Circuit Breaking (delegated to CircuitBreaker) ───────────────

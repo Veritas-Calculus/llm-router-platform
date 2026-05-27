@@ -101,6 +101,7 @@ var ValidCategories = map[string]bool{
 	"backup":      true,
 	"payment":     true,
 	"oauth":       true,
+	"captcha":     true,
 	"featuregate": true,
 }
 

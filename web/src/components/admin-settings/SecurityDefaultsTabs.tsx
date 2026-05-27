@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { FormField, TextInput, Toggle, SelectInput } from './FormPrimitives';
+import { FormField, TextInput, Toggle, SelectInput, HelpText } from './FormPrimitives';
 
 export function SecuritySettingsTab({ data, onChange, t }: { data: any; onChange: (d: any) => void; t: (k: string) => string }) {
   return (
@@ -14,6 +14,19 @@ export function SecuritySettingsTab({ data, onChange, t }: { data: any; onChange
             { value: 'closed', label: t('admin_settings.security.mode_closed') },
           ]}
         />
+        <HelpText>{t('admin_settings.security.registration_mode_desc')}</HelpText>
+      </FormField>
+      <FormField label={t('admin_settings.security.cookie_secure_mode')}>
+        <SelectInput
+          value={data.cookieSecureMode || 'auto'}
+          onChange={(v) => onChange({ ...data, cookieSecureMode: v })}
+          options={[
+            { value: 'auto', label: t('admin_settings.security.cookie_secure_mode_auto') },
+            { value: 'always', label: t('admin_settings.security.cookie_secure_mode_always') },
+            { value: 'never', label: t('admin_settings.security.cookie_secure_mode_never') },
+          ]}
+        />
+        <HelpText>{t('admin_settings.security.cookie_secure_mode_desc')}</HelpText>
       </FormField>
       <div className="space-y-3 pt-2">
         <Toggle checked={data.emailVerification ?? false} onChange={(v) => onChange({ ...data, emailVerification: v })} label={t('admin_settings.security.email_verification')} />
@@ -27,6 +40,7 @@ export function SecuritySettingsTab({ data, onChange, t }: { data: any; onChange
 }
 
 export function DefaultsSettingsTab({ data, onChange, t }: { data: any; onChange: (d: any) => void; t: (k: string) => string }) {
+  const builtinBlocklistPlaceholder = '(?i)(uncensored|abliterated|jailbreak(ed)?|nsfw|aggressive)';
   return (
     <div className="space-y-5">
       <FormField label={t('admin_settings.defaults.balance')}>
@@ -40,6 +54,22 @@ export function DefaultsSettingsTab({ data, onChange, t }: { data: any; onChange
       </FormField>
       <FormField label={t('admin_settings.defaults.rate_limit')}>
         <TextInput type="number" value={String(data.defaultRateLimit ?? 60)} onChange={(v) => onChange({ ...data, defaultRateLimit: parseInt(v) || 60 })} placeholder="60" />
+      </FormField>
+      <div className="pt-2">
+        <Toggle
+          checked={data.providerSyncAutoActivate ?? false}
+          onChange={(v) => onChange({ ...data, providerSyncAutoActivate: v })}
+          label={t('admin_settings.defaults.provider_sync_auto_activate')}
+        />
+        <HelpText>{t('admin_settings.defaults.provider_sync_auto_activate_desc')}</HelpText>
+      </div>
+      <FormField label={t('admin_settings.defaults.provider_sync_blocklist_regex')}>
+        <TextInput
+          value={data.providerSyncBlocklistRegex || ''}
+          onChange={(v) => onChange({ ...data, providerSyncBlocklistRegex: v })}
+          placeholder={builtinBlocklistPlaceholder}
+        />
+        <HelpText>{t('admin_settings.defaults.provider_sync_blocklist_regex_desc')}</HelpText>
       </FormField>
     </div>
   );

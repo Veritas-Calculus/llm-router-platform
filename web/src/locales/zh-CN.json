@@ -1266,7 +1266,8 @@
             "backup": "备份恢复",
             "payment": "支付渠道",
             "sso": "登录 & SSO",
-            "integrations": "外部集成"
+            "integrations": "外部集成",
+            "captcha": "人机验证"
         },
         "site": {
             "title": "站点设置",
@@ -1281,6 +1282,7 @@
             "title": "安全设置",
             "desc": "注册开关、邮箱验证、邀请码、优惠码注册、2FA 和 SSO",
             "registration_mode": "注册模式",
+            "registration_mode_desc": "控制谁可以注册账号。变更最多在 5 分钟内生效。",
             "mode_open": "开放注册",
             "mode_invite": "仅邀请注册",
             "mode_closed": "关闭注册",
@@ -1288,7 +1290,12 @@
             "invite_only": "邀请注册",
             "coupon_enabled": "优惠码系统",
             "two_factor": "双因素认证 (2FA)",
-            "sso": "单点登录 (SSO)"
+            "sso": "单点登录 (SSO)",
+            "cookie_secure_mode": "Cookie Secure 标志",
+            "cookie_secure_mode_desc": "控制会话 Cookie 的 Secure 属性。除非反向代理会剥离 X-Forwarded-Proto，否则建议保持 auto。",
+            "cookie_secure_mode_auto": "自动（推荐）",
+            "cookie_secure_mode_always": "总是开启",
+            "cookie_secure_mode_never": "总是关闭（仅开发环境）"
         },
         "defaults": {
             "title": "默认用户设置",
@@ -1296,7 +1303,11 @@
             "balance": "默认余额 (USD)",
             "concurrency": "默认并发数",
             "plan": "默认订阅计划",
-            "rate_limit": "默认速率限制 (请求/分钟)"
+            "rate_limit": "默认速率限制 (请求/分钟)",
+            "provider_sync_auto_activate": "自动启用新发现的供应商模型",
+            "provider_sync_auto_activate_desc": "启用后，从 /v1/models 同步到的新模型直接以 active 状态入库；禁用（默认）时，管理员需要手动启用每个模型。命中 NSFW 黑名单的名称始终以 inactive 入库。",
+            "provider_sync_blocklist_regex": "供应商同步黑名单正则",
+            "provider_sync_blocklist_regex_desc": "覆盖内置的 (?i)(uncensored|abliterated|jailbreak(ed)?|nsfw|aggressive) 模式。留空使用默认值，使用 Go RE2 引擎编译。"
         },
         "email": {
             "title": "邮件配置",
@@ -1341,6 +1352,22 @@
             "stripe_webhook": "Webhook Secret",
             "wechat_enabled": "启用微信支付",
             "alipay_enabled": "启用支付宝"
+        },
+        "captcha": {
+            "title": "人机验证后端",
+            "desc": "选择保护注册和高风险操作的验证服务。Site Key / Secret Key 仍然通过环境变量配置。",
+            "provider": "服务商",
+            "provider_dev": "Dev（接受固定 bypass token）",
+            "provider_hcaptcha": "hCaptcha",
+            "provider_turnstile": "Cloudflare Turnstile",
+            "provider_disabled": "禁用（接受所有请求）",
+            "credentials_title": "凭据",
+            "credentials_desc": "Site Key 与 Secret Key 是配对的密钥，需通过服务端 CAPTCHA_SITE_KEY / CAPTCHA_SECRET_KEY 环境变量配置。",
+            "site_key_label": "Site Key",
+            "secret_key_label": "Secret Key",
+            "configured": "已配置",
+            "not_configured": "未配置",
+            "warn_no_secret": "所选后端需要 Secret Key，请先在环境变量中配置，否则所有验证请求都会被拒绝。"
         }
     },
     "errors": {

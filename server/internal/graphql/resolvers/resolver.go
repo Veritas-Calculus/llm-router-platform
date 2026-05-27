@@ -26,6 +26,7 @@ import (
 	"llm-router-platform/internal/service/proxy"
 	"llm-router-platform/internal/service/redeem"
 	"llm-router-platform/internal/service/router"
+	"llm-router-platform/internal/service/settings"
 	"llm-router-platform/internal/service/task"
 	"llm-router-platform/internal/service/turnstile"
 	"llm-router-platform/internal/service/user"
@@ -68,6 +69,7 @@ type Resolver struct {
 	MonitoringSvc    *monitoring.Collector
 	TurnstileSvc     *turnstile.Service
 	CaptchaSvc       *captcha.Service
+	SettingsRegistry *settings.Registry
 	LoginLimiter     *user.LoginLimiter
 	AdminSvc         *admin.Service
 	Logger           *zap.Logger
