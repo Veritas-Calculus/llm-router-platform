@@ -212,7 +212,7 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 	c.Set("provider_id", selectedProvider.ID.String())
 
 	h.logger.Info("model routed to provider",
-		zap.String("request_id", requestIDFromContext(c)),
+		zap.String("request_id", sanitize.LogValue(requestIDFromContext(c))),
 		zap.String("model", sanitize.LogValue(req.Model)),
 		zap.String("provider", sanitize.LogValue(selectedProvider.Name)),
 		zap.String("base_url", sanitize.LogValue(selectedProvider.BaseURL)),
