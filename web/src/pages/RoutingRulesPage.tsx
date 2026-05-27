@@ -41,6 +41,7 @@ function ConfirmModal({
   onCancel,
   loading,
 }: ConfirmModalProps) {
+  const { t } = useTranslation();
   if (!isOpen) return null;
 
   return (
@@ -61,14 +62,14 @@ function ConfirmModal({
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={onCancel} className="btn btn-secondary" disabled={loading}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={onConfirm}
             className="btn btn-danger"
             disabled={loading}
           >
-            {loading ? 'Processing...' : confirmText}
+            {loading ? t('routing_rules.processing') : confirmText}
           </button>
         </div>
       </motion.div>
@@ -184,7 +185,7 @@ function RoutingRulesPage() {
 
   const handleSave = async () => {
     if (!name.trim() || !modelPattern.trim() || !targetProviderId) {
-      toast.error('Please fill out all required fields');
+      toast.error(t('routing_rules.fill_required'));
       return;
     }
 
@@ -202,15 +203,15 @@ function RoutingRulesPage() {
     try {
       if (editingRule) {
         await updateRuleMut({ variables: { id: editingRule.id, input } });
-        toast.success('Routing rule updated');
+        toast.success(t('routing_rules.update_success'));
       } else {
         await createRuleMut({ variables: { input } });
-        toast.success('Routing rule created');
+        toast.success(t('routing_rules.create_success'));
       }
       await refetchRules();
       setShowModal(false);
     } catch (e: any) {
-      toast.error(e.message || 'Failed to save routing rule');
+      toast.error(e.message || t('routing_rules.save_error'));
     } finally {
       setSaving(false);
     }
@@ -220,11 +221,11 @@ function RoutingRulesPage() {
     setProcessingDelete(true);
     try {
       await deleteRuleMut({ variables: { id: confirmModal.ruleId } });
-      toast.success('Routing rule deleted');
+      toast.success(t('routing_rules.delete_success'));
       await refetchRules();
       setConfirmModal({ isOpen: false, ruleId: '' });
     } catch (e: any) {
-      toast.error(e.message || 'Failed to delete routing rule');
+      toast.error(e.message || t('routing_rules.delete_error'));
     } finally {
       setProcessingDelete(false);
     }
@@ -241,10 +242,10 @@ function RoutingRulesPage() {
         isEnabled: !rule.isEnabled,
       };
       await updateRuleMut({ variables: { id: rule.id, input } });
-      toast.success(`Rule ${rule.isEnabled ? 'disabled' : 'enabled'}`);
+      toast.success(rule.isEnabled ? t('routing_rules.toggle_disabled') : t('routing_rules.toggle_enabled'));
       await refetchRules();
     } catch {
-      toast.error('Failed to toggle rule status');
+      toast.error(t('routing_rules.toggle_error'));
     }
   };
 
@@ -261,13 +262,13 @@ function RoutingRulesPage() {
       {tabBar}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-apple-gray-900">Routing Rules</h1>
-          <p className="text-apple-gray-500 mt-1">Configure model routing and provider fallback strategies</p>
+          <h1 className="text-2xl font-semibold text-apple-gray-900">{t('routing_rules.title')}</h1>
+          <p className="text-apple-gray-500 mt-1">{t('routing_rules.subtitle')}</p>
         </div>
         {rules.length > 0 && (
           <button onClick={openCreateModal} className="btn btn-primary">
             <PlusIcon className="w-5 h-5 mr-2" />
-            Create Rule
+            {t('routing_rules.create_rule')}
           </button>
         )}
       </div>
@@ -279,12 +280,12 @@ function RoutingRulesPage() {
       >
         {rules.length === 0 ? (
           <div className="text-center py-16">
-            <h3 className="text-lg font-semibold text-apple-gray-900 mb-1">No Routing Rules</h3>
+            <h3 className="text-lg font-semibold text-apple-gray-900 mb-1">{t('routing_rules.no_rules')}</h3>
             <p className="text-apple-gray-500 text-sm mb-6 max-w-sm mx-auto">
-              Create rules to explicitly route models to specific providers, enabling fallback configurations.
+              {t('routing_rules.no_rules_desc')}
             </p>
             <button onClick={openCreateModal} className="btn btn-primary rounded-xl">
-              Create your first rule
+              {t('routing_rules.create_first_rule')}
             </button>
           </div>
         ) : (
@@ -292,19 +293,19 @@ function RoutingRulesPage() {
             <table className="min-w-full divide-y divide-apple-gray-200">
               <thead>
                 <tr>
-                  <th className="table-header">Name</th>
-                  <th className="table-header">Model Pattern</th>
-                  <th className="table-header">Target Provider</th>
-                  <th className="table-header">Fallback Provider</th>
-                  <th className="table-header">Priority</th>
-                  <th className="table-header">Status</th>
-                  <th className="table-header">Actions</th>
+                  <th className="table-header">{t('routing_rules.col_name')}</th>
+                  <th className="table-header">{t('routing_rules.col_pattern')}</th>
+                  <th className="table-header">{t('routing_rules.col_target')}</th>
+                  <th className="table-header">{t('routing_rules.col_fallback')}</th>
+                  <th className="table-header">{t('routing_rules.col_priority')}</th>
+                  <th className="table-header">{t('routing_rules.col_status')}</th>
+                  <th className="table-header">{t('routing_rules.col_actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-apple-gray-100">
                 {rules.map((rule) => {
-                  const targetName = rule.targetProvider?.name || providers.find(p => p.id === rule.targetProviderId)?.name || 'Unknown';
-                  const fallbackName = rule.fallbackProvider?.name || (rule.fallbackProviderId && providers.find(p => p.id === rule.fallbackProviderId)?.name) || 'None';
+                  const targetName = rule.targetProvider?.name || providers.find(p => p.id === rule.targetProviderId)?.name || t('visual_router.unknown_provider');
+                  const fallbackName = rule.fallbackProvider?.name || (rule.fallbackProviderId && providers.find(p => p.id === rule.fallbackProviderId)?.name) || t('routing_rules.fallback_label');
                   
                   return (
                     <tr key={rule.id} className="hover:bg-apple-gray-50">
@@ -329,7 +330,7 @@ function RoutingRulesPage() {
                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
                              {fallbackName}
                            </span>
-                        ) : 'None'}
+                        ) : t('routing_rules.fallback_label')}
                       </td>
                       <td className="table-cell">
                         {rule.priority}
@@ -353,18 +354,18 @@ function RoutingRulesPage() {
                           <button
                             onClick={() => openEditModal(rule)}
                             className="inline-flex items-center gap-1 text-sm text-apple-blue hover:text-blue-600 transition-colors"
-                            title="Edit rule"
+                            title={t('routing_rules.edit_title')}
                           >
                             <PencilIcon className="w-4 h-4" />
-                            Edit
+                            {t('common.edit')}
                           </button>
                           <button
                             onClick={() => setConfirmModal({ isOpen: true, ruleId: rule.id })}
                             className="inline-flex items-center gap-1 text-sm text-apple-red hover:text-red-600 transition-colors"
-                            title="Delete rule"
+                            title={t('routing_rules.delete_title')}
                           >
                             <TrashIcon className="w-4 h-4" />
-                            Delete
+                            {t('common.delete')}
                           </button>
                         </div>
                       </td>
@@ -385,46 +386,46 @@ function RoutingRulesPage() {
             className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-lg mx-4"
           >
             <h2 className="text-xl font-semibold text-apple-gray-900 mb-4">
-              {editingRule ? 'Edit Routing Rule' : 'Create Routing Rule'}
+              {editingRule ? t('routing_rules.edit_rule') : t('routing_rules.create_rule_modal')}
             </h2>
             <div className="space-y-4">
               <div>
-                <label className="label">Rule Name *</label>
+                <label className="label">{t('routing_rules.rule_name')}</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="input"
-                  placeholder="e.g., Premium OpenAI Routing"
+                  placeholder={t('routing_rules.rule_name_placeholder')}
                 />
               </div>
-              
+
               <div>
-                <label className="label">Description</label>
+                <label className="label">{t('routing_rules.description')}</label>
                 <input
                   type="text"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="input"
-                  placeholder="Optional description"
+                  placeholder={t('routing_rules.description_placeholder')}
                 />
               </div>
 
               <div>
-                <label className="label">Model Pattern *</label>
-                <p className="text-xs text-apple-gray-500 mb-2">Use exact model name (gpt-4) or wildcards (gpt-*)</p>
+                <label className="label">{t('routing_rules.model_pattern')}</label>
+                <p className="text-xs text-apple-gray-500 mb-2">{t('routing_rules.model_pattern_hint')}</p>
                 <input
                   type="text"
                   value={modelPattern}
                   onChange={(e) => setModelPattern(e.target.value)}
                   className="input font-mono"
-                  placeholder="e.g., gpt-3.5-turbo*"
+                  placeholder={t('routing_rules.model_pattern_placeholder')}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="label">Target Provider *</label>
+                  <label className="label">{t('routing_rules.target_provider')}</label>
                   <select
                     value={targetProviderId}
                     onChange={(e) => {
@@ -435,7 +436,7 @@ function RoutingRulesPage() {
                     }}
                     className="input"
                   >
-                    <option value="">Select Primary Provider</option>
+                    <option value="">{t('routing_rules.select_primary_provider')}</option>
                     {providers.map(p => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
@@ -443,13 +444,13 @@ function RoutingRulesPage() {
                 </div>
 
                 <div>
-                  <label className="label">Fallback Provider</label>
+                  <label className="label">{t('routing_rules.fallback_provider')}</label>
                   <select
                     value={fallbackProviderId}
                     onChange={(e) => setFallbackProviderId(e.target.value)}
                     className="input"
                   >
-                    <option value="">None (Fail immediately)</option>
+                    <option value="">{t('routing_rules.fallback_none')}</option>
                     {fallbackProviders.map(p => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
@@ -459,8 +460,8 @@ function RoutingRulesPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="label">Priority</label>
-                  <p className="text-xs text-apple-gray-500 mb-2">Higher numbers = higher priority</p>
+                  <label className="label">{t('routing_rules.priority')}</label>
+                  <p className="text-xs text-apple-gray-500 mb-2">{t('routing_rules.priority_hint')}</p>
                   <input
                     type="number"
                     value={priority}
@@ -469,7 +470,7 @@ function RoutingRulesPage() {
                     min="1"
                   />
                 </div>
-                
+
                 <div className="flex flex-col justify-end pb-3">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -478,7 +479,7 @@ function RoutingRulesPage() {
                       onChange={(e) => setIsEnabled(e.target.checked)}
                       className="rounded border-apple-gray-300 text-apple-blue focus:ring-apple-blue"
                     />
-                    <span className="text-sm text-apple-gray-700">Enable this rule</span>
+                    <span className="text-sm text-apple-gray-700">{t('routing_rules.enable_rule')}</span>
                   </label>
                 </div>
               </div>
@@ -489,10 +490,10 @@ function RoutingRulesPage() {
                 onClick={() => setShowModal(false)}
                 className="btn btn-secondary"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button onClick={handleSave} className="btn btn-primary" disabled={saving}>
-                {saving ? 'Saving...' : 'Save Rule'}
+                {saving ? t('routing_rules.saving') : t('routing_rules.save_rule')}
               </button>
             </div>
           </motion.div>
@@ -501,9 +502,9 @@ function RoutingRulesPage() {
 
       <ConfirmModal
         isOpen={confirmModal.isOpen}
-        title="Delete Routing Rule"
-        message="Are you sure you want to permanently delete this routing rule? Models matched by this rule will fall back to default routing strategies."
-        confirmText="Delete Rule"
+        title={t('routing_rules.delete_modal_title')}
+        message={t('routing_rules.delete_modal_message')}
+        confirmText={t('routing_rules.delete_confirm_btn')}
         onConfirm={handleDelete}
         onCancel={() => setConfirmModal({ isOpen: false, ruleId: '' })}
         loading={processingDelay}

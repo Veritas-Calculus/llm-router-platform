@@ -9,10 +9,12 @@ import {
 } from '@heroicons/react/24/outline';
 import { PROVIDERS_QUERY } from '@/lib/graphql/operations/providers';
 import { SUBSCRIPTION_QUOTA_QUERY } from '@/lib/graphql/operations/billing';
+import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 function RateLimitDashboardPage() {
+  const { t } = useTranslation();
   const { data: provData, loading } = useQuery<any>(PROVIDERS_QUERY);
   const providers = useMemo(() => provData?.providers || [], [provData]);
 
@@ -35,19 +37,19 @@ function RateLimitDashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-apple-gray-900">Rate Limit Overview</h1>
+        <h1 className="text-2xl font-semibold text-apple-gray-900">{t('rate_limits.title')}</h1>
         <p className="text-apple-gray-500 mt-1">
-          Monitor rate limits across providers and API keys
+          {t('rate_limits.subtitle')}
         </p>
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: 'Active Providers', value: `${activeProviders}/${totalProviders}`, icon: ServerIcon, color: 'bg-blue-50 text-apple-blue' },
-          { label: 'Avg Rate Limit', value: `${avgRateLimit} RPM`, icon: ShieldExclamationIcon, color: 'bg-green-50 text-green-600' },
-          { label: 'Max Rate Limit', value: `${maxRateLimit} RPM`, icon: ShieldExclamationIcon, color: 'bg-purple-50 text-purple-600' },
-          { label: 'API Keys', value: 'Per-key limits', icon: KeyIcon, color: 'bg-orange-50 text-orange-600' },
+          { label: t('rate_limits.active_providers'), value: `${activeProviders}/${totalProviders}`, icon: ServerIcon, color: 'bg-blue-50 text-apple-blue' },
+          { label: t('rate_limits.avg_rate_limit'), value: `${avgRateLimit} ${t('rate_limits.rpm')}`, icon: ShieldExclamationIcon, color: 'bg-green-50 text-green-600' },
+          { label: t('rate_limits.max_rate_limit'), value: `${maxRateLimit} ${t('rate_limits.rpm')}`, icon: ShieldExclamationIcon, color: 'bg-purple-50 text-purple-600' },
+          { label: t('rate_limits.api_keys_label'), value: t('rate_limits.per_key_limits'), icon: KeyIcon, color: 'bg-orange-50 text-orange-600' },
         ].map((card, i) => (
           <motion.div
             key={card.label}
@@ -74,8 +76,8 @@ function RateLimitDashboardPage() {
       {/* Provider rate limits */}
       <div className="card overflow-hidden">
         <div className="px-6 py-4 border-b border-apple-gray-100">
-          <h2 className="text-base font-semibold text-apple-gray-900">Provider Rate Limits</h2>
-          <p className="text-xs text-apple-gray-500 mt-0.5">Requests per minute allowed per provider</p>
+          <h2 className="text-base font-semibold text-apple-gray-900">{t('rate_limits.provider_rate_limits')}</h2>
+          <p className="text-xs text-apple-gray-500 mt-0.5">{t('rate_limits.provider_rate_limits_desc')}</p>
         </div>
         <div className="divide-y divide-apple-gray-100">
           {providers
@@ -98,10 +100,10 @@ function RateLimitDashboardPage() {
                     </div>
                     <div className="flex items-center gap-4 text-sm">
                       <span className="text-apple-gray-600 font-semibold">
-                        {provider.rateLimit || 0} <span className="text-xs text-apple-gray-400 font-normal">RPM</span>
+                        {provider.rateLimit || 0} <span className="text-xs text-apple-gray-400 font-normal">{t('rate_limits.rpm')}</span>
                       </span>
                       <span className="text-apple-gray-400 text-xs">
-                        Weight: {provider.weight}
+                        {t('rate_limits.weight_label', { value: provider.weight })}
                       </span>
                     </div>
                   </div>
@@ -130,13 +132,13 @@ function RateLimitDashboardPage() {
         <div className="flex items-start gap-3">
           <ShieldExclamationIcon className="w-5 h-5 text-apple-blue shrink-0 mt-0.5" />
           <div className="text-sm text-apple-gray-700">
-            <p className="font-medium text-apple-gray-900 mb-1">Rate Limit Enforcement</p>
+            <p className="font-medium text-apple-gray-900 mb-1">{t('rate_limits.enforcement_title')}</p>
             <ul className="space-y-1 text-apple-gray-600">
-              <li>• <strong>Subscription-level:</strong> Monthly token quota enforced by plan (e.g. Free plan = 100K tokens/month)</li>
-              <li>• <strong>Provider-level:</strong> Controls requests-per-minute to each LLM provider</li>
-              <li>• <strong>API Key-level:</strong> Per-key rate limits configurable in API Keys page</li>
-              <li>• <strong>GraphQL:</strong> Login/register limited to 5 req/min, password reset to 3 req/min</li>
-              <li>• <strong>Circuit Breaker:</strong> Providers auto-disabled after 5 consecutive errors</li>
+              <li>• <strong>{t('rate_limits.enforcement_subscription')}</strong> {t('rate_limits.enforcement_subscription_desc')}</li>
+              <li>• <strong>{t('rate_limits.enforcement_provider')}</strong> {t('rate_limits.enforcement_provider_desc')}</li>
+              <li>• <strong>{t('rate_limits.enforcement_api_key')}</strong> {t('rate_limits.enforcement_api_key_desc')}</li>
+              <li>• <strong>{t('rate_limits.enforcement_graphql')}</strong> {t('rate_limits.enforcement_graphql_desc')}</li>
+              <li>• <strong>{t('rate_limits.enforcement_circuit')}</strong> {t('rate_limits.enforcement_circuit_desc')}</li>
             </ul>
           </div>
         </div>
@@ -149,6 +151,7 @@ export default RateLimitDashboardPage;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function SubscriptionQuotaSection() {
+  const { t } = useTranslation();
   const { data } = useQuery<any>(SUBSCRIPTION_QUOTA_QUERY, { fetchPolicy: 'cache-and-network' });
   const sub = data?.mySubscription;
   if (!sub || sub.tokenLimit <= 0) return null;
@@ -165,19 +168,19 @@ function SubscriptionQuotaSection() {
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={`card p-5 border ${bgColor}`}>
       <div className="flex items-center gap-3 mb-3">
         <BoltIcon className={`w-5 h-5 ${textColor}`} />
-        <h2 className={`text-base font-semibold ${textColor}`}>Subscription Token Quota</h2>
+        <h2 className={`text-base font-semibold ${textColor}`}>{t('rate_limits.subscription_quota_title')}</h2>
       </div>
       <div className="flex items-center justify-between mb-2">
-        <span className={`text-sm font-medium ${textColor}`}>{sub.planName} Plan</span>
+        <span className={`text-sm font-medium ${textColor}`}>{sub.planName} {t('rate_limits.plan_suffix')}</span>
         <span className={`text-sm font-semibold ${textColor}`}>
-          {fmt(sub.usedTokens)} / {fmt(sub.tokenLimit)}{exceeded && ' (Exceeded)'}
+          {fmt(sub.usedTokens)} / {fmt(sub.tokenLimit)}{exceeded && ` ${t('rate_limits.exceeded')}`}
         </span>
       </div>
       <div className="h-2.5 bg-white/60 rounded-full overflow-hidden">
         <div className={`h-full rounded-full ${barColor} transition-all duration-500`} style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
       {exceeded && (
-        <p className="text-xs text-red-600 mt-2">Monthly token limit reached. API requests will be rejected until the next billing period.</p>
+        <p className="text-xs text-red-600 mt-2">{t('rate_limits.quota_exceeded_desc')}</p>
       )}
     </motion.div>
   );

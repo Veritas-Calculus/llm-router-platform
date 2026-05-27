@@ -49,6 +49,7 @@ const defaultForm: AlertRuleFormState = {
 };
 
 function AlertRulesCard() {
+  const { t } = useTranslation();
   const { data, loading, refetch } = useQuery<any>(ALERT_CONFIG_QUERY, {
     variables: { targetType: GLOBAL_TARGET_TYPE, targetId: GLOBAL_TARGET_ID },
     fetchPolicy: 'cache-and-network',
@@ -92,9 +93,9 @@ function AlertRulesCard() {
         },
       });
       await refetch();
-      toast.success('Alert rules saved');
+      toast.success(t('sla_alerts.rules_saved'));
     } catch {
-      toast.error('Failed to save alert rules');
+      toast.error(t('sla_alerts.rules_save_error'));
     }
   };
 
@@ -112,8 +113,8 @@ function AlertRulesCard() {
             <ShieldCheckIcon className="w-5 h-5 text-apple-blue" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-apple-gray-900">Global Alert Rules</h2>
-            <p className="text-sm text-apple-gray-500">Platform-wide SLA monitoring thresholds</p>
+            <h2 className="text-lg font-semibold text-apple-gray-900">{t('sla_alerts.global_rules')}</h2>
+            <p className="text-sm text-apple-gray-500">{t('sla_alerts.global_rules_desc')}</p>
           </div>
         </div>
         <label className="relative inline-flex items-center cursor-pointer">
@@ -125,7 +126,7 @@ function AlertRulesCard() {
           />
           <div className="w-11 h-6 bg-apple-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-apple-blue" />
           <span className="ml-3 text-sm font-medium text-apple-gray-700">
-            {form.isEnabled ? 'Enabled' : 'Disabled'}
+            {form.isEnabled ? t('common.enabled') : t('common.disabled')}
           </span>
         </label>
       </div>
@@ -133,7 +134,7 @@ function AlertRulesCard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {/* Health Failure Threshold */}
         <div>
-          <label className="label">Consecutive Failures</label>
+          <label className="label">{t('sla_alerts.consecutive_failures')}</label>
           <input
             type="number"
             value={form.failureThreshold}
@@ -141,12 +142,12 @@ function AlertRulesCard() {
             className="input mt-1 w-full"
             placeholder="3"
           />
-          <p className="text-xs text-apple-gray-400 mt-1">Alert after N consecutive health check failures</p>
+          <p className="text-xs text-apple-gray-400 mt-1">{t('sla_alerts.consecutive_failures_desc')}</p>
         </div>
 
         {/* Error Rate */}
         <div>
-          <label className="label">Error Rate Threshold (%)</label>
+          <label className="label">{t('sla_alerts.error_rate_threshold')}</label>
           <input
             type="number"
             value={form.errorRateThreshold}
@@ -155,12 +156,12 @@ function AlertRulesCard() {
             placeholder="5"
             step="0.1"
           />
-          <p className="text-xs text-apple-gray-400 mt-1">Alert when error rate exceeds this percentage</p>
+          <p className="text-xs text-apple-gray-400 mt-1">{t('sla_alerts.error_rate_threshold_desc')}</p>
         </div>
 
         {/* Latency */}
         <div>
-          <label className="label">P95 Latency Threshold (ms)</label>
+          <label className="label">{t('sla_alerts.p95_latency_threshold')}</label>
           <input
             type="number"
             value={form.latencyThresholdMs}
@@ -168,12 +169,12 @@ function AlertRulesCard() {
             className="input mt-1 w-full"
             placeholder="5000"
           />
-          <p className="text-xs text-apple-gray-400 mt-1">Alert when P95 latency exceeds this value</p>
+          <p className="text-xs text-apple-gray-400 mt-1">{t('sla_alerts.p95_latency_threshold_desc')}</p>
         </div>
 
         {/* Budget */}
         <div>
-          <label className="label">Budget Alert Threshold (%)</label>
+          <label className="label">{t('sla_alerts.budget_threshold')}</label>
           <input
             type="number"
             value={form.budgetThreshold}
@@ -181,12 +182,12 @@ function AlertRulesCard() {
             className="input mt-1 w-full"
             placeholder="90"
           />
-          <p className="text-xs text-apple-gray-400 mt-1">Alert when budget consumption exceeds this %</p>
+          <p className="text-xs text-apple-gray-400 mt-1">{t('sla_alerts.budget_threshold_desc')}</p>
         </div>
 
         {/* Cooldown */}
         <div>
-          <label className="label">Cooldown (minutes)</label>
+          <label className="label">{t('sla_alerts.cooldown')}</label>
           <input
             type="number"
             value={form.cooldownMinutes}
@@ -194,31 +195,31 @@ function AlertRulesCard() {
             className="input mt-1 w-full"
             placeholder="5"
           />
-          <p className="text-xs text-apple-gray-400 mt-1">Minimum interval between duplicate alerts</p>
+          <p className="text-xs text-apple-gray-400 mt-1">{t('sla_alerts.cooldown_desc')}</p>
         </div>
       </div>
 
       <div className="border-t border-apple-gray-100 mt-6 pt-6">
-        <h3 className="text-sm font-semibold text-apple-gray-700 mb-4">Notification Channels</h3>
+        <h3 className="text-sm font-semibold text-apple-gray-700 mb-4">{t('sla_alerts.notification_channels')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
-            <label className="label">Webhook URL</label>
+            <label className="label">{t('sla_alerts.webhook_url')}</label>
             <input
               type="url"
               value={form.webhookUrl}
               onChange={(e) => setForm({ ...form, webhookUrl: e.target.value })}
               className="input mt-1 w-full font-mono text-sm"
-              placeholder="https://hooks.slack.com/..."
+              placeholder={t('sla_alerts.webhook_url_placeholder')}
             />
           </div>
           <div>
-            <label className="label">Email</label>
+            <label className="label">{t('sla_alerts.email')}</label>
             <input
               type="email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               className="input mt-1 w-full"
-              placeholder="ops-team@company.com"
+              placeholder={t('sla_alerts.email_placeholder')}
             />
           </div>
         </div>
@@ -226,7 +227,7 @@ function AlertRulesCard() {
 
       <div className="flex justify-end mt-6">
         <button onClick={handleSave} className="btn btn-primary" disabled={saving}>
-          {saving ? 'Saving...' : 'Save Rules'}
+          {saving ? t('common.saving') : t('sla_alerts.save_rules')}
         </button>
       </div>
     </motion.div>
@@ -268,20 +269,20 @@ function ActiveAlertsTable() {
   const handleAck = async (id: string) => {
     try {
       await ackMut({ variables: { id } });
-      toast.success('Alert acknowledged');
+      toast.success(t('sla_alerts.ack_success'));
       await refetch();
     } catch {
-      toast.error('Failed to acknowledge alert');
+      toast.error(t('sla_alerts.ack_error'));
     }
   };
 
   const handleResolve = async (id: string) => {
     try {
       await resolveMut({ variables: { id } });
-      toast.success('Alert resolved');
+      toast.success(t('sla_alerts.resolve_success'));
       await refetch();
     } catch {
-      toast.error('Failed to resolve alert');
+      toast.error(t('sla_alerts.resolve_error'));
     }
   };
 
@@ -292,10 +293,10 @@ function ActiveAlertsTable() {
       await Promise.all(
         unresolved.map((a: any) => resolveMut({ variables: { id: a.id } }))
       );
-      toast.success(`${unresolved.length} alert${unresolved.length > 1 ? 's' : ''} resolved`);
+      toast.success(t('sla_alerts.bulk_resolved', { count: unresolved.length }));
       await refetch();
     } catch {
-      toast.error('Failed to resolve some alerts');
+      toast.error(t('sla_alerts.bulk_resolve_error'));
     } finally {
       setBulkClearing(false);
     }
@@ -314,8 +315,8 @@ function ActiveAlertsTable() {
             <BellAlertIcon className="w-5 h-5 text-apple-red" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-apple-gray-900">Active Alerts</h2>
-            <p className="text-sm text-apple-gray-500">{total} alert{total !== 1 ? 's' : ''} total</p>
+            <h2 className="text-lg font-semibold text-apple-gray-900">{t('sla_alerts.active_alerts')}</h2>
+            <p className="text-sm text-apple-gray-500">{t(total === 1 ? 'sla_alerts.alerts_total_one' : 'sla_alerts.alerts_total_other', { count: total })}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -336,7 +337,7 @@ function ActiveAlertsTable() {
               disabled={bulkClearing}
             >
               <CheckCircleIcon className="w-4 h-4 mr-1" />
-              {bulkClearing ? 'Clearing...' : `Clear All (${unresolved.length})`}
+              {bulkClearing ? t('sla_alerts.clearing') : t('sla_alerts.clear_all', { count: unresolved.length })}
             </button>
           )}
           <button
@@ -356,9 +357,9 @@ function ActiveAlertsTable() {
       ) : alerts.length === 0 ? (
         <div className="text-center py-12">
           <CheckCircleIcon className="w-12 h-12 text-apple-green mx-auto mb-3" />
-          <h3 className="text-lg font-semibold text-apple-gray-900">All Clear</h3>
+          <h3 className="text-lg font-semibold text-apple-gray-900">{t('sla_alerts.all_clear')}</h3>
           <p className="text-sm text-apple-gray-500 mt-1">
-            No {statusFilter || ''} alerts at this time.
+            {t('sla_alerts.all_clear_desc', { status: statusFilter || '' })}
           </p>
         </div>
       ) : (
@@ -366,12 +367,12 @@ function ActiveAlertsTable() {
           <table className="min-w-full divide-y divide-apple-gray-200">
             <thead>
               <tr>
-                <th className="table-header">Type</th>
-                <th className="table-header">Target</th>
-                <th className="table-header">Message</th>
-                <th className="table-header">Status</th>
-                <th className="table-header">Created</th>
-                <th className="table-header">Actions</th>
+                <th className="table-header">{t('sla_alerts.col_type')}</th>
+                <th className="table-header">{t('sla_alerts.col_target')}</th>
+                <th className="table-header">{t('sla_alerts.col_message')}</th>
+                <th className="table-header">{t('sla_alerts.col_status')}</th>
+                <th className="table-header">{t('sla_alerts.col_created')}</th>
+                <th className="table-header">{t('sla_alerts.col_actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-apple-gray-100">
@@ -406,7 +407,7 @@ function ActiveAlertsTable() {
                           onClick={() => handleAck(alert.id)}
                           className="text-xs text-apple-orange hover:text-orange-700 font-medium transition-colors"
                         >
-                          Acknowledge
+                          {t('sla_alerts.acknowledge')}
                         </button>
                       )}
                       {(alert.status === 'active' || alert.status === 'acknowledged') && (
@@ -414,7 +415,7 @@ function ActiveAlertsTable() {
                           onClick={() => handleResolve(alert.id)}
                           className="text-xs text-apple-green hover:text-green-700 font-medium transition-colors"
                         >
-                          Resolve
+                          {t('sla_alerts.resolve')}
                         </button>
                       )}
                       {alert.status === 'resolved' && (
@@ -435,12 +436,13 @@ function ActiveAlertsTable() {
 // ─── Main Page ──────────────────────────────────────────────────────
 
 function SlaAlertsPage() {
+  const { t } = useTranslation();
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold text-apple-gray-900">Alert Rules</h1>
+        <h1 className="text-2xl font-semibold text-apple-gray-900">{t('sla_alerts.title')}</h1>
         <p className="text-apple-gray-500 mt-1">
-          Configure SLA thresholds and notification channels for platform-wide monitoring
+          {t('sla_alerts.subtitle')}
         </p>
       </div>
 

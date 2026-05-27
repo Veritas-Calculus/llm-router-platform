@@ -19,6 +19,7 @@ import { useTranslation } from '@/lib/i18n';
 // ─── Cache Config Panel ─────────────────────────────────────────────
 
 function CacheConfigPanel() {
+  const { t } = useTranslation();
   const { data, refetch } = useQuery<any>(CACHE_CONFIG_QUERY, { fetchPolicy: 'cache-and-network' });
   const [updateMut, { loading: saving }] = useMutation(UPDATE_CACHE_CONFIG);
   const [expanded, setExpanded] = useState(false);
@@ -54,9 +55,9 @@ function CacheConfigPanel() {
         },
       });
       await refetch();
-      toast.success('Cache configuration saved');
+      toast.success(t('cache.config_saved'));
     } catch {
-      toast.error('Failed to save config');
+      toast.error(t('cache.config_save_error'));
     }
   };
 
@@ -71,8 +72,8 @@ function CacheConfigPanel() {
             <Cog6ToothIcon className="w-5 h-5" />
           </div>
           <div className="text-left">
-            <h2 className="text-base font-medium text-apple-gray-900">Cache Configuration</h2>
-            <p className="text-xs text-apple-gray-500 mt-0.5">Similarity threshold, TTL, embedding model</p>
+            <h2 className="text-base font-medium text-apple-gray-900">{t('cache.config_title')}</h2>
+            <p className="text-xs text-apple-gray-500 mt-0.5">{t('cache.config_desc')}</p>
           </div>
         </div>
         <ChevronDownIcon
@@ -90,7 +91,7 @@ function CacheConfigPanel() {
           >
             <div className="px-6 pb-6 pt-2 border-t border-apple-gray-100">
               <div className="flex items-center justify-between mb-5">
-                <span className="text-sm font-medium text-apple-gray-700">Enable Semantic Cache</span>
+                <span className="text-sm font-medium text-apple-gray-700">{t('cache.enable_cache')}</span>
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
@@ -104,7 +105,7 @@ function CacheConfigPanel() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
-                  <label className="label">Similarity Threshold</label>
+                  <label className="label">{t('cache.similarity_threshold')}</label>
                   <input
                     type="number"
                     value={similarityThreshold}
@@ -114,11 +115,11 @@ function CacheConfigPanel() {
                     min="0"
                     max="1"
                   />
-                  <p className="text-xs text-apple-gray-400 mt-1">Cosine distance (lower = stricter)</p>
+                  <p className="text-xs text-apple-gray-400 mt-1">{t('cache.similarity_threshold_hint')}</p>
                 </div>
 
                 <div>
-                  <label className="label">Default TTL (min)</label>
+                  <label className="label">{t('cache.default_ttl_min')}</label>
                   <input
                     type="number"
                     value={defaultTtlMinutes}
@@ -126,11 +127,11 @@ function CacheConfigPanel() {
                     className="input mt-1 w-full"
                     min="1"
                   />
-                  <p className="text-xs text-apple-gray-400 mt-1">Cache expiry in minutes</p>
+                  <p className="text-xs text-apple-gray-400 mt-1">{t('cache.default_ttl_min_hint')}</p>
                 </div>
 
                 <div>
-                  <label className="label">Embedding Model</label>
+                  <label className="label">{t('cache.embedding_model')}</label>
                   <select
                     value={embeddingModel}
                     onChange={(e) => setEmbeddingModel(e.target.value)}
@@ -140,11 +141,11 @@ function CacheConfigPanel() {
                     <option value="text-embedding-3-large">text-embedding-3-large</option>
                     <option value="text-embedding-ada-002">text-embedding-ada-002</option>
                   </select>
-                  <p className="text-xs text-apple-gray-400 mt-1">Vector embedding model</p>
+                  <p className="text-xs text-apple-gray-400 mt-1">{t('cache.embedding_model_hint')}</p>
                 </div>
 
                 <div>
-                  <label className="label">Max Cache Size</label>
+                  <label className="label">{t('cache.max_cache_size')}</label>
                   <input
                     type="number"
                     value={maxCacheSize}
@@ -152,13 +153,13 @@ function CacheConfigPanel() {
                     className="input mt-1 w-full"
                     min="100"
                   />
-                  <p className="text-xs text-apple-gray-400 mt-1">Maximum cache entries</p>
+                  <p className="text-xs text-apple-gray-400 mt-1">{t('cache.max_cache_size_hint')}</p>
                 </div>
               </div>
 
               <div className="flex justify-end mt-5">
                 <button onClick={handleSave} className="btn btn-primary" disabled={saving}>
-                  {saving ? 'Saving...' : 'Save Configuration'}
+                  {saving ? t('common.saving') : t('cache.save_configuration')}
                 </button>
               </div>
             </div>
@@ -187,27 +188,27 @@ function SemanticCachePage() {
   const caches = useMemo(() => cachesData?.semanticCaches || [], [cachesData]);
 
   const handleClearCache = async (id: string) => {
-    if (!window.confirm('Delete this cache entry?')) return;
+    if (!window.confirm(t('cache.delete_confirm'))) return;
     try {
       await clearCacheMut({ variables: { id } });
-      toast.success('Cache entry deleted');
+      toast.success(t('cache.deleted_success'));
       refetchCaches();
       refetchStats();
     } catch {
-      toast.error('Failed to delete cache');
+      toast.error(t('cache.delete_error'));
     }
   };
 
   const handleClearAll = async () => {
-    if (!window.confirm('Are you absolutely sure you want to clear ALL semantic caches?')) return;
+    if (!window.confirm(t('cache.clear_all_confirm'))) return;
     setIsClearingAll(true);
     try {
       await clearAllCachesMut();
-      toast.success('All semantic caches cleared');
+      toast.success(t('cache.clear_all_success'));
       refetchCaches();
       refetchStats();
     } catch {
-      toast.error('Failed to clear all caches');
+      toast.error(t('cache.clear_all_error'));
     } finally {
       setIsClearingAll(false);
     }
@@ -225,8 +226,8 @@ function SemanticCachePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-apple-gray-900">Semantic Cache</h1>
-          <p className="text-apple-gray-500 mt-1">Manage and monitor vectorized prompt caching (pgvector)</p>
+          <h1 className="text-2xl font-semibold text-apple-gray-900">{t('cache.title')}</h1>
+          <p className="text-apple-gray-500 mt-1">{t('cache.subtitle')}</p>
         </div>
         <button
           onClick={handleClearAll}
@@ -234,7 +235,7 @@ function SemanticCachePage() {
           className="px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-50 transition-colors flex items-center gap-2"
         >
           <TrashIcon className="w-4 h-4" />
-          {isClearingAll ? 'Clearing...' : 'Clear All Caches'}
+          {isClearingAll ? t('cache.clearing') : t('cache.clear_all')}
         </button>
       </div>
 
@@ -244,7 +245,7 @@ function SemanticCachePage() {
             <BeakerIcon className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-sm font-medium text-apple-gray-500">Total Vector Caches</div>
+            <div className="text-sm font-medium text-apple-gray-500">{t('cache.total_vector_caches')}</div>
             <div className="text-2xl font-semibold text-apple-gray-900">{stats.totalCaches}</div>
           </div>
         </div>
@@ -255,9 +256,9 @@ function SemanticCachePage() {
             </svg>
           </div>
           <div>
-            <div className="text-sm font-medium text-apple-gray-500">Total Cache Hits</div>
+            <div className="text-sm font-medium text-apple-gray-500">{t('cache.total_cache_hits')}</div>
             <div className="text-2xl font-semibold text-apple-gray-900">{stats.totalHits}</div>
-            <div className="text-xs text-apple-gray-400 mt-0.5">Approx. ${(stats.totalHits * 0.005).toFixed(2)} saved</div>
+            <div className="text-xs text-apple-gray-400 mt-0.5">{t('cache.approx_saved', { amount: (stats.totalHits * 0.005).toFixed(2) })}</div>
           </div>
         </div>
       </div>
@@ -267,18 +268,18 @@ function SemanticCachePage() {
 
       <div className="bg-white rounded-xl shadow-apple-sm border border-apple-gray-100 overflow-hidden">
         <div className="px-6 py-4 border-b border-apple-gray-100">
-          <h2 className="text-lg font-medium text-apple-gray-900">Recent Cache Entries</h2>
+          <h2 className="text-lg font-medium text-apple-gray-900">{t('cache.recent_entries')}</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-apple-gray-50/50 text-apple-gray-500 font-medium">
               <tr>
-                <th className="px-6 py-3 border-y border-apple-gray-100">Creation Date</th>
-                <th className="px-6 py-3 border-y border-apple-gray-100">Provider</th>
-                <th className="px-6 py-3 border-y border-apple-gray-100">Model</th>
-                <th className="px-6 py-3 border-y border-apple-gray-100">Hash (SHA-256)</th>
-                <th className="px-6 py-3 border-y border-apple-gray-100">Hits</th>
-                <th className="px-6 py-3 border-y border-apple-gray-100 text-right">Actions</th>
+                <th className="px-6 py-3 border-y border-apple-gray-100">{t('cache.col_created')}</th>
+                <th className="px-6 py-3 border-y border-apple-gray-100">{t('cache.col_provider')}</th>
+                <th className="px-6 py-3 border-y border-apple-gray-100">{t('cache.col_model')}</th>
+                <th className="px-6 py-3 border-y border-apple-gray-100">{t('cache.col_hash')}</th>
+                <th className="px-6 py-3 border-y border-apple-gray-100">{t('cache.col_hits')}</th>
+                <th className="px-6 py-3 border-y border-apple-gray-100 text-right">{t('cache.col_actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-apple-gray-100">
@@ -318,7 +319,7 @@ function SemanticCachePage() {
               {caches.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-apple-gray-500">
-                    No semantics caches recorded yet.
+                    {t('cache.no_entries_recorded')}
                   </td>
                 </tr>
               )}

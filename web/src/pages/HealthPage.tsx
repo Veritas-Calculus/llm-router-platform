@@ -61,12 +61,12 @@ function HealthPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-apple-gray-900">Health Monitor</h1>
-          <p className="text-apple-gray-500 mt-1">Monitor the health of your API keys and proxies</p>
+          <h1 className="text-2xl font-semibold text-apple-gray-900">{t('health.title')}</h1>
+          <p className="text-apple-gray-500 mt-1">{t('health.subtitle')}</p>
         </div>
         <button onClick={refreshAll} className="btn btn-secondary" disabled={refreshing}>
           <ArrowPathIcon className={`w-5 h-5 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
+          {t('common.refresh')}
         </button>
       </div>
 
@@ -79,7 +79,11 @@ function HealthPage() {
               activeTab === tab ? 'segmented-control-item--active' : ''
             }`}
           >
-            {tab === 'api-keys' ? 'API Keys' : tab === 'config' ? 'Alert Config' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === 'api-keys' ? t('health.tab_api_keys')
+              : tab === 'config' ? t('health.tab_config')
+              : tab === 'providers' ? t('health.tab_providers')
+              : tab === 'proxies' ? t('health.tab_proxies')
+              : t('health.tab_alerts')}
             {tab === 'config' && <Cog6ToothIcon className="w-4 h-4" />}
             {tab === 'alerts' && activeAlerts > 0 && (
               <span className="bg-apple-red text-white text-2xs px-1.5 py-0.5 rounded-full leading-none">{activeAlerts}</span>
@@ -91,17 +95,17 @@ function HealthPage() {
       {activeTab === 'providers' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-apple-gray-900">Provider Health</h3>
+            <h3 className="text-lg font-medium text-apple-gray-900">{t('health.provider_health_heading')}</h3>
             <button onClick={checkAllProviders} className="btn btn-secondary text-sm">
-              <ArrowPathIcon className="w-4 h-4 mr-1" /> Check All
+              <ArrowPathIcon className="w-4 h-4 mr-1" /> {t('health.check_all')}
             </button>
           </div>
           {providerHealth.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16">
               <CpuChipIcon className="w-12 h-12 text-apple-gray-300 mb-3" />
-              <p className="text-lg font-medium text-apple-gray-700 mb-1">No active providers</p>
-              <p className="text-sm text-apple-gray-400 mb-4">Configure a provider to start monitoring health</p>
-              <a href="/admin/providers" className="btn btn-primary text-sm px-4 py-2">Add Provider</a>
+              <p className="text-lg font-medium text-apple-gray-700 mb-1">{t('health.no_providers')}</p>
+              <p className="text-sm text-apple-gray-400 mb-4">{t('health.no_providers_desc')}</p>
+              <a href="/admin/providers" className="btn btn-primary text-sm px-4 py-2">{t('health.add_provider')}</a>
             </div>
           ) : (
             <div className="space-y-4">
@@ -119,24 +123,24 @@ function HealthPage() {
                     {provider.use_proxy && (
                       <div className="flex items-center gap-1">
                         <ServerIcon className="w-4 h-4 text-apple-blue" />
-                        <span className="text-xs text-apple-blue">Via Proxy</span>
+                        <span className="text-xs text-apple-blue">{t('health.via_proxy')}</span>
                       </div>
                     )}
                     <div className="text-right">
                       <p className="text-sm font-medium text-apple-gray-900">{provider.response_time > 0 ? `${provider.response_time}ms` : '-'}</p>
-                      <p className="text-xs text-apple-gray-500">Latency</p>
+                      <p className="text-xs text-apple-gray-500">{t('health.latency')}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-medium text-apple-gray-900">{(provider.success_rate * 100).toFixed(1)}%</p>
-                      <p className="text-xs text-apple-gray-500">Success rate</p>
+                      <p className="text-xs text-apple-gray-500">{t('health.success_rate')}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm text-apple-gray-500">{provider.last_check ? formatDate(provider.last_check) : 'Never'}</p>
-                      <p className="text-xs text-apple-gray-400">Last checked</p>
+                      <p className="text-sm text-apple-gray-500">{provider.last_check ? formatDate(provider.last_check) : t('health.never')}</p>
+                      <p className="text-xs text-apple-gray-400">{t('health.last_checked')}</p>
                     </div>
                     <button onClick={() => checkProvider(provider.id)} className="btn btn-secondary text-sm px-3 py-1.5" title={t('health.check_now')}>
                       <ArrowPathIcon className="w-4 h-4 mr-1" />
-                      Test
+                      {t('common.test')}
                     </button>
                   </div>
                 </div>
@@ -151,8 +155,8 @@ function HealthPage() {
           {apiKeyHealth.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16">
               <KeyIcon className="w-12 h-12 text-apple-gray-300 mb-3" />
-              <p className="text-lg font-medium text-apple-gray-700 mb-1">No API keys found</p>
-              <p className="text-sm text-apple-gray-400">API keys will appear here once providers are configured</p>
+              <p className="text-lg font-medium text-apple-gray-700 mb-1">{t('health.no_api_keys')}</p>
+              <p className="text-sm text-apple-gray-400">{t('health.no_api_keys_desc')}</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -167,20 +171,20 @@ function HealthPage() {
                   </div>
                   <div className="flex items-center gap-6">
                     <div className="text-right">
-                      <p className={`text-sm font-medium ${key.is_active ? 'text-apple-green' : 'text-apple-gray-400'}`}>{key.is_active ? 'Active' : 'Inactive'}</p>
-                      <p className="text-xs text-apple-gray-500">Status</p>
+                      <p className={`text-sm font-medium ${key.is_active ? 'text-apple-green' : 'text-apple-gray-400'}`}>{key.is_active ? t('common.active') : t('common.inactive')}</p>
+                      <p className="text-xs text-apple-gray-500">{t('common.status')}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-medium text-apple-gray-900">{key.response_time}ms</p>
-                      <p className="text-xs text-apple-gray-500">Latency</p>
+                      <p className="text-xs text-apple-gray-500">{t('health.latency')}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm text-apple-gray-500">{key.last_check ? formatDate(key.last_check) : 'Never'}</p>
-                      <p className="text-xs text-apple-gray-400">Last checked</p>
+                      <p className="text-sm text-apple-gray-500">{key.last_check ? formatDate(key.last_check) : t('health.never')}</p>
+                      <p className="text-xs text-apple-gray-400">{t('health.last_checked')}</p>
                     </div>
-                    <button onClick={() => checkApiKey(key.id)} className="btn btn-secondary text-sm px-3 py-1.5" title="Check now">
+                    <button onClick={() => checkApiKey(key.id)} className="btn btn-secondary text-sm px-3 py-1.5" title={t('health.check_now')}>
                       <ArrowPathIcon className="w-4 h-4 mr-1" />
-                      Test
+                      {t('common.test')}
                     </button>
                   </div>
                 </div>
@@ -195,9 +199,9 @@ function HealthPage() {
           {proxyHealth.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16">
               <GlobeAltIcon className="w-12 h-12 text-apple-gray-300 mb-3" />
-              <p className="text-lg font-medium text-apple-gray-700 mb-1">No proxies configured</p>
-              <p className="text-sm text-apple-gray-400 mb-4">Add proxy servers to route traffic through them</p>
-              <a href="/admin/proxies" className="btn btn-primary text-sm px-4 py-2">Add Proxy</a>
+              <p className="text-lg font-medium text-apple-gray-700 mb-1">{t('health.no_proxies')}</p>
+              <p className="text-sm text-apple-gray-400 mb-4">{t('health.no_proxies_desc')}</p>
+              <a href="/admin/proxies" className="btn btn-primary text-sm px-4 py-2">{t('health.add_proxy')}</a>
             </div>
           ) : (
             <div className="space-y-4">
@@ -212,20 +216,20 @@ function HealthPage() {
                   </div>
                   <div className="flex items-center gap-6">
                     <div className="text-right">
-                      <p className={`text-sm font-medium ${proxy.is_active ? 'text-apple-green' : 'text-apple-gray-400'}`}>{proxy.is_active ? 'Active' : 'Inactive'}</p>
-                      <p className="text-xs text-apple-gray-500">Status</p>
+                      <p className={`text-sm font-medium ${proxy.is_active ? 'text-apple-green' : 'text-apple-gray-400'}`}>{proxy.is_active ? t('common.active') : t('common.inactive')}</p>
+                      <p className="text-xs text-apple-gray-500">{t('common.status')}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-medium text-apple-gray-900">{proxy.response_time}ms</p>
-                      <p className="text-xs text-apple-gray-500">Latency</p>
+                      <p className="text-xs text-apple-gray-500">{t('health.latency')}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-medium text-apple-gray-900">{(proxy.success_rate * 100).toFixed(1)}%</p>
-                      <p className="text-xs text-apple-gray-500">Success rate</p>
+                      <p className="text-xs text-apple-gray-500">{t('health.success_rate')}</p>
                     </div>
-                    <button onClick={() => checkProxy(proxy.id)} className="btn btn-secondary text-sm px-3 py-1.5" title="Check now">
+                    <button onClick={() => checkProxy(proxy.id)} className="btn btn-secondary text-sm px-3 py-1.5" title={t('health.check_now')}>
                       <ArrowPathIcon className="w-4 h-4 mr-1" />
-                      Test
+                      {t('common.test')}
                     </button>
                   </div>
                 </div>
@@ -240,8 +244,8 @@ function HealthPage() {
           {alerts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16">
               <BellSlashIcon className="w-12 h-12 text-apple-gray-300 mb-3" />
-              <p className="text-lg font-medium text-apple-gray-700 mb-1">No alerts</p>
-              <p className="text-sm text-apple-gray-400">Everything is running smoothly</p>
+              <p className="text-lg font-medium text-apple-gray-700 mb-1">{t('health.no_alerts')}</p>
+              <p className="text-sm text-apple-gray-400">{t('health.no_alerts_desc')}</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -261,12 +265,12 @@ function HealthPage() {
                     </div>
                     {alert.status === 'active' && (
                       <div className="flex gap-2">
-                        <button onClick={() => acknowledgeAlert(alert.id)} className="btn-secondary text-sm px-3 py-1">Acknowledge</button>
-                        <button onClick={() => resolveAlert(alert.id)} className="btn-primary text-sm px-3 py-1">Resolve</button>
+                        <button onClick={() => acknowledgeAlert(alert.id)} className="btn-secondary text-sm px-3 py-1">{t('health.acknowledge')}</button>
+                        <button onClick={() => resolveAlert(alert.id)} className="btn-primary text-sm px-3 py-1">{t('health.resolve')}</button>
                       </div>
                     )}
                     {alert.status === 'acknowledged' && (
-                      <button onClick={() => resolveAlert(alert.id)} className="btn-primary text-sm px-3 py-1">Resolve</button>
+                      <button onClick={() => resolveAlert(alert.id)} className="btn-primary text-sm px-3 py-1">{t('health.resolve')}</button>
                     )}
                   </div>
                 </div>
@@ -278,11 +282,11 @@ function HealthPage() {
       {activeTab === 'config' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
           <div className="card">
-            <h3 className="text-lg font-medium text-apple-gray-900 mb-2">Alert Channel Configuration</h3>
-            <p className="text-sm text-apple-gray-500 mb-4">Configure notification channels for each provider. Alerts will be sent when health checks fail.</p>
+            <h3 className="text-lg font-medium text-apple-gray-900 mb-2">{t('health.alert_config_title')}</h3>
+            <p className="text-sm text-apple-gray-500 mb-4">{t('health.alert_config_desc')}</p>
           </div>
           {providerHealth.length === 0 ? (
-            <p className="text-center text-apple-gray-500 py-8">No providers to configure</p>
+            <p className="text-center text-apple-gray-500 py-8">{t('health.no_providers_to_configure')}</p>
           ) : (
             providerHealth.map((provider: any) => {
               const configKey = `provider:${provider.id}`;
@@ -313,6 +317,7 @@ function AlertConfigCard({
   config?: AlertConfig;
   onSave: (c: Omit<AlertConfig, 'id'>) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [isEnabled, setIsEnabled] = useReactState(config?.is_enabled ?? false);
   const [threshold, setThreshold] = useReactState(config?.failure_threshold ?? 3);
   const [webhookUrl, setWebhookUrl] = useReactState(config?.webhook_url ?? '');
@@ -340,7 +345,7 @@ function AlertConfigCard({
           <h4 className="font-medium text-apple-gray-900">{providerName}</h4>
         </div>
         <label className="flex items-center gap-2 cursor-pointer">
-          <span className="text-sm text-apple-gray-500">{isEnabled ? 'Enabled' : 'Disabled'}</span>
+          <span className="text-sm text-apple-gray-500">{isEnabled ? t('common.enabled') : t('common.disabled')}</span>
           <div
             className={`relative w-10 h-6 rounded-full transition-colors ${isEnabled ? 'bg-apple-blue' : 'bg-apple-gray-300'}`}
             onClick={() => setIsEnabled(!isEnabled)}
@@ -353,23 +358,23 @@ function AlertConfigCard({
       <div className={`space-y-4 ${!isEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-apple-gray-700 mb-1">Webhook URL</label>
+            <label className="block text-sm font-medium text-apple-gray-700 mb-1">{t('health.webhook_url')}</label>
             <input
               type="url"
               value={webhookUrl}
               onChange={(e) => setWebhookUrl(e.target.value)}
-              placeholder="https://hooks.slack.com/... or DingTalk webhook"
+              placeholder={t('health.webhook_url_placeholder')}
               className="input w-full"
             />
-            <p className="text-xs text-apple-gray-400 mt-1">Supports Slack, DingTalk, Feishu, or any HTTP endpoint</p>
+            <p className="text-xs text-apple-gray-400 mt-1">{t('health.webhook_url_hint')}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-apple-gray-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-apple-gray-700 mb-1">{t('health.email')}</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="ops-team@company.com"
+              placeholder={t('health.email_placeholder')}
               className="input w-full"
             />
           </div>
@@ -377,7 +382,7 @@ function AlertConfigCard({
 
         <div>
           <label className="block text-sm font-medium text-apple-gray-700 mb-1">
-            Failure Threshold: <span className="text-apple-blue">{threshold}</span> consecutive failures
+            {t('health.failure_threshold')}: <span className="text-apple-blue">{threshold}</span> {t('health.failure_threshold_consecutive', { count: threshold })}
           </label>
           <input
             type="range"
@@ -388,15 +393,15 @@ function AlertConfigCard({
             className="w-full accent-apple-blue"
           />
           <div className="flex justify-between text-xs text-apple-gray-400">
-            <span>1 (sensitive)</span>
-            <span>10 (tolerant)</span>
+            <span>{t('health.sensitive')}</span>
+            <span>{t('health.tolerant')}</span>
           </div>
         </div>
       </div>
 
       <div className="flex justify-end mt-4 pt-4 border-t border-apple-gray-100">
         <button onClick={handleSave} disabled={saving} className="btn btn-primary text-sm">
-          {saving ? 'Saving...' : 'Save Configuration'}
+          {saving ? t('common.saving') : t('health.save_configuration')}
         </button>
       </div>
     </div>

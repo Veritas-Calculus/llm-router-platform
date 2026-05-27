@@ -11,8 +11,10 @@ import ProxyFormModal from '@/components/proxies/ProxyFormModal';
 import BatchImportModal from '@/components/proxies/BatchImportModal';
 import ProxyPoolsPanel from '@/components/proxies/ProxyPoolsPanel';
 import { useProxies } from '@/hooks/useProxies';
+import { useTranslation } from '@/lib/i18n';
 
 function ProxiesPage() {
+  const { t } = useTranslation();
   const {
     fileInputRef,
     proxies,
@@ -72,22 +74,22 @@ function ProxiesPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-apple-gray-900">Proxies</h1>
-          <p className="text-apple-gray-500 mt-1">Manage proxy nodes for API requests</p>
+          <h1 className="text-2xl font-semibold text-apple-gray-900">{t('proxies.title')}</h1>
+          <p className="text-apple-gray-500 mt-1">{t('proxies.subtitle')}</p>
         </div>
         {proxies.length > 0 && (
           <div className="flex items-center gap-3">
             <button onClick={handleTestAllProxies} className="btn btn-secondary" disabled={testingAll}>
               {testingAll ? <ArrowPathIcon className="w-5 h-5 mr-2 animate-spin" /> : <PlayIcon className="w-5 h-5 mr-2" />}
-              Test All
+              {t('proxies.test_all')}
             </button>
             <div className="relative group">
               <button onClick={openBatchModal} className="btn btn-secondary">
-                <DocumentArrowUpIcon className="w-5 h-5 mr-2" /> Import
+                <DocumentArrowUpIcon className="w-5 h-5 mr-2" /> {t('common.import')}
               </button>
             </div>
             <button onClick={openCreateModal} className="btn btn-primary">
-              <PlusIcon className="w-5 h-5 mr-2" /> Add Proxy
+              <PlusIcon className="w-5 h-5 mr-2" /> {t('proxies.add_proxy')}
             </button>
           </div>
         )}
@@ -112,12 +114,12 @@ function ProxiesPage() {
             <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <GlobeAltIcon className="w-8 h-8 text-apple-blue" />
             </div>
-            <h3 className="text-lg font-semibold text-apple-gray-900 mb-1">No Proxies Configured</h3>
+            <h3 className="text-lg font-semibold text-apple-gray-900 mb-1">{t('proxies.empty_title')}</h3>
             <p className="text-apple-gray-500 text-sm mb-6 max-w-sm mx-auto">
-              Add proxy nodes to distribute and load-balance your LLM API requests.
+              {t('proxies.empty_desc')}
             </p>
             <button onClick={openCreateModal} className="btn btn-primary rounded-xl">
-              <PlusIcon className="w-5 h-5 mr-2" /> Add your first proxy
+              <PlusIcon className="w-5 h-5 mr-2" /> {t('proxies.add_first_proxy')}
             </button>
           </div>
         ) : (
