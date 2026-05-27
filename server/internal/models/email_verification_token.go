@@ -14,6 +14,11 @@ type EmailVerificationToken struct {
 	TokenHash string     `gorm:"not null;uniqueIndex" json:"-"`
 	ExpiresAt time.Time  `gorm:"not null" json:"expires_at"`
 	UsedAt    *time.Time `json:"used_at,omitempty"` // nil = not yet used
+
+	// email_verification_tokens_user_id_fkey: CASCADE — orphan tokens are
+	// useless if the user row is gone (added in migration 000023). The
+	// explicit constraint name matches the Postgres-default SQL name.
+	User *User `gorm:"foreignKey:UserID;constraint:email_verification_tokens_user_id_fkey,OnDelete:CASCADE" json:"-"`
 }
 
 // IsValid returns true if the token has not expired and has not been used.
