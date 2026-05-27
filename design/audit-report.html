@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>LLM Router Platform — 产品 / 安全 / 体验 审计报告</title>
+<style>
+  :root{
+    --bg:#0b0c0f; --panel:#13141a; --panel2:#181a22; --line:#23242c;
+    --fg:#e7e8ee; --muted:#9aa0ac; --accent:#7aa2ff;
+    --crit:#ff4d5e; --high:#ff8a3d; --med:#f1c40f; --low:#7ad07a; --info:#7aa2ff;
+    --code:#10121a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  code,kbd,pre{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12.5px}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto}
+  code:not(pre>code){background:var(--code);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+  header{padding:48px 32px 24px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#15171f,#0b0c0f)}
+  header h1{margin:0 0 6px;font-size:30px;letter-spacing:.2px}
+  header .sub{color:var(--muted);font-size:14px}
+  header .meta{margin-top:18px;color:var(--muted);font-size:12.5px}
+  header .meta b{color:var(--fg);font-weight:600}
+  main{max-width:1160px;margin:0 auto;padding:32px}
+  section{margin:36px 0;padding:0}
+  h2{font-size:20px;margin:0 0 14px;letter-spacing:.1px}
+  h3{font-size:16px;margin:18px 0 6px}
+  .lead{color:var(--muted);max-width:780px;margin:0 0 18px}
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:20px 0 8px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 14px;text-align:center}
+  .stat .n{font-size:30px;font-weight:700;line-height:1}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:6px;letter-spacing:.5px;text-transform:uppercase}
+  .stat.crit .n{color:var(--crit)} .stat.high .n{color:var(--high)} .stat.med .n{color:var(--med)} .stat.low .n{color:var(--low)} .stat.info .n{color:var(--info)}
+  .toc{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin:20px 0 12px}
+  .toc h3{margin:0 0 10px;font-size:13.5px;text-transform:uppercase;color:var(--muted);letter-spacing:1px}
+  .toc ol{margin:0;padding-left:20px;columns:2;column-gap:28px}
+  .toc li{padding:2px 0;break-inside:avoid}
+  .finding{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--info);border-radius:10px;margin:18px 0;padding:20px 22px}
+  .finding.crit{border-left-color:var(--crit)}
+  .finding.high{border-left-color:var(--high)}
+  .finding.med{border-left-color:var(--med)}
+  .finding.low{border-left-color:var(--low)}
+  .finding.info{border-left-color:var(--info)}
+  .finding header{padding:0;background:none;border:0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin-bottom:10px}
+  .id{color:var(--muted);font-family:ui-monospace,monospace;font-size:12.5px;letter-spacing:.5px}
+  .title{font-size:16.5px;font-weight:600;flex:1;min-width:0}
+  .tag{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--muted);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+  .tag.crit{color:#fff;background:var(--crit);border-color:var(--crit)}
+  .tag.high{color:#1a1a1a;background:var(--high);border-color:var(--high)}
+  .tag.med{color:#1a1a1a;background:var(--med);border-color:var(--med)}
+  .tag.low{color:#0c0c0c;background:var(--low);border-color:var(--low)}
+  .tag.info{color:#0c0c0c;background:var(--info);border-color:var(--info)}
+  .row{display:grid;grid-template-columns:120px 1fr;gap:6px 14px;margin:6px 0}
+  .row .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px;padding-top:2px}
+  .row .v{color:var(--fg)}
+  .row .v ul{margin:4px 0;padding-left:18px}
+  .row .v li{margin:2px 0}
+  details{margin-top:10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+  details summary{cursor:pointer;color:var(--muted);font-size:12.5px}
+  details[open] summary{color:var(--fg);margin-bottom:8px}
+  .shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:14px 0}
+  .shots figure{margin:0;background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .shots img{display:block;width:100%;height:auto}
+  .shots figcaption{padding:6px 10px;font-size:11.5px;color:var(--muted)}
+  table.matrix{width:100%;border-collapse:separate;border-spacing:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  table.matrix th, table.matrix td{padding:8px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:13px}
+  table.matrix th{background:var(--panel2);color:var(--muted);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.5px}
+  table.matrix tr:last-child td{border-bottom:0}
+  table.matrix td.sev{font-weight:600;white-space:nowrap}
+  table.matrix td.sev.crit{color:var(--crit)} table.matrix td.sev.high{color:var(--high)} table.matrix td.sev.med{color:var(--med)} table.matrix td.sev.low{color:var(--low)} table.matrix td.sev.info{color:var(--info)}
+  footer{border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;padding:24px 32px;text-align:center}
+  hr.sep{border:0;border-top:1px dashed var(--line);margin:22px 0}
+  .scope{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}
+  .scope span{font-size:11px;padding:3px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+  @media (max-width:780px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .toc ol{columns:1}
+    .row{grid-template-columns:1fr}
+    header{padding:32px 20px 18px}
+    main{padding:18px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>LLM Router Platform — 产品 / 安全 / 体验 审计报告</h1>
+  <div class="sub">基于本地 Docker 部署（<code>llm-router-web</code> + <code>llm-router-server</code> + <code>postgres</code> + <code>redis</code>）的端到端实测审计</div>
+  <div class="meta">
+    审计时间：<b>2026-05-26</b>　|　审计方法：<b>Playwright 浏览器驱动 + curl 直连接口 + 源码交叉核对</b>　|　被测主机：<b>http://localhost</b><br>
+    后端版本：<b>migration v22</b>　|　构建 ID：<code>index-Cwve4tjX.js</code>　|　被测账号：<code>weakpw@example.com</code>（普通用户）/ <code>admin@example.com</code>（管理员）
+  </div>
+</header>
+
+<main>
+
+  <section>
+    <h2>1. 摘要</h2>
+    <p class="lead">本次审计在本地真实运行的 LLM Router 平台上完成，覆盖未登录态、用户注册/登录、API Key、Playground、Webhook、DLP、Subscription、Members、Profile，以及管理员后台的 Providers / Audit / Settings / Finance 等模块。同时通过命令行直连验证了 <code>/graphql</code>、<code>/v1/*</code>、<code>/healthz</code>、<code>/metrics</code> 等接口的真实行为。</p>
+    <p class="lead">总体来看，平台的<strong>架构与安全基线已经搭起来</strong>（HSTS、CSP、frame-ancestors、refresh cookie HttpOnly+Secure、SSRF 拒绝内网主机、GraphQL 关闭 introspection、写时鉴权下沉到 directive 等都已落地）。但在<strong>真实可用性、跨模块一致性、UI/UX 闭环</strong>层面有大量未收尾的细节：CSP 与 Sentry/Worker 互相打架、相同 Header 被前后两层重复设置且参数不一致、注册流程对密码强度的说法与实际后端校验不一致、错误以「内部错误」吞掉、新建账号自动赠送 5 美元（开放注册下相当于资金漏洞）、Subscription 与 Dashboard 余额两套真相、Onboarding 弹窗每次切页都重新弹出等等。</p>
+    <p class="lead">同时存在 <strong>2 个安全敏感发现</strong>：<em>访问态 JWT 直接保存在 localStorage</em> 以及 <em>普通用户 UI 主动请求管理员级 GraphQL 字段并将「403 forbidden」原文 toast 给用户</em>。前者使得任意一次 XSS（哪怕只是粘贴一段名字字段绕过）都能导致长期会话窃取；后者会向终端用户暴露后台权限模型与字段名。</p>
+    <div class="stats">
+      <div class="stat crit"><div class="n">3</div><div class="l">Critical</div></div>
+      <div class="stat high"><div class="n">8</div><div class="l">High</div></div>
+      <div class="stat med"><div class="n">11</div><div class="l">Medium</div></div>
+      <div class="stat low"><div class="n">7</div><div class="l">Low</div></div>
+      <div class="stat info"><div class="n">3</div><div class="l">Info</div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="toc">
+      <h3>风险快索引（按严重程度排序）</h3>
+      <ol>
+        <li><a href="#C-01">C-01 注册 + $5 赠金 + 缺验证码 = 撸羊毛漏洞</a></li>
+        <li><a href="#C-02">C-02 访问 JWT 写入 localStorage → 一次 XSS = 长期接管</a></li>
+        <li><a href="#C-03">C-03 普通用户 UI 主动调用 admin 字段并把权限错误 toast 给用户</a></li>
+        <li><a href="#H-01">H-01 nginx 与 Go 后端各自设置一套安全 Header，互相冲突</a></li>
+        <li><a href="#H-02">H-02 CSP 不允许 worker-src 但前端用 blob: 起 Worker，加载失败</a></li>
+        <li><a href="#H-03">H-03 CSP 拒绝 Sentry 上报，但 baggage/replay 仍照常发送</a></li>
+        <li><a href="#H-04">H-04 注册表单「至少 6 位」与后端「至少 8 位」不一致，错误被吞</a></li>
+        <li><a href="#H-05">H-05 创建 Webhook 失败时仅返回 "internal error"，无用户级提示</a></li>
+        <li><a href="#H-06">H-06 Subscription / Dashboard 显示的余额不一致且竞态闪烁</a></li>
+        <li><a href="#H-07">H-07 「Upgrade Now」按钮在 payments 关闭时仍然可点击</a></li>
+        <li><a href="#H-08">H-08 Sentry DSN（含 public key）被硬编码进 vite 构建产物</a></li>
+        <li><a href="#M-01">M-01 Onboarding 弹窗每次切页重新打开，且 z-index 覆盖按钮</a></li>
+        <li><a href="#M-02">M-02 Playground STT/TTS 下拉里全是 chat / embedding 模型</a></li>
+        <li><a href="#M-03">M-03 Playground 计时器 0 tok/s 但有 token 输出，公式错误</a></li>
+        <li><a href="#M-04">M-04 chat/completions 流推送约 150 个空 delta 才有首个 token</a></li>
+        <li><a href="#M-05">M-05 i18n 仅覆盖侧栏，标题与正文未翻译</a></li>
+        <li><a href="#M-06">M-06 /admin/* 路由的服务器端无防护，title 闪烁后才跳走</a></li>
+        <li><a href="#M-07">M-07 模型表全部 max_tokens=4096，但 /v1/models 自报 262144</a></li>
+        <li><a href="#M-08">M-08 Admin Providers 列出 whisper / embedding 模型当成 LLM</a></li>
+        <li><a href="#M-09">M-09 注册流程缺少邮箱校验、密码确认与人机校验</a></li>
+        <li><a href="#M-10">M-10 nginx 把 /metrics 直接 proxy 到 server，依赖后端鉴权</a></li>
+        <li><a href="#M-11">M-11 Recharts 容器尺寸 -1, -1，可视化空白</a></li>
+        <li><a href="#L-01">L-01 OPTIONS 预检接受任意 Origin，无白名单回显</a></li>
+        <li><a href="#L-02">L-02 注册 Set-Cookie 在 http 下带 Secure，浏览器静默丢弃</a></li>
+        <li><a href="#L-03">L-03 「You will not be able to see it again」的 API key 仍展示在表格</a></li>
+        <li><a href="#L-04">L-04 Profile 页主标题写「Settings」，与 nav「My Profile」不一致</a></li>
+        <li><a href="#L-05">L-05 Provider catalogue 暴露明显的脏模型名</a></li>
+        <li><a href="#L-06">L-06 创建 API key 的 Name 字段允许 HTML 标签</a></li>
+        <li><a href="#L-07">L-07 Cache-Control 在 /healthz 被设置两次，值相反</a></li>
+        <li><a href="#I-01">I-01 注册响应 Set-Cookie 暴露 JWT iat / sub 等内部字段</a></li>
+        <li><a href="#I-02">I-02 Sentry baggage Header 在 CSP 拒绝后仍随每个 fetch 发出</a></li>
+        <li><a href="#I-03">I-03 /auth/verify 子请求被 wired 到 /healthz，等于无防护</a></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============ Critical ============ -->
+  <section>
+    <h2>2. Critical 严重问题</h2>
+
+    <article id="C-01" class="finding crit">
+      <header>
+        <span class="tag crit">Critical</span>
+        <span class="title">C-01　开放注册 + 自动赠送 $5 余额 + 无人机校验 = 资金可批量套取</span>
+        <span class="id">SECURITY · ABUSE</span>
+      </header>
+      <div class="scope"><span>注册接口</span><span>计费</span><span>反滥用</span></div>
+      <div class="row"><div class="k">Reproduction</div><div class="v">
+        <ol>
+          <li>无 <code>captchaToken</code> 直接 <code>curl -X POST /graphql</code> 调用 <code>register</code> mutation；返回 200，<code>token</code> 与 refresh cookie 立即下发。</li>
+          <li>登录 Dashboard 后，<code>Account Balance</code> 显示 <strong>$5.00</strong>，UI 文案「Available for pay-as-you-go usage」。</li>
+          <li>同样的脚本可在分钟级注册任意多账号，每账号自动获得 $5 的可消费余额（无邮箱验证、无手机号、无 IP 限制）。</li>
+        </ol>
+      </div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">攻击者可在数十秒内创建数百个账号并集中消耗后端 LLM 资源，等于<strong>把成本直接转嫁给运营方</strong>。即使单账号 $5 看似不大，若上游 provider 为外采（OpenAI/Anthropic）则按真实定价结算，数千账号即数千美元成本。</div></div>
+      <div class="row"><div class="k">Evidence</div><div class="v">注册请求载荷包含 <code>captchaToken: null</code>，服务端未拒绝；Dashboard 截图显示 <code>$5.00</code> 余额。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">
+        <ul>
+          <li>把 <code>REGISTRATION_MODE</code> 默认值改为 <code>invite</code> 或 <code>verified-email</code>；当前 docker-compose 默认 <code>open</code> 不应自动赠金。</li>
+          <li>赠金逻辑需绑定<strong>邮箱+手机/支付凭据</strong>之一完成验证；可分阶段（注册立即 $0，验证邮箱 +$1，绑定支付 +$4）。</li>
+          <li>captcha 不能信任客户端字段，需在 register resolver 中强制校验 hCaptcha/Cloudflare Turnstile token。</li>
+          <li>同 IP / 同设备指纹 / 同邮箱域名（gmail+ 后缀）做注册速率限制。</li>
+        </ul>
+      </div></div>
+      <details><summary>佐证</summary>
+        <div class="shots">
+          <figure><img loading="lazy" src="audit-evidence/04-dashboard.png" alt=""><figcaption>04 · Dashboard — 新账号自动 $5.00 余额</figcaption></figure>
+          <figure><img loading="lazy" src="audit-evidence/02-signup.png" alt=""><figcaption>02 · 注册表单 · 无 captcha、邮箱验证</figcaption></figure>
+        </div>
+      </details>
+    </article>
+
+    <article id="C-02" class="finding crit">
+      <header>
+        <span class="tag crit">Critical</span>
+        <span class="title">C-02　访问态 JWT 写入 localStorage，任一 XSS 即可长期接管会话</span>
+        <span class="id">SECURITY · AUTH</span>
+      </header>
+      <div class="scope"><span>前端 Zustand</span><span>JWT</span><span>XSS Blast radius</span></div>
+      <div class="row"><div class="k">Reproduction</div><div class="v">
+        登录后在控制台执行 <code>localStorage.getItem('auth-storage')</code>，返回包含完整 <code>token</code>（HS256 JWT）的 JSON 串：
+        <pre>{"state":{"token":"eyJhbGciOiJIUzI1NiIsImtpZCI6ImxlZ2FjeSIsInR5cCI6IkpXVCJ9.eyJleHA…", …}}</pre>
+        该 JWT 直接用于所有 <code>/graphql</code> 与 <code>/v1/*</code> 调用。refresh token 在 <code>Set-Cookie</code> 中以 <code>HttpOnly; Secure; SameSite=Lax</code> 形式下发，<em>但访问态 token 不是</em>。
+      </div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">JWT 一旦泄漏，在 <code>JWT_EXPIRES_IN=1h</code> 内可完全冒充用户调用任意管理 API；管理员若被钓鱼则同样适用。<code>RotateRefreshToken</code> 强制 <code>iat &gt;= TokensInvalidatedAt</code> 这条防御<strong>仅对 refresh 有效</strong>，攻击者无需 refresh — 直接拿 access token 即可。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">
+        <ul>
+          <li>将 access token 也改为 <strong>HttpOnly cookie</strong>（与现有 refresh cookie 同源、SameSite=Lax，Path 仅限 <code>/graphql</code> 与 <code>/v1</code>），客户端无需读取，Apollo 关 <code>credentials: 'include'</code> 即可自带。</li>
+          <li>如必须保留 bearer 模型，至少缩短 access token TTL 到 5–10 分钟，并强制每分钟悄静 refresh。</li>
+          <li>在后端给所有写操作增加二次校验（最近一次密码 / TOTP），避免 token 被盗后任意提权。</li>
+          <li>结合本报告 <a href="#H-02">H-02 CSP worker-src 缺失</a> 与 <a href="#L-06">L-06 字段允许 HTML 标签</a>，XSS 的暴露面并不为零。</li>
+        </ul>
+      </div></div>
+      <details><summary>佐证</summary><pre>localStorage:
+  onboarding-storage: {"state":{"hasCompletedTour":true,…}}
+  auth-storage:       {"state":{"token":"eyJ…(567 bytes)…"}}
+sessionStorage:
+  sentryReplaySession: {…}
+document.cookie: ""           ← 注意访问态 token 不在 cookie，而在 localStorage</pre></details>
+    </article>
+
+    <article id="C-03" class="finding crit">
+      <header>
+        <span class="tag crit">Critical</span>
+        <span class="title">C-03　普通用户 UI 主动调用 admin GraphQL 字段，并把「forbidden」原文 toast 给用户</span>
+        <span class="id">AUTHZ · INFO LEAK</span>
+      </header>
+      <div class="scope"><span>GraphQL @auth</span><span>UI 错误处理</span></div>
+      <div class="row"><div class="k">Reproduction</div><div class="v">
+        以普通用户 <code>weakpw@example.com</code> 登录后进入 <code>/playground</code>，浏览器 toast 区出现 <code>forbidden: admin access required</code>。抓包发现请求体是 <code>query Alerts($status:"active"){ alerts{…} }</code>，命中后端 <code>@auth(role: ADMIN)</code> 拒绝。
+      </div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">
+        <ul>
+          <li>UI 层把权限模型与字段名（<code>alerts</code>、<code>targetType</code>、<code>alertType</code>）直接打印给普通用户，泄漏后台模型。</li>
+          <li>说明前端没有按用户角色拆查询；以 admin 路径上同款查询泛化到 user 路径 → 所有 user 都向后端发出至少一次注定失败的 admin 调用，造成无意义的 401/403 噪声、污染 audit log。</li>
+          <li>错误处理链路有缺陷：本应在 Apollo errorLink 静默吞掉 <code>FORBIDDEN</code> + admin-only path 的错误，但实际 toast 出来。</li>
+        </ul>
+      </div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">
+        <ul>
+          <li>前端按 <code>currentUser.role</code> 条件加载查询（Apollo <code>skip</code>），admin-only 查询不应出现在普通用户 bundle。</li>
+          <li>Apollo 全局 errorLink 对 <code>FORBIDDEN</code> 走静默策略，仅 sentry 上报、不 toast。</li>
+          <li>后端可考虑对未授权字段返回 <code>null</code> + warning 而非 error，配合 <code>@auth</code> 改为 nullable，避免侧信道泄漏字段存在性。</li>
+        </ul>
+      </div></div>
+      <details><summary>佐证</summary>
+        <pre>// 用户态请求
+POST /graphql
+{"operationName":"Alerts","variables":{"status":"active"},
+ "query":"query Alerts($status:String){ alerts(status:$status){ data{ id targetType targetId alertType message status resolvedAt acknowledgedAt createdAt } total } }"}
+
+// 后端响应
+{"errors":[{"message":"forbidden: admin access required","path":["alerts"],
+            "extensions":{"code":"FORBIDDEN"}}],"data":null}
+
+// 在 Playground 截图 ref=e226 看到 status role="status": "forbidden: admin access required"</pre>
+        <div class="shots">
+          <figure><img loading="lazy" src="audit-evidence/09-playground-response.png" alt=""><figcaption>09 · Playground 右下角弹出 "forbidden: admin access required"</figcaption></figure>
+        </div>
+      </details>
+    </article>
+  </section>
+
+  <!-- ============ High ============ -->
+  <section>
+    <h2>3. High 高优先级问题</h2>
+
+    <article id="H-01" class="finding high">
+      <header>
+        <span class="tag high">High</span>
+        <span class="title">H-01　nginx 与 Go middleware 各自设置一套安全 Header，互相冲突</span>
+        <span class="id">CONFIG · SECURITY HEADERS</span>
+      </header>
+      <div class="row"><div class="k">Observed</div><div class="v">所有 <code>/graphql</code>、<code>/v1/*</code>、<code>/healthz</code> 响应都同时返回<strong>两套</strong> CSP / HSTS / Permissions-Policy / X-Frame-Options / X-XSS-Protection / Referrer-Policy / Cache-Control：
+        <pre>Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'
+
+Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+X-XSS-Protection: 0
+X-XSS-Protection: 0
+
+Cache-Control: no-store, no-cache, must-revalidate, private, proxy-revalidate
+Cache-Control: no-cache, no-store, must-revalidate</pre>
+      </div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">
+        <ul>
+          <li><strong>CSP 重复</strong>：浏览器对多个 CSP 取<em>交集</em>（最严格），结果是 nginx 的 <code>font-src https://fonts.gstatic.com</code> 被 Go 的 <code>font-src 'self'</code> 吞掉；同理 <code>frame-ancestors 'none'</code> 与 nginx 的 <code>X-Frame-Options: DENY</code> 既定语义不冲突但语义冗余，会让审计/扫描器误报。</li>
+          <li><strong>HSTS preload 标志</strong>仅在一份里有，提交 hstspreload.org 时会因「响应中有多条 HSTS」被拒。</li>
+          <li><strong>Cache-Control</strong> 健康检查同时被两套规则覆写，nginx 的 <code>no-cache</code> 与 Go 的 <code>no-store, …, proxy-revalidate</code>，下游 LB 行为不可预测。</li>
+        </ul>
+      </div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">
+        <ol>
+          <li>选定<strong>单一职责</strong>：让 Go 后端不再发安全 Header（关掉 <code>SecurityHeaders()</code> 中除 <code>X-Content-Type-Options</code> 之外的项），由 nginx 集中负责；或反过来——nginx 只透传 + 加 SPA cache 控制，Header 全部由后端发。</li>
+          <li>两份 CSP 合并为一份且<strong>包括</strong> <code>worker-src 'self' blob:</code>（见 H-02）和 <code>connect-src</code> 的实际目标（langfuse / sentry / GraphQL ws）。</li>
+          <li>HSTS 仅在 nginx 一处声明，且仅在 TLS-terminator 域返回，避免 preload 检测。</li>
+        </ol>
+      </div></div>
+      <details><summary>原始证据</summary>
+        <pre>$ curl -sI http://localhost/graphql -X POST -H 'Content-Type: application/json' --data '{"query":"{__typename}"}'
+HTTP/1.1 200 OK
+…
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';
+…
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'</pre>
+        <p>nginx 配置位于 <a href="../web/nginx.conf"><code>web/nginx.conf</code></a>，Go 中间件在 <code>server/internal/api/middleware/security.go:104</code>。</p>
+      </details>
+    </article>
+
+    <article id="H-02" class="finding high">
+      <header>
+        <span class="tag high">High</span>
+        <span class="title">H-02　CSP 未声明 worker-src，前端构造 blob: Worker 被全量阻断</span>
+        <span class="id">CSP · BROKEN FEATURE</span>
+      </header>
+      <div class="row"><div class="k">Observed</div><div class="v">登录页 / dashboard / api-keys / settings 几乎每个路由都打印至少一次：
+        <pre>[ERROR] Creating a worker from 'blob:http://localhost/…' violates the following CSP directive: "script-src 'self'". Note that 'worker-src' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.   @ /assets/index-Cwve4tjX.js:3</pre>
+        Web Worker 是被 Sentry Replay 用来跑压缩 / 序列化，<strong>每次页面加载都失败</strong>。
+      </div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">Replay 在生产构建中完全停摆（无错误录像、无慢交互回放），但占用 bundle 体积、向 Sentry 上报失败、还污染控制台错误数。这影响线上稳定性观测，也意味着 <em>vendor-sentry-DhV8gi6o.js</em> 占用的 ~XXkB 是无效负载。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">CSP 增加 <code>worker-src 'self' blob:</code>（仅当确实想保留 Sentry Replay）。否则在 vite build 配置中关闭 Replay integration，避免运行时无用代码加载。</div></div>
+    </article>
+
+    <article id="H-03" class="finding high">
+      <header>
+        <span class="tag high">High</span>
+        <span class="title">H-03　CSP connect-src='self' 阻断 Sentry 上报，但客户端仍在每次请求加 sentry baggage</span>
+        <span class="id">CSP · OBSERVABILITY</span>
+      </header>
+      <div class="row"><div class="k">Observed</div><div class="v">控制台报错（仅 admin 路由就累计 64 条）：<pre>Refused to connect to http://localhost:9000/api/2/envelope/?sentry_version=7&amp;sentry_key=c4ad6bd79b2990db75215e0a4b801910 because it violates the document's Content Security Policy.</pre>
+        同时所有 <code>/v1/chat/completions</code> 请求都仍然带：<pre>baggage: sentry-environment=development,sentry-public_key=c4ad6bd79b2990db75215e0a4b801910,sentry-trace_id=…
+sentry-trace: …-1</pre>
+      </div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">
+        <ul>
+          <li>Sentry 在线上完全无效；研发误以为「Sentry 跑着」实际无任何 issue 落库。</li>
+          <li>每个 fetch 多带 2 个 header（约 300 字节），针对 100 QPS 的高负载是 30 KB/s 无效开销。</li>
+          <li>Sentry DSN 中的 public key <code>c4ad6bd79b2990db75215e0a4b801910</code> 被打进静态 JS bundle，任何用户可读到（虽公开 key 设计上不属敏感，但建议生产用反代隧道而非直连）。</li>
+        </ul>
+      </div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">
+        <ol>
+          <li>选定生产 Sentry 地址（<code>https://sentry.example.com</code>）并加入 CSP <code>connect-src</code>；本地开发用 self-hosted 时也要把 <code>http://localhost:9000</code> 写入。</li>
+          <li>构建时检测 <code>VITE_SENTRY_DSN</code> 是否为空，空则完全不挂 Sentry SDK；当前 docker-compose 把 <code>VITE_SENTRY_DSN</code> 作为 build arg 但仍生成 baggage。</li>
+          <li>对 <code>baggage</code> Header 加 propagation allowlist，只在被 trace 的接口加。</li>
+        </ol>
+      </div></div>
+    </article>
+
+    <article id="H-04" class="finding high">
+      <header>
+        <span class="tag high">High</span>
+        <span class="title">H-04　注册表单写「最少 6 位」、后端要求 8 位，错误被 UI 静默吞掉</span>
+        <span class="id">UX · VALIDATION</span>
+      </header>
+      <div class="row"><div class="k">Reproduction</div><div class="v">
+        <ol>
+          <li>注册页 Password 字段下方文案：<em>"Minimum 6 characters."</em></li>
+          <li>填入 <code>123456</code> → 提交。表单未跳转、未变色、未提示，按钮恢复默认状态。</li>
+          <li>抓包：服务端返回 <code>{"errors":[{"message":"password must be at least 8 characters","extensions":{"code":"VALIDATION"}}]}</code>。</li>
+          <li>普通用户的反应是「点了没反应，再点一次」——典型的死循环。</li>
+        </ol>
+      </div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">
+        <ul>
+          <li>违反「表单错误必须 inline 显示」的基本可用性约束。</li>
+          <li>用户被引导用<strong>更弱</strong>的密码（6 位），即使后来侥幸用 8 位通过，平台仍把这种用户密码画像收住了。</li>
+          <li>说明 Apollo errorLink + form 之间缺少绑定。</li>
+        </ul>
+      </div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">
+        <ul>
+          <li>统一密码策略：前端校验、Schema、后端 <code>password_policy</code> 三处只设一个常量并 import。</li>
+          <li>UI 引入 zxcvbn 强度条；后端最小长度从 8 提至 10 + 至少包含字母与数字。</li>
+          <li>修复 register mutation 错误透传到表单，按字段映射 <code>extensions.field</code>。</li>
+        </ul>
+      </div></div>
+      <details><summary>对应代码</summary>
+        <pre>// UI 文案
+&lt;p ref=e31&gt;Minimum 6 characters.&lt;/p&gt;
+
+// 后端响应
+{"errors":[{"message":"password must be at least 8 characters",
+            "path":["register"], "extensions":{"code":"VALIDATION"}}],"data":null}</pre>
+      </details>
+    </article>
+
+    <article id="H-05" class="finding high">
+      <header>
+        <span class="tag high">High</span>
+        <span class="title">H-05　创建 Webhook 失败时仅返回 “internal error”，用户无任何提示</span>
+        <span class="id">SSRF · UX</span>
+      </header>
+      <div class="row"><div class="k">Reproduction</div><div class="v">
+        Webhook 表单填入 <code>http://llm-router-postgres:5432/</code> 后点击「Create Webhook」。
+        <ul>
+          <li>服务端返回 <code>{"errors":[{"message":"internal error [04d2fbd42ef55154d3863af7505132e8]","extensions":{"code":"INTERNAL","request_id":"…"}}]}</code>。</li>
+          <li>对话框不关闭，<code>document.querySelectorAll('[role="status"]')</code> 为空 → <strong>没有任何 UI 提示</strong>。</li>
+        </ul>
+      </div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">
+        <ul>
+          <li>用户以为页面没响应。</li>
+          <li>SSRF 拒绝走「内部错误」分支说明<strong>验证错误没有走专门错误码</strong>。理论上 sanitize.ValidateWebhookURL 应该返回 <code>VALIDATION</code> + 字段，告诉用户 "URL must resolve to a public address"，但目前是 panic / err.Error 上抛。</li>
+          <li>「internal error」会让支持人员误判为后端 bug 投入排查时间。</li>
+        </ul>
+      </div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">
+        <ul>
+          <li>所有 user-input-driven validation 错误统一映射成 <code>extensions.code = "VALIDATION"</code> + <code>extensions.field</code>。</li>
+          <li>给 webhook URL 校验加专门错误：私网、loopback、保留 IP、非 https。</li>
+          <li>Apollo errorLink 对 <code>INTERNAL</code> 默认 toast 「Something went wrong (id: …)」，避免对话框失语。</li>
+        </ul>
+      </div></div>
+    </article>
+
+    <article id="H-06" class="finding high">
+      <header>
+        <span class="tag high">High</span>
+        <span class="title">H-06　Dashboard / Subscription / Topup 余额三套真相</span>
+        <span class="id">DATA CONSISTENCY · BILLING</span>
+      </header>
+      <div class="row"><div class="k">Observed</div><div class="v">
+        <ul>
+          <li>Dashboard 首屏「Account Balance」= <strong>$5.00</strong>。</li>
+          <li>Subscription 首屏「Balance」= <strong>$0.00</strong>，1~2 秒后异步刷新为 <strong>$5.00</strong>。</li>
+          <li>"My Subscription → Current Plan = Free Tier" 同时显示 "Period Ends: --"。</li>
+        </ul>
+      </div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">数字财务字段在多个页面用不同 query 取不同 caching key，<strong>初始渲染显示 0</strong>给用户带来「我是不是没充上」的恐慌；这是付费转化路径上最忌讳的状态。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">
+        <ul>
+          <li>把账户余额抽成单一 Apollo cache field（<code>typePolicies.User.balance</code>），所有页面读同一 reactive var。</li>
+          <li>未拉取数据时显示 skeleton（<code>animate-pulse</code> 占位），不显示 $0.00。</li>
+          <li>「Period Ends: --」改为「Not subscribed」或隐藏整个卡片。</li>
+        </ul>
+      </div></div>
+    </article>
+
+    <article id="H-07" class="finding high">
+      <header>
+        <span class="tag high">High</span>
+        <span class="title">H-07　Payments disabled 时 Upgrade Now 仍可点，错误吞掉</span>
+        <span class="id">UX · BILLING</span>
+      </header>
+      <div class="row"><div class="k">Observed</div><div class="v">点击 "Upgrade Now" 后服务端返回：<pre>{"errors":[{"message":"payments are currently disabled","path":["createCheckoutSession"],"extensions":{"code":"VALIDATION"}}]}</pre>
+        但按钮不带 disabled 态、点击也不弹错误。</div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">用户进入付费页期望升级，结果按钮看似无效——非常容易判定为 bug 并放弃。同时 admin 后台没有任何提示「当前 stripe/alipay/wechat 都关着」。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">
+        <ul>
+          <li>用 GraphQL 查询 <code>billingConfig.paymentsEnabled</code>，UI 根据该字段决定是否渲染升级按钮，渲染为「Payments disabled — contact sales」。</li>
+          <li>admin Settings → Payment 增加横幅，提示当前未配置支付通道、点击跳转到 Stripe / Alipay / WeChat 配置页。</li>
+        </ul>
+      </div></div>
+    </article>
+
+    <article id="H-08" class="finding high">
+      <header>
+        <span class="tag high">High</span>
+        <span class="title">H-08　Sentry DSN/public key 硬编码进 vite 静态产物，且与 self-host 实例不匹配</span>
+        <span class="id">BUILD · SECRETS</span>
+      </header>
+      <div class="row"><div class="k">Observed</div><div class="v">
+        <code>vendor-sentry-DhV8gi6o.js</code> 中包含 <code>sentry_key=c4ad6bd79b2990db75215e0a4b801910</code> 和 endpoint <code>http://localhost:9000/api/2/envelope/</code>。endpoint 显然来自构建时的开发环境 ENV，<strong>被打入了生产镜像</strong>。
+      </div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">
+        <ul>
+          <li>Sentry public key 出现在前端是设计上可接受的，但 <code>localhost:9000</code> 这个 endpoint 一旦部署到任何 non-localhost 域就是死代码；目前镜像本身就是「错的」。</li>
+          <li>说明 <code>web/Dockerfile</code> 的多阶段构建里 <code>VITE_SENTRY_DSN</code> 的来源未做空值短路。</li>
+        </ul>
+      </div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">改用 <strong>runtime config injection</strong>：在 <code>web/public/runtime-config.js</code> 由 nginx 在容器启动时 envsubst 生成，前端从 <code>window.__RUNTIME_CONFIG__</code> 读取。同一个镜像可在任意环境跑。</div></div>
+    </article>
+  </section>
+
+  <!-- ============ Medium ============ -->
+  <section>
+    <h2>4. Medium 中等优先级问题</h2>
+
+    <article id="M-01" class="finding med">
+      <header><span class="tag med">Medium</span><span class="title">M-01　Onboarding tour 每次切页都重新打开，且 z-index 阻塞按钮点击</span><span class="id">UX · NAVIGATION</span></header>
+      <div class="row"><div class="k">Reproduction</div><div class="v">
+        登录 → 出现 "Welcome to LLM Router Platform" 弹窗 → 点 X 关闭 → 点 sidebar API Keys → 弹窗又出现 → 该弹窗以 <code>position:fixed; inset:0; z-index:100</code> 包裹背景蒙板，<strong>覆盖在「Create your first API key」按钮上</strong>，导致 playwright 报：<em>subtree intercepts pointer events</em>。<br>
+        必须每个页面手动「Skip tour」一次。
+      </div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">tour 关闭状态写入 <code>onboarding-storage.hasCompletedTour</code>（截图证据显示该字段已存在但未被写入），点击 X 立即 setState。</div></div>
+    </article>
+
+    <article id="M-02" class="finding med">
+      <header><span class="tag med">Medium</span><span class="title">M-02　Playground STT / TTS 下拉里全是 chat 与 embedding 模型</span><span class="id">UX · DATA QUALITY</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">「STT Model」下拉包含 <code>text-embedding-bge-m3</code>、<code>zai-org/glm-4.7-flash</code>、<code>google/gemma-4-31b</code>……。这些不可能是 STT 模型，但下拉允许选择。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">前端按 <code>capabilities.input_modalities</code>（<code>/v1/models</code> 已返回）过滤；TTS 同理。Provider sync 时把 <code>whisper-*</code> 等标 <code>type=stt</code>，<code>kokoro-*</code> 等标 <code>type=tts</code>。</div></div>
+    </article>
+
+    <article id="M-03" class="finding med">
+      <header><span class="tag med">Medium</span><span class="title">M-03　Playground TTFB 24s / 0 tok/s，但实际产出 1 token</span><span class="id">METRICS · DIVISION-BY-ZERO</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">Playground 显示：<code>TTFB 24423ms · Total 27298ms · 0 tok/s · Tokens: 12 in / 1 out = 13 · ~$0.0000</code>。实际是 <code>1 token / (27298-24423)/1000 ≈ 0.35 tok/s</code>。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">分母不为 0 时也至少保留 2 位有效数字；<code>output_tokens / (total - ttfb)</code>，当 <code>total-ttfb &lt; 100ms</code> 显示「too fast to measure」。</div></div>
+    </article>
+
+    <article id="M-04" class="finding med">
+      <header><span class="tag med">Medium</span><span class="title">M-04　chat/completions 流推送 ~150 个空 delta 才出现首个 token</span><span class="id">PERFORMANCE · UPSTREAM PARITY</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">单条消息 "Say hi in one word." 的 SSE 抓包显示前 ~150 帧均为 <code>{"choices":[{"delta":{}}]}</code>，直到第 151 帧才出现 <code>delta:{"content":"\n\n"}</code>。看起来是后端把 LM Studio 上游的 <em>think</em> token 全部转发但 strip 了内容。</div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">带宽浪费、TTFB 误判、客户端解析压力（typescript SDK 会一帧帧 emit event）。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">在 server router 里把内容为空的 delta 合并/丢弃，或在 thinking 流末尾合并为单条 <code>{"reasoning":"..."}</code>（OpenAI o1 那样）。</div></div>
+    </article>
+
+    <article id="M-05" class="finding med">
+      <header><span class="tag med">Medium</span><span class="title">M-05　i18n 仅覆盖 sidebar，标题、正文、表单未翻译</span><span class="id">i18n</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">点 "中文" 按钮后：sidebar 全部变成「概览 / 数据分析 / 账号管理…」，但页面标题 <code>Audit Logs</code> / 主区描述 <code>Review system security and access logs</code> / 表格列名 / "showing 1 to 20" 等仍是英文。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">把现有英文硬编码字符串移到 <code>i18n/zh.json</code>；建议先做覆盖率盘点（grep 直接含 ASCII 字母的 JSX 文本）。</div></div>
+    </article>
+
+    <article id="M-06" class="finding med">
+      <header><span class="tag med">Medium</span><span class="title">M-06　/admin/* 路由对 user 角色仅做客户端跳转，document.title 短暂闪烁</span><span class="id">AUTHZ · CLIENT-SIDE GUARD</span></header>
+      <div class="row"><div class="k">Reproduction</div><div class="v">普通用户访问 <code>http://localhost/admin/users</code> 会被重定向到 <code>/api-keys</code>，但<strong>跳转前一瞬间 document.title 已被设为 "Users - Router"</strong>，且 SPA 已加载对应 chunk。说明守卫位于 React useEffect / router beforeEnter 而非 SSR / nginx 层。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">
+        <ul>
+          <li>在 React Router 的 <code>loader</code> 阶段同步校验 <code>auth.role==='admin'</code>，否则 <code>throw redirect('/dashboard')</code>。</li>
+          <li>chunk split 时把 admin 路由 lazy load，但确保 router guard 在 lazy import 前同步生效，避免提前拉 admin bundle。</li>
+        </ul>
+      </div></div>
+    </article>
+
+    <article id="M-07" class="finding med">
+      <header><span class="tag med">Medium</span><span class="title">M-07　Admin Models 表全部 max_tokens=4096，与 /v1/models 自报 262144 不一致</span><span class="id">DATA QUALITY</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">
+        <ul>
+          <li><code>GET /v1/models</code> 返回 <code>qwen/qwen3.6-35b-a3b</code> 的 <code>max_context_length: 262144</code>。</li>
+          <li>Admin /admin/providers 中所有模型行 Max Tokens = <code>4,096</code>。</li>
+        </ul>
+        说明 Provider sync 落库时把 <code>max_tokens</code> 当成了 OpenAI 兼容字段的「default response limit」而非「context window」。
+      </div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">区分两列：<code>context_window</code> 与 <code>max_output_tokens</code>。前端 Playground「Max Tokens」slider 上限应取后者。</div></div>
+    </article>
+
+    <article id="M-08" class="finding med">
+      <header><span class="tag med">Medium</span><span class="title">M-08　Admin Providers 把 whisper / embedding 模型混在 LLM 列表里</span><span class="id">DATA QUALITY</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">Models 表里同时出现 <code>whisper-large-v3-turbo</code>、<code>text-embedding-bge-m3</code>、<code>text-embedding-nomic-embed-text-v1.5</code>，列名仍然是 "Customer Price in/out"，对 embedding/audio 没有意义。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">表格分组「Chat / Embedding / Audio (STT|TTS) / Image」，并按 capability 显示不同列。Provider catalog 数据模型应记录 <code>type</code> 与 <code>capabilities</code> 字段（其实 LM Studio 已返回，只是没存）。</div></div>
+    </article>
+
+    <article id="M-09" class="finding med">
+      <header><span class="tag med">Medium</span><span class="title">M-09　注册流程缺少邮箱验证、密码确认、Captcha</span><span class="id">AUTH · ABUSE</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">注册仅 Name + Email + Password 三字段，无 confirm password、无邮箱验证、无 captcha；提交即登录。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">参考 C-01：开放注册场景下需要至少 hCaptcha + 邮箱激活才能解锁付费/赠金。</div></div>
+    </article>
+
+    <article id="M-10" class="finding med">
+      <header><span class="tag med">Medium</span><span class="title">M-10　nginx 把 /metrics 直接 proxy 到 server，全靠后端 admin 鉴权</span><span class="id">DEFENSE IN DEPTH</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">nginx.conf 注释「<em>/metrics is still protected by the backend's JWT + admin middleware</em>」。当前实测确实需要 admin token，但缺少 <strong>nginx 层 IP allowlist / basic auth</strong>。如果未来某次后端误把 <code>METRICS_ALLOW_UNAUTHENTICATED</code> 设为 true，<code>/metrics</code> 直接对公开网开放。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">
+        <ul>
+          <li>在 nginx 给 <code>/metrics</code> 加 <code>allow 10.0.0.0/8; allow 172.16.0.0/12; allow 192.168.0.0/16; deny all;</code>。</li>
+          <li>把 prometheus 用的 metrics 端口隔离到内部 docker network，外部边缘不暴露。</li>
+        </ul>
+      </div></div>
+    </article>
+
+    <article id="M-11" class="finding med">
+      <header><span class="tag med">Medium</span><span class="title">M-11　Recharts container 尺寸 -1,-1，admin dashboard 图表区空白</span><span class="id">UI · LAYOUT</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">控制台告警：
+        <pre>The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(256) or use aspect(undefined)…</pre>
+        出现在 admin dashboard "My Request Trend / My Spend Trend"。
+      </div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">给 ResponsiveContainer 父级显式 height（如 <code>className="h-64"</code>）或 <code>aspect={2}</code>；当前父级被 flex 计算为 0×0。</div></div>
+    </article>
+  </section>
+
+  <!-- ============ Low ============ -->
+  <section>
+    <h2>5. Low 低优先级问题</h2>
+
+    <article id="L-01" class="finding low">
+      <header><span class="tag low">Low</span><span class="title">L-01　OPTIONS preflight 不回显 Access-Control-Allow-Origin，但允许所有方法</span><span class="id">CORS</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v"><pre>$ curl -X OPTIONS http://localhost/graphql -H 'Origin: https://evil.example' …
+HTTP/1.1 204 No Content
+Access-Control-Allow-Headers: Origin, Content-Type, Authorization, X-API-Key, X-Request-Id, X-Trace-Id
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Max-Age: 86400
+（注意：没有 Access-Control-Allow-Origin）</pre>
+        没有 Origin 反射在<em>当前部署</em>下意味着浏览器会拒绝跨域请求，所以并非可利用。但 <code>Access-Control-Allow-Headers/Methods</code> 已经准备好——一旦后端配置了通配 origin（<code>CORS_ORIGINS=*</code>），就会立刻打开。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">显式声明仅在白名单 origin 时才回显这些 Header，避免运维误改 env 直接放开 CORS。</div></div>
+    </article>
+
+    <article id="L-02" class="finding low">
+      <header><span class="tag low">Low</span><span class="title">L-02　注册成功的 Set-Cookie 在 HTTP 下带 Secure，浏览器静默丢弃</span><span class="id">COOKIE</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v"><pre>Set-Cookie: llm_router_refresh=eyJ…; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax</pre>
+        本地 dev 用 <code>http://</code> 跑，Chrome 会丢这个 cookie，refresh 流程在 dev 模式下完全失效，但开发者可能没意识到。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">配置一项 <code>COOKIE_SECURE=auto</code>，根据 <code>X-Forwarded-Proto</code> 自动加，仅生产打开。</div></div>
+    </article>
+
+    <article id="L-03" class="finding low">
+      <header><span class="tag low">Low</span><span class="title">L-03　创建 API key 提示「不会再显示」，但 toast 关闭后 prefix 仍 visible，且全 key 直到 toast 关闭都在 DOM 里</span><span class="id">UX · SECRETS</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">提示文案：<em>"Please copy your API key now. You will not be able to see it again."</em> 实际 prefix <code>llm_7ffb...</code> 长期可见，与文案语义不完全一致。同时密钥的全文 <code>llm_7ffb62ab11b06cdef44acfd1bb36122bbecb69ddf70294c5316841d873f8a897</code> 直到用户主动点 Dismiss 才被擦除——若用户开了 Sentry Replay（H-02 修好后），整 key 会被记录。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">
+        <ul>
+          <li>提示语改为「Copy now; only the prefix will remain.」</li>
+          <li>该 dialog 的 inner text 给 Sentry Replay 加 <code>data-sentry-mask</code>。</li>
+          <li>30 秒后自动清空状态，避免下次开发者复现时键还在内存。</li>
+        </ul>
+      </div></div>
+    </article>
+
+    <article id="L-04" class="finding low">
+      <header><span class="tag low">Low</span><span class="title">L-04　Profile 页面 H1 写「Settings」，导航 / 标签 / 标题写「My Profile」</span><span class="id">CONSISTENCY · COPY</span></header>
+      <div class="row"><div class="k">Recommendation</div><div class="v">统一为 "My Profile" 或 "Account Settings"，并改 <code>document.title</code> 与 H1 一致。</div></div>
+    </article>
+
+    <article id="L-05" class="finding low">
+      <header><span class="tag low">Low</span><span class="title">L-05　Provider catalogue 把开发自留模型当成产品模型展示</span><span class="id">CONTENT</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">Admin Providers / Playground 都列出 <code>qwen3.5-35b-a3b-uncensored-hauhaucs-aggressive</code>。这类带「uncensored / aggressive」的模型名出现在生产 catalogue 会带来法务与合规问题。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">Provider sync 默认 <code>active=false</code>，由 admin 手工 enable 才进 user-facing 列表；或加 <code>nameRegex</code> 黑名单。</div></div>
+    </article>
+
+    <article id="L-06" class="finding low">
+      <header><span class="tag low">Low</span><span class="title">L-06　API key Name 字段允许 HTML 标签</span><span class="id">XSS DEFENSE</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">创建 key 时 Name <code>&lt;script&gt;alert('xss')&lt;/script&gt;audit key</code> 保存成功，列表中以 React text node 输出（不执行），但下拉框 (<code>&lt;option&gt;</code>) 与表格 cell 都把 tag 作为纯文本展示。</div></div>
+      <div class="row"><div class="k">Impact</div><div class="v">当前安全（React + CSP 双保险）。但是一旦：1) 有人未来在某条路径用未转义 HTML 渲染该字段；或 2) 把 name 导出 CSV / PDF（PDF generator 不一定 escape） — 立刻就是 stored XSS。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">Schema 层加正则 <code>^[\w\s\-\.（）()]{1,64}$</code>。简单粗暴避免后患。</div></div>
+    </article>
+
+    <article id="L-07" class="finding low">
+      <header><span class="tag low">Low</span><span class="title">L-07　/healthz 返回了两条 Cache-Control，值互相冲突</span><span class="id">HEADERS</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v"><pre>Cache-Control: no-store, no-cache, must-revalidate, private, proxy-revalidate    ← Go
+Cache-Control: no-cache, no-store, must-revalidate                                ← nginx</pre>
+        实际效果浏览器只看第一条；但 LB 可能会以最严格的为准。前后端配置漂移信号。
+      </div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">解决 H-01 即可。</div></div>
+    </article>
+  </section>
+
+  <!-- ============ Informational ============ -->
+  <section>
+    <h2>6. Informational</h2>
+
+    <article id="I-01" class="finding info">
+      <header><span class="tag info">Info</span><span class="title">I-01　注册响应 Set-Cookie 内嵌可 base64-decode 的 JWT iat/sub</span><span class="id">INFO LEAK</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">refresh JWT 可被任意持有 cookie 的中间代理解码（HS256 仅签名不加密），其中含 <code>sub</code>=用户 UUID、<code>iat</code>=注册时间戳。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">设计上正常，但若产品对「用户 ID 不外露」有要求，可考虑用 opaque random refresh token + DB 反查。</div></div>
+    </article>
+
+    <article id="I-02" class="finding info">
+      <header><span class="tag info">Info</span><span class="title">I-02　Sentry baggage 在 CSP 拒绝后仍随每次 fetch 发出</span><span class="id">OBSERVABILITY · OVERHEAD</span></header>
+      <div class="row"><div class="k">Recommendation</div><div class="v">见 H-03，构建期决定是否注入 SDK。</div></div>
+    </article>
+
+    <article id="I-03" class="finding info">
+      <header><span class="tag info">Info</span><span class="title">I-03　Langfuse self-host UI 经 nginx auth_request 校验 Authorization，但实际打到 /healthz</span><span class="id">INTEGRATION</span></header>
+      <div class="row"><div class="k">Observed</div><div class="v">nginx 把 <code>/langfuse/</code> 接 <code>auth_request /auth/verify → proxy_pass /healthz</code>。当前 /healthz 不要求 auth，所以 auth_request 永远 200，<em>实际并未保护 langfuse</em>；同时上游 langfuse-server 没在 docker-compose 默认 profile 启动，访问 <code>/langfuse/</code> 返回 504。</div></div>
+      <div class="row"><div class="k">Recommendation</div><div class="v">将 <code>/auth/verify</code> 改为真实的 token 校验子路由（<code>/internal/auth</code>），并要求 Authorization Header；当前实现是无意义的 placeholder。</div></div>
+    </article>
+  </section>
+
+  <!-- ============ Matrix ============ -->
+  <section>
+    <h2>7. 风险矩阵速查</h2>
+    <table class="matrix">
+      <thead><tr><th style="width:80px">ID</th><th style="width:90px">Severity</th><th>主题</th><th style="width:160px">领域</th></tr></thead>
+      <tbody>
+        <tr><td><a href="#C-01">C-01</a></td><td class="sev crit">Critical</td><td>开放注册自动赠送 $5，无 captcha / 邮箱验证 → 撸羊毛</td><td>计费 · 反滥用</td></tr>
+        <tr><td><a href="#C-02">C-02</a></td><td class="sev crit">Critical</td><td>JWT access token 存 localStorage</td><td>认证 · XSS</td></tr>
+        <tr><td><a href="#C-03">C-03</a></td><td class="sev crit">Critical</td><td>普通用户 UI 调用 admin 字段并 toast forbidden</td><td>授权 · 信息泄漏</td></tr>
+        <tr><td><a href="#H-01">H-01</a></td><td class="sev high">High</td><td>nginx 与 Go 各设一套安全 Header,&nbsp;互相覆盖</td><td>配置</td></tr>
+        <tr><td><a href="#H-02">H-02</a></td><td class="sev high">High</td><td>CSP worker-src 缺失,&nbsp;Sentry Replay 全挂</td><td>CSP · 功能</td></tr>
+        <tr><td><a href="#H-03">H-03</a></td><td class="sev high">High</td><td>CSP 阻断 Sentry 上报但 baggage 仍发</td><td>CSP · 观测</td></tr>
+        <tr><td><a href="#H-04">H-04</a></td><td class="sev high">High</td><td>注册「6 位」与「8 位」前后端不一致</td><td>UX · 校验</td></tr>
+        <tr><td><a href="#H-05">H-05</a></td><td class="sev high">High</td><td>Webhook 创建失败返回 internal error</td><td>SSRF · UX</td></tr>
+        <tr><td><a href="#H-06">H-06</a></td><td class="sev high">High</td><td>余额三套真相、闪烁 0</td><td>账务 · 一致性</td></tr>
+        <tr><td><a href="#H-07">H-07</a></td><td class="sev high">High</td><td>Payments 关闭仍可点 Upgrade Now</td><td>付费 · UX</td></tr>
+        <tr><td><a href="#H-08">H-08</a></td><td class="sev high">High</td><td>Sentry DSN 与 endpoint 硬编入产物</td><td>构建</td></tr>
+        <tr><td><a href="#M-01">M-01</a></td><td class="sev med">Medium</td><td>Onboarding 弹窗持续阻塞</td><td>UX</td></tr>
+        <tr><td><a href="#M-02">M-02</a></td><td class="sev med">Medium</td><td>STT/TTS 下拉装满 chat / embedding</td><td>UX · 数据</td></tr>
+        <tr><td><a href="#M-03">M-03</a></td><td class="sev med">Medium</td><td>0 tok/s 但有 token 输出</td><td>指标</td></tr>
+        <tr><td><a href="#M-04">M-04</a></td><td class="sev med">Medium</td><td>chat/completions 推送大量空 delta</td><td>性能</td></tr>
+        <tr><td><a href="#M-05">M-05</a></td><td class="sev med">Medium</td><td>i18n 仅覆盖侧栏</td><td>i18n</td></tr>
+        <tr><td><a href="#M-06">M-06</a></td><td class="sev med">Medium</td><td>/admin/* 客户端守卫,&nbsp;title 闪烁</td><td>授权</td></tr>
+        <tr><td><a href="#M-07">M-07</a></td><td class="sev med">Medium</td><td>模型 max_tokens 全部 4096</td><td>数据</td></tr>
+        <tr><td><a href="#M-08">M-08</a></td><td class="sev med">Medium</td><td>whisper / embedding 当 LLM</td><td>数据</td></tr>
+        <tr><td><a href="#M-09">M-09</a></td><td class="sev med">Medium</td><td>注册缺验证与 captcha</td><td>认证</td></tr>
+        <tr><td><a href="#M-10">M-10</a></td><td class="sev med">Medium</td><td>/metrics 仅依赖后端鉴权</td><td>纵深防御</td></tr>
+        <tr><td><a href="#M-11">M-11</a></td><td class="sev med">Medium</td><td>Recharts 容器尺寸 -1,-1</td><td>UI · 布局</td></tr>
+        <tr><td><a href="#L-01">L-01</a></td><td class="sev low">Low</td><td>OPTIONS preflight 过于宽松</td><td>CORS</td></tr>
+        <tr><td><a href="#L-02">L-02</a></td><td class="sev low">Low</td><td>http 下 Secure cookie 被丢弃</td><td>Cookie</td></tr>
+        <tr><td><a href="#L-03">L-03</a></td><td class="sev low">Low</td><td>「不再显示」实际仍长期可见</td><td>UX · 密钥</td></tr>
+        <tr><td><a href="#L-04">L-04</a></td><td class="sev low">Low</td><td>Profile 主标题写成 Settings</td><td>一致性</td></tr>
+        <tr><td><a href="#L-05">L-05</a></td><td class="sev low">Low</td><td>uncensored / aggressive 模型出现在 catalogue</td><td>内容</td></tr>
+        <tr><td><a href="#L-06">L-06</a></td><td class="sev low">Low</td><td>API key Name 允许 HTML 标签</td><td>XSS 防御</td></tr>
+        <tr><td><a href="#L-07">L-07</a></td><td class="sev low">Low</td><td>/healthz 出现两条 Cache-Control</td><td>Header</td></tr>
+        <tr><td><a href="#I-01">I-01</a></td><td class="sev info">Info</td><td>JWT cookie 可解码 sub/iat</td><td>信息</td></tr>
+        <tr><td><a href="#I-02">I-02</a></td><td class="sev info">Info</td><td>Sentry baggage 持续发送</td><td>观测</td></tr>
+        <tr><td><a href="#I-03">I-03</a></td><td class="sev info">Info</td><td>/auth/verify 形同虚设</td><td>集成</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============ Evidence index ============ -->
+  <section>
+    <h2>8. 证据图集（按采集顺序）</h2>
+    <div class="shots">
+      <figure><img loading="lazy" src="audit-evidence/01-login-default.png" alt=""><figcaption>01 · 登录页</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/02-signup.png" alt=""><figcaption>02 · 注册表单</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/03-signup-weak-pw.png" alt=""><figcaption>03 · 6 位密码 — 服务端拒绝、UI 无反馈</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/04-dashboard.png" alt=""><figcaption>04 · 新用户进入 dashboard — $5 余额自动到账</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/05-api-keys.png" alt=""><figcaption>05 · API Keys 页空状态</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/06-create-key-modal.png" alt=""><figcaption>06 · API Key 创建对话框</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/07-key-created.png" alt=""><figcaption>07 · 「不再显示」提示与 key 长期可见</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/08-playground.png" alt=""><figcaption>08 · Playground · STT/TTS 下拉混杂</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/09-playground-response.png" alt=""><figcaption>09 · Playground 右下 toast: forbidden</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/10-subscription.png" alt=""><figcaption>10 · Subscription · Balance 0.00 闪烁</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/11-upgrade.png" alt=""><figcaption>11 · 点 Upgrade Now 无反馈</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/12-webhooks.png" alt=""><figcaption>12 · Webhooks 列表</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/13-webhook-ssrf-attempt.png" alt=""><figcaption>13 · 提交内网 URL → 内部错误,&nbsp;UI 沉默</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/14-profile.png" alt=""><figcaption>14 · Profile · H1 写 Settings</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/15-members.png" alt=""><figcaption>15 · Members</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/16-dlp.png" alt=""><figcaption>16 · DLP 模块</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/17-admin-dashboard.png" alt=""><figcaption>17 · Admin Dashboard · 图表空白</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/18-admin-providers.png" alt=""><figcaption>18 · Providers · max_tokens 4096 / uncensored 模型</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/19-admin-settings.png" alt=""><figcaption>19 · System Settings · 多 Tab</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/20-admin-finance.png" alt=""><figcaption>20 · Admin Finance</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/21-admin-audit.png" alt=""><figcaption>21 · Admin Audit · 84 entries</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/22-admin-audit-page.png" alt=""><figcaption>22 · Admin Audit · 中文切换前</figcaption></figure>
+      <figure><img loading="lazy" src="audit-evidence/23-audit-chinese.png" alt=""><figcaption>23 · 中文切换后 · 仅侧栏翻译</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>9. 后续动作建议（按 PR 切分）</h2>
+    <ol>
+      <li><strong>PR-1 安全防线收紧（针对 C-01 / C-02 / C-03 / M-09）：</strong> 关闭 open-registration 默认赠金；access token 改 HttpOnly cookie；前端按角色拆查询 + Apollo errorLink 静默 FORBIDDEN。</li>
+      <li><strong>PR-2 Header 一致性（H-01 / H-02 / H-03 / L-07）：</strong> 收敛安全 Header 到 nginx 单端；CSP 补 worker-src，对齐 Sentry endpoint；HSTS / Cache-Control 去重。</li>
+      <li><strong>PR-3 注册与计费 UX 闭环（H-04 / H-06 / H-07 / M-09）：</strong> 表单 inline error；balance 单一 Apollo cache；payments disabled 时按钮 disabled + 文案。</li>
+      <li><strong>PR-4 Provider catalogue 数据规整（M-02 / M-07 / M-08 / L-05）：</strong> 按 capability 分类，max_output_tokens 与 context_window 区分；filter dev-only / NSFW 模型。</li>
+      <li><strong>PR-5 i18n & 视觉细节（M-05 / M-11 / L-04）：</strong> 全量 zh.json，标题/正文统一；Recharts 容器固定 minHeight。</li>
+      <li><strong>PR-6 Onboarding & Tour（M-01）：</strong> 关闭状态写 store，避免反复阻塞。</li>
+      <li><strong>PR-7 Build/运维（H-08 / M-10 / I-03）：</strong> Sentry runtime config injection；nginx /metrics 加 allowlist；/auth/verify 改真实校验。</li>
+    </ol>
+  </section>
+
+</main>
+<footer>
+  生成于 2026-05-26 · 审计工具：Playwright MCP + curl · 报告路径 <code>design/audit-report.html</code>
+</footer>
+</body>
+</html>
