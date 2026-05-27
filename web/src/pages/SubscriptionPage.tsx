@@ -20,7 +20,7 @@ import { MY_BALANCE } from '@/lib/graphql/operations/auth';
 import { MY_REDEEM_HISTORY, REDEEM_CODE_MUTATION } from '@/lib/graphql/operations/redeem';
 import { useTranslation } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/authStore';
-import { formatUSD, moneyNumber } from '@/lib/format';
+import { formatUSD, moneyNumber, type MoneyValue } from '@/lib/format';
 import toast from 'react-hot-toast';
 import RechargeModal from '@/components/RechargeModal';
 
@@ -38,6 +38,13 @@ function SubscriptionPage() {
   const { data: plansData, loading: plansLoading } = useQuery<any>(PLANS_QUERY);
   const { data: billingData, loading: billingLoading, refetch: refetchBilling } = useQuery<any>(MY_BILLING_QUERY);
   const { data: redeemHistoryData, loading: redeemHistoryLoading, refetch: refetchRedeemHistory } = useQuery<any>(MY_REDEEM_HISTORY);
+  // H-06: the balance card reads from Apollo cache via MY_BALANCE so it
+  // shares the same normalized User entity that the dashboard wrote on
+  // login bootstrap. cache-and-network means we paint immediately from
+  // cache (if available) and silently refresh in the background — no
+  // 0.00 flash. The lazy variant below stays around only for the
+  // post-Stripe-redirect explicit refresh.
+  const { data: balanceData, loading: balanceLoading } = useQuery<any>(MY_BALANCE, { fetchPolicy: 'cache-and-network' });
   const [refetchBalance] = useLazyQuery<any>(MY_BALANCE, { fetchPolicy: 'network-only' });
   const [changePlanMut] = useMutation(CHANGE_PLAN);
   const [createCheckoutSession] = useMutation(CREATE_CHECKOUT_SESSION);
@@ -47,6 +54,22 @@ function SubscriptionPage() {
   const [redeemCode, setRedeemCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
   const [isRechargeModalOpen, setIsRechargeModalOpen] = useState(false);
+
+  // Inline error map keyed by which feature failed (e.g. "paymentsDisabled")
+  // so the upgrade UI can flag the affected plan and disable subsequent
+  // clicks. H-07.
+  const [paymentsAvailable, setPaymentsAvailable] = useState(true);
+  const [upgradeInlineError, setUpgradeInlineError] = useState<string | null>(null);
+
+  // Balance is "real" once we have a numeric value either from cache or
+  // network. Until then we render skeletons rather than the misleading
+  // $0.00 (H-06). The auth-store value is a last-resort fallback for
+  // edge cases where the cookie-bootstrap path populated it pre-Apollo.
+  const cachedBalance: MoneyValue | undefined = balanceData?.me?.balance;
+  const hasBalance = cachedBalance !== undefined && cachedBalance !== null;
+  const balanceForDisplay: MoneyValue = hasBalance ? cachedBalance : (user?.balance ?? 0);
+  const showBalanceSkeleton = !hasBalance && balanceLoading;
+
   const loading = plansLoading || billingLoading || redeemHistoryLoading;
 
   // Refresh balance + billing on:
@@ -148,7 +171,31 @@ function SubscriptionPage() {
     await refreshUserBalance();
   };
 
+  // isPaymentsDisabledError detects the typed VALIDATION error the server
+  // emits when no payment provider is configured. We branch on both
+  // extensions.code === VALIDATION (Round 1 wiring) and the legacy
+  // message-text substring so older builds still surface correctly.
+  const isPaymentsDisabledError = (error: unknown): boolean => {
+    if (!error) return false;
+    const msg = getErrorMessage(error);
+    if (msg.includes('payments are currently disabled') || msg.includes('payments are disabled')) {
+      return true;
+    }
+    // GraphQLError-shaped objects expose .errors[].extensions.code.
+    const maybeGqlErr = error as { errors?: ReadonlyArray<{ extensions?: Record<string, unknown>; message?: string }> };
+    return (maybeGqlErr.errors ?? []).some((e) => {
+      if (e?.extensions?.code === 'VALIDATION' && typeof e.message === 'string' && e.message.includes('payments')) {
+        return true;
+      }
+      return false;
+    });
+  };
+
   const handleChangePlan = async (plan: any) => {
+    // H-07: clear last attempt's inline error so the user knows a fresh
+    // attempt is in progress. If this attempt also fails with
+    // payments-disabled we'll re-set it below.
+    setUpgradeInlineError(null);
     try {
       setProcessingId(plan.id);
       const priceMonth = moneyNumber(plan.priceMonth);
@@ -172,7 +219,18 @@ function SubscriptionPage() {
       toast.success(t('subscription.change_success'));
     } catch (error) {
       const fallback = moneyNumber(plan.priceMonth) > 0 ? t('subscription.checkout_error') : t('subscription.change_error');
-      toast.error(planChangeErrorMessage(error, fallback));
+      const friendlyMsg = planChangeErrorMessage(error, fallback);
+
+      if (isPaymentsDisabledError(error)) {
+        // H-07: surface inline AND visually disable subsequent attempts.
+        // The toast remains because the user may be scrolled past the
+        // plan card when the error fires; the inline message is the
+        // persistent affordance, the toast is a one-shot notification.
+        setPaymentsAvailable(false);
+        setUpgradeInlineError(t('subscription.payments_disabled_inline'));
+      }
+
+      toast.error(friendlyMsg);
     } finally {
       setProcessingId(null);
     }
@@ -269,9 +327,23 @@ function SubscriptionPage() {
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-medium text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.balance')}</p>
-                <p className="mt-0.5 truncate text-xl font-semibold text-apple-gray-900 dark:text-white">
-                  {formatUSD(user?.balance ?? 0)}
-                </p>
+                {/* H-06: render a skeleton while the very first Apollo
+                    fetch is in flight. Until Round 1 wired MY_BALANCE in
+                    the cache this card would flash $0.00 → real value,
+                    which on a paid product reads as "did my top-up not
+                    apply?" The skeleton keeps the layout stable but
+                    visibly indicates work in progress. */}
+                {showBalanceSkeleton ? (
+                  <div
+                    aria-busy="true"
+                    aria-label={t('subscription.balance')}
+                    className="mt-1 h-6 w-24 animate-pulse rounded-md bg-apple-gray-200 dark:bg-white/10"
+                  />
+                ) : (
+                  <p className="mt-0.5 truncate text-xl font-semibold text-apple-gray-900 dark:text-white">
+                    {formatUSD(balanceForDisplay)}
+                  </p>
+                )}
               </div>
             </div>
             <button
@@ -292,10 +364,13 @@ function SubscriptionPage() {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-medium text-apple-gray-500 dark:text-apple-gray-400">{t('subscription.period')}</p>
+              {/* H-06: "Period Ends: --" reads as a bug to first-time users
+                  on the free tier. When there's no subscription end date,
+                  show the actual state ("Not subscribed") instead. */}
               <p className="mt-0.5 truncate text-lg font-semibold text-apple-gray-900 dark:text-white">
                 {subscription?.currentPeriodEnd
                   ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
-                  : '--'}
+                  : t('subscription.not_subscribed')}
               </p>
             </div>
           </div>
@@ -414,25 +489,52 @@ function SubscriptionPage() {
                       </ul>
                     )}
 
-                    <button
-                      onClick={() => handleChangePlan(plan)}
-                      disabled={isCurrent || !!processingId}
-                      className={`mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition-all ${
-                        isCurrent
-                          ? 'cursor-default bg-apple-gray-100 text-apple-gray-500 dark:bg-white/10 dark:text-apple-gray-400'
-                          : 'bg-apple-blue text-white shadow-sm hover:bg-blue-600 active:scale-[0.98]'
-                      }`}
-                    >
-                      {processingId === plan.id ? (
-                        <ArrowPathIcon className="h-5 w-5 animate-spin" />
-                      ) : isCurrent ? (
-                        t('subscription.subscribed')
-                      ) : isUpgrade ? (
-                        t('subscription.upgrade')
-                      ) : (
-                        t('subscription.downgrade')
-                      )}
-                    </button>
+                    {/* H-07: A paid plan can't actually be upgraded when
+                        the server's payment service is disabled. Once we
+                        learn that — either pre-emptively in a future
+                        billingConfig query, or reactively from the first
+                        failed checkout — we keep the button visible but
+                        non-interactive, with a tooltip explaining why. The
+                        Current plan still uses the existing disabled path
+                        (isCurrent), which is semantically different. */}
+                    {(() => {
+                      const isPaid = priceMonth > 0;
+                      const disabledForPayments = isPaid && !paymentsAvailable;
+                      const disabled = isCurrent || !!processingId || disabledForPayments;
+                      return (
+                        <button
+                          onClick={() => handleChangePlan(plan)}
+                          disabled={disabled}
+                          aria-disabled={disabled}
+                          title={disabledForPayments ? t('subscription.payments_disabled_inline') : undefined}
+                          className={`mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition-all ${
+                            isCurrent || disabledForPayments
+                              ? 'cursor-not-allowed bg-apple-gray-100 text-apple-gray-500 dark:bg-white/10 dark:text-apple-gray-400'
+                              : 'bg-apple-blue text-white shadow-sm hover:bg-blue-600 active:scale-[0.98]'
+                          }`}
+                        >
+                          {processingId === plan.id ? (
+                            <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                          ) : isCurrent ? (
+                            t('subscription.subscribed')
+                          ) : isUpgrade ? (
+                            t('subscription.upgrade')
+                          ) : (
+                            t('subscription.downgrade')
+                          )}
+                        </button>
+                      );
+                    })()}
+
+                    {/* Inline error below the paid plan card. We render
+                        only on the upgrade-targets that would actually be
+                        affected (i.e. paid plans, not the user's current
+                        plan). H-07. */}
+                    {priceMonth > 0 && !isCurrent && upgradeInlineError && (
+                      <p role="alert" className="mt-2 text-xs text-red-600">
+                        {upgradeInlineError}
+                      </p>
+                    )}
                   </motion.div>
                 );
               })}
