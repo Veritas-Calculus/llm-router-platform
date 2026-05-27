@@ -189,13 +189,15 @@ const maxFinancialDays = 365
 
 func (s *Service) financialDaily(ctx context.Context, start, end time.Time, days int) ([]FinancialDailyPoint, error) {
 	// Defense-in-depth: FinancialDashboard already caps days at [1,365]
-	// (line 77-83), but CodeQL's go/uncontrolled-allocation-size taint
-	// can only clear tainted-int allocation sizes via a `min` against
-	// a constant — `if x > max { x = max }` reassignment is not enough
-	// for the taint tracker.
+	// (line 77-83). CodeQL's go/uncontrolled-allocation-size taint
+	// tracker won't follow an `int` parameter through any clamp shape
+	// — neither `if x > N { x = N }` nor `min(max(x, 1), N)`. The
+	// only pattern that clears the analysis is allocating with the
+	// constant itself, then bounding the loop iteration separately.
+	const capacity = maxFinancialDays
+	byDate := make(map[string]*FinancialDailyPoint, capacity)
+	out := make([]FinancialDailyPoint, 0, capacity)
 	n := min(max(days, 1), maxFinancialDays)
-	byDate := make(map[string]*FinancialDailyPoint, n)
-	out := make([]FinancialDailyPoint, 0, n)
 	for i := 0; i < n; i++ {
 		date := start.AddDate(0, 0, i).Format("2006-01-02")
 		point := &FinancialDailyPoint{Date: date}
