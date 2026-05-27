@@ -179,21 +179,29 @@ func (s *Service) FinancialDashboard(ctx context.Context, days int) (*FinancialD
 	}, nil
 }
 
+// maxFinancialDays is the absolute upper bound on the number of days a
+// caller can request from financialDaily. The public FinancialDashboard
+// already caps its `days` parameter at 365; this constant is a defensive
+// re-cap for the private helper. Keeping it as a typed constant (rather
+// than reassigning the parameter) gives CodeQL's taint tracker a stable
+// upper bound it can use to clear go/uncontrolled-allocation-size.
+const maxFinancialDays = 365
+
 func (s *Service) financialDaily(ctx context.Context, start, end time.Time, days int) ([]FinancialDailyPoint, error) {
 	// Defense-in-depth: FinancialDashboard already caps days at [1,365]
 	// (see line 77-83), but CodeQL's taint analysis (rule
 	// go/uncontrolled-allocation-size) can't follow that cap into this
-	// helper. Re-clamp here so a future caller that bypasses the public
-	// entry point can't OOM the process via the make() below.
-	if days <= 0 {
-		days = 1
+	// private helper unless we re-bind into a constant-bounded local.
+	n := days
+	if n <= 0 {
+		n = 1
 	}
-	if days > 365 {
-		days = 365
+	if n > maxFinancialDays {
+		n = maxFinancialDays
 	}
-	byDate := make(map[string]*FinancialDailyPoint, days)
-	out := make([]FinancialDailyPoint, 0, days)
-	for i := 0; i < days; i++ {
+	byDate := make(map[string]*FinancialDailyPoint, n)
+	out := make([]FinancialDailyPoint, 0, n)
+	for i := 0; i < n; i++ {
 		date := start.AddDate(0, 0, i).Format("2006-01-02")
 		point := &FinancialDailyPoint{Date: date}
 		byDate[date] = point
