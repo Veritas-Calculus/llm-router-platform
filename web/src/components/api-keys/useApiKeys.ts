@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
+import { CombinedGraphQLErrors } from '@apollo/client/errors';
 import { MY_API_KEYS, MY_ORGANIZATIONS, MY_PROJECTS, CREATE_API_KEY, REVOKE_API_KEY, DELETE_API_KEY, UPDATE_PROJECT } from '@/lib/graphql/operations';
 import type { ApiKey, Organization, Project } from '@/lib/types';
 import { useTranslation } from '@/lib/i18n';
@@ -8,6 +9,40 @@ import { useAuthStore } from '@/stores/authStore';
 import { useAuthHydrated } from '@/hooks/useAuthHydrated';
 import { mapApiKey, AVAILABLE_SCOPES_BASE } from './ApiKeyComponents';
 import toast from 'react-hot-toast';
+
+// FU-1: shape of the field-keyed inline-error map surfaced by the
+// hook to the create-key dialog. Mirrors the WebhooksPage / LoginPage
+// convention so the dialog can render <p role="alert"> under each input.
+// Server keys the field via extensions.field — we forward those keys
+// verbatim. `name` is the field the L-06 server validator exercises
+// today; the others are wired for forward-compat with the API key
+// rate-limit / scopes validators.
+type FieldErrors = Partial<Record<'name' | 'rateLimit' | 'tokenLimit' | 'dailyLimit' | 'scopes', string>>;
+
+const KNOWN_API_KEY_FIELDS: ReadonlySet<keyof FieldErrors> = new Set(['name', 'rateLimit', 'tokenLimit', 'dailyLimit', 'scopes']);
+
+// Pull every VALIDATION-coded GraphQL error out of an Apollo onError
+// payload and project it into a {field: message} map. Unknown fields
+// (or VALIDATION without a field) land in otherMessages so the caller
+// can still toast them rather than silently dropping the server reason.
+function collectValidationErrors(error: unknown): { fieldErrors: FieldErrors; otherMessages: string[] } {
+  const fieldErrors: FieldErrors = {};
+  const otherMessages: string[] = [];
+  if (!CombinedGraphQLErrors.is(error)) {
+    if (error instanceof Error) otherMessages.push(error.message);
+    return { fieldErrors, otherMessages };
+  }
+  for (const gqlError of error.errors) {
+    const code = (gqlError.extensions?.code as string) || '';
+    const field = (gqlError.extensions?.field as string) || '';
+    if (code === 'VALIDATION' && field && KNOWN_API_KEY_FIELDS.has(field as keyof FieldErrors)) {
+      fieldErrors[field as keyof FieldErrors] = gqlError.message;
+      continue;
+    }
+    otherMessages.push(gqlError.message);
+  }
+  return { fieldErrors, otherMessages };
+}
 
 const parsePolicyList = (value: string) => Array.from(new Set(
   value
@@ -17,6 +52,13 @@ const parsePolicyList = (value: string) => Array.from(new Set(
 ));
 
 const DEFAULT_API_KEY_SCOPES = ['chat'];
+
+// L-06: mirror of the server-side regex in apikey.resolvers.go. Soft check
+// only — the backend is the source of truth and will return a typed
+// VALIDATION error with field=name if the client mirror drifts. The
+// （ / ） escapes are fullwidth parens, which appear naturally
+// in Chinese / Japanese key names.
+const API_KEY_NAME_PATTERN = /^[\p{L}\p{N}\s_.\-()（）]{1,64}$/u;
 
 export function useApiKeys() {
   const { t } = useTranslation();
@@ -62,6 +104,10 @@ export function useApiKeys() {
   const [newKeyTokenLimit, setNewKeyTokenLimit] = useState<string>('');
   const [createdKey, setCreatedKey] = useState<ApiKey | null>(null);
   const [creating, setCreating] = useState(false);
+  // FU-1: field-keyed inline errors. Populated by the create-key
+  // mutation onError handler and cleared whenever the user edits the
+  // matching input (see clearFieldError below) or re-opens the dialog.
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [createKeyMut] = useMutation(CREATE_API_KEY);
   const [revokeKeyMut] = useMutation(REVOKE_API_KEY);
   const [deleteKeyMut] = useMutation(DELETE_API_KEY);
@@ -77,8 +123,22 @@ export function useApiKeys() {
   const [processing, setProcessing] = useState(false);
 
   const handleCreate = useCallback(async () => {
-    if (!newKeyName.trim()) { toast.error(t('api_keys.enter_name')); return; }
+    const trimmedName = newKeyName.trim();
+    if (!trimmedName) { toast.error(t('api_keys.enter_name')); return; }
+    // L-06: soft client-side mirror of the server-side regex; the server
+    // returns a typed VALIDATION error with field=name if this slips past
+    // (e.g. when the client mirror drifts) — that response is rendered
+    // inline by the dialog via fieldErrors.name. Surface the same hint
+    // inline here so the UX is consistent regardless of where the check
+    // fires.
+    if (!API_KEY_NAME_PATTERN.test(trimmedName)) {
+      setFieldErrors({ name: t('api_keys.invalid_name') });
+      return;
+    }
     if (!selectedProjectId) { toast.error(t('api_keys.select_project')); return; }
+    // FU-1: always clear stale inline errors before a new round-trip —
+    // server failures will repopulate this via the onError path below.
+    setFieldErrors({});
     setCreating(true);
     try {
       const scopeStr = selectedScopes.includes('all') ? 'all' : selectedScopes.join(',');
@@ -89,17 +149,51 @@ export function useApiKeys() {
       const allowedProviders = parsePolicyList(newAllowedProviders);
       if (allowedModels.length > 0) variables.allowedModels = allowedModels;
       if (allowedProviders.length > 0) variables.allowedProviders = allowedProviders;
-      const { data: result } = await createKeyMut({ variables });
-      const key = mapApiKey((result as any)?.createApiKey);
+      // Apollo's global errorPolicy is 'all', so GraphQL errors land in
+      // result.error rather than being thrown. We forward that into the
+      // catch site to keep the field-error wiring centralized.
+      const result = await createKeyMut({ variables });
+      if (result.error) throw result.error;
+      const key = mapApiKey((result.data as any)?.createApiKey);
       setCreatedKey(key);
       setShowCreateModal(false);
       await refetch();
       setNewKeyName(''); setSelectedScopes(DEFAULT_API_KEY_SCOPES); setNewAllowedModels(''); setNewAllowedProviders(''); setNewKeyRateLimit(''); setNewKeyTokenLimit('');
       toast.success(t('api_keys.created_success'));
     } catch (e: any) {
-      toast.error(e.message || t('api_keys.create_error'));
+      // FU-1: project any VALIDATION error with a known extensions.field
+      // onto the inline-error map so the dialog renders <p role=alert>
+      // under the offending input. Anything we can't pin to a field
+      // falls back to a toast — matches the WebhooksPage policy.
+      const { fieldErrors: next, otherMessages } = collectValidationErrors(e);
+      if (Object.keys(next).length > 0) {
+        setFieldErrors(next);
+      } else if (otherMessages.length > 0) {
+        toast.error(otherMessages.join('\n'));
+      } else {
+        toast.error(e.message || t('api_keys.create_error'));
+      }
     } finally { setCreating(false); }
   }, [newKeyName, selectedProjectId, selectedScopes, newKeyRateLimit, newKeyTokenLimit, newAllowedModels, newAllowedProviders, createKeyMut, refetch, t]);
+
+  // FU-1: lets the dialog's input change handlers wipe just the inline
+  // error tied to that field as the user starts editing — mirrors the
+  // LoginPage / WebhooksPage UX where the red message vanishes once the
+  // user begins typing a fix.
+  const clearFieldError = useCallback((field: keyof FieldErrors) => {
+    setFieldErrors((prev) => {
+      if (!(field in prev)) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  }, []);
+
+  // Reset fieldErrors whenever the create dialog opens, so stale errors
+  // from a prior failed attempt don't leak across opens.
+  useEffect(() => {
+    if (showCreateModal) setFieldErrors({});
+  }, [showCreateModal]);
 
   const openRevokeModal = (id: string) => setConfirmModal({ isOpen: true, type: 'revoke', keyId: id });
   const openDeleteModal = (id: string) => setConfirmModal({ isOpen: true, type: 'delete', keyId: id });
@@ -157,6 +251,8 @@ export function useApiKeys() {
     selectedScopes, setSelectedScopes, newAllowedModels, setNewAllowedModels,
     newAllowedProviders, setNewAllowedProviders, newKeyRateLimit, setNewKeyRateLimit,
     newKeyTokenLimit, setNewKeyTokenLimit, createdKey, setCreatedKey, creating, handleCreate,
+    // FU-1: inline error surface for the create dialog.
+    fieldErrors, clearFieldError,
     // Quick guide
     showQuickGuide, setShowQuickGuide,
     // Actions

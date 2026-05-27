@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   PlusIcon, TrashIcon, ClipboardIcon, XCircleIcon,
@@ -10,6 +10,14 @@ import {
   SubscriptionQuotaBanner, RateLimitStatusCell, ConfirmModal, formatDate,
   useApiKeys,
 } from '@/components/api-keys';
+
+// L-03: how long the freshly-created API key stays visible in the reveal
+// banner before we wipe it from React state. 60s is enough to copy +
+// paste into a password manager without overstaying. The Sentry Replay
+// `data-sentry-mask` attribute on the key element is a belt-and-braces
+// guard — Replay is disabled today (audit H-02 path), but the marker
+// keeps the secret out of any future Replay capture.
+const REVEAL_COUNTDOWN_SECONDS = 60;
 
 function AccessBadges({ items, fallback }: { items?: string[]; fallback: string }) {
   const values = (items || []).filter(Boolean);
@@ -42,6 +50,7 @@ function ApiKeysPage() {
     selectedScopes, setSelectedScopes, newAllowedModels, setNewAllowedModels,
     newAllowedProviders, setNewAllowedProviders, newKeyRateLimit, setNewKeyRateLimit,
     newKeyTokenLimit, setNewKeyTokenLimit, createdKey, setCreatedKey, creating, handleCreate,
+    fieldErrors, clearFieldError,
     showQuickGuide, setShowQuickGuide,
     openRevokeModal, openDeleteModal, closeConfirmModal, handleConfirmAction,
     confirmModal, processing, copyToClipboard,
@@ -57,6 +66,30 @@ function ApiKeysPage() {
     setNewKeyRateLimit('');
     setNewKeyTokenLimit('');
   }, [setNewAllowedModels, setNewAllowedProviders, setNewKeyName, setNewKeyRateLimit, setNewKeyTokenLimit, setSelectedScopes, setShowCreateModal]);
+
+  // L-03: countdown for the "show me the key once" banner. The createdKey
+  // state holds the full plaintext secret, so we wipe it (setCreatedKey(null))
+  // after REVEAL_COUNTDOWN_SECONDS even if the user forgets to dismiss the
+  // banner. Each new key resets the countdown.
+  const [revealRemaining, setRevealRemaining] = useState<number>(0);
+  useEffect(() => {
+    if (!createdKey) {
+      setRevealRemaining(0);
+      return;
+    }
+    setRevealRemaining(REVEAL_COUNTDOWN_SECONDS);
+    const interval = setInterval(() => {
+      setRevealRemaining((s) => {
+        if (s <= 1) {
+          // Drop the key from state — not just hidden, fully gone.
+          setCreatedKey(null);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [createdKey, setCreatedKey]);
   const closeProjectSettings = useCallback(() => setIsProjectSettingsOpen(false), [setIsProjectSettingsOpen]);
   const createDialogRef = useDialogA11y<HTMLDivElement>(showCreateModal, closeCreateModal);
   const projectDialogRef = useDialogA11y<HTMLDivElement>(isProjectSettingsOpen, closeProjectSettings);
@@ -97,37 +130,48 @@ function ApiKeysPage() {
               </select>
             </div>
             {selectedProjectId && (
-              <button onClick={openProjectSettings} className="btn btn-secondary w-full justify-center px-3 sm:col-span-2 lg:w-auto" title={t('api_keys.project_settings')}>Settings</button>
+              <button onClick={openProjectSettings} className="btn btn-secondary w-full justify-center px-3 sm:col-span-2 lg:w-auto" title={t('api_keys.project_settings')}>{t('common.configure')}</button>
             )}
           </div>
         </div>
         <div className="flex w-full flex-col gap-3 sm:flex-row xl:w-auto xl:items-center">
           <button onClick={() => setShowQuickGuide(!showQuickGuide)} className="btn btn-secondary justify-center bg-white dark:bg-[#1C1C1E]">
-            <InformationCircleIcon className="w-5 h-5 mr-2 -ml-1" />Quick API Reference
+            <InformationCircleIcon className="w-5 h-5 mr-2 -ml-1" />{t('api_keys.quick_reference')}
           </button>
           {apiKeys.length > 0 && (
             <button onClick={() => setShowCreateModal(true)} className="btn btn-primary justify-center" disabled={!selectedProjectId}>
-              <PlusIcon className="w-5 h-5 mr-2 -ml-1" />Create API Key
+              <PlusIcon className="w-5 h-5 mr-2 -ml-1" />{t('api_keys.create')}
             </button>
           )}
         </div>
       </div>
 
-      {/* Created Key Banner */}
+      {/* Created Key Banner — L-03: countdown + sentry mask + auto-wipe */}
       {createdKey && (
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="card border-2 border-apple-green bg-green-50">
           <div className="flex items-start justify-between">
-            <div>
-              <h3 className="text-lg font-semibold text-apple-gray-900 mb-2">API Key Created Successfully</h3>
-              <p className="text-sm text-apple-gray-600 mb-4">Please copy your API key now. You will not be able to see it again.</p>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-semibold text-apple-gray-900 mb-2">{t('api_keys.created_banner_title')}</h3>
+              <p className="text-sm text-apple-gray-600 mb-4">
+                {t('api_keys.created_banner_body')}
+                <span className="ml-2 text-xs font-mono text-apple-gray-500" aria-live="polite">
+                  ({t('api_keys.reveal_countdown', { seconds: revealRemaining })})
+                </span>
+              </p>
               <div className="flex items-center gap-2 bg-[var(--theme-bg-input)] rounded-apple border border-apple-gray-200 p-3">
-                <code className="text-sm text-apple-gray-900 flex-1 break-all">{createdKey.key}</code>
+                <code
+                  className="text-sm text-apple-gray-900 flex-1 break-all"
+                  data-sentry-mask
+                  data-sentry-replay-mask
+                >
+                  {createdKey.key}
+                </code>
                 <button onClick={() => copyToClipboard(createdKey.key)} className="btn btn-ghost p-2" title={t('api_keys.copy_clipboard')}>
                   <ClipboardIcon className="w-5 h-5" />
                 </button>
               </div>
             </div>
-            <button onClick={() => setCreatedKey(null)} className="text-apple-gray-400 hover:text-apple-gray-600">
+            <button onClick={() => setCreatedKey(null)} className="text-apple-gray-400 hover:text-apple-gray-600 ml-2">
               <span className="sr-only">{t('common.dismiss')}</span>&times;
             </button>
           </div>
@@ -160,7 +204,7 @@ function ApiKeysPage() {
                     <th className="table-header">{t('common.key')}</th>
                     <th className="table-header">{t('common.status')}</th>
                     <th className="table-header">{t('common.scopes')}</th>
-                    <th className="table-header">Access</th>
+                    <th className="table-header">{t('api_keys.access')}</th>
                     <th className="table-header">{t('common.limits')}</th>
                     <th className="table-header">{t('common.expires')}</th>
                     <th className="table-header">{t('common.created')}</th>
@@ -188,12 +232,12 @@ function ApiKeysPage() {
                       <td className="table-cell">
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-medium uppercase tracking-wide text-apple-gray-400 w-14">Models</span>
-                            <AccessBadges items={key.allowed_models} fallback="All models" />
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-apple-gray-400 w-14">{t('api_keys.models_label')}</span>
+                            <AccessBadges items={key.allowed_models} fallback={t('api_keys.all_models')} />
                           </div>
                           <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-medium uppercase tracking-wide text-apple-gray-400 w-14">Providers</span>
-                            <AccessBadges items={key.allowed_providers} fallback="All providers" />
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-apple-gray-400 w-14">{t('api_keys.providers_label')}</span>
+                            <AccessBadges items={key.allowed_providers} fallback={t('api_keys.all_providers')} />
                           </div>
                         </div>
                       </td>
@@ -202,15 +246,15 @@ function ApiKeysPage() {
                           <RateLimitStatusCell keyId={key.id} isActive={key.is_active} />
                         ) : (
                           <div className="text-xs text-apple-gray-600 space-y-1">
-                            <div><span className="text-apple-gray-400">RPM:</span> {key.rate_limit || 'Unlimited'}</div>
-                            <div><span className="text-apple-gray-400">TPM:</span> {key.token_limit || 'Unlimited'}</div>
-                            <div><span className="text-apple-gray-400">Daily:</span> {key.daily_limit || 'Unlimited'}</div>
+                            <div><span className="text-apple-gray-400">RPM:</span> {key.rate_limit || t('users.unlimited')}</div>
+                            <div><span className="text-apple-gray-400">TPM:</span> {key.token_limit || t('users.unlimited')}</div>
+                            <div><span className="text-apple-gray-400">Daily:</span> {key.daily_limit || t('users.unlimited')}</div>
                           </div>
                         )}
                       </td>
-                      <td className="table-cell text-apple-gray-500">{key.expires_at && new Date(key.expires_at).getTime() > 0 ? formatDate(key.expires_at) : 'Never'}</td>
+                      <td className="table-cell text-apple-gray-500">{key.expires_at && new Date(key.expires_at).getTime() > 0 ? formatDate(key.expires_at) : t('common.never')}</td>
                       <td className="table-cell text-apple-gray-500">{formatDate(key.created_at)}</td>
-                      <td className="table-cell text-apple-gray-500">{key.last_used_at && new Date(key.last_used_at).getTime() > 0 ? formatDate(key.last_used_at) : 'Never'}</td>
+                      <td className="table-cell text-apple-gray-500">{key.last_used_at && new Date(key.last_used_at).getTime() > 0 ? formatDate(key.last_used_at) : t('common.never')}</td>
                       <td className="table-cell">
                         <div className="flex items-center gap-2">
                           {key.is_active && (
@@ -251,12 +295,12 @@ function ApiKeysPage() {
                   </div>
                   <div className="bg-apple-gray-50 rounded-xl p-3 border border-apple-gray-100 space-y-2">
                     <div>
-                      <span className="block text-apple-gray-400 font-medium mb-1 uppercase tracking-wider text-[9px]">Models</span>
-                      <AccessBadges items={key.allowed_models} fallback="All models" />
+                      <span className="block text-apple-gray-400 font-medium mb-1 uppercase tracking-wider text-[9px]">{t('api_keys.models_label')}</span>
+                      <AccessBadges items={key.allowed_models} fallback={t('api_keys.all_models')} />
                     </div>
                     <div>
-                      <span className="block text-apple-gray-400 font-medium mb-1 uppercase tracking-wider text-[9px]">Providers</span>
-                      <AccessBadges items={key.allowed_providers} fallback="All providers" />
+                      <span className="block text-apple-gray-400 font-medium mb-1 uppercase tracking-wider text-[9px]">{t('api_keys.providers_label')}</span>
+                      <AccessBadges items={key.allowed_providers} fallback={t('api_keys.all_providers')} />
                     </div>
                   </div>
                   <div className="bg-apple-gray-50 rounded-xl p-3 border border-apple-gray-100">
@@ -264,9 +308,9 @@ function ApiKeysPage() {
                       <RateLimitStatusCell keyId={key.id} isActive={key.is_active} />
                     ) : (
                       <div className="text-[11px] text-apple-gray-600 space-y-1.5">
-                        <div className="flex justify-between items-center"><span className="text-apple-gray-500 font-medium tracking-wide">RPM</span> <span className="font-mono">{key.rate_limit || 'Unlimited'}</span></div>
-                        <div className="flex justify-between items-center"><span className="text-apple-gray-500 font-medium tracking-wide">TPM</span> <span className="font-mono">{key.token_limit || 'Unlimited'}</span></div>
-                        <div className="flex justify-between items-center"><span className="text-apple-gray-500 font-medium tracking-wide">Daily</span> <span className="font-mono">{key.daily_limit || 'Unlimited'}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-apple-gray-500 font-medium tracking-wide">RPM</span> <span className="font-mono">{key.rate_limit || t('users.unlimited')}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-apple-gray-500 font-medium tracking-wide">TPM</span> <span className="font-mono">{key.token_limit || t('users.unlimited')}</span></div>
+                        <div className="flex justify-between items-center"><span className="text-apple-gray-500 font-medium tracking-wide">Daily</span> <span className="font-mono">{key.daily_limit || t('users.unlimited')}</span></div>
                       </div>
                     )}
                   </div>
@@ -277,7 +321,7 @@ function ApiKeysPage() {
                     </div>
                     <div className="text-right">
                       <span className="block text-apple-gray-400 font-medium mb-0.5 uppercase tracking-wider text-[9px]">{t('common.last_used')}</span>
-                      {key.last_used_at && new Date(key.last_used_at).getTime() > 0 ? formatDate(key.last_used_at) : 'Never'}
+                      {key.last_used_at && new Date(key.last_used_at).getTime() > 0 ? formatDate(key.last_used_at) : t('common.never')}
                     </div>
                   </div>
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-apple-gray-100">
@@ -310,13 +354,26 @@ function ApiKeysPage() {
             animate={{ opacity: 1, scale: 1 }}
             className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto"
           >
-            <h2 id="create-api-key-title" className="text-xl font-semibold text-apple-gray-900 mb-4">Create API Key</h2>
+            <h2 id="create-api-key-title" className="text-xl font-semibold text-apple-gray-900 mb-4">{t('api_keys.create_modal_title')}</h2>
             <div className="mb-6">
-              <label htmlFor="keyName" className="label">Name</label>
-              <input type="text" id="keyName" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} className="input" placeholder="e.g., Production, Development" autoFocus />
+              <label htmlFor="keyName" className="label">{t('common.name')}</label>
+              <input
+                type="text"
+                id="keyName"
+                value={newKeyName}
+                onChange={(e) => { setNewKeyName(e.target.value); clearFieldError('name'); }}
+                className="input"
+                placeholder={t('api_keys.name_placeholder')}
+                autoFocus
+                aria-invalid={!!fieldErrors.name}
+                aria-describedby={fieldErrors.name ? 'apikey-name-error' : undefined}
+              />
+              {fieldErrors.name && (
+                <p id="apikey-name-error" role="alert" className="text-xs mt-1.5 text-red-600">{fieldErrors.name}</p>
+              )}
             </div>
             <div className="mb-6">
-              <label className="label mb-2">Permissions (Scopes)</label>
+              <label className="label mb-2">{t('api_keys.permissions_label')}</label>
               <p className="mb-3 text-xs leading-relaxed text-apple-gray-500">
                 {t('api_keys.scopes_help')}
               </p>
@@ -347,27 +404,27 @@ function ApiKeysPage() {
             </div>
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div>
-                <label htmlFor="rateLimit" className="label">Requests/Min (RPM)</label>
-                <input type="number" id="rateLimit" value={newKeyRateLimit} onChange={(e) => setNewKeyRateLimit(e.target.value)} className="input mt-1 block w-full" placeholder="Unlimited (1000)" />
+                <label htmlFor="rateLimit" className="label">{t('api_keys.rpm_label')}</label>
+                <input type="number" id="rateLimit" value={newKeyRateLimit} onChange={(e) => setNewKeyRateLimit(e.target.value)} className="input mt-1 block w-full" placeholder={t('api_keys.rpm_placeholder')} />
               </div>
               <div>
-                <label htmlFor="tokenLimit" className="label">Tokens/Min (TPM)</label>
-                <input type="number" id="tokenLimit" value={newKeyTokenLimit} onChange={(e) => setNewKeyTokenLimit(e.target.value)} className="input mt-1 block w-full" placeholder="Unlimited (0)" />
+                <label htmlFor="tokenLimit" className="label">{t('api_keys.tpm_label')}</label>
+                <input type="number" id="tokenLimit" value={newKeyTokenLimit} onChange={(e) => setNewKeyTokenLimit(e.target.value)} className="input mt-1 block w-full" placeholder={t('api_keys.tpm_placeholder')} />
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div>
-                <label htmlFor="allowedModels" className="label">Allowed Models</label>
-                <textarea id="allowedModels" value={newAllowedModels} onChange={(e) => setNewAllowedModels(e.target.value)} rows={3} className="input mt-1 block w-full font-mono text-xs" placeholder="All models" />
+                <label htmlFor="allowedModels" className="label">{t('api_keys.allowed_models_label')}</label>
+                <textarea id="allowedModels" value={newAllowedModels} onChange={(e) => setNewAllowedModels(e.target.value)} rows={3} className="input mt-1 block w-full font-mono text-xs" placeholder={t('api_keys.all_models')} />
               </div>
               <div>
-                <label htmlFor="allowedProviders" className="label">Allowed Providers</label>
-                <textarea id="allowedProviders" value={newAllowedProviders} onChange={(e) => setNewAllowedProviders(e.target.value)} rows={3} className="input mt-1 block w-full font-mono text-xs" placeholder="All providers" />
+                <label htmlFor="allowedProviders" className="label">{t('api_keys.allowed_providers_label')}</label>
+                <textarea id="allowedProviders" value={newAllowedProviders} onChange={(e) => setNewAllowedProviders(e.target.value)} rows={3} className="input mt-1 block w-full font-mono text-xs" placeholder={t('api_keys.all_providers')} />
               </div>
             </div>
             <div className="flex justify-end gap-3">
-              <button onClick={closeCreateModal} className="btn btn-secondary">Cancel</button>
-              <button onClick={handleCreate} className="btn btn-primary" disabled={creating}>{creating ? 'Creating...' : 'Create'}</button>
+              <button onClick={closeCreateModal} className="btn btn-secondary">{t('common.cancel')}</button>
+              <button onClick={handleCreate} className="btn btn-primary" disabled={creating}>{creating ? t('common.adding') : t('common.create')}</button>
             </div>
           </motion.div>
         </div>
@@ -375,9 +432,9 @@ function ApiKeysPage() {
 
       <ConfirmModal
         isOpen={confirmModal.isOpen}
-        title={confirmModal.type === 'revoke' ? 'Revoke API Key' : 'Delete API Key'}
-        message={confirmModal.type === 'revoke' ? 'Are you sure you want to revoke this API key? It will be deactivated but can still be deleted later.' : 'Are you sure you want to permanently delete this API key? This action cannot be undone.'}
-        confirmText={confirmModal.type === 'revoke' ? 'Revoke' : 'Delete'}
+        title={confirmModal.type === 'revoke' ? t('api_keys.revoke_key') : t('api_keys.delete_key')}
+        message={confirmModal.type === 'revoke' ? t('api_keys.revoke_confirm_desc') : t('api_keys.delete_confirm_desc')}
+        confirmText={confirmModal.type === 'revoke' ? t('api_keys.revoke') : t('common.delete')}
         confirmColor={confirmModal.type === 'revoke' ? 'orange' : 'red'}
         onConfirm={handleConfirmAction}
         onCancel={closeConfirmModal}
@@ -397,17 +454,17 @@ function ApiKeysPage() {
             animate={{ opacity: 1, scale: 1 }}
             className="bg-[var(--theme-bg-card)] rounded-apple-lg shadow-apple-xl p-6 w-full max-w-lg mx-4"
           >
-            <h3 id="project-settings-title" className="text-xl font-semibold text-apple-gray-900 mb-6">Project Settings</h3>
+            <h3 id="project-settings-title" className="text-xl font-semibold text-apple-gray-900 mb-6">{t('api_keys.project_settings')}</h3>
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-apple-gray-700 mb-1">API IP Whitelist</label>
-                <textarea value={projectWhiteListedIps} onChange={(e) => setProjectWhiteListedIps(e.target.value)} placeholder="e.g. 192.168.1.1, 10.0.0.0/24 (comma separated)" rows={4} className="input w-full font-mono text-sm" />
-                <p className="mt-2 text-xs text-apple-gray-500 max-w">Restrict API key usage to specific IP addresses or CIDR blocks. Leave empty to allow any IP. <strong>Note:</strong> This takes effect for all API keys in this project.</p>
+                <label className="block text-sm font-medium text-apple-gray-700 mb-1">{t('api_keys.ip_whitelist_label')}</label>
+                <textarea value={projectWhiteListedIps} onChange={(e) => setProjectWhiteListedIps(e.target.value)} placeholder="e.g. 192.168.1.1, 10.0.0.0/24" rows={4} className="input w-full font-mono text-sm" />
+                <p className="mt-2 text-xs text-apple-gray-500 max-w">{t('api_keys.ip_whitelist_hint')}</p>
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-8">
-              <button onClick={closeProjectSettings} className="btn btn-secondary" disabled={updatingProject}>Cancel</button>
-              <button onClick={saveProjectSettings} className="btn btn-primary" disabled={updatingProject}>{updatingProject ? 'Saving...' : 'Save Settings'}</button>
+              <button onClick={closeProjectSettings} className="btn btn-secondary" disabled={updatingProject}>{t('common.cancel')}</button>
+              <button onClick={saveProjectSettings} className="btn btn-primary" disabled={updatingProject}>{updatingProject ? t('common.saving') : t('common.save')}</button>
             </div>
           </motion.div>
         </div>
