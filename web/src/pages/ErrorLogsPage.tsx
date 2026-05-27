@@ -63,25 +63,25 @@ Headers: ${log.headers}
 
 ${log.responseBody}`;
     navigator.clipboard.writeText(formatStr);
-    toast.success('Sherlog copied to clipboard!');
+    toast.success(t('error_logs.copied_success'));
   };
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold text-apple-gray-900">Error Logs</h1>
-        <p className="text-apple-gray-500 mt-1">Review upstream routing failures and copy telemetry</p>
+        <h1 className="text-2xl font-semibold text-apple-gray-900">{t('error_logs.title')}</h1>
+        <p className="text-apple-gray-500 mt-1">{t('error_logs.subtitle')}</p>
       </div>
 
       <div className="card overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-apple-gray-200">
-              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">Time</th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">Trace / Trajectory</th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">Provider / Model</th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">Status</th>
-              <th className="text-right py-3 px-4 text-sm font-medium text-apple-gray-500">Actions</th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('audit.col_time')}</th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('error_logs.col_trace')}</th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('error_logs.col_provider_model')}</th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('common.status')}</th>
+              <th className="text-right py-3 px-4 text-sm font-medium text-apple-gray-500">{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -99,7 +99,7 @@ ${log.responseBody}`;
                   <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
                     <ExclamationCircleIcon className="w-8 h-8 text-apple-gray-400" />
                   </div>
-                  <p className="text-apple-gray-500">No error logs found.</p>
+                  <p className="text-apple-gray-500">{t('error_logs.no_errors')}</p>
                 </td>
               </tr>
             ) : (
@@ -142,7 +142,7 @@ ${log.responseBody}`;
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        toast.success('Pushed to Integrations!');
+                        toast.success(t('error_logs.pushed_success'));
                       }}
                       className="ml-1 p-1.5 text-apple-gray-400 hover:text-apple-blue hover:bg-apple-gray-100 rounded-lg transition-colors inline-block"
                       title={t('error_logs.push_integrations')}
@@ -160,7 +160,11 @@ ${log.responseBody}`;
         {totalPages > 1 && (
           <div className="px-4 py-4 border-t border-apple-gray-100 flex items-center justify-between">
             <span className="text-sm text-apple-gray-500">
-              Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total} results
+              {t('audit.showing_range', {
+                from: (page - 1) * pageSize + 1,
+                to: Math.min(page * pageSize, total),
+                total,
+              })}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -168,17 +172,17 @@ ${log.responseBody}`;
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 className="px-3 py-1.5 rounded-lg text-sm font-medium text-apple-gray-600 hover:bg-apple-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                Previous
+                {t('common.previous')}
               </button>
               <span className="text-sm font-medium text-apple-gray-900 border border-apple-gray-200 bg-apple-gray-50 px-3 py-1.5 rounded-lg">
-                Page {page} of {totalPages}
+                {t('audit.page_of', { page, total: totalPages })}
               </span>
               <button
                 disabled={page === totalPages}
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 className="px-3 py-1.5 rounded-lg text-sm font-medium text-apple-gray-600 hover:bg-apple-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                Next
+                {t('common.next')}
               </button>
             </div>
           </div>
@@ -205,7 +209,7 @@ ${log.responseBody}`;
             >
               <div className="flex items-center justify-between p-6 border-b border-apple-gray-200 dark:border-white/10 bg-white/80 dark:bg-[#1C1C1E]/80 backdrop-blur-xl">
                 <div>
-                  <h2 className="text-xl font-semibold text-apple-gray-900 dark:text-white">Error Details</h2>
+                  <h2 className="text-xl font-semibold text-apple-gray-900 dark:text-white">{t('error_logs.detail_title')}</h2>
                   <p className="text-sm font-mono text-apple-gray-500 dark:text-gray-400 mt-1">{selectedLog.traceId}</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -213,7 +217,7 @@ ${log.responseBody}`;
                     onClick={() => navigate(`/admin/troubleshooting?requestId=${encodeURIComponent(selectedLog.traceId)}`)}
                     className="px-4 py-2 bg-apple-blue text-white text-sm font-medium rounded-lg shadow-sm hover:bg-blue-600 transition-colors"
                   >
-                    View Trace
+                    {t('error_logs.view_trace')}
                   </button>
                   <button
                     onClick={() => setSelectedLog(null)}
@@ -227,23 +231,23 @@ ${log.responseBody}`;
               <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-apple-gray-50 dark:bg-black">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-white dark:bg-[#1C1C1E] p-4 rounded-xl shadow-sm border border-apple-gray-100 dark:border-white/10">
-                    <label className="text-xs font-semibold text-apple-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">Provider</label>
+                    <label className="text-xs font-semibold text-apple-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">{t('error_logs.provider')}</label>
                     <div className="text-sm font-medium text-apple-gray-900 dark:text-white capitalize">{selectedLog.provider}</div>
                   </div>
                   <div className="bg-white dark:bg-[#1C1C1E] p-4 rounded-xl shadow-sm border border-apple-gray-100 dark:border-white/10">
-                    <label className="text-xs font-semibold text-apple-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">Status Code</label>
+                    <label className="text-xs font-semibold text-apple-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">{t('error_logs.status_code')}</label>
                     <div className="text-sm font-medium text-red-600 dark:text-red-400">HTTP {selectedLog.statusCode}</div>
                   </div>
                 </div>
 
                 <div className="bg-white dark:bg-[#1C1C1E] p-4 rounded-xl shadow-sm border border-apple-gray-100 dark:border-white/10">
-                    <label className="text-xs font-semibold text-apple-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">Trajectory ID</label>
+                    <label className="text-xs font-semibold text-apple-gray-400 dark:text-gray-500 uppercase tracking-wider block mb-1">{t('error_logs.trajectory_id')}</label>
                     <div className="text-sm font-mono text-apple-gray-700 dark:text-gray-300">{selectedLog.trajectoryId}</div>
                 </div>
 
                 <div className="bg-white dark:bg-[#1C1C1E] rounded-xl shadow-sm border border-apple-gray-100 dark:border-white/10 overflow-hidden">
                   <div className="px-4 py-3 border-b border-apple-gray-100 dark:border-white/10 flex items-center justify-between">
-                    <h3 className="text-sm font-medium text-apple-gray-900 dark:text-white">Response Headers</h3>
+                    <h3 className="text-sm font-medium text-apple-gray-900 dark:text-white">{t('error_logs.response_headers')}</h3>
                   </div>
                   <pre className="p-4 bg-apple-gray-50 dark:bg-black/40 text-xs font-mono text-apple-gray-700 dark:text-gray-300 overflow-x-auto m-0 whitespace-pre-wrap">
                     {(() => {
@@ -258,12 +262,12 @@ ${log.responseBody}`;
 
                 <div className="bg-white dark:bg-[#1C1C1E] rounded-xl shadow-sm border border-apple-gray-100 dark:border-white/10 overflow-hidden">
                   <div className="px-4 py-3 border-b border-apple-gray-100 dark:border-white/10 flex items-center justify-between">
-                    <h3 className="text-sm font-medium text-apple-gray-900 dark:text-white">Original Response Body</h3>
+                    <h3 className="text-sm font-medium text-apple-gray-900 dark:text-white">{t('error_logs.response_body')}</h3>
                     <button
                       onClick={() => copySherlog(selectedLog)}
                       className="text-xs font-medium text-apple-blue hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                     >
-                       Copy Sherlog
+                       {t('error_logs.copy_sherlog')}
                     </button>
                   </div>
                   <pre className="p-4 bg-apple-gray-50 dark:bg-black/40 text-xs font-mono text-apple-gray-800 dark:text-[#D4D4D4] overflow-x-auto m-0 whitespace-pre-wrap rounded-b-xl">

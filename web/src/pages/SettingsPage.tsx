@@ -6,14 +6,22 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
 import { useMutation } from '@apollo/client/react';
 import { CHANGE_PASSWORD, GENERATE_MFA_SECRET, VERIFY_AND_ENABLE_MFA, DISABLE_MFA, UPDATE_PROFILE } from '@/lib/graphql/operations';
-import { ShieldCheckIcon, ShieldExclamationIcon, DocumentDuplicateIcon } from '@heroicons/react/24/outline';
+import { ShieldCheckIcon, ShieldExclamationIcon, DocumentDuplicateIcon, PlayCircleIcon } from '@heroicons/react/24/outline';
 import { QRCodeSVG } from 'qrcode.react';
 import { useTranslation } from '@/lib/i18n';
 import BudgetSettingsCard from '@/components/BudgetSettingsCard';
+import { useOnboardingStore } from '@/stores/useOnboardingStore';
+import { useNavigate } from 'react-router-dom';
 
 function SettingsPage() {
   const { t } = useTranslation();
   const { user, updateUser } = useAuthStore();
+  // M-01: explicit "re-take the welcome tour" handle. The auto-open
+  // useEffect in OnboardingTour is one-shot per session and gated on
+  // hasCompletedTour, so the only way back into the tour after the
+  // user dismissed it is this restartTour action.
+  const restartOnboarding = useOnboardingStore((s) => s.restartTour);
+  const navigate = useNavigate();
   const [changePwd] = useMutation<any>(CHANGE_PASSWORD);
   const [generateMfaSecret] = useMutation<any>(GENERATE_MFA_SECRET);
   const [verifyAndEnableMfa] = useMutation<any>(VERIFY_AND_ENABLE_MFA);
@@ -159,8 +167,8 @@ function SettingsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold text-apple-gray-900">{t('settings.title')}</h1>
-        <p className="text-apple-gray-500 mt-1">{t('settings.subtitle')}</p>
+        <h1 className="text-2xl font-semibold text-apple-gray-900">{t('profile.heading')}</h1>
+        <p className="text-apple-gray-500 mt-1">{t('profile.subheading')}</p>
       </div>
 
       <motion.div
@@ -314,6 +322,39 @@ function SettingsPage() {
               {saving ? t('settings.mfa_loading') : t('settings.mfa_setup')}
             </button>
           )}
+        </div>
+      </motion.div>
+
+      {/* M-01: Re-open the welcome tour. The tour can only auto-open
+          once per account (gated on hasCompletedTour); this is the
+          escape hatch for users who dismissed it too quickly. We send
+          them to the dashboard first so the contextual tour steps line
+          up with the UI they're seeing. */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.18 }}
+        className="card max-w-2xl"
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 rounded-full bg-apple-blue/10 text-apple-blue">
+            <PlayCircleIcon className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-apple-gray-900">{t('settings.onboarding_title')}</h2>
+            <p className="text-sm text-apple-gray-500">{t('settings.onboarding_desc')}</p>
+          </div>
+        </div>
+        <div className="pt-2 border-t border-apple-gray-100 mt-4">
+          <button
+            onClick={() => {
+              navigate('/dashboard');
+              restartOnboarding();
+            }}
+            className="btn mt-4 bg-apple-gray-100 text-apple-gray-700 hover:bg-apple-gray-200"
+          >
+            {t('settings.onboarding_restart')}
+          </button>
         </div>
       </motion.div>
 

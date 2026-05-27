@@ -193,7 +193,7 @@ function UsagePage() {
           </div>
         ) : (
           <div className="h-64" style={{ minHeight: '256px' }}>
-            <ResponsiveContainer width="100%" height="100%" minHeight={256}>
+            <ResponsiveContainer width="100%" height={256} minHeight={256}>
               <LineChart data={dailyStats}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                 <XAxis

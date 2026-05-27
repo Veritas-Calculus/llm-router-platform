@@ -5,8 +5,10 @@ import {
   ShieldExclamationIcon,
 } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
+import { useTranslation } from '@/lib/i18n';
 
 export default function AuditLogsPage() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
@@ -21,8 +23,8 @@ export default function AuditLogsPage() {
   const totalPages = Math.ceil(total / pageSize);
 
   const formatDate = (dateStr: string) => {
-    if (!dateStr || dateStr === '0001-01-01T00:00:00Z') return 'Unknown';
-    return new Date(dateStr).toLocaleString('en-US', {
+    if (!dateStr || dateStr === '0001-01-01T00:00:00Z') return t('common.unknown');
+    return new Date(dateStr).toLocaleString(undefined, {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit',
     });
@@ -31,20 +33,20 @@ export default function AuditLogsPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold text-apple-gray-900">Audit Logs</h1>
-        <p className="text-apple-gray-500 mt-1">Review system security and access logs</p>
+        <h1 className="text-2xl font-semibold text-apple-gray-900">{t('audit.title')}</h1>
+        <p className="text-apple-gray-500 mt-1">{t('audit.subtitle')}</p>
       </div>
 
       <div className="card overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-apple-gray-200">
-              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">Time</th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">Action</th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">Actor ID</th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">Target ID</th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">IP / User Agent</th>
-              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">Details</th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('audit.col_time')}</th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('audit.col_action')}</th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('audit.col_actor_id')}</th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('audit.col_target_id')}</th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('audit.col_ip_ua')}</th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-apple-gray-500">{t('audit.col_details')}</th>
             </tr>
           </thead>
           <tbody>
@@ -62,7 +64,7 @@ export default function AuditLogsPage() {
                   <div className="w-16 h-16 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
                     <ShieldExclamationIcon className="w-8 h-8 text-apple-gray-400" />
                   </div>
-                  <p className="text-apple-gray-500">No audit logs found.</p>
+                  <p className="text-apple-gray-500">{t('audit.no_logs')}</p>
                 </td>
               </tr>
             ) : (
@@ -106,7 +108,11 @@ export default function AuditLogsPage() {
         {totalPages > 1 && (
           <div className="px-4 py-4 border-t border-apple-gray-100 flex items-center justify-between">
             <span className="text-sm text-apple-gray-500">
-              Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total} results
+              {t('audit.showing_range', {
+                from: (page - 1) * pageSize + 1,
+                to: Math.min(page * pageSize, total),
+                total,
+              })}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -114,17 +120,17 @@ export default function AuditLogsPage() {
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 className="px-3 py-1.5 rounded-lg text-sm font-medium text-apple-gray-600 hover:bg-apple-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                Previous
+                {t('common.previous')}
               </button>
               <span className="text-sm font-medium text-apple-gray-900 border border-apple-gray-200 bg-apple-gray-50 px-3 py-1.5 rounded-lg">
-                Page {page} of {totalPages}
+                {t('audit.page_of', { page, total: totalPages })}
               </span>
               <button
                 disabled={page === totalPages}
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 className="px-3 py-1.5 rounded-lg text-sm font-medium text-apple-gray-600 hover:bg-apple-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                Next
+                {t('common.next')}
               </button>
             </div>
           </div>

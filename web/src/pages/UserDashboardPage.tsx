@@ -412,7 +412,7 @@ function UserDashboardPage() {
                 <p className="text-xs mt-1">{t('user_dashboard.request_data_hint')}</p>
               </div>
             ) : (
-            <ResponsiveContainer width="100%" height="100%" minHeight={256}>
+            <ResponsiveContainer width="100%" height={256} minHeight={256}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                 <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} />
@@ -435,7 +435,7 @@ function UserDashboardPage() {
                 <p className="text-xs mt-1">{t('user_dashboard.cost_data_hint')}</p>
               </div>
             ) : (
-            <ResponsiveContainer width="100%" height="100%" minHeight={256}>
+            <ResponsiveContainer width="100%" height={256} minHeight={256}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E8E8ED" />
                 <XAxis dataKey="date" stroke="#8E8E93" fontSize={12} tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} />

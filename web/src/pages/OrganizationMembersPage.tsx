@@ -103,14 +103,14 @@ export default function OrganizationMembersPage() {
         }
     };
 
-    if (orgLoading) return <div className="p-8 text-center text-apple-gray-500">Loading organization context...</div>;
+    if (orgLoading) return <div className="p-8 text-center text-apple-gray-500">{t('org_members.loading_org')}</div>;
 
     return (
         <div className="max-w-6xl mx-auto pb-12">
             <div className="flex items-center justify-between mb-8">
                 <div>
-                    <h1 className="text-2xl font-semibold text-apple-gray-900">Organization Members</h1>
-                    <p className="text-apple-gray-500 mt-1">Manage users, access, and RBAC roles in your organization.</p>
+                    <h1 className="text-2xl font-semibold text-apple-gray-900">{t('org_members.title')}</h1>
+                    <p className="text-apple-gray-500 mt-1">{t('org_members.subtitle')}</p>
                 </div>
                 <button
                     onClick={() => setIsAddModalOpen(true)}
@@ -118,12 +118,12 @@ export default function OrganizationMembersPage() {
                     disabled={!selectedOrgId}
                 >
                     <PlusIcon className="w-5 h-5 mr-2" />
-                    Invite Member
+                    {t('org_members.invite_member')}
                 </button>
             </div>
 
             <div className="mb-6 flex items-center gap-4">
-                <label className="text-sm font-medium text-apple-gray-700">Select Organization:</label>
+                <label className="text-sm font-medium text-apple-gray-700">{t('org_members.select_org_label')}</label>
                 <select
                     value={selectedOrgId}
                     onChange={(e) => setSelectedOrgId(e.target.value)}
@@ -139,17 +139,17 @@ export default function OrganizationMembersPage() {
                 <table className="w-full text-left">
                     <thead>
                         <tr className="border-b border-apple-gray-200">
-                            <th className="py-3 px-4 text-sm font-medium text-apple-gray-500">Current Members</th>
-                            <th className="py-3 px-4 text-sm font-medium text-apple-gray-500">Role</th>
-                            <th className="py-3 px-4 text-sm font-medium text-apple-gray-500">Joined</th>
-                            <th className="py-3 px-4 text-sm font-medium text-apple-gray-500 text-right">Actions</th>
+                            <th className="py-3 px-4 text-sm font-medium text-apple-gray-500">{t('org_members.col_member')}</th>
+                            <th className="py-3 px-4 text-sm font-medium text-apple-gray-500">{t('org_members.col_role')}</th>
+                            <th className="py-3 px-4 text-sm font-medium text-apple-gray-500">{t('org_members.col_joined')}</th>
+                            <th className="py-3 px-4 text-sm font-medium text-apple-gray-500 text-right">{t('common.actions')}</th>
                         </tr>
                     </thead>
                     <tbody>
                         {membersLoading ? (
-                            <tr><td colSpan={4} className="py-8 text-center text-apple-gray-500">Loading members...</td></tr>
+                            <tr><td colSpan={4} className="py-8 text-center text-apple-gray-500">{t('org_members.loading_members')}</td></tr>
                         ) : members.length === 0 ? (
-                            <tr><td colSpan={4} className="py-8 text-center text-apple-gray-500">No members found.</td></tr>
+                            <tr><td colSpan={4} className="py-8 text-center text-apple-gray-500">{t('org_members.no_members')}</td></tr>
                         ) : (
                             members.map((m: any, idx: number) => (
                                 <motion.tr 
@@ -166,7 +166,7 @@ export default function OrganizationMembersPage() {
                                             </div>
                                             <div>
                                                 <div className="font-medium text-apple-gray-900">
-                                                    {m.user.name} {m.userId === user?.id && <span className="text-xs ml-2 text-apple-blue bg-apple-blue/10 px-2 py-0.5 rounded-full">You</span>}
+                                                    {m.user.name} {m.userId === user?.id && <span className="text-xs ml-2 text-apple-blue bg-apple-blue/10 px-2 py-0.5 rounded-full">{t('org_members.you_label')}</span>}
                                                 </div>
                                                 <div className="text-sm text-apple-gray-500">{m.user.email}</div>
                                             </div>
@@ -213,13 +213,13 @@ export default function OrganizationMembersPage() {
                         className="bg-white rounded-2xl shadow-apple-lg w-full max-w-md overflow-hidden"
                     >
                         <div className="px-6 py-4 border-b border-apple-gray-100 flex items-center justify-between">
-                            <h3 className="text-lg font-semibold text-apple-gray-900">Add Team Member</h3>
+                            <h3 className="text-lg font-semibold text-apple-gray-900">{t('org_members.add_modal_title')}</h3>
                         </div>
                         <form onSubmit={handleAddMember} className="p-6">
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-apple-gray-700 mb-1">
-                                        User Email Address
+                                        {t('org_members.email_label')}
                                     </label>
                                     <input
                                         type="email"
@@ -230,12 +230,12 @@ export default function OrganizationMembersPage() {
                                         placeholder="colleague@company.com"
                                     />
                                     <p className="text-xs text-apple-gray-500 mt-1">
-                                        The user must already be registered in the system.
+                                        {t('org_members.email_hint')}
                                     </p>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-apple-gray-700 mb-1">
-                                        Role
+                                        {t('org_members.col_role')}
                                     </label>
                                     <div className="grid gap-3">
                                         {ROLES.map(role => (
@@ -271,10 +271,10 @@ export default function OrganizationMembersPage() {
                                     onClick={() => setIsAddModalOpen(false)}
                                     className="btn btn-secondary"
                                 >
-                                    Cancel
+                                    {t('common.cancel')}
                                 </button>
                                 <button type="submit" className="btn btn-primary">
-                                    Add Member
+                                    {t('org_members.add_member')}
                                 </button>
                             </div>
                         </form>
