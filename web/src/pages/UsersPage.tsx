@@ -19,7 +19,7 @@ import { useTranslation } from '@/lib/i18n';
 function UsersPage() {
     const { t } = useTranslation();
     const navigate = useNavigate();
-    const { data, loading, refetch } = useQuery<any>(USERS_QUERY);
+    const { data, loading, refetch } = useQuery(USERS_QUERY);
     const [toggleUserMut] = useMutation(TOGGLE_USER);
     const [updateRoleMut] = useMutation(UPDATE_USER_ROLE);
     const [searchQuery, setSearchQuery] = useState('');
@@ -27,16 +27,20 @@ function UsersPage() {
     const menuRef = useRef<HTMLDivElement>(null);
 
     const users: UserListItem[] = useMemo(() =>
-        (data?.users?.data || []).map((u: any) => ({
+        (data?.users?.data || []).map((u) => ({
             id: u.id, name: u.name, email: u.email, role: u.role,
             is_active: u.isActive, api_key_count: u.apiKeyCount, created_at: u.createdAt,
+            last_login_at: u.lastLoginAt ?? '',
         })),
     [data]);
     const total = data?.users?.total || 0;
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        refetch({ search: searchQuery || undefined });
+        // USERS_QUERY uses `q` as the search-string variable; keep the
+        // input-field name on the local state but pass it through under
+        // the schema-side variable name.
+        refetch({ q: searchQuery || undefined });
     };
 
     // Close kebab menu on outside click

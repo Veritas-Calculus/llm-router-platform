@@ -113,10 +113,10 @@ function LoginPage() {
   const turnstileRef = useRef<TurnstileInstance | null>(null);
 
   // Query registration mode (public, no auth required)
-  const { data: regModeData } = useQuery<{ registrationMode: { mode: string; inviteCodeRequired: boolean } }>(REGISTRATION_MODE, { fetchPolicy: 'cache-first' });
-  const { data: captchaData } = useQuery<{ captchaConfig: { enabled: boolean; siteKey: string; provider: string } }>(CAPTCHA_CONFIG, { fetchPolicy: 'cache-first' });
-  const { data: siteData } = useQuery<{ siteConfig: { siteName: string; subtitle?: string | null; logoUrl?: string | null } }>(SITE_CONFIG_QUERY, { fetchPolicy: 'cache-first' });
-  const { data: policyData } = useQuery<{ passwordPolicy: PasswordPolicyType }>(PASSWORD_POLICY, { fetchPolicy: 'cache-first' });
+  const { data: regModeData } = useQuery(REGISTRATION_MODE, { fetchPolicy: 'cache-first' });
+  const { data: captchaData } = useQuery(CAPTCHA_CONFIG, { fetchPolicy: 'cache-first' });
+  const { data: siteData } = useQuery(SITE_CONFIG_QUERY, { fetchPolicy: 'cache-first' });
+  const { data: policyData } = useQuery(PASSWORD_POLICY, { fetchPolicy: 'cache-first' });
   const passwordPolicy: PasswordPolicyType = policyData?.passwordPolicy ?? DEFAULT_PASSWORD_POLICY;
   const captchaConfig = captchaData?.captchaConfig ?? { enabled: false, siteKey: '', provider: 'dev' };
   // The captcha provider drives which widget we render. It now comes from
@@ -235,7 +235,17 @@ function LoginPage() {
         setAuth(resp.token, resp.user);
         toast.success(t('auth.welcome_back'));
       } else {
-        const registerInput: Record<string, string | null> = {
+        // RegisterInput's required fields are now type-checked by Apollo
+        // 4.2's variable narrowing. We build the full object up-front and
+        // conditionally append inviteCode rather than relying on Record-like
+        // looseness.
+        const registerInput: {
+          email: string;
+          password: string;
+          name: string;
+          captchaToken: string;
+          inviteCode?: string;
+        } = {
           email: formData.email,
           password: formData.password,
           name: formData.name,

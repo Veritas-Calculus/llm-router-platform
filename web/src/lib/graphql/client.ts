@@ -13,6 +13,28 @@ import toast from 'react-hot-toast';
 import * as Sentry from '@sentry/react';
 import { useAuthStore } from '@/stores/authStore';
 
+// Apollo 4.2 requires explicit module augmentation to permit a non-default
+// `errorPolicy` (or other narrowed defaults) in `defaultOptions`. We keep
+// `errorPolicy: 'all'` so callers continue to receive partial data alongside
+// `errors[]`, which is how every page reacts to schema-aware failures today.
+// Without this declaration `new ApolloClient({ defaultOptions: { ... } })`
+// would refuse the literal types at the type system level.
+declare module '@apollo/client' {
+  namespace ApolloClient {
+    namespace DeclareDefaultOptions {
+      interface WatchQuery {
+        errorPolicy: 'all';
+      }
+      interface Query {
+        errorPolicy: 'all';
+      }
+      interface Mutate {
+        errorPolicy: 'all';
+      }
+    }
+  }
+}
+
 // ── HTTP Link ──────────────────────────────────────────────────────
 // credentials:'include' ensures the HttpOnly access cookie is sent on
 // every GraphQL request. C-02: this is the browser-side half of moving

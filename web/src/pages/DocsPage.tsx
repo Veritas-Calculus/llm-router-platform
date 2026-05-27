@@ -108,7 +108,7 @@ function EndpointCard({ method, path, description, children }: {
 function DocsPage() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabId>('quickstart');
-  const { data: docsData, loading: docsLoading } = useQuery<{ publishedDocuments: PublishedDocument[] }>(PUBLISHED_DOCUMENTS_QUERY);
+  const { data: docsData, loading: docsLoading } = useQuery(PUBLISHED_DOCUMENTS_QUERY);
   const publishedDocuments = docsData?.publishedDocuments ?? [];
 
   return (

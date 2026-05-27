@@ -1,4 +1,18 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  CreateWebhookEndpointMutation,
+  CreateWebhookEndpointMutationVariables,
+  DeleteWebhookEndpointMutation,
+  DeleteWebhookEndpointMutationVariables,
+  GetWebhookDeliveriesQuery,
+  GetWebhookDeliveriesQueryVariables,
+  GetWebhooksQuery,
+  GetWebhooksQueryVariables,
+  TestWebhookEndpointMutation,
+  TestWebhookEndpointMutationVariables,
+  UpdateWebhookEndpointMutation,
+  UpdateWebhookEndpointMutationVariables,
+} from '../generated/graphql';
 
 export const WEBHOOK_ENDPOINT_FIELDS = gql`
   fragment WebhookEndpointFields on WebhookEndpoint {
@@ -13,7 +27,7 @@ export const WEBHOOK_ENDPOINT_FIELDS = gql`
   }
 `;
 
-export const GET_WEBHOOKS = gql`
+export const GET_WEBHOOKS: TypedDocumentNode<GetWebhooksQuery, GetWebhooksQueryVariables> = gql`
   ${WEBHOOK_ENDPOINT_FIELDS}
   query GetWebhooks($projectId: ID!) {
     webhooks(projectId: $projectId) {
@@ -22,7 +36,7 @@ export const GET_WEBHOOKS = gql`
   }
 `;
 
-export const CREATE_WEBHOOK_ENDPOINT = gql`
+export const CREATE_WEBHOOK_ENDPOINT: TypedDocumentNode<CreateWebhookEndpointMutation, CreateWebhookEndpointMutationVariables> = gql`
   ${WEBHOOK_ENDPOINT_FIELDS}
   mutation CreateWebhookEndpoint($input: CreateWebhookEndpointInput!) {
     createWebhookEndpoint(input: $input) {
@@ -32,7 +46,7 @@ export const CREATE_WEBHOOK_ENDPOINT = gql`
   }
 `;
 
-export const UPDATE_WEBHOOK_ENDPOINT = gql`
+export const UPDATE_WEBHOOK_ENDPOINT: TypedDocumentNode<UpdateWebhookEndpointMutation, UpdateWebhookEndpointMutationVariables> = gql`
   ${WEBHOOK_ENDPOINT_FIELDS}
   mutation UpdateWebhookEndpoint($id: ID!, $input: UpdateWebhookEndpointInput!) {
     updateWebhookEndpoint(id: $id, input: $input) {
@@ -41,19 +55,19 @@ export const UPDATE_WEBHOOK_ENDPOINT = gql`
   }
 `;
 
-export const DELETE_WEBHOOK_ENDPOINT = gql`
+export const DELETE_WEBHOOK_ENDPOINT: TypedDocumentNode<DeleteWebhookEndpointMutation, DeleteWebhookEndpointMutationVariables> = gql`
   mutation DeleteWebhookEndpoint($id: ID!) {
     deleteWebhookEndpoint(id: $id)
   }
 `;
 
-export const TEST_WEBHOOK_ENDPOINT = gql`
+export const TEST_WEBHOOK_ENDPOINT: TypedDocumentNode<TestWebhookEndpointMutation, TestWebhookEndpointMutationVariables> = gql`
   mutation TestWebhookEndpoint($id: ID!) {
     testWebhookEndpoint(id: $id)
   }
 `;
 
-export const GET_WEBHOOK_DELIVERIES = gql`
+export const GET_WEBHOOK_DELIVERIES: TypedDocumentNode<GetWebhookDeliveriesQuery, GetWebhookDeliveriesQueryVariables> = gql`
   query GetWebhookDeliveries($endpointId: ID!, $limit: Int) {
     webhookDeliveries(endpointId: $endpointId, limit: $limit) {
       id

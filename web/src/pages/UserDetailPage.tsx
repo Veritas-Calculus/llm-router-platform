@@ -23,7 +23,9 @@ function UserDetailPage() {
   const { t } = useTranslation();
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { data, loading, refetch } = useQuery<any>(USER_DETAIL_QUERY, { variables: { id }, skip: !id });
+    // `id` may be undefined while the route is still resolving; we guard
+    // via `skip` but Apollo 4.2's typed variables require a string.
+    const { data, loading, refetch } = useQuery(USER_DETAIL_QUERY, { variables: { id: id ?? '' }, skip: !id });
     const [toggleUserMut] = useMutation(TOGGLE_USER);
     const [updateRoleMut] = useMutation(UPDATE_USER_ROLE);
     const [updateQuotaMut] = useMutation(UPDATE_USER_QUOTA);
@@ -33,7 +35,7 @@ function UserDetailPage() {
         if (!u) return null;
         return {
             ...u, name: u.name, email: u.email, role: u.role, is_active: u.isActive,
-            created_at: u.createdAt, api_keys: u.apiKeys ?? u.apiKeyCount ?? 0,
+            created_at: u.createdAt, api_keys: u.apiKeys ?? 0,
             monthly_token_limit: u.monthlyTokenLimit || 0, monthly_budget_usd: u.monthlyBudgetUsd || '0',
             usage_month: u.usageMonth ? {
                 total_requests: u.usageMonth.totalRequests, total_tokens: u.usageMonth.totalTokens,

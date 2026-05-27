@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
  
 import { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
@@ -8,6 +8,12 @@ import { useTranslation } from '@/lib/i18n';
 import { PLANS_QUERY, CREATE_PLAN, UPDATE_PLAN } from '@/lib/graphql/operations/plans';
 import { formatUSD, type MoneyValue } from '@/lib/format';
 
+// Plan shape mirrors PLANS_QUERY's selection set (see operations/plans.ts).
+// We keep a local mirror because the codegen Plan type ships `features` as
+// `string | null` and several openEdit / submit paths in this file need a
+// stable shape — refactoring those is out of scope for the Apollo 4.2
+// migration. The fields below match codegen's nullability so a direct
+// assignment from `data.plans` typechecks.
 interface Plan {
   id: string;
   name: string;
@@ -16,7 +22,7 @@ interface Plan {
   tokenLimit: number;
   rateLimit: number;
   supportLevel: string;
-  features?: string;
+  features: string | null;
   isActive: boolean;
 }
 
@@ -54,9 +60,9 @@ function AdminPlansPage() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
-  const { data, loading, refetch } = useQuery<any>(PLANS_QUERY);
-  const [createPlan, { loading: saving }] = useMutation<any>(CREATE_PLAN);
-  const [updatePlan] = useMutation<any>(UPDATE_PLAN);
+  const { data, loading, refetch } = useQuery(PLANS_QUERY);
+  const [createPlan, { loading: saving }] = useMutation(CREATE_PLAN);
+  const [updatePlan] = useMutation(UPDATE_PLAN);
 
   const plans: Plan[] = data?.plans || [];
 

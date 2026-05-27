@@ -39,7 +39,7 @@ const CONFIG_TEMPLATES: Record<string, any> = {
 
 function NotificationChannelsPage() {
   const { t } = useTranslation();
-  const { data, loading, refetch } = useQuery<any>(NOTIFICATION_CHANNELS_QUERY);
+  const { data, loading, refetch } = useQuery(NOTIFICATION_CHANNELS_QUERY);
   const channels = useMemo(() => data?.notificationChannels || [], [data]);
 
   const [createMut] = useMutation(CREATE_NOTIFICATION_CHANNEL);

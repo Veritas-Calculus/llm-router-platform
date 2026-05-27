@@ -1,6 +1,12 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  GetErrorLogsQuery,
+  GetErrorLogsQueryVariables,
+  GetRequestLogsQuery,
+  GetRequestLogsQueryVariables,
+} from '../generated/graphql';
 
-export const GET_ERROR_LOGS = gql`
+export const GET_ERROR_LOGS: TypedDocumentNode<GetErrorLogsQuery, GetErrorLogsQueryVariables> = gql`
   query GetErrorLogs($page: Int, $pageSize: Int) {
     errorLogs(page: $page, pageSize: $pageSize) {
       data {
@@ -21,7 +27,7 @@ export const GET_ERROR_LOGS = gql`
   }
 `;
 
-export const GET_REQUEST_LOGS = gql`
+export const GET_REQUEST_LOGS: TypedDocumentNode<GetRequestLogsQuery, GetRequestLogsQueryVariables> = gql`
   query GetRequestLogs($requestId: String, $level: String, $startTime: String, $endTime: String, $limit: Int) {
     requestLogs(requestId: $requestId, level: $level, startTime: $startTime, endTime: $endTime, limit: $limit) {
       timestamp

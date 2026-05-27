@@ -29,7 +29,7 @@ import {
 
 function PromptRegistryPage() {
   const { t } = useTranslation();
-  const { data, loading, refetch } = useQuery<any>(PROMPT_TEMPLATES_QUERY, {
+  const { data, loading, refetch } = useQuery(PROMPT_TEMPLATES_QUERY, {
     fetchPolicy: 'cache-and-network',
   });
   const [createMut] = useMutation(CREATE_PROMPT_TEMPLATE);
@@ -268,7 +268,7 @@ function PromptRegistryPage() {
 
 function VersionPanel({ template, onRefresh }: { template: any; onRefresh: () => void }) {
   const { t } = useTranslation();
-  const { data, loading, refetch } = useQuery<any>(PROMPT_VERSIONS_QUERY, {
+  const { data, loading, refetch } = useQuery(PROMPT_VERSIONS_QUERY, {
     variables: { templateId: template.id },
     fetchPolicy: 'cache-and-network',
   });

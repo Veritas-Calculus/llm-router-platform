@@ -16,7 +16,7 @@ interface UseUserDashboardProps {
  */
 export function useUserDashboard(props?: UseUserDashboardProps) {
   const { days = 7, projectId, channel } = props || {};
-  const { data, loading, error } = useQuery<any>(USER_DASHBOARD_QUERY, {
+  const { data, loading, error } = useQuery(USER_DASHBOARD_QUERY, {
     variables: {
       days,
       ...(projectId ? { projectId } : {}),

@@ -1,8 +1,12 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  DashboardQuery,
+  DashboardQueryVariables,
+} from '../generated/graphql';
 
 // ── Dashboard Operations ────────────────────────────────────────────
 
-export const DASHBOARD_QUERY = gql`
+export const DASHBOARD_QUERY: TypedDocumentNode<DashboardQuery, DashboardQueryVariables> = gql`
   query Dashboard($days: Int, $projectId: ID, $channel: String) {
     dashboard(projectId: $projectId, channel: $channel) {
       totalRequests

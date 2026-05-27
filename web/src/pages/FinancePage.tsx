@@ -40,11 +40,14 @@ const tooltipStyle = {
 const fmtCurrency = (v: MoneyValue): string =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(moneyNumber(v));
 
-const fmtNum = (v: number): string =>
-  new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(v || 0);
+// fmtNum / fmtPct accept the maybe-undefined shapes Apollo 4.2 now narrows
+// to (partial data + nullable scalars). Coercing `?? 0` inside keeps the
+// call sites readable instead of repeating the fallback at every callsite.
+const fmtNum = (v: number | null | undefined): string =>
+  new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(v ?? 0);
 
-const fmtPct = (v: number): string =>
-  `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(v || 0)}%`;
+const fmtPct = (v: number | null | undefined): string =>
+  `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(v ?? 0)}%`;
 
 const fmtCompact = (v: number): string => {
   if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
@@ -94,7 +97,7 @@ function FinancePage() {
   const { t } = useTranslation();
   const [days, setDays] = useState<(typeof dayOptions)[number]>(30);
   const pollMs = 60_000;
-  const queryResult = useQuery<any>(ADMIN_FINANCIAL_DASHBOARD_QUERY, {
+  const queryResult = useQuery(ADMIN_FINANCIAL_DASHBOARD_QUERY, {
     variables: { days },
     pollInterval: pollMs,
   });

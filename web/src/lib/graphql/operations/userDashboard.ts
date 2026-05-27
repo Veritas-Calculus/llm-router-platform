@@ -1,10 +1,14 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  UserDashboardQuery,
+  UserDashboardQueryVariables,
+} from '../generated/graphql';
 
 // ── User Dashboard Composite Query ─────────────────────────────────
 // Combines personal usage, daily trends, provider breakdown, budget, and anomaly detection
 // into a single query call for the User Dashboard page.
 
-export const USER_DASHBOARD_QUERY = gql`
+export const USER_DASHBOARD_QUERY: TypedDocumentNode<UserDashboardQuery, UserDashboardQueryVariables> = gql`
   query UserDashboard($days: Int, $projectId: ID, $channel: String) {
     me {
       id

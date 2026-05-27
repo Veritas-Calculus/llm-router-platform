@@ -15,7 +15,7 @@ import {
   DELETE_ROUTING_RULE,
 } from '@/lib/graphql/operations/routingRules';
 import { PROVIDERS_QUERY } from '@/lib/graphql/operations';
-import type { RoutingRule, Provider } from '@/lib/types';
+import type { RoutingRule } from '@/lib/types';
 import { useTranslation } from '@/lib/i18n';
 
 const VisualRouterPage = lazy(() => import('./VisualRouterPage'));
@@ -80,11 +80,11 @@ function ConfirmModal({
 function RoutingRulesPage() {
   const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<'rules' | 'visual'>('rules');
-  const { data: rulesData, loading: rulesLoading, refetch: refetchRules } = useQuery<any>(GET_ROUTING_RULES, {
+  const { data: rulesData, loading: rulesLoading, refetch: refetchRules } = useQuery(GET_ROUTING_RULES, {
     variables: { page: 1, pageSize: 100 },
   });
   
-  const { data: providersData } = useQuery<any>(PROVIDERS_QUERY);
+  const { data: providersData } = useQuery(PROVIDERS_QUERY);
 
   // Tab bar shared across both views
   const tabBar = (
@@ -116,8 +116,12 @@ function RoutingRulesPage() {
   const [updateRuleMut] = useMutation(UPDATE_ROUTING_RULE);
   const [deleteRuleMut] = useMutation(DELETE_ROUTING_RULE);
 
-  const rules: RoutingRule[] = useMemo(() => rulesData?.routingRules?.data || [], [rulesData]);
-  const providers: Provider[] = useMemo(() => providersData?.providers || [], [providersData]);
+  // Row shapes are inferred from each query's TypedDocumentNode — the
+  // local snake_case Provider/RoutingRule types in @/lib/types don't
+  // match the camelCase wire format and aren't worth refactoring inside
+  // this Apollo 4.2 PR.
+  const rules = useMemo(() => rulesData?.routingRules?.data || [], [rulesData]);
+  const providers = useMemo(() => providersData?.providers || [], [providersData]);
 
   const [showModal, setShowModal] = useState(false);
   const [editingRule, setEditingRule] = useState<RoutingRule | null>(null);

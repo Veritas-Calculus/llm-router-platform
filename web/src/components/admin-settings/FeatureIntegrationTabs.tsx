@@ -38,7 +38,7 @@ const highRiskGateHelp: Record<string, string> = {
 };
 
 export function FeatureGatesSettingsTab() {
-  const { data, loading, refetch } = useApolloQuery<{ featureGates: FeatureGateItem[] }>(FEATURE_GATES_QUERY, {
+  const { data, loading, refetch } = useApolloQuery(FEATURE_GATES_QUERY, {
     fetchPolicy: 'network-only',
   });
   const [updateGate] = useApolloMutation(UPDATE_FEATURE_GATE);
@@ -129,7 +129,7 @@ export function FeatureGatesSettingsTab() {
 /* ── Integrations ── */
 
 export function IntegrationsSettingsTab() {
-  const { data, loading, refetch } = useQuery<any>(GET_INTEGRATIONS, { fetchPolicy: 'cache-and-network' });
+  const { data, loading, refetch } = useQuery(GET_INTEGRATIONS, { fetchPolicy: 'cache-and-network' });
   const [updateIntegration] = useMutation(UPDATE_INTEGRATION);
   const [testLangfuse] = useMutation(TEST_LANGFUSE_CONNECTION);
 

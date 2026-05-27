@@ -34,6 +34,15 @@ const config: CodegenConfig = {
             input: 'string | number',
             output: 'string',
           },
+          // DateTime serializes as ISO-8601 over the wire; using `string`
+          // means callers can pass it straight into `new Date(...)` without
+          // an `as string` cast. Apollo 4.2 surfaces stronger types on
+          // partial data which made the previous `unknown` fall through
+          // as runtime-correct but type-system-wrong.
+          DateTime: {
+            input: 'string',
+            output: 'string',
+          },
         },
       },
       presetConfig: {

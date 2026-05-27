@@ -151,8 +151,8 @@ function RuleRow({ rule, providerMap, providerColorMap }: { rule: any; providerM
 
 function VisualRouterPage() {
   const { t } = useTranslation();
-  const { data: providersData, loading: provLoading, refetch: refetchProviders } = useQuery<any>(PROVIDERS_QUERY);
-  const { data: rulesData, loading: rulesLoading, refetch: refetchRules } = useQuery<any>(GET_ROUTING_RULES, {
+  const { data: providersData, loading: provLoading, refetch: refetchProviders } = useQuery(PROVIDERS_QUERY);
+  const { data: rulesData, loading: rulesLoading, refetch: refetchRules } = useQuery(GET_ROUTING_RULES, {
     variables: { page: 1, pageSize: 200 },
   });
 

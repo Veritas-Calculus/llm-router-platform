@@ -1,8 +1,20 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  AdminRedeemCodesQuery,
+  AdminRedeemCodesQueryVariables,
+  GenerateRedeemCodesMutation,
+  GenerateRedeemCodesMutationVariables,
+  MyRedeemHistoryQuery,
+  MyRedeemHistoryQueryVariables,
+  RedeemCodeMutation,
+  RedeemCodeMutationVariables,
+  RevokeRedeemCodeMutation,
+  RevokeRedeemCodeMutationVariables,
+} from '../generated/graphql';
 
 // ── Redeem Code Operations ──────────────────────────────────────────
 
-export const REDEEM_CODE_MUTATION = gql`
+export const REDEEM_CODE_MUTATION: TypedDocumentNode<RedeemCodeMutation, RedeemCodeMutationVariables> = gql`
   mutation RedeemCode($code: String!) {
     redeemCode(code: $code) {
       success
@@ -13,7 +25,7 @@ export const REDEEM_CODE_MUTATION = gql`
   }
 `;
 
-export const MY_REDEEM_HISTORY = gql`
+export const MY_REDEEM_HISTORY: TypedDocumentNode<MyRedeemHistoryQuery, MyRedeemHistoryQueryVariables> = gql`
   query MyRedeemHistory {
     myRedeemHistory {
       id
@@ -26,7 +38,7 @@ export const MY_REDEEM_HISTORY = gql`
 `;
 
 // ── Admin: Redeem Codes ──
-export const ADMIN_REDEEM_CODES_QUERY = gql`
+export const ADMIN_REDEEM_CODES_QUERY: TypedDocumentNode<AdminRedeemCodesQuery, AdminRedeemCodesQueryVariables> = gql`
   query AdminRedeemCodes($page: Int, $pageSize: Int) {
     redeemCodes(page: $page, pageSize: $pageSize) {
       nodes {
@@ -46,7 +58,7 @@ export const ADMIN_REDEEM_CODES_QUERY = gql`
   }
 `;
 
-export const GENERATE_REDEEM_CODES = gql`
+export const GENERATE_REDEEM_CODES: TypedDocumentNode<GenerateRedeemCodesMutation, GenerateRedeemCodesMutationVariables> = gql`
   mutation GenerateRedeemCodes($input: GenerateRedeemCodesInput!) {
     generateRedeemCodes(input: $input) {
       codes
@@ -55,7 +67,7 @@ export const GENERATE_REDEEM_CODES = gql`
   }
 `;
 
-export const REVOKE_REDEEM_CODE = gql`
+export const REVOKE_REDEEM_CODE: TypedDocumentNode<RevokeRedeemCodeMutation, RevokeRedeemCodeMutationVariables> = gql`
   mutation RevokeRedeemCode($id: ID!) {
     revokeRedeemCode(id: $id)
   }

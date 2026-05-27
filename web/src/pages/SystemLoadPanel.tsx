@@ -9,41 +9,6 @@ import {
   ArrowPathIcon,
 } from '@heroicons/react/24/outline';
 
-interface ServiceLoad {
-  requestsInFlight: number;
-  requestsPerSecond: number;
-  avgLatencyMs: number;
-  p95LatencyMs: number;
-  errorRate: number;
-}
-
-interface DatabaseLoad {
-  activeConnections: number;
-  maxConnections: number;
-  poolIdle: number;
-  poolInUse: number;
-  transactionsPerSecond: number;
-  cacheHitRate: number;
-  deadlocks: number;
-}
-
-interface RedisLoad {
-  connectedClients: number;
-  usedMemoryMB: number;
-  maxMemoryMB: number;
-  opsPerSecond: number;
-  hitRate: number;
-  keyCount: number;
-}
-
-interface SystemLoadData {
-  systemLoad: {
-    service: ServiceLoad;
-    database: DatabaseLoad;
-    redis: RedisLoad;
-  };
-}
-
 function MetricCard({ label, value, unit, color }: { label: string; value: string | number; unit?: string; color?: string }) {
   return (
     <div className="text-center">
@@ -68,7 +33,7 @@ function ProgressBar({ value, max, color }: { value: number; max: number; color:
 export default function SystemLoadPanel() {
   const { t } = useTranslation();
   const pollMs = 5000;
-  const queryResult = useQuery<SystemLoadData>(SYSTEM_LOAD_QUERY, {
+  const queryResult = useQuery(SYSTEM_LOAD_QUERY, {
     pollInterval: pollMs,
   });
   useVisibilityAwarePolling(queryResult, pollMs);

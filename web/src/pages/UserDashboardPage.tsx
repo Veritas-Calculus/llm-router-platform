@@ -34,20 +34,9 @@ import QuickStartGuide from '@/components/QuickStartGuide';
 
 /* ── Announcement Banner ── */
 
-interface AnnouncementItem {
-  id: string;
-  title: string;
-  content: string;
-  type: string;
-  priority: number;
-  startsAt?: string;
-  endsAt?: string;
-  createdAt: string;
-}
-
 function AnnouncementBanner() {
   const pollMs = 60000;
-  const queryResult = useQuery<{ activeAnnouncements: AnnouncementItem[] }>(ACTIVE_ANNOUNCEMENTS_QUERY, {
+  const queryResult = useQuery(ACTIVE_ANNOUNCEMENTS_QUERY, {
     pollInterval: pollMs,
   });
   useVisibilityAwarePolling(queryResult, pollMs);
@@ -346,26 +335,31 @@ function UserDashboardPage() {
             )}
           </motion.div>
 
-          {/* Token Limit */}
-          {me.monthlyTokenLimit > 0 ? (
+          {/* Token Limit — pull into a const so TS narrows it to `number`
+              inside the truthy branch. Apollo 4.2 now types monthlyTokenLimit
+              as `number | null`. */}
+          {(() => {
+            const tokenLimit = me.monthlyTokenLimit;
+            return tokenLimit && tokenLimit > 0;
+          })() ? (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="card border border-apple-gray-200 dark:border-[var(--theme-border)]">
               <div className="flex justify-between text-sm mb-2">
                 <span className="font-semibold text-apple-gray-900">{t('user_dashboard.token_limit')}</span>
                 <span className="text-apple-gray-600 font-medium">
-                  {formatTokens(summary?.totalTokens || 0)} / {formatTokens(me.monthlyTokenLimit)}
+                  {formatTokens(summary?.totalTokens || 0)} / {formatTokens(me.monthlyTokenLimit ?? 0)}
                 </span>
               </div>
               <div
                 className="w-full bg-[var(--theme-bg-input)] rounded-full h-2.5 overflow-hidden border border-apple-gray-200 dark:border-[var(--theme-border)]"
                 role="progressbar"
-                aria-valuenow={Math.min(100, Math.round(((summary?.totalTokens || 0) / me.monthlyTokenLimit) * 100))}
+                aria-valuenow={Math.min(100, Math.round(((summary?.totalTokens || 0) / (me.monthlyTokenLimit ?? 1)) * 100))}
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-label={t('user_dashboard.token_limit')}
               >
                 <div
-                  className={`h-2.5 rounded-full ${((summary?.totalTokens || 0) / me.monthlyTokenLimit) > 0.9 ? 'bg-apple-red' : ((summary?.totalTokens || 0) / me.monthlyTokenLimit) > 0.75 ? 'bg-apple-orange' : 'bg-apple-purple'}`}
-                  style={{ width: `${Math.min(100, ((summary?.totalTokens || 0) / me.monthlyTokenLimit) * 100)}%` }}
+                  className={`h-2.5 rounded-full ${((summary?.totalTokens || 0) / (me.monthlyTokenLimit ?? 1)) > 0.9 ? 'bg-apple-red' : ((summary?.totalTokens || 0) / (me.monthlyTokenLimit ?? 1)) > 0.75 ? 'bg-apple-orange' : 'bg-apple-purple'}`}
+                  style={{ width: `${Math.min(100, ((summary?.totalTokens || 0) / (me.monthlyTokenLimit ?? 1)) * 100)}%` }}
                 />
               </div>
             </motion.div>

@@ -1,17 +1,13 @@
 import { useEffect, useMemo } from 'react';
 import { useQuery } from '@apollo/client/react';
-import { gql } from '@apollo/client';
 import { useAuthStore } from '@/stores/authStore';
 import { useAuthHydrated } from '@/hooks/useAuthHydrated';
 import { ChevronUpDownIcon } from '@heroicons/react/24/outline';
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-const MY_ORGS = gql`query MyOrgsForSwitcher { myOrganizations { id name } }`;
+import { MY_ORGANIZATIONS } from '@/lib/graphql/operations';
 
 export default function OrgSwitcher() {
   const { selectedOrgId, setSelectedOrgId } = useAuthStore();
-  const { data } = useQuery<any>(MY_ORGS);
+  const { data } = useQuery(MY_ORGANIZATIONS);
   const orgs = useMemo(() => data?.myOrganizations || [], [data]);
   const hydrated = useAuthHydrated();
 
@@ -38,7 +34,7 @@ export default function OrgSwitcher() {
           onChange={(e) => setSelectedOrgId(e.target.value)}
           className="w-full appearance-none px-3 py-2 pr-8 bg-apple-gray-50 border border-apple-gray-200 rounded-xl text-sm font-medium text-apple-gray-700 focus:ring-2 focus:ring-apple-blue focus:border-transparent cursor-pointer"
         >
-          {orgs.map((org: any) => (
+          {orgs.map((org) => (
             <option key={org.id} value={org.id}>{org.name}</option>
           ))}
         </select>

@@ -1,8 +1,18 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  AdminDashboardQuery,
+  AdminDashboardQueryVariables,
+  AdminRevenueChartQuery,
+  AdminRevenueChartQueryVariables,
+  AdminUsageByUserQuery,
+  AdminUsageByUserQueryVariables,
+  AdminUserGrowthQuery,
+  AdminUserGrowthQueryVariables,
+} from '../generated/graphql';
 
 // -- Admin Dashboard & Analytics Operations --
 
-export const ADMIN_DASHBOARD_QUERY = gql`
+export const ADMIN_DASHBOARD_QUERY: TypedDocumentNode<AdminDashboardQuery, AdminDashboardQueryVariables> = gql`
   query AdminDashboard {
     adminDashboard {
       totalUsers
@@ -52,7 +62,7 @@ export const ADMIN_DASHBOARD_QUERY = gql`
   }
 `;
 
-export const ADMIN_USAGE_BY_USER_QUERY = gql`
+export const ADMIN_USAGE_BY_USER_QUERY: TypedDocumentNode<AdminUsageByUserQuery, AdminUsageByUserQueryVariables> = gql`
   query AdminUsageByUser($days: Int) {
     adminUsageByUser(days: $days) {
       userId
@@ -65,7 +75,7 @@ export const ADMIN_USAGE_BY_USER_QUERY = gql`
   }
 `;
 
-export const ADMIN_REVENUE_CHART_QUERY = gql`
+export const ADMIN_REVENUE_CHART_QUERY: TypedDocumentNode<AdminRevenueChartQuery, AdminRevenueChartQueryVariables> = gql`
   query AdminRevenueChart($days: Int) {
     adminRevenueChart(days: $days) {
       date
@@ -75,7 +85,7 @@ export const ADMIN_REVENUE_CHART_QUERY = gql`
   }
 `;
 
-export const ADMIN_USER_GROWTH_QUERY = gql`
+export const ADMIN_USER_GROWTH_QUERY: TypedDocumentNode<AdminUserGrowthQuery, AdminUserGrowthQueryVariables> = gql`
   query AdminUserGrowth($days: Int) {
     adminUserGrowth(days: $days) {
       date

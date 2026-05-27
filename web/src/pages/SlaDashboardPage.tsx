@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
  
 import { useState } from 'react';
 import { useQuery } from '@apollo/client/react';
@@ -16,7 +16,7 @@ import { useTranslation } from '@/lib/i18n';
 function SlaDashboardPage() {
   const { t } = useTranslation();
   const [timeWindow, setTimeWindow] = useState<number>(24);
-  const { data, loading, error, refetch, networkStatus } = useQuery<any>(SYSTEM_SLA_QUERY, {
+  const { data, loading, error, refetch, networkStatus } = useQuery(SYSTEM_SLA_QUERY, {
     variables: { hours: timeWindow },
     notifyOnNetworkStatusChange: true,
     fetchPolicy: 'cache-and-network',

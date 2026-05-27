@@ -1,6 +1,10 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  GetAuditLogsQuery,
+  GetAuditLogsQueryVariables,
+} from '../generated/graphql';
 
-export const GET_AUDIT_LOGS = gql`
+export const GET_AUDIT_LOGS: TypedDocumentNode<GetAuditLogsQuery, GetAuditLogsQueryVariables> = gql`
   query GetAuditLogs($page: Int, $pageSize: Int, $action: String) {
     auditLogs(page: $page, pageSize: $pageSize, action: $action) {
       data {

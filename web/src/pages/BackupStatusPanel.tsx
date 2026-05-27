@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from '@apollo/client/react';
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
 import { useTranslation } from '@/lib/i18n';
 import { useVisibilityAwarePolling } from '@/hooks/useVisibilityAwarePolling';
 import {
@@ -10,7 +10,28 @@ import {
   CloudArrowUpIcon,
 } from '@heroicons/react/24/outline';
 
-const BACKUP_STATUS_QUERY = gql`
+interface BackupRecord {
+  id: string;
+  type: string;
+  status: string;
+  sizeBytes: number;
+  durationMs: number;
+  destination: string;
+  errorMessage?: string;
+  startedAt: string;
+  completedAt?: string;
+}
+
+interface BackupStatusData {
+  backupStatus: {
+    isConfigured: boolean;
+    scheduleEnabled: boolean;
+    lastBackup?: BackupRecord;
+    records: BackupRecord[];
+  };
+}
+
+const BACKUP_STATUS_QUERY: TypedDocumentNode<BackupStatusData, Record<string, never>> = gql`
   query BackupStatus {
     backupStatus {
       isConfigured
@@ -46,27 +67,6 @@ const TRIGGER_BACKUP = gql`
     triggerBackup
   }
 `;
-
-interface BackupRecord {
-  id: string;
-  type: string;
-  status: string;
-  sizeBytes: number;
-  durationMs: number;
-  destination: string;
-  errorMessage?: string;
-  startedAt: string;
-  completedAt?: string;
-}
-
-interface BackupStatusData {
-  backupStatus: {
-    isConfigured: boolean;
-    scheduleEnabled: boolean;
-    lastBackup?: BackupRecord;
-    records: BackupRecord[];
-  };
-}
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
@@ -112,7 +112,7 @@ function timeAgo(iso: string): string {
 export default function BackupStatusPanel() {
   const { t } = useTranslation();
   const pollMs = 30000;
-  const queryResult = useQuery<BackupStatusData>(BACKUP_STATUS_QUERY, {
+  const queryResult = useQuery(BACKUP_STATUS_QUERY, {
     pollInterval: pollMs,
   });
   useVisibilityAwarePolling(queryResult, pollMs);

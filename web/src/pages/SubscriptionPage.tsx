@@ -35,17 +35,17 @@ const getErrorMessage = (error: unknown) => {
 function SubscriptionPage() {
   const { t } = useTranslation();
   const { user, updateUser } = useAuthStore();
-  const { data: plansData, loading: plansLoading } = useQuery<any>(PLANS_QUERY);
-  const { data: billingData, loading: billingLoading, refetch: refetchBilling } = useQuery<any>(MY_BILLING_QUERY);
-  const { data: redeemHistoryData, loading: redeemHistoryLoading, refetch: refetchRedeemHistory } = useQuery<any>(MY_REDEEM_HISTORY);
+  const { data: plansData, loading: plansLoading } = useQuery(PLANS_QUERY);
+  const { data: billingData, loading: billingLoading, refetch: refetchBilling } = useQuery(MY_BILLING_QUERY);
+  const { data: redeemHistoryData, loading: redeemHistoryLoading, refetch: refetchRedeemHistory } = useQuery(MY_REDEEM_HISTORY);
   // H-06: the balance card reads from Apollo cache via MY_BALANCE so it
   // shares the same normalized User entity that the dashboard wrote on
   // login bootstrap. cache-and-network means we paint immediately from
   // cache (if available) and silently refresh in the background — no
   // 0.00 flash. The lazy variant below stays around only for the
   // post-Stripe-redirect explicit refresh.
-  const { data: balanceData, loading: balanceLoading } = useQuery<any>(MY_BALANCE, { fetchPolicy: 'cache-and-network' });
-  const [refetchBalance] = useLazyQuery<any>(MY_BALANCE, { fetchPolicy: 'network-only' });
+  const { data: balanceData, loading: balanceLoading } = useQuery(MY_BALANCE, { fetchPolicy: 'cache-and-network' });
+  const [refetchBalance] = useLazyQuery(MY_BALANCE, { fetchPolicy: 'network-only' });
   const [changePlanMut] = useMutation(CHANGE_PLAN);
   const [createCheckoutSession] = useMutation(CREATE_CHECKOUT_SESSION);
   const [redeemMut] = useMutation(REDEEM_CODE_MUTATION);

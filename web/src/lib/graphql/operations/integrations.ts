@@ -1,6 +1,14 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  GetIntegrationsQuery,
+  GetIntegrationsQueryVariables,
+  TestLangfuseConnectionMutation,
+  TestLangfuseConnectionMutationVariables,
+  UpdateIntegrationMutation,
+  UpdateIntegrationMutationVariables,
+} from '../generated/graphql';
 
-export const GET_INTEGRATIONS = gql`
+export const GET_INTEGRATIONS: TypedDocumentNode<GetIntegrationsQuery, GetIntegrationsQueryVariables> = gql`
   query GetIntegrations {
     integrations {
       id
@@ -12,7 +20,7 @@ export const GET_INTEGRATIONS = gql`
   }
 `;
 
-export const UPDATE_INTEGRATION = gql`
+export const UPDATE_INTEGRATION: TypedDocumentNode<UpdateIntegrationMutation, UpdateIntegrationMutationVariables> = gql`
   mutation UpdateIntegration($name: String!, $input: UpdateIntegrationInput!) {
     updateIntegration(name: $name, input: $input) {
       id
@@ -24,7 +32,7 @@ export const UPDATE_INTEGRATION = gql`
   }
 `;
 
-export const TEST_LANGFUSE_CONNECTION = gql`
+export const TEST_LANGFUSE_CONNECTION: TypedDocumentNode<TestLangfuseConnectionMutation, TestLangfuseConnectionMutationVariables> = gql`
   mutation TestLangfuseConnection($publicKey: String!, $secretKey: String!, $host: String!) {
     testLangfuseConnection(publicKey: $publicKey, secretKey: $secretKey, host: $host)
   }

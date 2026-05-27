@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
-import { gql } from '@apollo/client';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
@@ -19,16 +18,17 @@ import {
   UPDATE_IDENTITY_PROVIDER,
   DELETE_IDENTITY_PROVIDER,
 } from '@/lib/graphql/operations/sso';
+import { MY_ORGANIZATIONS } from '@/lib/graphql/operations';
 import { useTranslation } from '@/lib/i18n';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-const MY_ORGS_INLINE = gql`query MyOrgsForSSO { myOrganizations { id name } }`;
-
 function SsoManagementPage() {
   const { t } = useTranslation();
-  // Load user's orgs to scope IdP listing
-  const { data: orgResult } = useQuery<any>(MY_ORGS_INLINE);
+  // Load user's orgs to scope IdP listing — reuse the canonical typed
+  // operation so we share Apollo's normalised cache entry instead of
+  // double-fetching under a one-off query name.
+  const { data: orgResult } = useQuery(MY_ORGANIZATIONS);
   const orgs = useMemo(() => orgResult?.myOrganizations || [], [orgResult]);
   const selectedOrgId = useAuthStore((s) => s.selectedOrgId) ?? '';
   const setSelectedOrgId = useAuthStore((s) => s.setSelectedOrgId);
@@ -39,7 +39,7 @@ function SsoManagementPage() {
     if (orgs.length > 0 && !selectedOrgId) setSelectedOrgId(orgs[0].id);
   }, [hydrated, orgs, selectedOrgId, setSelectedOrgId]);
 
-  const { data: idpData, loading, refetch } = useQuery<any>(IDENTITY_PROVIDERS_QUERY, {
+  const { data: idpData, loading, refetch } = useQuery(IDENTITY_PROVIDERS_QUERY, {
     variables: { orgId: selectedOrgId },
     skip: !selectedOrgId,
   });

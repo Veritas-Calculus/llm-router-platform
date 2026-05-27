@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 
 import { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
@@ -30,10 +30,10 @@ function AdminDocsPage() {
   const [form, setForm] = useState(emptyForm);
   const [previewMode, setPreviewMode] = useState(false);
 
-  const { data, loading, refetch } = useQuery<any>(DOCUMENTS_QUERY);
-  const [createDocument, { loading: saving }] = useMutation<any>(CREATE_DOCUMENT);
-  const [updateDocument] = useMutation<any>(UPDATE_DOCUMENT);
-  const [deleteDocument] = useMutation<any>(DELETE_DOCUMENT);
+  const { data, loading, refetch } = useQuery(DOCUMENTS_QUERY);
+  const [createDocument, { loading: saving }] = useMutation(CREATE_DOCUMENT);
+  const [updateDocument] = useMutation(UPDATE_DOCUMENT);
+  const [deleteDocument] = useMutation(DELETE_DOCUMENT);
 
   const items: Document[] = data?.documents || [];
 

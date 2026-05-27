@@ -19,9 +19,9 @@ import { formatUSD, formatPercent } from '@/lib/format';
 // quota middleware).
 function BudgetSettingsCard() {
   const { t } = useTranslation();
-  const { data, loading, refetch } = useQuery<any>(MY_BILLING_QUERY);
-  const [setBudgetMut, { loading: saving }] = useMutation<any>(SET_BUDGET);
-  const [deleteBudgetMut, { loading: deleting }] = useMutation<any>(DELETE_BUDGET);
+  const { data, loading, refetch } = useQuery(MY_BILLING_QUERY);
+  const [setBudgetMut, { loading: saving }] = useMutation(SET_BUDGET);
+  const [deleteBudgetMut, { loading: deleting }] = useMutation(DELETE_BUDGET);
 
   const myBudget = data?.myBudget;
   const myBudgetStatus = data?.myBudgetStatus;
@@ -40,7 +40,12 @@ function BudgetSettingsCard() {
       const pct = raw <= 1 ? raw * 100 : raw;
       setAlertThreshold(String(pct));
       setEnforceHardLimit(Boolean(myBudget.enforceHardLimit));
-      setEmail(myBudget.email || '');
+      // `email` lives on Budget server-side but isn't part of the MyBilling
+      // selection set today. Treat it as best-effort so the form prefills
+      // when the field shows up (e.g. a future selection-set expansion)
+      // without forcing a query change in this Apollo migration PR.
+      const maybeEmail = (myBudget as { email?: string | null }).email;
+      setEmail(maybeEmail || '');
     }
   }, [myBudget]);
 
@@ -98,7 +103,7 @@ function BudgetSettingsCard() {
       </h2>
       <p className="text-sm text-apple-gray-500 mb-6">{t('budget.subtitle')}</p>
 
-      {!loading && myBudgetStatus?.budget && (
+      {!loading && myBudgetStatus && myBudget && (
         <div className="mb-6 p-3 rounded-lg bg-apple-gray-50 dark:bg-[var(--theme-bg-input)] text-sm">
           <div className="flex justify-between">
             <span className="text-apple-gray-500">{t('budget.current_spend')}</span>

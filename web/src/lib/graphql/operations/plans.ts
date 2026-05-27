@@ -1,8 +1,16 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  CreatePlanMutation,
+  CreatePlanMutationVariables,
+  PlansQuery,
+  PlansQueryVariables,
+  UpdatePlanMutation,
+  UpdatePlanMutationVariables,
+} from '../generated/graphql';
 
 // ── Admin: Plans ──────────────────────────────────────────
 
-export const PLANS_QUERY = gql`
+export const PLANS_QUERY: TypedDocumentNode<PlansQuery, PlansQueryVariables> = gql`
   query Plans {
     plans {
       id
@@ -18,7 +26,7 @@ export const PLANS_QUERY = gql`
   }
 `;
 
-export const CREATE_PLAN = gql`
+export const CREATE_PLAN: TypedDocumentNode<CreatePlanMutation, CreatePlanMutationVariables> = gql`
   mutation CreatePlan($input: PlanInput!) {
     createPlan(input: $input) {
       id
@@ -34,7 +42,7 @@ export const CREATE_PLAN = gql`
   }
 `;
 
-export const UPDATE_PLAN = gql`
+export const UPDATE_PLAN: TypedDocumentNode<UpdatePlanMutation, UpdatePlanMutationVariables> = gql`
   mutation UpdatePlan($id: ID!, $input: PlanInput!) {
     updatePlan(id: $id, input: $input) {
       id

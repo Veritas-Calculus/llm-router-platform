@@ -1,6 +1,10 @@
-import { gql } from '@apollo/client';
+import { gql, type TypedDocumentNode } from '@apollo/client';
+import type {
+  AdminFinancialDashboardQuery,
+  AdminFinancialDashboardQueryVariables,
+} from '../generated/graphql';
 
-export const ADMIN_FINANCIAL_DASHBOARD_QUERY = gql`
+export const ADMIN_FINANCIAL_DASHBOARD_QUERY: TypedDocumentNode<AdminFinancialDashboardQuery, AdminFinancialDashboardQueryVariables> = gql`
   query AdminFinancialDashboard($days: Int) {
     adminFinancialDashboard(days: $days) {
       periodStart

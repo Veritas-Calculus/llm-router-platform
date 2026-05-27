@@ -10,10 +10,6 @@ interface TabProps {
   t: (k: string) => string;
 }
 
-interface CaptchaConfigResult {
-  captchaConfig: { enabled: boolean; siteKey: string; provider: string };
-}
-
 // CaptchaSettingsTab lets the operator pick a captcha backend at runtime.
 // The provider lives in the DB-backed system_settings table (settings
 // category "captcha"); credentials (site key / secret key) stay in env
@@ -23,7 +19,7 @@ interface CaptchaConfigResult {
 // Selection takes effect within 5 minutes (Registry cache TTL) and
 // immediately on save.
 export function CaptchaSettingsTab({ data, onChange, t }: TabProps) {
-  const { data: configData } = useQuery<CaptchaConfigResult>(CAPTCHA_CONFIG, { fetchPolicy: 'cache-first' });
+  const { data: configData } = useQuery(CAPTCHA_CONFIG, { fetchPolicy: 'cache-first' });
   const siteKey = configData?.captchaConfig?.siteKey ?? '';
   // We cannot probe the secret key — it's server-side only. The proxy
   // signals "configured" by reporting enabled=true *and* providing a

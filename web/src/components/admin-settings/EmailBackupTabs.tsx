@@ -7,7 +7,7 @@ import { FormField, TextInput, Toggle, SelectInput } from './FormPrimitives';
 
 export function EmailSettingsTab({ data, onChange, t }: { data: any; onChange: (d: any) => void; t: (k: string) => string }) {
   const [testEmail, setTestEmail] = useState('');
-  const [sendTestEmail, { loading: sending }] = useMutation<any>(SEND_TEST_EMAIL);
+  const [sendTestEmail, { loading: sending }] = useMutation(SEND_TEST_EMAIL);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const handleTestEmail = async () => {
@@ -69,7 +69,7 @@ export function EmailSettingsTab({ data, onChange, t }: { data: any; onChange: (
 }
 
 export function BackupSettingsTab({ data, onChange, t }: { data: any; onChange: (d: any) => void; t: (k: string) => string }) {
-  const [triggerBackup, { loading: triggering }] = useMutation<any>(TRIGGER_BACKUP);
+  const [triggerBackup, { loading: triggering }] = useMutation(TRIGGER_BACKUP);
   const [backupResult, setBackupResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const handleTriggerBackup = async () => {

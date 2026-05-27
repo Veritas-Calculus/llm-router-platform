@@ -21,30 +21,8 @@ interface DependencyStatus {
   name: string;
   status: string;
   latencyMs: number;
-  version?: string;
-  details?: string;
-}
-
-interface SystemStatusData {
-  systemStatus: {
-    overallStatus: string;
-    service: {
-      version: string;
-      gitCommit: string;
-      buildTime: string;
-      uptime: string;
-      configMode: string;
-    };
-    runtime: {
-      goroutines: number;
-      heapAllocMB: number;
-      heapSysMB: number;
-      gcPauseMs: number;
-      numGC: number;
-      cpuCores: number;
-    };
-    dependencies: DependencyStatus[];
-  };
+  version: string | null;
+  details: string | null;
 }
 
 function statusColor(status: string) {
@@ -88,7 +66,7 @@ function depIcon(name: string) {
   }
 }
 
-function parseDetails(details?: string): Record<string, string> | null {
+function parseDetails(details: string | null | undefined): Record<string, string> | null {
   if (!details) return null;
   try {
     return JSON.parse(details);
@@ -100,7 +78,7 @@ function parseDetails(details?: string): Record<string, string> | null {
 export default function SystemStatusPanel() {
   const { t } = useTranslation();
   const pollMs = 10000;
-  const queryResult = useQuery<SystemStatusData>(SYSTEM_STATUS_QUERY, {
+  const queryResult = useQuery(SYSTEM_STATUS_QUERY, {
     pollInterval: pollMs,
     fetchPolicy: 'network-only',
   });

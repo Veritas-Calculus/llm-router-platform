@@ -15,7 +15,7 @@ import { useTranslation } from '@/lib/i18n';
 
 function RateLimitDashboardPage() {
   const { t } = useTranslation();
-  const { data: provData, loading } = useQuery<any>(PROVIDERS_QUERY);
+  const { data: provData, loading } = useQuery(PROVIDERS_QUERY);
   const providers = useMemo(() => provData?.providers || [], [provData]);
 
   if (loading) {
@@ -149,10 +149,10 @@ function RateLimitDashboardPage() {
 
 export default RateLimitDashboardPage;
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 function SubscriptionQuotaSection() {
   const { t } = useTranslation();
-  const { data } = useQuery<any>(SUBSCRIPTION_QUOTA_QUERY, { fetchPolicy: 'cache-and-network' });
+  const { data } = useQuery(SUBSCRIPTION_QUOTA_QUERY, { fetchPolicy: 'cache-and-network' });
   const sub = data?.mySubscription;
   if (!sub || sub.tokenLimit <= 0) return null;
 

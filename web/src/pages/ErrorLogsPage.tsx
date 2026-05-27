@@ -24,10 +24,6 @@ interface ErrorLog {
   createdAt: string;
 }
 
-interface ErrorLogsData {
-  errorLogs: { data: ErrorLog[]; total: number };
-}
-
 export default function ErrorLogsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -35,7 +31,7 @@ export default function ErrorLogsPage() {
   const pageSize = 20;
   const [selectedLog, setSelectedLog] = useState<ErrorLog | null>(null);
 
-  const { data, loading } = useQuery<ErrorLogsData>(GET_ERROR_LOGS, {
+  const { data, loading } = useQuery(GET_ERROR_LOGS, {
     variables: { page, pageSize },
     fetchPolicy: 'cache-and-network',
   });
