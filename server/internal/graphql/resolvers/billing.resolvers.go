@@ -571,14 +571,14 @@ func (r *queryResolver) Dashboard(ctx context.Context, projectID *string, channe
 	totalCost := decimal.Zero
 	successRate, avgLatency := 0.0, 0.0
 	if summary != nil {
-		totalReq = int(summary.TotalRequests)
-		totalTokens = int(summary.TotalTokens)
+		totalReq = int64ToInt(summary.TotalRequests)
+		totalTokens = int64ToInt(summary.TotalTokens)
 		totalCost = summary.TotalCost
 		successRate = summary.SuccessRate
 		avgLatency = summary.AvgLatency
-		errorCount = int(summary.ErrorCount)
-		mcpCalls = int(summary.MCPCallCount)
-		mcpErrors = int(summary.MCPErrorCount)
+		errorCount = int64ToInt(summary.ErrorCount)
+		mcpCalls = int64ToInt(summary.MCPCallCount)
+		mcpErrors = int64ToInt(summary.MCPErrorCount)
 	}
 
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -590,8 +590,8 @@ func (r *queryResolver) Dashboard(ctx context.Context, projectID *string, channe
 		todaySummary, _ = r.Billing.GetUsageSummary(ctx, orgID, scopedProjectID, channel, todayStart, now)
 	}
 	if todaySummary != nil {
-		todayReq = int(todaySummary.TotalRequests)
-		todayTokens = int(todaySummary.TotalTokens)
+		todayReq = int64ToInt(todaySummary.TotalRequests)
+		todayTokens = int64ToInt(todaySummary.TotalTokens)
 		todayCost = todaySummary.TotalCost
 	}
 

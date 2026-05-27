@@ -3,8 +3,28 @@ package resolvers
 // Domain helpers: helpers_util
 
 import (
+	"math"
 	"time"
 )
+
+// int64ToInt converts an int64 (typically a DB count or sum aggregated by
+// the database driver) into an int suitable for GraphQL Int scalars (which
+// are platform-int on the wire). On 64-bit platforms this is a no-op; on
+// hypothetical 32-bit builds it saturates at math.MaxInt32 / math.MinInt32
+// so a row-count past 2.1B can't silently wrap to a negative number. Use
+// this anywhere CodeQL flags `int(summary.X)` as go/incorrect-integer-
+// conversion.
+func int64ToInt(n int64) int {
+	const max = int64(math.MaxInt32)
+	const min = int64(math.MinInt32)
+	if n > max {
+		return math.MaxInt32
+	}
+	if n < min {
+		return math.MinInt32
+	}
+	return int(n)
+}
 
 // ── Utility helpers ─────────────────────────────────────────────────
 
