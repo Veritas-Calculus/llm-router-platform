@@ -214,8 +214,8 @@ func (h *ChatHandler) ChatCompletion(c *gin.Context) {
 	h.logger.Info("model routed to provider",
 		zap.String("request_id", requestIDFromContext(c)),
 		zap.String("model", sanitize.LogValue(req.Model)),
-		zap.String("provider", selectedProvider.Name),
-		zap.String("base_url", selectedProvider.BaseURL),
+		zap.String("provider", sanitize.LogValue(selectedProvider.Name)),
+		zap.String("base_url", sanitize.LogValue(selectedProvider.BaseURL)),
 	)
 
 	// 1. Build messages (conversation history + request)

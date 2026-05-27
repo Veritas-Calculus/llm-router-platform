@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	"llm-router-platform/internal/config"
+	"llm-router-platform/pkg/sanitize"
 
 	langfuse "github.com/git-hulk/langfuse-go"
 	"github.com/git-hulk/langfuse-go/pkg/traces"
@@ -44,7 +45,7 @@ func NewLangfuseService(cfg config.ObservabilityConfig, logger *zap.Logger) Serv
 		return NewNoopService()
 	}
 
-	logger.Info("Langfuse observability initialized successfully", zap.String("host", cfg.LangfuseHost))
+	logger.Info("Langfuse observability initialized successfully", zap.String("host", sanitize.LogValue(cfg.LangfuseHost)))
 
 	return &LangfuseService{
 		client: client,

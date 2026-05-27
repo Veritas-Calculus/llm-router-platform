@@ -180,6 +180,17 @@ func (s *Service) FinancialDashboard(ctx context.Context, days int) (*FinancialD
 }
 
 func (s *Service) financialDaily(ctx context.Context, start, end time.Time, days int) ([]FinancialDailyPoint, error) {
+	// Defense-in-depth: FinancialDashboard already caps days at [1,365]
+	// (see line 77-83), but CodeQL's taint analysis (rule
+	// go/uncontrolled-allocation-size) can't follow that cap into this
+	// helper. Re-clamp here so a future caller that bypasses the public
+	// entry point can't OOM the process via the make() below.
+	if days <= 0 {
+		days = 1
+	}
+	if days > 365 {
+		days = 365
+	}
 	byDate := make(map[string]*FinancialDailyPoint, days)
 	out := make([]FinancialDailyPoint, 0, days)
 	for i := 0; i < days; i++ {

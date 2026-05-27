@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"llm-router-platform/internal/config"
+	"llm-router-platform/pkg/sanitize"
 
 	"go.uber.org/zap"
 )
@@ -58,7 +59,7 @@ func (s *ReloadableLangfuseService) ReloadLangfuse(ctx context.Context, cfg conf
 
 	s.logger.Info("langfuse runtime configuration reloaded",
 		zap.Bool("enabled", cfg.LangfuseEnabled),
-		zap.String("host", cfg.LangfuseHost),
+		zap.String("host", sanitize.LogValue(cfg.LangfuseHost)),
 	)
 	s.shutdownLater(old)
 	return nil

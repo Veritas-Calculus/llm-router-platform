@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"llm-router-platform/internal/config"
+	"llm-router-platform/pkg/sanitize"
 
 	"go.uber.org/zap"
 )
@@ -526,7 +527,9 @@ func (c *LMStudioClient) ensureModelLoaded(ctx context.Context, model string) er
 			}
 		}
 	} else if c.logger != nil {
-		c.logger.Debug("failed to inspect LM Studio loaded models before load", zap.String("model", model), zap.Error(err))
+		c.logger.Debug("failed to inspect LM Studio loaded models before load",
+			zap.String("model", sanitize.LogValue(model)),
+			zap.String("error", sanitize.LogValue(err.Error())))
 	}
 
 	if err := c.loadModel(ctx, model); err != nil {

@@ -79,7 +79,14 @@ func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, n
 
 	key, secret, err := r.UserSvc.CreateAPIKey(ctx, userID, id, name, scopeStr, rateLimit, tokenLimit, allowedModels, allowedProviders)
 	if err != nil {
-		r.Logger.Error("Failed to create API key in resolver", zap.Error(err), zap.String("projectID", sanitize.LogValue(projectID)))
+		// Sanitize err.Error() rather than using zap.Error(err) directly:
+		// the wrapped error message may include the user-provided `name`,
+		// and CodeQL flags any taint flow into the log line. LogValue
+		// strips control chars so a name with embedded newlines cannot
+		// forge log entries.
+		r.Logger.Error("Failed to create API key in resolver",
+			zap.String("error", sanitize.LogValue(err.Error())),
+			zap.String("projectID", sanitize.LogValue(projectID)))
 		return nil, err
 	}
 
