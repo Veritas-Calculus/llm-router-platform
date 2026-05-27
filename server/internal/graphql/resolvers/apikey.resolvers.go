@@ -7,11 +7,14 @@ import (
 	"context"
 	"fmt"
 	"llm-router-platform/internal/graphql/directives"
+	"llm-router-platform/internal/graphql/errs"
 	"llm-router-platform/internal/graphql/model"
 	"llm-router-platform/internal/models"
 	"llm-router-platform/internal/service/audit"
 	"llm-router-platform/pkg/sanitize"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -20,6 +23,30 @@ import (
 	"go.uber.org/zap"
 )
 
+// apiKeyNamePattern restricts the user-facing Name field to letters
+// (unicode), digits, whitespace, dot, dash, underscore, and either
+// half-width or full-width parentheses. 1-64 characters total. Audit
+// L-06: the field is rendered as a React text node today (safe) but is
+// also surfaced in CSV exports, table dropdowns, and audit logs — none
+// of which we can guarantee escape HTML correctly forever. Stripping the
+// `<` / `>` / `"` triad at the schema boundary defuses every downstream
+// vector before it appears.
+var apiKeyNamePattern = regexp.MustCompile(`^[\p{L}\p{N}\s_.\-()\x{FF08}\x{FF09}]{1,64}$`)
+
+func validateAPIKeyName(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return errs.Validation("name", "name is required")
+	}
+	if len([]rune(trimmed)) > 64 {
+		return errs.Validation("name", "name must be 64 characters or fewer")
+	}
+	if !apiKeyNamePattern.MatchString(trimmed) {
+		return errs.Validation("name", "name may only contain letters, digits, spaces, and . - _ ( )")
+	}
+	return nil
+}
+
 // CreateAPIKey is the resolver for the createApiKey field.
 func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, name string, scopes *string, rateLimit *int, tokenLimit *int, allowedModels []string, allowedProviders []string) (*model.APIKeyWithSecret, error) {
 	uid, _ := directives.UserIDFromContext(ctx)
@@ -27,6 +54,11 @@ func (r *mutationResolver) CreateAPIKey(ctx context.Context, projectID string, n
 		r.Logger.Error("RequireProjectRole failed in CreateAPIKey", zap.Error(err), zap.String("uid", sanitize.LogValue(uid)), zap.String("projectID", sanitize.LogValue(projectID)))
 		return nil, err
 	}
+
+	if err := validateAPIKeyName(name); err != nil {
+		return nil, err
+	}
+	name = strings.TrimSpace(name)
 
 	id, err := uuid.Parse(projectID)
 	if err != nil {
@@ -129,6 +161,18 @@ func (r *mutationResolver) UpdateAPIKey(ctx context.Context, id string, name *st
 	keyID, err := uuid.Parse(id)
 	if err != nil {
 		return nil, fmt.Errorf("invalid API key ID")
+	}
+
+	// L-06: re-validate the name on update (the create path validates too,
+	// but a future migration could populate legacy rows we want to lock
+	// down at edit time). Only validate when the caller actually supplied
+	// a name change — nil means "leave unchanged".
+	if name != nil {
+		if err := validateAPIKeyName(*name); err != nil {
+			return nil, err
+		}
+		trimmed := strings.TrimSpace(*name)
+		name = &trimmed
 	}
 
 	// Resolve the key's owning project and enforce membership before mutation.

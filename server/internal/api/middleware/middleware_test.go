@@ -185,6 +185,70 @@ func TestCORSWithSpecificOrigin(t *testing.T) {
 	assert.Equal(t, "true", w.Header().Get("Access-Control-Allow-Credentials"))
 }
 
+// Audit L-01: preflight from a non-whitelisted Origin must NOT receive
+// Allow-Methods / Allow-Headers / ACAO. Returning 403 makes the rejection
+// observable to defenders without leaking the allow-list shape.
+func TestCORSRejectsUnknownOriginPreflight(t *testing.T) {
+	router := gin.New()
+	cors := NewCORSMiddleware([]string{"http://localhost:3000"}, "")
+	router.Use(cors.Handle())
+	router.POST("/graphql", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("OPTIONS", "/graphql", nil)
+	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Methods"))
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Headers"))
+	assert.Equal(t, "Origin", w.Header().Get("Vary"))
+}
+
+// Audit L-01: a same-origin request (no Origin header) must pass through.
+// We never echo ACAO and never reject it as a preflight.
+func TestCORSPassesThroughSameOrigin(t *testing.T) {
+	router := gin.New()
+	cors := NewCORSMiddleware([]string{"http://localhost:3000"}, "")
+	router.Use(cors.Handle())
+	router.GET("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/test", nil)
+	// no Origin header set
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+}
+
+// Audit L-01: a non-preflight (POST) request from an unknown Origin must
+// still be served (browsers will discard the response when ACAO is absent)
+// but without any CORS metadata in the response.
+func TestCORSAllowsBodyButOmitsHeadersForUnknownOrigin(t *testing.T) {
+	router := gin.New()
+	cors := NewCORSMiddleware([]string{"http://localhost:3000"}, "")
+	router.Use(cors.Handle())
+	router.POST("/graphql", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/graphql", nil)
+	req.Header.Set("Origin", "https://evil.example")
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Methods"))
+}
+
 func TestRateLimiterMiddleware(t *testing.T) {
 	logger, _ := zap.NewDevelopment()
 	limiter := NewRateLimiter(100, nil, logger)
