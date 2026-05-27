@@ -21,7 +21,6 @@ import (
 	"llm-router-platform/pkg/sanitize"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -534,17 +533,3 @@ func readAndClearOAuth2StateCookie(c *gin.Context) (oauth2StatePayload, bool) {
 	return p, true
 }
 
-func (h *OAuth2Handler) generateJWT(u *models.User) (string, error) {
-	ttl := h.cfg.JWT.ExpiresIn
-	if ttl <= 0 {
-		ttl = time.Hour // Default: 1 hour (consistent with resolver)
-	}
-	claims := jwt.MapClaims{
-		"sub":  u.ID.String(),
-		"role": u.Role,
-		"exp":  time.Now().Add(ttl).Unix(),
-		"iat":  time.Now().Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(h.cfg.JWT.Secret))
-}

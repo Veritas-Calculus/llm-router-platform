@@ -64,7 +64,7 @@ func newPaymentMoney(amount decimal.Decimal) paymentMoney {
 }
 
 func (m paymentMoney) money() decimal.Decimal {
-	return m.Decimal.Round(models.MoneyScale)
+	return m.Round(models.MoneyScale)
 }
 
 func (m paymentMoney) MarshalJSON() ([]byte, error) {

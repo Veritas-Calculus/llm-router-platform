@@ -250,9 +250,7 @@ func (c *OllamaClient) StreamChat(ctx context.Context, req *ChatRequest) (<-chan
 
 func ollamaNativeBaseURL(baseURL string) string {
 	root := strings.TrimSuffix(baseURL, "/")
-	if strings.HasSuffix(root, "/v1") {
-		root = strings.TrimSuffix(root, "/v1")
-	}
+	root = strings.TrimSuffix(root, "/v1")
 	return root
 }
 

@@ -27,7 +27,7 @@ import (
 //
 // Kept in sync with server/internal/graphql/resolvers/helpers_auth.go
 // (accessTokenCookieName) — both names point at the same cookie.
-const AccessTokenCookieName = "llm_router_access"
+const AccessTokenCookieName = "llm_router_access" // #nosec G101 -- cookie name, not a credential
 
 // AuthMiddleware handles JWT authentication.
 type AuthMiddleware struct {

@@ -131,7 +131,10 @@ jobs:
         id: build
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
-          context: ./web
+          # Build context must be the repo root because web/Dockerfile copies
+          # both `web/` and `server/internal/graphql/schema/` (the build-time
+          # GraphQL validator needs the canonical .graphqls files).
+          context: .
           file: ./web/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
@@ -246,7 +249,9 @@ jobs:
       - name: Build web image locally
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
-          context: ./web
+          # Build context must be the repo root because web/Dockerfile copies
+          # both `web/` and `server/internal/graphql/schema/`.
+          context: .
           file: ./web/Dockerfile
           load: true
           tags: web:scan

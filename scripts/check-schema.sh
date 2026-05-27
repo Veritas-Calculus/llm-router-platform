@@ -12,7 +12,7 @@
 # Exit code 0 = schemas match, 1 = schemas differ
 set -euo pipefail
 
-PG_IMAGE="postgres:16-alpine"
+PG_IMAGE="pgvector/pgvector:pg16"
 PG_USER="testuser"
 PG_PASS="testpass"
 PG_DB="testdb"
@@ -22,28 +22,44 @@ GORM_CONTAINER="schema-gorm-$$"
 
 MIGRATION_DIR="$(cd "$(dirname "$0")/../server/migrations" && pwd)"
 SERVER_DIR="$(cd "$(dirname "$0")/../server" && pwd)"
+# The AutoMigrate program must live inside the server module tree to import
+# `llm-router-platform/internal/...` packages — Go forbids importing internal
+# packages from outside the module's directory subtree.
+AUTOMIGRATE_DIR="${SERVER_DIR}/cmd/schema_check_automigrate_$$"
+AUTOMIGRATE_GO="${AUTOMIGRATE_DIR}/main.go"
 
 cleanup() {
     echo "🧹 Cleaning up..."
     docker rm -f "$SQL_CONTAINER" "$GORM_CONTAINER" 2>/dev/null || true
     docker network rm "$NET_NAME" 2>/dev/null || true
     rm -f /tmp/schema_sql.dump /tmp/schema_gorm.dump
+    rm -rf "$AUTOMIGRATE_DIR"
 }
 trap cleanup EXIT
 
 echo "📦 Starting temporary Postgres containers..."
 docker network create "$NET_NAME" >/dev/null 2>&1 || true
 
-# Start two PG instances
-for name in "$SQL_CONTAINER" "$GORM_CONTAINER"; do
-    docker run -d --rm \
-        --name "$name" \
-        --network "$NET_NAME" \
-        -e POSTGRES_USER="$PG_USER" \
-        -e POSTGRES_PASSWORD="$PG_PASS" \
-        -e POSTGRES_DB="$PG_DB" \
-        "$PG_IMAGE" >/dev/null
-done
+# Start two PG instances. The GORM container also publishes its port to
+# 127.0.0.1 because `go run` executes on the host and host→container-IP
+# routing is not available on Docker Desktop (Mac/Windows). On Linux CI
+# the container IP would work; the host-port publish path works on both.
+docker run -d --rm \
+    --name "$SQL_CONTAINER" \
+    --network "$NET_NAME" \
+    -e POSTGRES_USER="$PG_USER" \
+    -e POSTGRES_PASSWORD="$PG_PASS" \
+    -e POSTGRES_DB="$PG_DB" \
+    "$PG_IMAGE" >/dev/null
+
+docker run -d --rm \
+    --name "$GORM_CONTAINER" \
+    --network "$NET_NAME" \
+    -p 127.0.0.1::5432 \
+    -e POSTGRES_USER="$PG_USER" \
+    -e POSTGRES_PASSWORD="$PG_PASS" \
+    -e POSTGRES_DB="$PG_DB" \
+    "$PG_IMAGE" >/dev/null
 
 # Wait for both to be ready
 for name in "$SQL_CONTAINER" "$GORM_CONTAINER"; do
@@ -72,10 +88,14 @@ docker run --rm \
 
 echo ""
 echo "🔄 Running GORM AutoMigrate on $GORM_CONTAINER..."
-GORM_HOST=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$GORM_CONTAINER")
+# GORM runs on the host — connect via the published port on 127.0.0.1.
+GORM_HOST="127.0.0.1"
+GORM_PORT=$(docker inspect -f '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}' "$GORM_CONTAINER")
 
-# Run a temporary Go program that performs AutoMigrate
-cat > /tmp/schema_check_automigrate.go << 'GOEOF'
+# Run a temporary Go program that performs AutoMigrate. It must live inside
+# $SERVER_DIR so Go allows the internal package imports.
+mkdir -p "$AUTOMIGRATE_DIR"
+cat > "$AUTOMIGRATE_GO" << 'GOEOF'
 package main
 
 import (
@@ -87,9 +107,13 @@ import (
 )
 
 func main() {
+    port := os.Getenv("DB_PORT")
+    if port == "" {
+        port = "5432"
+    }
     cfg := &config.DatabaseConfig{
         Host:     os.Getenv("DB_HOST"),
-        Port:     "5432",
+        Port:     port,
         User:     os.Getenv("DB_USER"),
         Password: os.Getenv("DB_PASSWORD"),
         Name:     os.Getenv("DB_NAME"),
@@ -109,8 +133,9 @@ func main() {
 GOEOF
 
 cd "$SERVER_DIR"
-DB_HOST="$GORM_HOST" DB_USER="$PG_USER" DB_PASSWORD="$PG_PASS" DB_NAME="$PG_DB" \
-    go run /tmp/schema_check_automigrate.go
+DB_HOST="$GORM_HOST" DB_PORT="$GORM_PORT" \
+    DB_USER="$PG_USER" DB_PASSWORD="$PG_PASS" DB_NAME="$PG_DB" \
+    go run "$AUTOMIGRATE_GO"
 
 echo ""
 echo "📊 Comparing schemas..."
