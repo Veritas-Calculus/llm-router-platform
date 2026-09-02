@@ -1,5 +1,5 @@
 # Build stage
-FROM --platform=$BUILDPLATFORM node:26-alpine AS builder
+FROM --platform=$BUILDPLATFORM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -11,21 +11,9 @@ RUN npm ci
 
 ARG CACHEBUST=1
 
-# Build-time defaults — only used when running `npm run dev`. The production
-# image reads these at container start via envsubst over the runtime config
-# template (see entrypoint + /runtime-config.template.js + audit H-08).
-# The bundle no longer hardcodes Sentry DSN / captcha keys, so the same
-# image can be promoted dev → staging → prod without rebuild.
-ARG VITE_SENTRY_DSN=""
-ARG VITE_SENTRY_ENVIRONMENT="production"
-# VITE_CAPTCHA_PROVIDER removed — the SPA now reads provider from the
-# captchaConfig GraphQL query (DB-backed via settings.Registry).
-ARG VITE_CAPTCHA_SITE_KEY=""
-ARG VITE_DEV_CAPTCHA_BYPASS_TOKEN="dev-ok"
-ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
-ENV VITE_SENTRY_ENVIRONMENT=$VITE_SENTRY_ENVIRONMENT
-ENV VITE_CAPTCHA_SITE_KEY=$VITE_CAPTCHA_SITE_KEY
-ENV VITE_DEV_CAPTCHA_BYPASS_TOKEN=$VITE_DEV_CAPTCHA_BYPASS_TOKEN
+# Sentry and captcha settings are injected by the runtime entrypoint. Keep
+# them out of the build stage so secrets cannot be baked into image layers or
+# the Vite bundle, and so one image can be promoted across environments.
 
 # Copy source code and the GraphQL schema used by the build-time validator
 COPY web/ .

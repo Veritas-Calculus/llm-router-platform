@@ -33,7 +33,7 @@
     "date-fns": "^4.4.0",
     "flatted": "^3.4.4",
     "framer-motion": "^13.1.1",
-    "graphql": "^17.0.2",
+    "graphql": "^16.14.0",
     "i18next": "^26.4.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.8",
@@ -71,9 +71,10 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.5",
     "jsdom": "^30.0.1",
+    "picomatch": "^4.0.7",
     "postcss": "^8.5.15",
     "tailwindcss": "^4.1.18",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"
   }
